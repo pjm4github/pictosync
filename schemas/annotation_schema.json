@@ -1,0 +1,402 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nanobanana.io/schemas/annotation_schema.json",
+  "title": "NanoBANANA Annotation Schema",
+  "description": "JSON Schema for diagram annotation items used in NanoBANANA for canvas, property panel, and AI extraction interchange.",
+  "type": "object",
+  "required": ["annotations"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version identifier",
+      "enum": ["draft-1", "overlay-1.0"]
+    },
+    "image": {
+      "$ref": "#/$defs/imageInfo"
+    },
+    "background_png": {
+      "type": "string",
+      "description": "Path to the background PNG image"
+    },
+    "scene_rect": {
+      "$ref": "#/$defs/sceneRect"
+    },
+    "annotations": {
+      "type": "array",
+      "description": "List of annotation items",
+      "items": {
+        "$ref": "#/$defs/annotationItem"
+      }
+    }
+  },
+  "$defs": {
+    "imageInfo": {
+      "type": "object",
+      "description": "Information about the source image",
+      "properties": {
+        "width": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Image width in pixels"
+        },
+        "height": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Image height in pixels"
+        },
+        "path": {
+          "type": "string",
+          "description": "Path to the image file"
+        }
+      }
+    },
+    "sceneRect": {
+      "type": "object",
+      "description": "Scene rectangle bounds",
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "w": { "type": "number", "minimum": 0 },
+        "h": { "type": "number", "minimum": 0 }
+      }
+    },
+    "annotationItem": {
+      "type": "object",
+      "description": "A single annotation item",
+      "required": ["kind", "geom"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for this annotation",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["rect", "roundedrect", "ellipse", "line", "text"],
+          "description": "The type of annotation item"
+        },
+        "geom": {
+          "$ref": "#/$defs/geometry"
+        },
+        "meta": {
+          "$ref": "#/$defs/annotationMeta"
+        },
+        "style": {
+          "$ref": "#/$defs/styleDefinition"
+        },
+        "text": {
+          "type": "string",
+          "description": "Text content: for text items this is the displayed text; for lines this is the relationship label overlaying the line"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "kind": { "const": "rect" } }
+          },
+          "then": {
+            "properties": {
+              "geom": { "$ref": "#/$defs/rectGeometry" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "roundedrect" } }
+          },
+          "then": {
+            "properties": {
+              "geom": { "$ref": "#/$defs/roundedRectGeometry" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "ellipse" } }
+          },
+          "then": {
+            "properties": {
+              "geom": { "$ref": "#/$defs/rectGeometry" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "line" } }
+          },
+          "then": {
+            "properties": {
+              "geom": { "$ref": "#/$defs/lineGeometry" },
+              "style": { "$ref": "#/$defs/lineStyleDefinition" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "text" } }
+          },
+          "then": {
+            "properties": {
+              "geom": { "$ref": "#/$defs/pointGeometry" }
+            },
+            "required": ["text"]
+          }
+        }
+      ]
+    },
+    "geometry": {
+      "type": "object",
+      "description": "Geometry specification (varies by item kind)",
+      "oneOf": [
+        { "$ref": "#/$defs/rectGeometry" },
+        { "$ref": "#/$defs/roundedRectGeometry" },
+        { "$ref": "#/$defs/lineGeometry" },
+        { "$ref": "#/$defs/pointGeometry" }
+      ]
+    },
+    "rectGeometry": {
+      "type": "object",
+      "description": "Rectangle geometry (rect, ellipse)",
+      "required": ["x", "y", "w", "h"],
+      "properties": {
+        "x": {
+          "type": "number",
+          "description": "X position of top-left corner"
+        },
+        "y": {
+          "type": "number",
+          "description": "Y position of top-left corner"
+        },
+        "w": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Width"
+        },
+        "h": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Height"
+        }
+      },
+      "additionalProperties": false
+    },
+    "roundedRectGeometry": {
+      "type": "object",
+      "description": "Rounded rectangle geometry",
+      "required": ["x", "y", "w", "h"],
+      "properties": {
+        "x": {
+          "type": "number",
+          "description": "X position of top-left corner"
+        },
+        "y": {
+          "type": "number",
+          "description": "Y position of top-left corner"
+        },
+        "w": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Width"
+        },
+        "h": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Height"
+        },
+        "radius": {
+          "type": "number",
+          "minimum": 0,
+          "default": 10,
+          "description": "Corner radius"
+        }
+      },
+      "additionalProperties": false
+    },
+    "lineGeometry": {
+      "type": "object",
+      "description": "Line geometry with start and end points",
+      "required": ["x1", "y1", "x2", "y2"],
+      "properties": {
+        "x1": {
+          "type": "number",
+          "description": "Start point X"
+        },
+        "y1": {
+          "type": "number",
+          "description": "Start point Y"
+        },
+        "x2": {
+          "type": "number",
+          "description": "End point X"
+        },
+        "y2": {
+          "type": "number",
+          "description": "End point Y"
+        }
+      },
+      "additionalProperties": false
+    },
+    "pointGeometry": {
+      "type": "object",
+      "description": "Point geometry for text placement",
+      "required": ["x", "y"],
+      "properties": {
+        "x": {
+          "type": "number",
+          "description": "X position"
+        },
+        "y": {
+          "type": "number",
+          "description": "Y position"
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotationMeta": {
+      "type": "object",
+      "description": "Annotation metadata including labels and formatting",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "Semantic kind (may differ from item kind, e.g., 'Component', 'Database')"
+        },
+        "label": {
+          "type": "string",
+          "default": "",
+          "description": "Primary label text"
+        },
+        "tech": {
+          "type": "string",
+          "default": "",
+          "description": "Technology or protocol (e.g., 'HTTPS/JSON', 'gRPC', 'Kafka')"
+        },
+        "note": {
+          "type": "string",
+          "default": "",
+          "description": "Freeform note or description"
+        },
+        "label_align": {
+          "type": "string",
+          "enum": ["left", "center", "right"],
+          "default": "center",
+          "description": "Label text alignment"
+        },
+        "label_size": {
+          "type": "integer",
+          "minimum": 6,
+          "maximum": 72,
+          "default": 12,
+          "description": "Label font size in points"
+        },
+        "tech_align": {
+          "type": "string",
+          "enum": ["left", "center", "right"],
+          "default": "center",
+          "description": "Tech text alignment"
+        },
+        "tech_size": {
+          "type": "integer",
+          "minimum": 6,
+          "maximum": 72,
+          "default": 10,
+          "description": "Tech font size in points"
+        },
+        "note_align": {
+          "type": "string",
+          "enum": ["left", "center", "right"],
+          "default": "center",
+          "description": "Note text alignment"
+        },
+        "note_size": {
+          "type": "integer",
+          "minimum": 6,
+          "maximum": 72,
+          "default": 10,
+          "description": "Note font size in points"
+        }
+      },
+      "additionalProperties": true
+    },
+    "colorHex": {
+      "type": "string",
+      "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+      "description": "Hex color string (#RRGGBB or #RRGGBBAA)"
+    },
+    "penStyle": {
+      "type": "object",
+      "description": "Pen/stroke style",
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/colorHex"
+        },
+        "width": {
+          "type": "number",
+          "minimum": 0,
+          "default": 2,
+          "description": "Stroke width in pixels"
+        }
+      }
+    },
+    "brushStyle": {
+      "type": "object",
+      "description": "Brush/fill style",
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/colorHex"
+        }
+      }
+    },
+    "textStyle": {
+      "type": "object",
+      "description": "Text style",
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/colorHex"
+        },
+        "size_pt": {
+          "type": "number",
+          "minimum": 6,
+          "maximum": 72,
+          "default": 12,
+          "description": "Font size in points"
+        }
+      }
+    },
+    "styleDefinition": {
+      "type": "object",
+      "description": "Complete style definition for an item",
+      "properties": {
+        "pen": {
+          "$ref": "#/$defs/penStyle"
+        },
+        "brush": {
+          "$ref": "#/$defs/brushStyle"
+        },
+        "text": {
+          "$ref": "#/$defs/textStyle"
+        }
+      }
+    },
+    "lineStyleDefinition": {
+      "type": "object",
+      "description": "Style definition for line items (includes arrow mode)",
+      "properties": {
+        "pen": {
+          "$ref": "#/$defs/penStyle"
+        },
+        "brush": {
+          "$ref": "#/$defs/brushStyle"
+        },
+        "text": {
+          "$ref": "#/$defs/textStyle"
+        },
+        "arrow": {
+          "type": "string",
+          "enum": ["none", "start", "end", "both"],
+          "default": "none",
+          "description": "Arrowhead mode"
+        }
+      }
+    }
+  }
+}

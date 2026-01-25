@@ -1,0 +1,147 @@
+"""
+canvas/mixins.py
+
+Mixin classes for graphics items providing annotation ID linking and metadata handling.
+"""
+
+from __future__ import annotations
+
+from dataclasses import asdict
+from typing import Any, Callable, Dict, Optional
+
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
+from PyQt6.QtWidgets import QGraphicsItem
+
+from models import AnnotationMeta, ANN_ID_KEY
+from utils import qcolor_to_hex, hex_to_qcolor
+
+
+class LinkedMixin:
+    """
+    Mixin that provides annotation ID linking for graphics items.
+    Enables bidirectional sync between JSON and scene.
+    """
+
+    def __init__(self, ann_id: str, on_change: Optional[Callable[[QGraphicsItem], None]]):
+        self.ann_id = ann_id
+        self.on_change = on_change
+
+    def _notify_changed(self):
+        """Notify that this item has changed."""
+        if self.on_change:
+            self.on_change(self)
+
+    def set_ann_id(self, ann_id: str):
+        """Set the annotation ID for this item."""
+        self.ann_id = ann_id
+        self.setData(ANN_ID_KEY, ann_id)
+
+
+class MetaMixin:
+    """
+    Mixin that adds metadata and styling support to graphics items.
+
+    Provides:
+      - meta (AnnotationMeta)
+      - style properties (pen, brush, text colors)
+      - text size support via style.text.size_pt
+    """
+
+    def __init__(self):
+        self.meta = AnnotationMeta(kind="unknown")
+        self.pen_color = QColor(Qt.GlobalColor.red)
+        self.pen_width = 2
+        self.brush_color = QColor(0, 0, 0, 0)  # transparent
+        self.text_color = QColor(Qt.GlobalColor.yellow)
+        self.text_size_pt = 12  # font size in points
+        self.line_dash = "solid"  # solid | dashed | dotted | custom
+        self.dash_pattern_length = 12.0  # total length of one dash+gap cycle in pixels
+        self.dash_solid_percent = 50.0  # percentage of pattern that is solid (0-100)
+        self.arrow_size = 12.0  # arrow head size in pixels
+
+    def set_meta(self, meta: AnnotationMeta) -> None:
+        """Set the annotation metadata."""
+        self.meta = meta
+
+    @staticmethod
+    def _meta_dict(meta: AnnotationMeta) -> Dict[str, Any]:
+        """Convert metadata to dict for JSON serialization."""
+        return {"meta": asdict(meta)}
+
+    def _style_dict(self) -> Dict[str, Any]:
+        """Get style as dict for JSON serialization."""
+        pen_style = {
+            "color": qcolor_to_hex(self.pen_color),
+            "width": int(self.pen_width),
+            "dash": self.line_dash,
+        }
+        # Include custom dash pattern settings when dash is "custom"
+        if self.line_dash == "custom":
+            pen_style["dash_pattern_length"] = float(self.dash_pattern_length)
+            pen_style["dash_solid_percent"] = float(self.dash_solid_percent)
+
+        style = {
+            "pen": pen_style,
+            "fill": {"color": qcolor_to_hex(self.brush_color, include_alpha=True)},
+            "text": {"color": qcolor_to_hex(self.text_color), "size_pt": float(self.text_size_pt)},
+        }
+        # Only include arrow_size for line items
+        if hasattr(self, "arrow_mode"):
+            style["arrow_size"] = float(self.arrow_size)
+        return {"style": style}
+
+    def apply_style_from_record(self, rec: Dict[str, Any]):
+        """Apply style from a JSON record dict."""
+        style = rec.get("style") or {}
+        if not isinstance(style, dict):
+            return
+        pen = style.get("pen") or {}
+        fill = style.get("fill") or {}
+        txt = style.get("text") or {}
+
+        if isinstance(pen, dict):
+            self.pen_color = hex_to_qcolor(pen.get("color", ""), self.pen_color)
+            try:
+                self.pen_width = int(pen.get("width", self.pen_width))
+            except Exception:
+                pass
+            dash = pen.get("dash", "solid")
+            if dash in ("solid", "dashed", "dotted", "custom"):
+                self.line_dash = dash
+            # Read custom dash pattern settings
+            try:
+                if "dash_pattern_length" in pen:
+                    self.dash_pattern_length = float(pen["dash_pattern_length"])
+                if "dash_solid_percent" in pen:
+                    self.dash_solid_percent = float(pen["dash_solid_percent"])
+            except Exception:
+                pass
+
+        if isinstance(fill, dict):
+            self.brush_color = hex_to_qcolor(fill.get("color", ""), self.brush_color)
+
+        if isinstance(txt, dict):
+            self.text_color = hex_to_qcolor(txt.get("color", ""), self.text_color)
+            try:
+                if "size_pt" in txt and txt["size_pt"] is not None:
+                    self.text_size_pt = float(txt["size_pt"])
+            except Exception:
+                pass
+
+        arrow = style.get("arrow", "none")
+        if hasattr(self, "arrow_mode") and isinstance(arrow, str):
+            self.arrow_mode = arrow
+
+        try:
+            arrow_size = style.get("arrow_size")
+            if arrow_size is not None:
+                self.arrow_size = float(arrow_size)
+        except Exception:
+            pass
+
+        try:
+            if "font_size" in rec and rec["font_size"] is not None:
+                self.text_size_pt = float(rec["font_size"])
+        except Exception:
+            pass

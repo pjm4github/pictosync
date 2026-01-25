@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nanobanana.io/schemas/gemini_extraction_schema.json",
+  "title": "NanoBANANA Gemini Extraction Schema",
+  "description": "Simplified JSON Schema for AI-based diagram element extraction. Use this schema when prompting Gemini to extract diagram components.",
+  "type": "object",
+  "required": ["image", "annotations"],
+  "properties": {
+    "image": {
+      "type": "object",
+      "required": ["width", "height"],
+      "properties": {
+        "width": {
+          "type": "number",
+          "description": "Image width in pixels"
+        },
+        "height": {
+          "type": "number",
+          "description": "Image height in pixels"
+        }
+      }
+    },
+    "annotations": {
+      "type": "array",
+      "description": "List of detected diagram elements",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/$defs/rectAnnotation" },
+          { "$ref": "#/$defs/roundedRectAnnotation" },
+          { "$ref": "#/$defs/ellipseAnnotation" },
+          { "$ref": "#/$defs/lineAnnotation" },
+          { "$ref": "#/$defs/textAnnotation" }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "rectAnnotation": {
+      "type": "object",
+      "description": "A rectangular box element (containers, components, classes)",
+      "required": ["kind", "geom"],
+      "properties": {
+        "kind": {
+          "const": "rect"
+        },
+        "geom": {
+          "type": "object",
+          "required": ["x", "y", "w", "h"],
+          "properties": {
+            "x": { "type": "number", "description": "X of top-left corner" },
+            "y": { "type": "number", "description": "Y of top-left corner" },
+            "w": { "type": "number", "minimum": 1, "description": "Width" },
+            "h": { "type": "number", "minimum": 1, "description": "Height" }
+          }
+        },
+        "meta": {
+          "type": "object",
+          "properties": {
+            "label": { "type": "string", "description": "Primary label/name" },
+            "tech": { "type": "string", "description": "Technology stack or type" },
+            "note": { "type": "string", "description": "Description or notes" }
+          }
+        },
+        "text": {
+          "type": "string",
+          "description": "C4 format: 'Label [Tech]\\nDescription'"
+        }
+      }
+    },
+    "roundedRectAnnotation": {
+      "type": "object",
+      "description": "A rounded rectangle element (software containers, services)",
+      "required": ["kind", "geom"],
+      "properties": {
+        "kind": {
+          "const": "roundedrect"
+        },
+        "geom": {
+          "type": "object",
+          "required": ["x", "y", "w", "h"],
+          "properties": {
+            "x": { "type": "number", "description": "X of top-left corner" },
+            "y": { "type": "number", "description": "Y of top-left corner" },
+            "w": { "type": "number", "minimum": 1, "description": "Width" },
+            "h": { "type": "number", "minimum": 1, "description": "Height" },
+            "radius": { "type": "number", "minimum": 0, "default": 10, "description": "Corner radius" }
+          }
+        },
+        "meta": {
+          "type": "object",
+          "properties": {
+            "label": { "type": "string", "description": "Primary label/name" },
+            "tech": { "type": "string", "description": "Technology stack or type" },
+            "note": { "type": "string", "description": "Description or notes" }
+          }
+        },
+        "text": {
+          "type": "string",
+          "description": "C4 format: 'Label [Tech]\\nDescription'"
+        }
+      }
+    },
+    "ellipseAnnotation": {
+      "type": "object",
+      "description": "An ellipse/circle element (actors, users, external entities)",
+      "required": ["kind", "geom"],
+      "properties": {
+        "kind": {
+          "const": "ellipse"
+        },
+        "geom": {
+          "type": "object",
+          "required": ["x", "y", "w", "h"],
+          "properties": {
+            "x": { "type": "number", "description": "X of bounding box top-left" },
+            "y": { "type": "number", "description": "Y of bounding box top-left" },
+            "w": { "type": "number", "minimum": 1, "description": "Width (horizontal diameter)" },
+            "h": { "type": "number", "minimum": 1, "description": "Height (vertical diameter)" }
+          }
+        },
+        "meta": {
+          "type": "object",
+          "properties": {
+            "label": { "type": "string", "description": "Primary label/name" },
+            "tech": { "type": "string", "description": "Role or type" },
+            "note": { "type": "string", "description": "Description or notes" }
+          }
+        },
+        "text": {
+          "type": "string",
+          "description": "C4 format: 'Label [Tech]\\nDescription'"
+        }
+      }
+    },
+    "lineAnnotation": {
+      "type": "object",
+      "description": "A line/arrow element (relationships, data flows, dependencies). IMPORTANT: Any text that overlays or labels this line should be included in the text field, NOT as a separate text annotation.",
+      "required": ["kind", "geom"],
+      "properties": {
+        "kind": {
+          "const": "line"
+        },
+        "geom": {
+          "type": "object",
+          "required": ["x1", "y1", "x2", "y2"],
+          "properties": {
+            "x1": { "type": "number", "description": "Start point X" },
+            "y1": { "type": "number", "description": "Start point Y" },
+            "x2": { "type": "number", "description": "End point X" },
+            "y2": { "type": "number", "description": "End point Y" }
+          }
+        },
+        "meta": {
+          "type": "object",
+          "properties": {
+            "label": { "type": "string", "description": "Leave empty for lines" },
+            "tech": { "type": "string", "description": "Protocol or method shown on line (HTTP, gRPC, REST, etc.)" },
+            "note": { "type": "string", "description": "Text label on or near the line (same as text field)" }
+          }
+        },
+        "style": {
+          "type": "object",
+          "properties": {
+            "arrow": {
+              "type": "string",
+              "enum": ["none", "start", "end", "both"],
+              "default": "end",
+              "description": "Arrow direction"
+            }
+          }
+        },
+        "text": {
+          "type": "string",
+          "description": "Text label that overlays or is positioned near/on the line - copy this value to meta.note as well. DO NOT create separate text items for line labels"
+        }
+      }
+    },
+    "textAnnotation": {
+      "type": "object",
+      "description": "A standalone text label NOT associated with any shape or line. Use ONLY for text that doesn't belong to a rectangle, ellipse, or line. Text on lines should be in the line's text field instead.",
+      "required": ["kind", "geom", "text"],
+      "properties": {
+        "kind": {
+          "const": "text"
+        },
+        "geom": {
+          "type": "object",
+          "required": ["x", "y"],
+          "properties": {
+            "x": { "type": "number", "description": "Text anchor X position" },
+            "y": { "type": "number", "description": "Text anchor Y position" }
+          }
+        },
+        "text": {
+          "type": "string",
+          "description": "The text content"
+        },
+        "meta": {
+          "type": "object",
+          "properties": {
+            "label": { "type": "string", "description": "Category or role" },
+            "note": { "type": "string", "description": "Additional context" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,140 @@
+"""
+generate_icons.py
+
+Generate SVG icons for each UI theme.
+Run this script to regenerate icons after modifying colors or designs.
+
+Each theme gets two icon variants:
+- Normal: for unselected/default button state
+- Selected: inverted contrast for selected/checked button state
+"""
+
+import os
+
+# Theme color definitions with normal and selected (inverted) variants
+THEMES = {
+    "Foundation": {
+        "normal": {"stroke": "#FEFEFE", "fill": "none", "accent": "#1779BA"},
+        "selected": {"stroke": "#1A1A1A", "fill": "none", "accent": "#1779BA"},
+    },
+    "Bulma": {
+        "normal": {"stroke": "#363636", "fill": "none", "accent": "#00D1B2"},
+        "selected": {"stroke": "#FFFFFF", "fill": "none", "accent": "#00D1B2"},
+    },
+    "Bauhaus": {
+        "normal": {"stroke": "#212121", "fill": "none", "accent": "#E53935"},
+        "selected": {"stroke": "#FFFFFF", "fill": "none", "accent": "#FDD835"},
+    },
+    "Neumorphism": {
+        "normal": {"stroke": "#4B5563", "fill": "none", "accent": "#6366F1"},
+        "selected": {"stroke": "#FFFFFF", "fill": "none", "accent": "#6366F1"},
+    },
+    "Materialize": {
+        "normal": {"stroke": "#212121", "fill": "none", "accent": "#26A69A"},
+        "selected": {"stroke": "#FFFFFF", "fill": "none", "accent": "#26A69A"},
+    },
+    "Tailwind": {
+        "normal": {"stroke": "#374151", "fill": "none", "accent": "#3B82F6"},
+        "selected": {"stroke": "#FFFFFF", "fill": "none", "accent": "#3B82F6"},
+    },
+    "Bootstrap": {
+        "normal": {"stroke": "#212529", "fill": "none", "accent": "#0D6EFD"},
+        "selected": {"stroke": "#FFFFFF", "fill": "none", "accent": "#0D6EFD"},
+    },
+}
+
+# SVG icon templates (24x24 viewBox)
+ICONS = {
+    "select": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <path d="M4 4 L4 18 L8 14 L12 20 L14 19 L10 13 L16 13 Z" stroke="{stroke}" stroke-width="1.5" fill="{accent}" stroke-linejoin="round"/>
+</svg>''',
+
+    "rect": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <rect x="3" y="5" width="18" height="14" stroke="{stroke}" stroke-width="2" fill="{fill}" rx="0"/>
+</svg>''',
+
+    "rrect": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <rect x="3" y="5" width="18" height="14" stroke="{stroke}" stroke-width="2" fill="{fill}" rx="4"/>
+</svg>''',
+
+    "ellipse": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <ellipse cx="12" cy="12" rx="9" ry="7" stroke="{stroke}" stroke-width="2" fill="{fill}"/>
+</svg>''',
+
+    "line": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <line x1="4" y1="20" x2="20" y2="4" stroke="{stroke}" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="4" cy="20" r="2" fill="{accent}"/>
+  <circle cx="20" cy="4" r="2" fill="{accent}"/>
+</svg>''',
+
+    "text": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <path d="M5 6 L5 4 L19 4 L19 6" stroke="{stroke}" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="12" y1="4" x2="12" y2="20" stroke="{stroke}" stroke-width="2" stroke-linecap="round"/>
+  <line x1="9" y1="20" x2="15" y2="20" stroke="{stroke}" stroke-width="2" stroke-linecap="round"/>
+</svg>''',
+
+    "open": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <path d="M3 6 L3 18 L21 18 L21 8 L12 8 L10 6 Z" stroke="{stroke}" stroke-width="1.5" fill="{fill}" stroke-linejoin="round"/>
+  <path d="M3 10 L7 10 L21 10" stroke="{stroke}" stroke-width="1.5"/>
+</svg>''',
+
+    "clear": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <path d="M6 6 L18 6 L17 20 L7 20 Z" stroke="{stroke}" stroke-width="1.5" fill="{fill}" stroke-linejoin="round"/>
+  <line x1="4" y1="6" x2="20" y2="6" stroke="{stroke}" stroke-width="2" stroke-linecap="round"/>
+  <path d="M9 6 L9 4 L15 4 L15 6" stroke="{stroke}" stroke-width="1.5" fill="none"/>
+  <line x1="10" y1="10" x2="10" y2="16" stroke="{stroke}" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="14" y1="10" x2="14" y2="16" stroke="{stroke}" stroke-width="1.5" stroke-linecap="round"/>
+</svg>''',
+
+    "model": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <circle cx="12" cy="12" r="3" stroke="{stroke}" stroke-width="2" fill="{fill}"/>
+  <path d="M12 2 L12 5" stroke="{stroke}" stroke-width="2" stroke-linecap="round"/>
+  <path d="M12 19 L12 22" stroke="{stroke}" stroke-width="2" stroke-linecap="round"/>
+  <path d="M4.22 4.22 L6.34 6.34" stroke="{stroke}" stroke-width="2" stroke-linecap="round"/>
+  <path d="M17.66 17.66 L19.78 19.78" stroke="{stroke}" stroke-width="2" stroke-linecap="round"/>
+  <path d="M2 12 L5 12" stroke="{stroke}" stroke-width="2" stroke-linecap="round"/>
+  <path d="M19 12 L22 12" stroke="{stroke}" stroke-width="2" stroke-linecap="round"/>
+  <path d="M4.22 19.78 L6.34 17.66" stroke="{stroke}" stroke-width="2" stroke-linecap="round"/>
+  <path d="M17.66 6.34 L19.78 4.22" stroke="{stroke}" stroke-width="2" stroke-linecap="round"/>
+</svg>''',
+
+    "extract": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <path d="M12 2 L14 8 L12 7 L10 8 Z" fill="{accent}" stroke="{stroke}" stroke-width="1"/>
+  <path d="M22 12 L16 14 L17 12 L16 10 Z" fill="{accent}" stroke="{stroke}" stroke-width="1"/>
+  <path d="M12 22 L10 16 L12 17 L14 16 Z" fill="{accent}" stroke="{stroke}" stroke-width="1"/>
+  <path d="M2 12 L8 10 L7 12 L8 14 Z" fill="{accent}" stroke="{stroke}" stroke-width="1"/>
+  <circle cx="12" cy="12" r="3" stroke="{accent}" stroke-width="2" fill="none"/>
+</svg>''',
+}
+
+
+def generate_icons():
+    """Generate all icons for all themes (normal and selected variants)."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+
+    for theme_name, variants in THEMES.items():
+        theme_dir = os.path.join(base_dir, theme_name)
+        os.makedirs(theme_dir, exist_ok=True)
+
+        for variant_name, colors in variants.items():
+            for icon_name, template in ICONS.items():
+                svg_content = template.format(**colors)
+
+                # Normal icons: icon_name.svg, Selected icons: icon_name_selected.svg
+                if variant_name == "normal":
+                    filename = f"{icon_name}.svg"
+                else:
+                    filename = f"{icon_name}_{variant_name}.svg"
+
+                icon_path = os.path.join(theme_dir, filename)
+
+                with open(icon_path, "w", encoding="utf-8") as f:
+                    f.write(svg_content)
+
+                print(f"Created: {icon_path}")
+
+    print("\nIcon generation complete!")
+
+
+if __name__ == "__main__":
+    generate_icons()
