@@ -7,9 +7,37 @@ Utility functions for the Diagram Annotator application.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Dict, Optional, Tuple
 
 from PyQt6.QtGui import QColor
+
+
+def strip_markdown_fences(s: str) -> str:
+    """
+    Strip markdown code fences from a string.
+
+    Handles formats like:
+    - ```json ... ```
+    - ``` ... ```
+    - ```javascript ... ```
+
+    Args:
+        s: The string potentially wrapped in markdown fences
+
+    Returns:
+        The string with markdown fences removed
+    """
+    ss = (s or "").strip()
+
+    # Pattern matches: ```<optional language>\n<content>\n```
+    # Handles both ```json and ``` variants
+    pattern = r'^```(?:\w+)?\s*\n?(.*?)\n?```\s*$'
+    match = re.match(pattern, ss, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+
+    return ss
 
 
 def extract_first_json_object(s: str) -> Optional[dict]:
@@ -17,7 +45,10 @@ def extract_first_json_object(s: str) -> Optional[dict]:
     Extract the first JSON object from a string.
     Handles markdown code blocks and raw JSON.
     """
-    ss = (s or "").strip()
+    # First, strip any markdown fences
+    ss = strip_markdown_fences(s)
+    ss = ss.strip()
+
     if ss.startswith("{") and ss.endswith("}"):
         try:
             return json.loads(ss)

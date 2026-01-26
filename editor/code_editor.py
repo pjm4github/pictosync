@@ -85,6 +85,16 @@ class JsonCodeEditor(QPlainTextEdit):
     # Emits the annotation ID (e.g., "a000001") or empty string if not in an annotation
     cursor_annotation_changed = pyqtSignal(str)
 
+    # Default line number colors (Foundation Dark theme)
+    DEFAULT_LINE_COLORS = {
+        "background": "#1a1a1a",
+        "text": "#606060",
+        "text_active": "#ffffff",
+        "highlight_bg": "#2A3A4A",
+        "highlight_bar": "#0078D4",
+        "current_line_bg": "#2d2d2d",
+    }
+
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -110,6 +120,9 @@ class JsonCodeEditor(QPlainTextEdit):
         # Flag to prevent circular updates
         self._suppress_cursor_signal = False
 
+        # Line number area colors (theme-aware)
+        self._line_colors = dict(self.DEFAULT_LINE_COLORS)
+
         # Connect signals
         self.blockCountChanged.connect(self._update_margins)
         self.updateRequest.connect(self._update_line_number_area)
@@ -127,6 +140,19 @@ class JsonCodeEditor(QPlainTextEdit):
 
         # Tab width
         self.setTabStopDistance(self.fontMetrics().horizontalAdvance(' ') * 4)
+
+    def set_line_number_colors(self, colors: Dict[str, str]):
+        """
+        Set the line number area colors.
+
+        Args:
+            colors: Dict with keys: background, text, text_active, highlight_bg,
+                   highlight_bar, current_line_bg
+        """
+        self._line_colors = dict(self.DEFAULT_LINE_COLORS)
+        self._line_colors.update(colors)
+        self.line_number_area.update()
+        self.folding_area.update()
 
     def line_number_area_width(self) -> int:
         """Calculate the width needed for line numbers."""
@@ -167,8 +193,11 @@ class JsonCodeEditor(QPlainTextEdit):
         """Paint the line numbers with selection highlight bar."""
         painter = QPainter(self.line_number_area)
 
-        # Slightly darker background for the gutter
-        painter.fillRect(event.rect(), QColor("#252525"))
+        # Get colors from theme configuration
+        colors = self._line_colors
+
+        # Background for the gutter (slightly different from editor)
+        painter.fillRect(event.rect(), QColor(colors["background"]))
 
         block = self.firstVisibleBlock()
         block_number = block.blockNumber()
@@ -192,23 +221,24 @@ class JsonCodeEditor(QPlainTextEdit):
 
                 # Draw highlight bar for selected annotation
                 if in_highlight_range:
-                    painter.fillRect(0, top, highlight_bar_width, block_height, QColor("#0078D4"))
+                    painter.fillRect(0, top, highlight_bar_width, block_height,
+                                    QColor(colors["highlight_bar"]))
 
                 if block_number == current_block:
-                    # Current cursor line - lighter background
+                    # Current cursor line - slightly different background
                     painter.fillRect(highlight_bar_width, top,
                                     self.line_number_area.width() - highlight_bar_width,
-                                    block_height, QColor("#3D3D3D"))
-                    painter.setPen(QColor("#FFFFFF"))
+                                    block_height, QColor(colors["current_line_bg"]))
+                    painter.setPen(QColor(colors["text_active"]))
                 elif in_highlight_range:
-                    # Lines in highlighted range - slightly lighter background
+                    # Lines in highlighted range - highlight background
                     painter.fillRect(highlight_bar_width, top,
                                     self.line_number_area.width() - highlight_bar_width,
-                                    block_height, QColor("#2A3A4A"))
-                    painter.setPen(QColor("#A0A0A0"))
+                                    block_height, QColor(colors["highlight_bg"]))
+                    painter.setPen(QColor(colors["text_active"]))
                 else:
-                    # Normal lines - darker font color
-                    painter.setPen(QColor("#606060"))
+                    # Normal lines - dimmed text color
+                    painter.setPen(QColor(colors["text"]))
 
                 painter.drawText(highlight_bar_width, top,
                                 self.line_number_area.width() - highlight_bar_width - 4,
@@ -243,7 +273,12 @@ class JsonCodeEditor(QPlainTextEdit):
     def folding_area_paint_event(self, event):
         """Paint the folding markers."""
         painter = QPainter(self.folding_area)
-        painter.fillRect(event.rect(), QColor("#2D2D2D"))
+
+        # Get colors from theme configuration
+        colors = self._line_colors
+
+        # Folding area background matches line number area
+        painter.fillRect(event.rect(), QColor(colors["background"]))
 
         block = self.firstVisibleBlock()
         top = int(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
@@ -264,13 +299,14 @@ class JsonCodeEditor(QPlainTextEdit):
                     y = top + (block_height - rect_size) // 2
 
                     if is_hover:
-                        painter.fillRect(x - 1, y - 1, rect_size + 2, rect_size + 2, QColor("#4D4D4D"))
+                        painter.fillRect(x - 1, y - 1, rect_size + 2, rect_size + 2,
+                                        QColor(colors["current_line_bg"]))
 
-                    painter.setPen(QPen(QColor("#808080"), 1))
+                    painter.setPen(QPen(QColor(colors["text"]), 1))
                     painter.drawRect(x, y, rect_size, rect_size)
 
                     # Draw minus or plus
-                    painter.setPen(QPen(QColor("#CCCCCC"), 1))
+                    painter.setPen(QPen(QColor(colors["text_active"]), 1))
                     mid_y = y + rect_size // 2
                     painter.drawLine(x + 2, mid_y, x + rect_size - 2, mid_y)  # Horizontal line
 
@@ -420,6 +456,110 @@ class JsonCodeEditor(QPlainTextEdit):
         """Fold all foldable regions."""
         for block_number in sorted(self._fold_regions.keys(), reverse=True):
             self._fold(block_number)
+
+    def fold_all_annotations(self):
+        """Fold only top-level annotation objects (items in the annotations array)."""
+        text = self.toPlainText()
+        # Find fold regions that correspond to annotation objects
+        # These are objects that contain an "id" field at their level
+        for block_number in sorted(self._fold_regions.keys(), reverse=True):
+            if self._is_annotation_fold_region(block_number, text):
+                self._fold(block_number)
+
+    def _is_annotation_fold_region(self, block_number: int, text: str) -> bool:
+        """Check if a fold region corresponds to a top-level annotation object."""
+        if block_number not in self._fold_regions:
+            return False
+
+        start_pos, end_pos = self._fold_regions[block_number]
+
+        # Get the text of this fold region
+        region_text = text[start_pos:end_pos + 1]
+
+        # Check if this object has an "id" field at its top level
+        # Simple heuristic: look for "id": near the start of the object
+        id_pattern = r'^\s*\{\s*"id"\s*:'
+        return bool(re.match(id_pattern, region_text))
+
+    def _find_annotation_block_number(self, ann_id: str) -> int:
+        """Find the block number for the fold region containing the given annotation ID."""
+        if not ann_id:
+            return -1
+
+        text = self.toPlainText()
+
+        # Find the "id" field for this annotation
+        id_patterns = [f'"id": "{ann_id}"', f'"id":"{ann_id}"']
+        id_pos = -1
+        for pattern in id_patterns:
+            id_pos = text.find(pattern)
+            if id_pos >= 0:
+                break
+
+        if id_pos < 0:
+            return -1
+
+        # Scan backwards to find the opening brace of this annotation object
+        brace_depth = 0
+        object_start = -1
+        in_string = False
+
+        for i in range(id_pos - 1, -1, -1):
+            ch = text[i]
+
+            if ch == '"' and (i == 0 or text[i-1] != '\\'):
+                in_string = not in_string
+                continue
+
+            if in_string:
+                continue
+
+            if ch == '}':
+                brace_depth += 1
+            elif ch == '{':
+                if brace_depth == 0:
+                    object_start = i
+                    break
+                brace_depth -= 1
+
+        if object_start < 0:
+            return -1
+
+        # Find which block this position is in
+        doc = self.document()
+        block = doc.begin()
+        pos = 0
+
+        while block.isValid():
+            block_length = block.length()
+            if pos <= object_start < pos + block_length:
+                return block.blockNumber()
+            pos += block_length
+            block = block.next()
+
+        return -1
+
+    def focus_on_annotation(self, ann_id: str):
+        """
+        Focus mode: fold all annotations except the one with the given ID.
+        If ann_id is empty, fold all annotations.
+        """
+        # First unfold all to reset state
+        self.unfold_all()
+
+        # Recompute fold regions after unfold
+        self._recompute_fold_regions()
+
+        text = self.toPlainText()
+
+        # Find the block number of the annotation to keep open
+        keep_open_block = self._find_annotation_block_number(ann_id) if ann_id else -1
+
+        # Fold all annotation regions except the one to keep open
+        for block_number in sorted(self._fold_regions.keys(), reverse=True):
+            if self._is_annotation_fold_region(block_number, text):
+                if block_number != keep_open_block:
+                    self._fold(block_number)
 
     def _on_cursor_position_changed(self):
         """Handle cursor position changes to track which annotation we're in."""

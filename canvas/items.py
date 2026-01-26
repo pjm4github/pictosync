@@ -354,7 +354,7 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
     def to_record(self) -> Dict[str, Any]:
         p = self.pos()
         r = self.rect()
-        return {
+        rec = {
             "id": self.ann_id,
             "kind": "rect",
             "geom": {
@@ -366,6 +366,11 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
             **self._meta_dict(self.meta),
             **self._style_dict(),
         }
+        # Include z-index if set
+        z = self.zValue()
+        if z != 0:
+            rec["z"] = int(z)
+        return rec
 
 
 class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
@@ -682,7 +687,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def to_record(self) -> Dict[str, Any]:
         p = self.pos()
-        return {
+        rec = {
             "id": self.ann_id,
             "kind": "roundedrect",
             "geom": {
@@ -695,6 +700,11 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             **self._meta_dict(self.meta),
             **self._style_dict(),
         }
+        # Include z-index if set
+        z = self.zValue()
+        if z != 0:
+            rec["z"] = int(z)
+        return rec
 
 
 class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
@@ -916,7 +926,7 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
     def to_record(self) -> Dict[str, Any]:
         p = self.pos()
         r = self.rect()
-        return {
+        rec = {
             "id": self.ann_id,
             "kind": "ellipse",
             "geom": {
@@ -928,6 +938,11 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
             **self._meta_dict(self.meta),
             **self._style_dict(),
         }
+        # Include z-index if set
+        z = self.zValue()
+        if z != 0:
+            rec["z"] = int(z)
+        return rec
 
 
 class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
@@ -1465,7 +1480,7 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
         ln = self.line()
         style = self._style_dict()["style"]
         style["arrow"] = self.arrow_mode
-        return {
+        rec = {
             "id": self.ann_id,
             "kind": "line",
             "geom": {
@@ -1477,6 +1492,11 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
             **self._meta_dict(self.meta),
             "style": style,
         }
+        # Include z-index if set
+        z = self.zValue()
+        if z != 0:
+            rec["z"] = int(z)
+        return rec
 
 
 class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
@@ -1602,7 +1622,7 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
             pass
 
         p = self.pos()
-        return {
+        rec = {
             "id": self.ann_id,
             "kind": "text",
             "geom": {
@@ -1613,3 +1633,8 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
             **self._meta_dict(self.meta),
             **self._style_dict(),
         }
+        # Include z-index if set
+        z = self.zValue()
+        if z != 0:
+            rec["z"] = int(z)
+        return rec

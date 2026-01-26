@@ -49,20 +49,24 @@ class DraftDock(QDockWidget):
         # Forward the cursor annotation changed signal
         self.text.cursor_annotation_changed.connect(self.cursor_annotation_changed.emit)
 
-        # Toolbar for fold controls
+        # Toolbar for focus mode
         fold_bar = QHBoxLayout()
-        fold_all_btn = QPushButton("Fold All")
-        fold_all_btn.setMaximumWidth(80)
-        fold_all_btn.clicked.connect(self.text.fold_all)
-        unfold_all_btn = QPushButton("Unfold All")
-        unfold_all_btn.setMaximumWidth(80)
-        unfold_all_btn.clicked.connect(self.text.unfold_all)
-        fold_bar.addWidget(fold_all_btn)
-        fold_bar.addWidget(unfold_all_btn)
+        self.focus_mode_btn = QPushButton("Focus")
+        self.focus_mode_btn.setCheckable(True)
+        self.focus_mode_btn.setToolTip(
+            "When enabled, only the selected annotation is expanded.\n"
+            "Other annotations are collapsed for easier reading."
+        )
+        self.focus_mode_btn.toggled.connect(self._on_focus_mode_toggled)
+        fold_bar.addWidget(self.focus_mode_btn)
         fold_bar.addStretch()
         layout.addLayout(fold_bar)
 
-        self.import_btn = QPushButton("Import Draft into Overlay (link JSON <-> Scene)")
+        # Focus mode state
+        self._focus_mode_enabled = False
+        self._focused_annotation_id = ""
+
+        self.import_btn = QPushButton("Import && Link")
         self.import_btn.setEnabled(False)
         layout.addWidget(self.import_btn)
 
@@ -209,3 +213,26 @@ class DraftDock(QDockWidget):
     def clear_highlighted_annotation(self):
         """Clear the highlighted annotation."""
         self.text.clear_highlighted_annotation()
+
+    def _on_focus_mode_toggled(self, enabled: bool):
+        """Handle focus mode toggle."""
+        self._focus_mode_enabled = enabled
+        if enabled:
+            # Apply focus mode with current focused annotation
+            self.text.focus_on_annotation(self._focused_annotation_id)
+        else:
+            # Disable focus mode - unfold all
+            self.text.unfold_all()
+
+    def is_focus_mode_enabled(self) -> bool:
+        """Check if focus mode is enabled."""
+        return self._focus_mode_enabled
+
+    def set_focused_annotation(self, ann_id: str):
+        """
+        Set the annotation to focus on (expand) when in focus mode.
+        If focus mode is enabled, this will fold all others and expand this one.
+        """
+        self._focused_annotation_id = ann_id
+        if self._focus_mode_enabled:
+            self.text.focus_on_annotation(ann_id)

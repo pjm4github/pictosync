@@ -105,6 +105,50 @@ ICONS = {
   <path d="M2 12 L8 10 L7 12 L8 14 Z" fill="{accent}" stroke="{stroke}" stroke-width="1"/>
   <circle cx="12" cy="12" r="3" stroke="{accent}" stroke-width="2" fill="none"/>
 </svg>''',
+
+    "hide_png": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <path d="M2 12 C5 7 9 5 12 5 C15 5 19 7 22 12 C19 17 15 19 12 19 C9 19 5 17 2 12 Z" stroke="{stroke}" stroke-width="1.5" fill="{fill}"/>
+  <circle cx="12" cy="12" r="3" stroke="{stroke}" stroke-width="1.5" fill="{accent}"/>
+  <line x1="4" y1="20" x2="20" y2="4" stroke="{stroke}" stroke-width="2" stroke-linecap="round"/>
+</svg>''',
+
+    "show_png": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <path d="M2 12 C5 7 9 5 12 5 C15 5 19 7 22 12 C19 17 15 19 12 19 C9 19 5 17 2 12 Z" stroke="{stroke}" stroke-width="1.5" fill="{fill}"/>
+  <circle cx="12" cy="12" r="3" stroke="{stroke}" stroke-width="1.5" fill="{accent}"/>
+</svg>''',
+
+    "focus_on": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <!-- Cord -->
+  <line x1="12" y1="1" x2="12" y2="5" stroke="{stroke}" stroke-width="2" stroke-linecap="round"/>
+  <!-- Lamp shade -->
+  <path d="M6 5 L12 5 L18 5 L16 14 L8 14 Z" stroke="{stroke}" stroke-width="1.5" fill="{accent}"/>
+  <!-- Bulb glow effect -->
+  <ellipse cx="12" cy="15" rx="3" ry="2" fill="{accent}" opacity="0.6"/>
+  <!-- Light rays -->
+  <line x1="12" y1="17" x2="12" y2="22" stroke="{accent}" stroke-width="2" stroke-linecap="round"/>
+  <line x1="6" y1="16" x2="3" y2="20" stroke="{accent}" stroke-width="2" stroke-linecap="round"/>
+  <line x1="18" y1="16" x2="21" y2="20" stroke="{accent}" stroke-width="2" stroke-linecap="round"/>
+  <line x1="8" y1="17" x2="6" y2="22" stroke="{accent}" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="16" y1="17" x2="18" y2="22" stroke="{accent}" stroke-width="1.5" stroke-linecap="round"/>
+</svg>''',
+
+    "focus_off": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <!-- Cord -->
+  <line x1="12" y1="1" x2="12" y2="5" stroke="{stroke}" stroke-width="2" stroke-linecap="round"/>
+  <!-- Lamp shade -->
+  <path d="M6 5 L12 5 L18 5 L16 14 L8 14 Z" stroke="{stroke}" stroke-width="1.5" fill="{fill}"/>
+  <!-- Bulb (off) -->
+  <ellipse cx="12" cy="15" rx="2" ry="1.5" stroke="{stroke}" stroke-width="1" fill="{fill}"/>
+</svg>''',
+
+    "import_link": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <path d="M14 3 L14 8 L19 8" stroke="{stroke}" stroke-width="1.5" fill="{fill}" stroke-linejoin="round"/>
+  <path d="M19 8 L14 3 L5 3 L5 21 L19 21 L19 8 Z" stroke="{stroke}" stroke-width="1.5" fill="{fill}" stroke-linejoin="round"/>
+  <path d="M9 13 L15 13" stroke="{accent}" stroke-width="2" stroke-linecap="round"/>
+  <path d="M12 10 L12 16" stroke="{accent}" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="9" cy="13" r="1.5" fill="{accent}"/>
+  <circle cx="15" cy="13" r="1.5" fill="{accent}"/>
+</svg>''',
 }
 
 

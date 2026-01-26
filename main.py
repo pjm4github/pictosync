@@ -65,7 +65,7 @@ from canvas import (
 from editor import DraftDock
 from properties import PropertyPanel
 from gemini import ExtractWorker
-from styles import STYLES, DEFAULT_STYLE, CANVAS_TEXT_COLORS
+from styles import STYLES, DEFAULT_STYLE, CANVAS_TEXT_COLORS, LINE_NUMBER_COLORS
 
 
 class SettingsDialog(QDialog):
@@ -213,6 +213,9 @@ class MainWindow(QMainWindow):
         self.scene.set_right_click_callback(self._exit_sticky_mode)
         self.scene.set_escape_key_callback(self._exit_sticky_mode)
 
+        # Set up callback for z-order changes
+        self.scene.set_z_order_changed_callback(self._on_z_order_changed)
+
         # Set up text editing callbacks to disable shortcuts during editing
         self._setup_text_editing_callbacks()
 
@@ -323,6 +326,7 @@ class MainWindow(QMainWindow):
         self.toggle_png_act.setCheckable(True)
         self.toggle_png_act.setEnabled(False)  # Disabled until PNG is loaded
         self.toggle_png_act.triggered.connect(self._toggle_png_visibility)
+        self._icon_actions[self.toggle_png_act] = "hide_png"
         tb.addAction(self.toggle_png_act)
 
         tb.addSeparator()
@@ -342,8 +346,15 @@ class MainWindow(QMainWindow):
         self._icon_actions[self.extract_act] = "extract"
         tb.addAction(self.extract_act)
 
-        # Apply initial icons
+        # Apply initial icons and editor colors
         self._update_toolbar_icons(DEFAULT_STYLE)
+        self._update_editor_colors(DEFAULT_STYLE)
+        self._update_draft_dock_icons(DEFAULT_STYLE)
+
+        # Connect focus mode button toggle to update icon
+        self.draft.focus_mode_btn.toggled.connect(
+            lambda checked: self._update_focus_mode_icon(checked)
+        )
 
     def cycle_model(self):
         """Cycle through available Gemini models."""
@@ -357,6 +368,31 @@ class MainWindow(QMainWindow):
         for action, icon_name in self._icon_actions.items():
             icon = create_icon_with_states(icon_name, style)
             action.setIcon(icon)
+
+    def _update_editor_colors(self, style: str):
+        """Update the JSON editor's line number colors for the given style."""
+        colors = LINE_NUMBER_COLORS.get(style, LINE_NUMBER_COLORS.get("Tailwind", {}))
+        if colors:
+            self.draft.text.set_line_number_colors(colors)
+
+    def _update_draft_dock_icons(self, style: str):
+        """Update the Draft Dock button icons for the given style."""
+        # Import link button
+        import_icon = create_icon_with_states("import_link", style)
+        self.draft.import_btn.setIcon(import_icon)
+
+        # Focus mode button - set initial icon based on current state
+        self._update_focus_mode_icon(self.draft.focus_mode_btn.isChecked(), style)
+
+    def _update_focus_mode_icon(self, checked: bool, style: str = None):
+        """Update the focus mode button icon based on its state."""
+        if style is None:
+            app = QApplication.instance()
+            style = getattr(app, "_current_style", DEFAULT_STYLE)
+
+        icon_name = "focus_on" if checked else "focus_off"
+        icon = create_icon_with_states(icon_name, style)
+        self.draft.focus_mode_btn.setIcon(icon)
 
     def _setup_text_editing_callbacks(self):
         """Set up callbacks to disable shortcuts during text editing."""
@@ -464,15 +500,20 @@ class MainWindow(QMainWindow):
 
         if it is None:
             self.draft.clear_highlighted_annotation()
+            self.draft.set_focused_annotation("")  # Clear focus in focus mode
             return
 
         ann_id = it.data(ANN_ID_KEY)
         if not (isinstance(ann_id, str) and ann_id):
             self.draft.clear_highlighted_annotation()
+            self.draft.set_focused_annotation("")  # Clear focus in focus mode
             return
 
         # Set highlight bar in JSON editor for selected annotation
         self.draft.set_highlighted_annotation(ann_id)
+
+        # Update focus mode to show this annotation
+        self.draft.set_focused_annotation(ann_id)
 
         self._scroll_draft_to_id_top(ann_id)
 
@@ -593,18 +634,28 @@ class MainWindow(QMainWindow):
         if self.bg_item is None:
             return
 
+        # Get current style for icon update
+        app = QApplication.instance()
+        current_style = getattr(app, "_current_style", DEFAULT_STYLE)
+
         if checked:
             # Hide the PNG
             self.bg_item.setVisible(False)
             self.toggle_png_act.setText("Show PNG")
+            self._icon_actions[self.toggle_png_act] = "show_png"
             self._update_png_hidden_indicator(True)
             self.statusBar().showMessage("Background PNG hidden")
         else:
             # Show the PNG
             self.bg_item.setVisible(True)
             self.toggle_png_act.setText("Hide PNG")
+            self._icon_actions[self.toggle_png_act] = "hide_png"
             self._update_png_hidden_indicator(False)
             self.statusBar().showMessage("Background PNG visible")
+
+        # Update the icon
+        icon = create_icon_with_states(self._icon_actions[self.toggle_png_act], current_style)
+        self.toggle_png_act.setIcon(icon)
 
     def _update_png_hidden_indicator(self, show: bool):
         """Show or hide the 'PNG Hidden' indicator in the corner of the canvas."""
@@ -687,6 +738,8 @@ class MainWindow(QMainWindow):
                 app._current_style = new_style
                 self._update_toolbar_icons(new_style)
                 self._update_default_text_color(new_style)
+                self._update_editor_colors(new_style)
+                self._update_draft_dock_icons(new_style)
                 self.statusBar().showMessage(f"Theme changed to: {new_style}")
 
     def save_draft_text_dialog(self):
@@ -1094,6 +1147,41 @@ class MainWindow(QMainWindow):
         if item in self.scene.selectedItems():
             self.props.set_item(item)
 
+    def _on_z_order_changed(self):
+        """Handle z-order changes - update all items in JSON."""
+        if self._syncing_from_json or self._draft_data is None:
+            return
+
+        if not self._link_enabled:
+            return
+
+        anns = self._draft_data.get("annotations", [])
+        if not isinstance(anns, list):
+            return
+
+        # Update z-index for all annotation items
+        for item in self.scene.items():
+            if not (hasattr(item, "to_record") and hasattr(item, "ann_id")):
+                continue
+
+            ann_id = item.data(ANN_ID_KEY)
+            if not isinstance(ann_id, str) or not ann_id:
+                continue
+
+            idx = self._id_to_index.get(ann_id)
+            if idx is None or idx >= len(anns):
+                continue
+
+            # Update z-index in the record
+            z = item.zValue()
+            if isinstance(anns[idx], dict):
+                if z != 0:
+                    anns[idx]["z"] = int(z)
+                elif "z" in anns[idx]:
+                    del anns[idx]["z"]  # Remove z if it's 0 (default)
+
+        self._push_draft_data_to_editor(status="Z-order updated.")
+
     def _push_draft_data_to_editor(self, status: str = "", focus_id: Optional[str] = None):
         """Push draft data to the editor."""
         if self._draft_data is None:
@@ -1159,6 +1247,9 @@ class MainWindow(QMainWindow):
             meta.tech = tech.strip().strip("[]").strip() if tech else ""
             meta.note = note
 
+        # Get z-index from record (will be applied after item is created)
+        z_index = rec.get("z", 0)
+
         if kind == "rect":
             g = rec.get("geom", {})
             it = MetaRectItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]), ann_id, on_change)
@@ -1169,6 +1260,8 @@ class MainWindow(QMainWindow):
             it.setBrush(QBrush(it.brush_color))
             it._update_label_text()
             self.scene.addItem(it)
+            if z_index:
+                it.setZValue(z_index)
 
         elif kind == "roundedrect":
             g = rec.get("geom", {})
@@ -1181,6 +1274,8 @@ class MainWindow(QMainWindow):
             it.setBrush(QBrush(it.brush_color))
             it._update_label_text()
             self.scene.addItem(it)
+            if z_index:
+                it.setZValue(z_index)
 
         elif kind == "ellipse":
             g = rec.get("geom", {})
@@ -1191,6 +1286,8 @@ class MainWindow(QMainWindow):
             it.setPen(QPen(it.pen_color, it.pen_width))
             it.setBrush(QBrush(it.brush_color))
             self.scene.addItem(it)
+            if z_index:
+                it.setZValue(z_index)
 
         elif kind == "line":
             g = rec.get("geom", {})
@@ -1201,6 +1298,8 @@ class MainWindow(QMainWindow):
             it.setPen(QPen(it.pen_color, it.pen_width))
             it._update_label_text()
             self.scene.addItem(it)
+            if z_index:
+                it.setZValue(z_index)
 
         elif kind == "text":
             g = rec.get("geom", {})
@@ -1211,6 +1310,8 @@ class MainWindow(QMainWindow):
             it.apply_style_from_record(rec)
             it._apply_text_style()
             self.scene.addItem(it)
+            if z_index:
+                it.setZValue(z_index)
 
 
 def main():

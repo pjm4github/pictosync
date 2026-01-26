@@ -408,6 +408,34 @@ QFileDialog QTreeView::item:selected {
 QColorDialog {
     background-color: #252526;
 }
+
+/* === Splitter === */
+QSplitter::handle {
+    background-color: #0e639c;
+}
+
+QSplitter::handle:horizontal {
+    width: 5px;
+}
+
+QSplitter::handle:vertical {
+    height: 5px;
+}
+
+QSplitter::handle:hover {
+    background-color: #1177bb;
+}
+
+/* === Dock Widget Separator === */
+QMainWindow::separator {
+    background-color: #0e639c;
+    width: 5px;
+    height: 5px;
+}
+
+QMainWindow::separator:hover {
+    background-color: #1177bb;
+}
 """
 
 BULMA_STYLE = """
@@ -826,6 +854,34 @@ QFileDialog QTreeView::item:selected {
 /* === Color Dialog === */
 QColorDialog {
     background-color: #ffffff;
+}
+
+/* === Splitter === */
+QSplitter::handle {
+    background-color: #00d1b2;
+}
+
+QSplitter::handle:horizontal {
+    width: 5px;
+}
+
+QSplitter::handle:vertical {
+    height: 5px;
+}
+
+QSplitter::handle:hover {
+    background-color: #00e5c4;
+}
+
+/* === Dock Widget Separator === */
+QMainWindow::separator {
+    background-color: #00d1b2;
+    width: 5px;
+    height: 5px;
+}
+
+QMainWindow::separator:hover {
+    background-color: #00e5c4;
 }
 """
 
@@ -1264,6 +1320,34 @@ QFileDialog QTreeView::item:selected {
 QColorDialog {
     background-color: #ffffff;
 }
+
+/* === Splitter === */
+QSplitter::handle {
+    background-color: #e53935;
+}
+
+QSplitter::handle:horizontal {
+    width: 5px;
+}
+
+QSplitter::handle:vertical {
+    height: 5px;
+}
+
+QSplitter::handle:hover {
+    background-color: #ff5252;
+}
+
+/* === Dock Widget Separator === */
+QMainWindow::separator {
+    background-color: #e53935;
+    width: 5px;
+    height: 5px;
+}
+
+QMainWindow::separator:hover {
+    background-color: #ff5252;
+}
 """
 
 NEUMORPHISM_STYLE = """
@@ -1694,6 +1778,35 @@ QFileDialog QTreeView::item:selected {
 QColorDialog {
     background-color: #e0e5ec;
 }
+
+/* === Splitter === */
+QSplitter::handle {
+    background-color: #6c5ce7;
+    border-radius: 2px;
+}
+
+QSplitter::handle:horizontal {
+    width: 5px;
+}
+
+QSplitter::handle:vertical {
+    height: 5px;
+}
+
+QSplitter::handle:hover {
+    background-color: #8577ed;
+}
+
+/* === Dock Widget Separator === */
+QMainWindow::separator {
+    background-color: #6c5ce7;
+    width: 5px;
+    height: 5px;
+}
+
+QMainWindow::separator:hover {
+    background-color: #8577ed;
+}
 """
 
 MATERIALIZE_STYLE = """
@@ -2096,6 +2209,34 @@ QFileDialog QTreeView::item:selected {
 /* === Color Dialog === */
 QColorDialog {
     background-color: #fafafa;
+}
+
+/* === Splitter === */
+QSplitter::handle {
+    background-color: #3f51b5;
+}
+
+QSplitter::handle:horizontal {
+    width: 5px;
+}
+
+QSplitter::handle:vertical {
+    height: 5px;
+}
+
+QSplitter::handle:hover {
+    background-color: #5c6bc0;
+}
+
+/* === Dock Widget Separator === */
+QMainWindow::separator {
+    background-color: #3f51b5;
+    width: 5px;
+    height: 5px;
+}
+
+QMainWindow::separator:hover {
+    background-color: #5c6bc0;
 }
 """
 
@@ -2522,6 +2663,35 @@ QFileDialog QTreeView::item:selected {
 QColorDialog {
     background-color: #f8fafc;
 }
+
+/* === Splitter === */
+QSplitter::handle {
+    background-color: #6366f1;
+    border-radius: 2px;
+}
+
+QSplitter::handle:horizontal {
+    width: 5px;
+}
+
+QSplitter::handle:vertical {
+    height: 5px;
+}
+
+QSplitter::handle:hover {
+    background-color: #818cf8;
+}
+
+/* === Dock Widget Separator === */
+QMainWindow::separator {
+    background-color: #6366f1;
+    width: 5px;
+    height: 5px;
+}
+
+QMainWindow::separator:hover {
+    background-color: #818cf8;
+}
 """
 
 BOOTSTRAP_STYLE = """
@@ -2947,6 +3117,35 @@ QFileDialog QTreeView::item:selected {
 QColorDialog {
     background-color: #ffffff;
 }
+
+/* === Splitter === */
+QSplitter::handle {
+    background-color: #0d6efd;
+    border-radius: 2px;
+}
+
+QSplitter::handle:horizontal {
+    width: 5px;
+}
+
+QSplitter::handle:vertical {
+    height: 5px;
+}
+
+QSplitter::handle:hover {
+    background-color: #3d8bfd;
+}
+
+/* === Dock Widget Separator === */
+QMainWindow::separator {
+    background-color: #0d6efd;
+    width: 5px;
+    height: 5px;
+}
+
+QMainWindow::separator:hover {
+    background-color: #3d8bfd;
+}
 """
 
 # Style registry for easy access
@@ -2972,4 +3171,67 @@ CANVAS_TEXT_COLORS = {
     "Materialize": "#212121",        # Dark on light background (#eeeeee)
     "Tailwind": "#1E293B",           # Slate-800 on light background (#f1f5f9)
     "Bootstrap": "#212529",          # Dark on light background (#f8f9fa)
+}
+
+# Line number area colors for the code editor
+# background: slightly different from main editor background
+# text: high contrast for readability
+# highlight: accent color for selection/highlight bar
+LINE_NUMBER_COLORS = {
+    "Foundation (Dark)": {
+        "background": "#1a1a1a",      # Slightly darker than editor (#1e1e1e)
+        "text": "#606060",            # Dimmed text
+        "text_active": "#ffffff",     # Active line text
+        "highlight_bg": "#2A3A4A",    # Highlighted line background
+        "highlight_bar": "#0078D4",   # Selection bar color
+        "current_line_bg": "#2d2d2d", # Current line background
+    },
+    "Bulma (Light)": {
+        "background": "#f0f0f0",      # Slightly darker than editor (#ffffff)
+        "text": "#a0a0a0",            # Dimmed text
+        "text_active": "#363636",     # Active line text
+        "highlight_bg": "#e0f0e8",    # Highlighted line background
+        "highlight_bar": "#00d1b2",   # Selection bar color
+        "current_line_bg": "#e8e8e8", # Current line background
+    },
+    "Bauhaus": {
+        "background": "#f0f0f0",      # Slightly darker than editor (#ffffff)
+        "text": "#888888",            # Dimmed text
+        "text_active": "#000000",     # Active line text
+        "highlight_bg": "#fff3cd",    # Highlighted line background (yellow tint)
+        "highlight_bar": "#e53935",   # Selection bar color (red)
+        "current_line_bg": "#e0e0e0", # Current line background
+    },
+    "Neumorphism": {
+        "background": "#cdd4df",      # Slightly darker than editor (#d9e0ea)
+        "text": "#8a9bb0",            # Dimmed text
+        "text_active": "#4a5568",     # Active line text
+        "highlight_bg": "#c5cce0",    # Highlighted line background
+        "highlight_bar": "#6c5ce7",   # Selection bar color (purple)
+        "current_line_bg": "#d1d8e4", # Current line background
+    },
+    "Materialize": {
+        "background": "#f5f5f5",      # Slightly darker than editor (#ffffff)
+        "text": "#9e9e9e",            # Dimmed text
+        "text_active": "#212121",     # Active line text
+        "highlight_bg": "#e8eaf6",    # Highlighted line background (indigo tint)
+        "highlight_bar": "#3f51b5",   # Selection bar color (indigo)
+        "current_line_bg": "#eeeeee", # Current line background
+    },
+    "Tailwind": {
+        "background": "#f1f5f9",      # Slightly darker than editor (#ffffff)
+        "text": "#94a3b8",            # Dimmed text (slate-400)
+        "text_active": "#1e293b",     # Active line text (slate-800)
+        "highlight_bg": "#e0e7ff",    # Highlighted line background (indigo-100)
+        "highlight_bar": "#6366f1",   # Selection bar color (indigo-500)
+        "current_line_bg": "#e2e8f0", # Current line background (slate-200)
+    },
+    "Bootstrap": {
+        "background": "#f8f9fa",      # Slightly different from editor (#ffffff)
+        "text": "#adb5bd",            # Dimmed text
+        "text_active": "#212529",     # Active line text
+        "highlight_bg": "#cfe2ff",    # Highlighted line background (blue tint)
+        "highlight_bar": "#0d6efd",   # Selection bar color (primary blue)
+        "current_line_bg": "#e9ecef", # Current line background
+    },
 }
