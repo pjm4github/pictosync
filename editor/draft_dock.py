@@ -89,7 +89,8 @@ class DraftDock(QDockWidget):
 
     def scroll_to_id_top(self, ann_id: str, suppress_signal: bool = True) -> bool:
         """
-        Scroll the editor to show the annotation's opening bracket at the top.
+        Scroll the editor to show the annotation's "id" field at the top.
+        Places cursor at the "id" key for reliable positioning after fold operations.
         If suppress_signal is True, prevents emitting cursor_annotation_changed.
         """
         if not ann_id:
@@ -112,37 +113,11 @@ class DraftDock(QDockWidget):
             if id_pos < 0:
                 return False
 
-            # Scan backwards from id_pos to find the opening brace of this object
-            brace_depth = 0
-            object_start = -1
-            in_string = False
-
-            for i in range(id_pos - 1, -1, -1):
-                ch = full[i]
-
-                # Handle string detection (scanning backwards)
-                if ch == '"' and (i == 0 or full[i-1] != '\\'):
-                    in_string = not in_string
-                    continue
-
-                if in_string:
-                    continue
-
-                if ch == '}':
-                    brace_depth += 1
-                elif ch == '{':
-                    if brace_depth == 0:
-                        object_start = i
-                        break
-                    brace_depth -= 1
-
-            if object_start < 0:
-                return False
-
-            # Position cursor at the opening bracket
+            # Position cursor at the "id" key (not the opening brace)
+            # This is more reliable after fold operations
             doc = self.text.document()
             cursor = QTextCursor(doc)
-            cursor.setPosition(object_start)
+            cursor.setPosition(id_pos)
             cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
 
             self.text.setTextCursor(cursor)
@@ -150,7 +125,7 @@ class DraftDock(QDockWidget):
             # Update the tracked annotation ID
             self.text._current_annotation_id = ann_id
 
-            # Scroll so the opening bracket line is at the top of the viewport
+            # Scroll so the "id" line is at the top of the viewport
             # First ensure it's visible, then adjust to put it at top
             self.text.ensureCursorVisible()
             rect = self.text.cursorRect(cursor)

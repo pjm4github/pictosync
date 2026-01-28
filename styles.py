@@ -409,17 +409,63 @@ QColorDialog {
     background-color: #252526;
 }
 
+/* === Compact Form Elements (Property Panel) === */
+QDockWidget QLineEdit, PropertyPanel QLineEdit {
+    padding: 1px 4px;
+}
+
+QDockWidget QSpinBox, PropertyPanel QSpinBox {
+    padding: 0px 2px;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox {
+    padding: 1px 4px;
+}
+
+QDockWidget QPushButton, PropertyPanel QPushButton {
+    padding: 0px 6px;
+    margin: 0px;
+    min-width: 36px;
+    min-height: 0px;
+    max-height: 24px;
+    border: none;
+    border-radius: 3px;
+    font-size: 10px;
+    background-color: #0e639c;
+    color: #ffffff;
+}
+
+QDockWidget QPushButton:hover, PropertyPanel QPushButton:hover {
+    background-color: #1177bb;
+}
+
+QDockWidget QPushButton:pressed, PropertyPanel QPushButton:pressed {
+    background-color: #094771;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox {
+    background-color: #3c3c3c;
+    color: #cccccc;
+    border: 1px solid #505050;
+}
+
+QDockWidget QSpinBox, PropertyPanel QSpinBox {
+    background-color: #3c3c3c;
+    color: #cccccc;
+    border: 1px solid #505050;
+}
+
 /* === Splitter === */
 QSplitter::handle {
-    background-color: #0e639c;
+    background-color: #3d8ac4;
 }
 
 QSplitter::handle:horizontal {
-    width: 5px;
+    width: 3px;
 }
 
 QSplitter::handle:vertical {
-    height: 5px;
+    height: 3px;
 }
 
 QSplitter::handle:hover {
@@ -428,9 +474,9 @@ QSplitter::handle:hover {
 
 /* === Dock Widget Separator === */
 QMainWindow::separator {
-    background-color: #0e639c;
-    width: 5px;
-    height: 5px;
+    background-color: #3d8ac4;
+    width: 3px;
+    height: 3px;
 }
 
 QMainWindow::separator:hover {
@@ -856,17 +902,63 @@ QColorDialog {
     background-color: #ffffff;
 }
 
+/* === Compact Form Elements (Property Panel) === */
+QDockWidget QLineEdit, PropertyPanel QLineEdit {
+    padding: 1px 4px;
+}
+
+QDockWidget QSpinBox, PropertyPanel QSpinBox {
+    padding: 0px 2px;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox {
+    padding: 1px 4px;
+}
+
+QDockWidget QPushButton, PropertyPanel QPushButton {
+    padding: 0px 6px;
+    margin: 0px;
+    min-width: 36px;
+    min-height: 0px;
+    max-height: 24px;
+    border: none;
+    border-radius: 3px;
+    font-size: 10px;
+    background-color: #00d1b2;
+    color: #ffffff;
+}
+
+QDockWidget QPushButton:hover, PropertyPanel QPushButton:hover {
+    background-color: #00c4a7;
+}
+
+QDockWidget QPushButton:pressed, PropertyPanel QPushButton:pressed {
+    background-color: #00b89c;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox {
+    background-color: #ffffff;
+    color: #363636;
+    border: 1px solid #dbdbdb;
+}
+
+QDockWidget QSpinBox, PropertyPanel QSpinBox {
+    background-color: #ffffff;
+    color: #363636;
+    border: 1px solid #dbdbdb;
+}
+
 /* === Splitter === */
 QSplitter::handle {
-    background-color: #00d1b2;
+    background-color: #4de8d4;
 }
 
 QSplitter::handle:horizontal {
-    width: 5px;
+    width: 3px;
 }
 
 QSplitter::handle:vertical {
-    height: 5px;
+    height: 3px;
 }
 
 QSplitter::handle:hover {
@@ -875,9 +967,9 @@ QSplitter::handle:hover {
 
 /* === Dock Widget Separator === */
 QMainWindow::separator {
-    background-color: #00d1b2;
-    width: 5px;
-    height: 5px;
+    background-color: #4de8d4;
+    width: 3px;
+    height: 3px;
 }
 
 QMainWindow::separator:hover {
@@ -1321,17 +1413,65 @@ QColorDialog {
     background-color: #ffffff;
 }
 
+/* === Compact Form Elements (Property Panel) === */
+QDockWidget QLineEdit, PropertyPanel QLineEdit {
+    padding: 1px 4px;
+}
+
+QDockWidget QSpinBox, PropertyPanel QSpinBox {
+    padding: 0px 2px;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox {
+    padding: 1px 4px;
+}
+
+QDockWidget QPushButton, PropertyPanel QPushButton {
+    padding: 0px 6px;
+    margin: 0px;
+    min-width: 36px;
+    min-height: 0px;
+    max-height: 24px;
+    border: 2px solid #000000;
+    border-radius: 0;
+    font-size: 10px;
+    background-color: #1e88e5;
+    color: #ffffff;
+}
+
+QDockWidget QPushButton:hover, PropertyPanel QPushButton:hover {
+    background-color: #fdd835;
+    color: #000000;
+}
+
+QDockWidget QPushButton:pressed, PropertyPanel QPushButton:pressed {
+    background-color: #000000;
+    color: #ffffff;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox {
+    background-color: #ffffff;
+    color: #000000;
+    border: 2px solid #000000;
+}
+
+QDockWidget QSpinBox, PropertyPanel QSpinBox {
+    background-color: #ffffff;
+    color: #000000;
+    border: 2px solid #000000;
+}
+
 /* === Splitter === */
 QSplitter::handle {
-    background-color: #e53935;
+    background-color: #f06b68;
 }
 
 QSplitter::handle:horizontal {
-    width: 5px;
+    width: 3px;
 }
 
 QSplitter::handle:vertical {
-    height: 5px;
+    height: 3px;
 }
 
 QSplitter::handle:hover {
@@ -1340,9 +1480,9 @@ QSplitter::handle:hover {
 
 /* === Dock Widget Separator === */
 QMainWindow::separator {
-    background-color: #e53935;
-    width: 5px;
-    height: 5px;
+    background-color: #f06b68;
+    width: 3px;
+    height: 3px;
 }
 
 QMainWindow::separator:hover {
@@ -1779,18 +1919,65 @@ QColorDialog {
     background-color: #e0e5ec;
 }
 
+/* === Compact Form Elements (Property Panel) === */
+QDockWidget QLineEdit, PropertyPanel QLineEdit {
+    padding: 1px 4px;
+}
+
+QDockWidget QSpinBox, PropertyPanel QSpinBox {
+    padding: 0px 2px;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox {
+    padding: 1px 4px;
+}
+
+QDockWidget QPushButton, PropertyPanel QPushButton {
+    padding: 0px 6px;
+    margin: 0px;
+    min-width: 36px;
+    min-height: 0px;
+    max-height: 24px;
+    border: none;
+    border-radius: 6px;
+    font-size: 10px;
+    background-color: #e0e5ec;
+    color: #6c5ce7;
+}
+
+QDockWidget QPushButton:hover, PropertyPanel QPushButton:hover {
+    background-color: #d9e0ea;
+    color: #5b4cdb;
+}
+
+QDockWidget QPushButton:pressed, PropertyPanel QPushButton:pressed {
+    background-color: #d1d9e6;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox {
+    background-color: #e0e5ec;
+    color: #4a5568;
+    border: none;
+}
+
+QDockWidget QSpinBox, PropertyPanel QSpinBox {
+    background-color: #e0e5ec;
+    color: #4a5568;
+    border: none;
+}
+
 /* === Splitter === */
 QSplitter::handle {
-    background-color: #6c5ce7;
-    border-radius: 2px;
+    background-color: #9d90f0;
+    border-radius: 1px;
 }
 
 QSplitter::handle:horizontal {
-    width: 5px;
+    width: 3px;
 }
 
 QSplitter::handle:vertical {
-    height: 5px;
+    height: 3px;
 }
 
 QSplitter::handle:hover {
@@ -1799,9 +1986,9 @@ QSplitter::handle:hover {
 
 /* === Dock Widget Separator === */
 QMainWindow::separator {
-    background-color: #6c5ce7;
-    width: 5px;
-    height: 5px;
+    background-color: #9d90f0;
+    width: 3px;
+    height: 3px;
 }
 
 QMainWindow::separator:hover {
@@ -2211,17 +2398,65 @@ QColorDialog {
     background-color: #fafafa;
 }
 
+/* === Compact Form Elements (Property Panel) === */
+QDockWidget QLineEdit, PropertyPanel QLineEdit {
+    padding: 1px 0;
+}
+
+QDockWidget QSpinBox, PropertyPanel QSpinBox {
+    padding: 0px 0;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox {
+    padding: 1px 0;
+}
+
+QDockWidget QPushButton, PropertyPanel QPushButton {
+    padding: 0px 6px;
+    margin: 0px;
+    min-width: 36px;
+    min-height: 0px;
+    max-height: 24px;
+    border: none;
+    border-radius: 2px;
+    font-size: 10px;
+    background-color: #3f51b5;
+    color: #ffffff;
+}
+
+QDockWidget QPushButton:hover, PropertyPanel QPushButton:hover {
+    background-color: #5c6bc0;
+}
+
+QDockWidget QPushButton:pressed, PropertyPanel QPushButton:pressed {
+    background-color: #3949ab;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox {
+    background-color: transparent;
+    color: #212121;
+    border: none;
+    border-bottom: 1px solid #9e9e9e;
+}
+
+QDockWidget QSpinBox, PropertyPanel QSpinBox {
+    background-color: transparent;
+    color: #212121;
+    border: none;
+    border-bottom: 1px solid #9e9e9e;
+}
+
 /* === Splitter === */
 QSplitter::handle {
-    background-color: #3f51b5;
+    background-color: #7986cb;
 }
 
 QSplitter::handle:horizontal {
-    width: 5px;
+    width: 3px;
 }
 
 QSplitter::handle:vertical {
-    height: 5px;
+    height: 3px;
 }
 
 QSplitter::handle:hover {
@@ -2230,9 +2465,9 @@ QSplitter::handle:hover {
 
 /* === Dock Widget Separator === */
 QMainWindow::separator {
-    background-color: #3f51b5;
-    width: 5px;
-    height: 5px;
+    background-color: #7986cb;
+    width: 3px;
+    height: 3px;
 }
 
 QMainWindow::separator:hover {
@@ -2664,18 +2899,64 @@ QColorDialog {
     background-color: #f8fafc;
 }
 
+/* === Compact Form Elements (Property Panel) === */
+QDockWidget QLineEdit, PropertyPanel QLineEdit {
+    padding: 1px 4px;
+}
+
+QDockWidget QSpinBox, PropertyPanel QSpinBox {
+    padding: 0px 2px;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox {
+    padding: 1px 4px;
+}
+
+QDockWidget QPushButton, PropertyPanel QPushButton {
+    padding: 0px 6px;
+    margin: 0px;
+    min-width: 36px;
+    min-height: 0px;
+    max-height: 24px;
+    border: none;
+    border-radius: 4px;
+    font-size: 10px;
+    background-color: #6366f1;
+    color: #ffffff;
+}
+
+QDockWidget QPushButton:hover, PropertyPanel QPushButton:hover {
+    background-color: #4f46e5;
+}
+
+QDockWidget QPushButton:pressed, PropertyPanel QPushButton:pressed {
+    background-color: #4338ca;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox {
+    background-color: #ffffff;
+    color: #1e293b;
+    border: 1px solid #e2e8f0;
+}
+
+QDockWidget QSpinBox, PropertyPanel QSpinBox {
+    background-color: #ffffff;
+    color: #1e293b;
+    border: 1px solid #e2e8f0;
+}
+
 /* === Splitter === */
 QSplitter::handle {
-    background-color: #6366f1;
-    border-radius: 2px;
+    background-color: #a5b4fc;
+    border-radius: 1px;
 }
 
 QSplitter::handle:horizontal {
-    width: 5px;
+    width: 3px;
 }
 
 QSplitter::handle:vertical {
-    height: 5px;
+    height: 3px;
 }
 
 QSplitter::handle:hover {
@@ -2684,9 +2965,9 @@ QSplitter::handle:hover {
 
 /* === Dock Widget Separator === */
 QMainWindow::separator {
-    background-color: #6366f1;
-    width: 5px;
-    height: 5px;
+    background-color: #a5b4fc;
+    width: 3px;
+    height: 3px;
 }
 
 QMainWindow::separator:hover {
@@ -3118,18 +3399,64 @@ QColorDialog {
     background-color: #ffffff;
 }
 
+/* === Compact Form Elements (Property Panel) === */
+QDockWidget QLineEdit, PropertyPanel QLineEdit {
+    padding: 1px 4px;
+}
+
+QDockWidget QSpinBox, PropertyPanel QSpinBox {
+    padding: 0px 2px;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox {
+    padding: 1px 4px;
+}
+
+QDockWidget QPushButton, PropertyPanel QPushButton {
+    padding: 0px 6px;
+    margin: 0px;
+    min-width: 36px;
+    min-height: 0px;
+    max-height: 24px;
+    border: none;
+    border-radius: 4px;
+    font-size: 10px;
+    background-color: #0d6efd;
+    color: #ffffff;
+}
+
+QDockWidget QPushButton:hover, PropertyPanel QPushButton:hover {
+    background-color: #0b5ed7;
+}
+
+QDockWidget QPushButton:pressed, PropertyPanel QPushButton:pressed {
+    background-color: #0a58ca;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox {
+    background-color: #ffffff;
+    color: #212529;
+    border: 1px solid #ced4da;
+}
+
+QDockWidget QSpinBox, PropertyPanel QSpinBox {
+    background-color: #ffffff;
+    color: #212529;
+    border: 1px solid #ced4da;
+}
+
 /* === Splitter === */
 QSplitter::handle {
-    background-color: #0d6efd;
-    border-radius: 2px;
+    background-color: #6ea8fe;
+    border-radius: 1px;
 }
 
 QSplitter::handle:horizontal {
-    width: 5px;
+    width: 3px;
 }
 
 QSplitter::handle:vertical {
-    height: 5px;
+    height: 3px;
 }
 
 QSplitter::handle:hover {
@@ -3138,9 +3465,9 @@ QSplitter::handle:hover {
 
 /* === Dock Widget Separator === */
 QMainWindow::separator {
-    background-color: #0d6efd;
-    width: 5px;
-    height: 5px;
+    background-color: #6ea8fe;
+    width: 3px;
+    height: 3px;
 }
 
 QMainWindow::separator:hover {

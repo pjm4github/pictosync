@@ -28,9 +28,59 @@ class AnnotationMeta:
     tech_size: int = 10
     note_align: str = "center"
     note_size: int = 10
+    # Text vertical alignment and spacing
+    text_valign: str = "top"       # top | middle | bottom
+    text_spacing: float = 0.0      # spacing between label/tech/note in lines (0, 0.5, 1, 1.5, 2)
     # Text bounding box for lines (0 = auto-size, no box)
     text_box_width: float = 0.0
     text_box_height: float = 0.0
+
+    @classmethod
+    def get_formatting_defaults(cls) -> Dict[str, Any]:
+        """Get default values for formatting/layout meta fields only."""
+        return {
+            "label_align": "center",
+            "label_size": 12,
+            "tech_align": "center",
+            "tech_size": 10,
+            "note_align": "center",
+            "note_size": 10,
+            "text_valign": "top",
+            "text_spacing": 0.0,
+            "text_box_width": 0.0,
+            "text_box_height": 0.0,
+        }
+
+
+def normalize_meta(meta_dict: Dict[str, Any], kind: str) -> Dict[str, Any]:
+    """
+    Normalize a meta dict by adding default values for missing formatting fields.
+
+    Content fields (kind, label, tech, note) come from extraction only.
+    Formatting fields get defaults if not provided.
+
+    Args:
+        meta_dict: The meta dict to normalize (may be partial)
+        kind: The item kind (rect, roundedrect, ellipse, line, text)
+
+    Returns:
+        A complete meta dict with formatting defaults applied
+    """
+    # Start with the extraction data (content fields)
+    result = {}
+    if meta_dict:
+        result.update(meta_dict)
+
+    # Set kind from parameter
+    result["kind"] = kind
+
+    # Add formatting defaults for missing fields only
+    formatting_defaults = AnnotationMeta.get_formatting_defaults()
+    for key, default_value in formatting_defaults.items():
+        if key not in result:
+            result[key] = default_value
+
+    return result
 
 
 # ----------------------------

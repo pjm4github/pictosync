@@ -2,6 +2,7 @@
 properties/dock.py
 
 Property panel widget for editing selected item properties.
+Loads UI from Qt Designer-generated properties_ui.py.
 """
 
 from __future__ import annotations
@@ -12,17 +13,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QBrush, QColor, QPen
 from PyQt6.QtWidgets import (
     QColorDialog,
-    QComboBox,
-    QFormLayout,
     QGraphicsItem,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QScrollArea,
-    QSpinBox,
-    QTabWidget,
-    QVBoxLayout,
     QWidget,
 )
 
@@ -35,23 +26,137 @@ from canvas.items import (
     MetaTextItem,
 )
 
+# Try to import the compiled UI, fall back to None if not available
+try:
+    from properties.properties_ui import Ui_PropertyPanel
+    HAS_UI = True
+except ImportError:
+    HAS_UI = False
+    Ui_PropertyPanel = None
+
 
 class PropertyPanel(QWidget):
     """
     Property panel widget for editing selected item properties.
+
+    Loads layout from Qt Designer-generated properties_ui.py.
 
     Displays two tabs:
     - Image tab: Image info (path, size, mode, depth, file size)
     - Properties tab: Selected item properties (kind, label, tech, note),
       context-sensitive color pickers, and extra controls
 
-    Changes are auto-applied when fields lose focus.
+    Changes are auto-applied when fields lose focus or change.
     """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._current_item: Optional[QGraphicsItem] = None
         self._image_info: Dict[str, Any] = {}
+
+        if HAS_UI:
+            self._init_from_ui()
+        else:
+            self._init_fallback()
+
+        self._connect_signals()
+        self._set_enabled(False)
+        self._set_color_rows_visible(False, False, False)
+        self._set_extra_rows_visible(False, False, False, False, False, False)
+        self._set_dash_pattern_visible(False)
+
+    def _init_from_ui(self):
+        """Initialize from Qt Designer UI file."""
+        self.ui = Ui_PropertyPanel()
+        self.ui.setupUi(self)
+
+        # Create convenience references to widgets using naming convention
+        # Tabs
+        self.tabs = self.ui.tabs
+
+        # Image tab widgets
+        self.img_path = self.ui.lbl_img_path
+        self.path_scroll = self.ui.scroll_img_path
+        self.img_size = self.ui.lbl_img_size
+        self.img_mode = self.ui.lbl_img_mode
+        self.img_depth = self.ui.lbl_img_depth
+        self.img_filesize = self.ui.lbl_img_filesize
+
+        # Properties tab - Kind
+        self.kind_label = self.ui.lbl_kind
+
+        # Properties tab - Label row
+        self.label_edit = self.ui.edit_label
+        self.label_align = self.ui.combo_label_align
+        self.label_size = self.ui.spin_label_size
+        self.label_row = self.ui.row_label
+
+        # Properties tab - Tech row
+        self.tech_edit = self.ui.edit_tech
+        self.tech_align = self.ui.combo_tech_align
+        self.tech_size = self.ui.spin_tech_size
+        self.tech_row = self.ui.row_tech
+
+        # Properties tab - Note row
+        self.note_edit = self.ui.edit_note
+        self.note_align = self.ui.combo_note_align
+        self.note_size = self.ui.spin_note_size
+        self.note_row = self.ui.row_note
+
+        # Properties tab - Color rows
+        self.pen_color_btn = self.ui.btn_pen_color
+        self.pen_color_preview = self.ui.lbl_pen_color_preview
+        self.pen_row = self.ui.row_pen_color
+
+        self.fill_color_btn = self.ui.btn_fill_color
+        self.fill_color_preview = self.ui.lbl_fill_color_preview
+        self.fill_row = self.ui.row_fill_color
+
+        self.text_color_btn = self.ui.btn_text_color
+        self.text_color_preview = self.ui.lbl_text_color_preview
+        self.text_row = self.ui.row_text_color
+
+        # Properties tab - Extra controls
+        self.radius_spin = self.ui.spin_radius
+        self.radius_row = self.ui.row_radius
+
+        self.line_width_spin = self.ui.spin_line_width
+        self.line_width_row = self.ui.row_line_width
+
+        self.dash_combo = self.ui.combo_dash
+        self.dash_row = self.ui.row_dash
+
+        self.dash_length_spin = self.ui.spin_dash_length
+        self.dash_solid_spin = self.ui.spin_dash_solid
+        self.dash_pattern_row = self.ui.row_dash_pattern
+
+        self.arrow_combo = self.ui.combo_arrow
+        self.arrow_row = self.ui.row_arrow
+
+        self.arrow_size_spin = self.ui.spin_arrow_size
+        self.arrow_size_row = self.ui.row_arrow_size
+
+        self.text_box_width_spin = self.ui.spin_text_box_width
+        self.text_box_width_row = self.ui.row_text_box_width
+
+        # Text layout controls (spacing and vertical alignment)
+        self.text_spacing_combo = self.ui.combo_text_spacing
+        self.text_valign_combo = self.ui.combo_text_valign
+
+    def _init_fallback(self):
+        """Fallback initialization when UI file is not available."""
+        from PyQt6.QtWidgets import (
+            QComboBox,
+            QFormLayout,
+            QHBoxLayout,
+            QLabel,
+            QLineEdit,
+            QPushButton,
+            QScrollArea,
+            QSpinBox,
+            QTabWidget,
+            QVBoxLayout,
+        )
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -113,22 +218,22 @@ class PropertyPanel(QWidget):
         self.label_edit.setStyleSheet(compact_edit_style)
         self.label_align = QComboBox()
         self.label_align.addItems(["Left", "Center", "Right"])
-        self.label_align.setCurrentIndex(1)  # Center default
+        self.label_align.setCurrentIndex(1)
         self.label_align.setStyleSheet(compact_combo_style)
         self.label_size = QSpinBox()
         self.label_size.setRange(6, 72)
         self.label_size.setValue(12)
         self.label_size.setStyleSheet(compact_spin_style)
 
-        label_row = QWidget()
-        label_layout = QHBoxLayout(label_row)
+        self.label_row = QWidget()
+        label_layout = QHBoxLayout(self.label_row)
         label_layout.setContentsMargins(0, 0, 0, 0)
         label_layout.setSpacing(4)
         label_layout.addWidget(self.label_edit, 1)
         label_layout.addWidget(self.label_align)
         label_layout.addWidget(self.label_size)
 
-        # Tech row with alignment and font size
+        # Tech row
         self.tech_edit = QLineEdit()
         self.tech_edit.setStyleSheet(compact_edit_style)
         self.tech_align = QComboBox()
@@ -140,15 +245,15 @@ class PropertyPanel(QWidget):
         self.tech_size.setValue(10)
         self.tech_size.setStyleSheet(compact_spin_style)
 
-        tech_row = QWidget()
-        tech_layout = QHBoxLayout(tech_row)
+        self.tech_row = QWidget()
+        tech_layout = QHBoxLayout(self.tech_row)
         tech_layout.setContentsMargins(0, 0, 0, 0)
         tech_layout.setSpacing(4)
         tech_layout.addWidget(self.tech_edit, 1)
         tech_layout.addWidget(self.tech_align)
         tech_layout.addWidget(self.tech_size)
 
-        # Note row with alignment and font size
+        # Note row
         self.note_edit = QLineEdit()
         self.note_edit.setStyleSheet(compact_edit_style)
         self.note_align = QComboBox()
@@ -160,25 +265,20 @@ class PropertyPanel(QWidget):
         self.note_size.setValue(10)
         self.note_size.setStyleSheet(compact_spin_style)
 
-        note_row = QWidget()
-        note_layout = QHBoxLayout(note_row)
+        self.note_row = QWidget()
+        note_layout = QHBoxLayout(self.note_row)
         note_layout.setContentsMargins(0, 0, 0, 0)
         note_layout.setSpacing(4)
         note_layout.addWidget(self.note_edit, 1)
         note_layout.addWidget(self.note_align)
         note_layout.addWidget(self.note_size)
 
-        # Store row widgets for visibility control
-        self.label_row = label_row
-        self.tech_row = tech_row
-        self.note_row = note_row
-
         form.addRow("Kind:", self.kind_label)
         form.addRow("Label:", self.label_row)
         form.addRow("Tech:", self.tech_row)
         form.addRow("Note:", self.note_row)
 
-        # Color picker buttons and previews (compact)
+        # Color picker buttons and previews
         self.pen_color_btn = QPushButton("Pick")
         self.fill_color_btn = QPushButton("Pick")
         self.text_color_btn = QPushButton("Pick")
@@ -228,7 +328,7 @@ class PropertyPanel(QWidget):
         rad_l.addWidget(self.radius_spin)
         rad_l.addStretch(1)
 
-        # Line width control
+        # Line width control with text spacing and valign
         self.line_width_row = QWidget()
         line_width_l = QHBoxLayout(self.line_width_row)
         line_width_l.setContentsMargins(0, 0, 0, 0)
@@ -238,6 +338,16 @@ class PropertyPanel(QWidget):
         self.line_width_spin.setSuffix(" px")
         self.line_width_spin.setStyleSheet("padding: 1px 2px; min-width: 60px; max-height: 20px;")
         line_width_l.addWidget(self.line_width_spin)
+        line_width_l.addWidget(QLabel("Spacing:"))
+        self.text_spacing_combo = QComboBox()
+        self.text_spacing_combo.addItems(["0", "0.5", "1", "1.5", "2"])
+        self.text_spacing_combo.setStyleSheet(compact_combo_style)
+        line_width_l.addWidget(self.text_spacing_combo)
+        line_width_l.addWidget(QLabel("VAlign:"))
+        self.text_valign_combo = QComboBox()
+        self.text_valign_combo.addItems(["Top", "Middle", "Bottom"])
+        self.text_valign_combo.setStyleSheet(compact_combo_style)
+        line_width_l.addWidget(self.text_valign_combo)
         line_width_l.addStretch(1)
 
         # Line dash style control
@@ -245,12 +355,12 @@ class PropertyPanel(QWidget):
         dash_l = QHBoxLayout(self.dash_row)
         dash_l.setContentsMargins(0, 0, 0, 0)
         self.dash_combo = QComboBox()
-        self.dash_combo.addItems(["Solid", "Dashed", "Dotted", "Custom"])
+        self.dash_combo.addItems(["Solid", "Dashed"])
         self.dash_combo.setStyleSheet(compact_combo_style)
         dash_l.addWidget(self.dash_combo)
         dash_l.addStretch(1)
 
-        # Custom dash pattern controls
+        # Dash pattern controls
         self.dash_pattern_row = QWidget()
         dash_pattern_l = QHBoxLayout(self.dash_pattern_row)
         dash_pattern_l.setContentsMargins(0, 0, 0, 0)
@@ -258,7 +368,7 @@ class PropertyPanel(QWidget):
         compact_spin_with_suffix = "padding: 1px 2px; min-width: 60px; max-height: 20px;"
         self.dash_length_spin = QSpinBox()
         self.dash_length_spin.setRange(4, 100)
-        self.dash_length_spin.setValue(12)
+        self.dash_length_spin.setValue(30)
         self.dash_length_spin.setSuffix(" px")
         self.dash_length_spin.setStyleSheet(compact_spin_with_suffix)
         self.dash_solid_spin = QSpinBox()
@@ -294,7 +404,7 @@ class PropertyPanel(QWidget):
         arrow_size_l.addWidget(self.arrow_size_spin)
         arrow_size_l.addStretch(1)
 
-        # Text box width control (for line items)
+        # Text box width control
         self.text_box_width_row = QWidget()
         text_box_width_l = QHBoxLayout(self.text_box_width_row)
         text_box_width_l.setContentsMargins(0, 0, 0, 0)
@@ -303,7 +413,7 @@ class PropertyPanel(QWidget):
         self.text_box_width_spin.setValue(0)
         self.text_box_width_spin.setSuffix(" px")
         self.text_box_width_spin.setStyleSheet(compact_spin_with_suffix)
-        self.text_box_width_spin.setSpecialValueText("Auto")  # Show "Auto" when value is 0
+        self.text_box_width_spin.setSpecialValueText("Auto")
         text_box_width_l.addWidget(self.text_box_width_spin)
         text_box_width_l.addStretch(1)
 
@@ -319,14 +429,16 @@ class PropertyPanel(QWidget):
         form.addRow("Text box width:", self.text_box_width_row)
 
         props_layout.addStretch(1)
-
         self.tabs.addTab(props_tab, "Properties")
 
-        # Connect signals - auto-apply on focus loss or change
+    def _connect_signals(self):
+        """Connect all widget signals to handlers."""
+        # Text field changes
         self.label_edit.editingFinished.connect(self._apply_changes)
         self.tech_edit.editingFinished.connect(self._apply_changes)
         self.note_edit.editingFinished.connect(self._apply_changes)
 
+        # Alignment and size changes
         self.label_align.currentIndexChanged.connect(self._apply_changes)
         self.label_size.valueChanged.connect(self._apply_changes)
         self.tech_align.currentIndexChanged.connect(self._apply_changes)
@@ -334,9 +446,12 @@ class PropertyPanel(QWidget):
         self.note_align.currentIndexChanged.connect(self._apply_changes)
         self.note_size.valueChanged.connect(self._apply_changes)
 
+        # Color pickers
         self.pen_color_btn.clicked.connect(self.pick_pen_color)
         self.fill_color_btn.clicked.connect(self.pick_fill_color)
         self.text_color_btn.clicked.connect(self.pick_text_color)
+
+        # Extra controls
         self.radius_spin.valueChanged.connect(self._on_radius_changed)
         self.line_width_spin.valueChanged.connect(self._on_line_width_changed)
         self.dash_combo.currentIndexChanged.connect(self._on_dash_changed)
@@ -346,11 +461,9 @@ class PropertyPanel(QWidget):
         self.arrow_size_spin.valueChanged.connect(self._on_arrow_size_changed)
         self.text_box_width_spin.valueChanged.connect(self._on_text_box_width_changed)
 
-        # Initial state
-        self._set_enabled(False)
-        self._set_color_rows_visible(False, False, False)
-        self._set_extra_rows_visible(False, False, False, False, False, False)
-        self._set_dash_pattern_visible(False)
+        # Text layout controls
+        self.text_spacing_combo.currentIndexChanged.connect(self._on_text_spacing_changed)
+        self.text_valign_combo.currentIndexChanged.connect(self._on_text_valign_changed)
 
     def set_image_info(self, info: Dict[str, Any]):
         """Update the image info display."""
@@ -387,18 +500,24 @@ class PropertyPanel(QWidget):
         self.arrow_combo.setEnabled(enabled)
         self.arrow_size_spin.setEnabled(enabled)
         self.text_box_width_spin.setEnabled(enabled)
+        self.text_spacing_combo.setEnabled(enabled)
+        self.text_valign_combo.setEnabled(enabled)
 
-    def _set_extra_rows_visible(self, radius: bool, line_width: bool, dash: bool, arrow: bool, arrow_size: bool, text_box_width: bool = False):
+    def _set_extra_rows_visible(self, radius: bool, line_width: bool, dash: bool, arrow: bool, arrow_size: bool, text_box_width: bool = False, text_layout: bool = False):
         """Show or hide extra control rows."""
         self.radius_row.setVisible(radius)
         self.radius_spin.setVisible(radius)
         self.line_width_row.setVisible(line_width)
-        self.text_box_width_row.setVisible(text_box_width)
+        # text_box_width_row contains both text_box_width spin AND text layout controls
+        # Show the row if either text_box_width or text_layout is needed
+        self.text_box_width_row.setVisible(text_box_width or text_layout)
+        # But only show the text_box_width spin/label for line items
         self.text_box_width_spin.setVisible(text_box_width)
+        if hasattr(self.ui, 'label_text_box_width_title'):
+            self.ui.label_text_box_width_title.setVisible(text_box_width)
         self.line_width_spin.setVisible(line_width)
         self.dash_row.setVisible(dash)
         self.dash_combo.setVisible(dash)
-        # Dash pattern row is controlled separately based on dash combo selection
         self.arrow_row.setVisible(arrow)
         self.arrow_combo.setVisible(arrow)
         self.arrow_size_row.setVisible(arrow_size)
@@ -420,7 +539,7 @@ class PropertyPanel(QWidget):
         self.fill_row.setVisible(fill)
         self.text_row.setVisible(text)
 
-    def _set_preview(self, lbl: QLabel, color: QColor):
+    def _set_preview(self, lbl, color: QColor):
         """Update a color preview label."""
         r, g, b, a = color.red(), color.green(), color.blue(), color.alpha()
         rgba_str = f"rgba({r}, {g}, {b}, {a / 255.0:.2f})"
@@ -436,9 +555,9 @@ class PropertyPanel(QWidget):
             self.tech_edit.setText("")
             self.note_edit.setText("")
             self._set_enabled(False)
-            self._set_text_rows_visible(True, True, True)  # Show all rows when empty
+            self._set_text_rows_visible(True, True, True)
             self._set_color_rows_visible(False, False, False)
-            self._set_extra_rows_visible(False, False, False, False, False)
+            self._set_extra_rows_visible(False, False, False, False, False, text_box_width=False, text_layout=False)
             self._set_dash_pattern_visible(False)
             return
 
@@ -471,141 +590,135 @@ class PropertyPanel(QWidget):
         pen_color = getattr(item, "pen_color", QColor("red"))
 
         if kind == "rect":
-            # Rect: border, fill, text colors, line width, dash style; no radius, no arrow
-            self._set_text_rows_visible(True, True, True)
-            self._set_color_rows_visible(True, True, True)
-            self._set_extra_rows_visible(False, True, True, False, False)
-            self._set_preview(self.pen_color_preview, pen_color)
-            self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
-            self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
-            # Set line width
-            self.line_width_spin.blockSignals(True)
-            self.line_width_spin.setValue(int(getattr(item, "pen_width", 2)))
-            self.line_width_spin.blockSignals(False)
-            # Set dash style
-            dash_style = getattr(item, "line_dash", "solid")
-            dash_map = {"solid": 0, "dashed": 1, "dotted": 2, "custom": 3}
-            self.dash_combo.blockSignals(True)
-            self.dash_combo.setCurrentIndex(dash_map.get(dash_style, 0))
-            self.dash_combo.blockSignals(False)
-            # Set custom dash pattern values and visibility
-            self._set_dash_pattern_visible(dash_style == "custom")
-            self.dash_length_spin.blockSignals(True)
-            self.dash_length_spin.setValue(int(getattr(item, "dash_pattern_length", 12)))
-            self.dash_length_spin.blockSignals(False)
-            self.dash_solid_spin.blockSignals(True)
-            self.dash_solid_spin.setValue(int(getattr(item, "dash_solid_percent", 50)))
-            self.dash_solid_spin.blockSignals(False)
+            self._setup_rect_controls(item, pen_color)
         elif kind == "ellipse":
-            # Ellipse: border, fill, line width, dash style; no text color, no radius, no arrow
-            self._set_text_rows_visible(True, True, True)
-            self._set_color_rows_visible(True, True, False)
-            self._set_extra_rows_visible(False, True, True, False, False)
-            self._set_preview(self.pen_color_preview, pen_color)
-            self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
-            # Set line width
-            self.line_width_spin.blockSignals(True)
-            self.line_width_spin.setValue(int(getattr(item, "pen_width", 2)))
-            self.line_width_spin.blockSignals(False)
-            # Set dash style
-            dash_style = getattr(item, "line_dash", "solid")
-            dash_map = {"solid": 0, "dashed": 1, "dotted": 2, "custom": 3}
-            self.dash_combo.blockSignals(True)
-            self.dash_combo.setCurrentIndex(dash_map.get(dash_style, 0))
-            self.dash_combo.blockSignals(False)
-            # Set custom dash pattern values and visibility
-            self._set_dash_pattern_visible(dash_style == "custom")
-            self.dash_length_spin.blockSignals(True)
-            self.dash_length_spin.setValue(int(getattr(item, "dash_pattern_length", 12)))
-            self.dash_length_spin.blockSignals(False)
-            self.dash_solid_spin.blockSignals(True)
-            self.dash_solid_spin.setValue(int(getattr(item, "dash_solid_percent", 50)))
-            self.dash_solid_spin.blockSignals(False)
+            self._setup_ellipse_controls(item, pen_color)
         elif kind == "roundedrect":
-            # Rounded rect: border, fill, text, radius, line width, dash style; no arrow
-            self._set_text_rows_visible(True, True, True)
-            self._set_color_rows_visible(True, True, True)
-            self._set_extra_rows_visible(True, True, True, False, False)
-            self._set_preview(self.pen_color_preview, pen_color)
-            self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
-            self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
-            # Set line width
-            self.line_width_spin.blockSignals(True)
-            self.line_width_spin.setValue(int(getattr(item, "pen_width", 2)))
-            self.line_width_spin.blockSignals(False)
-            self.radius_spin.blockSignals(True)
-            self.radius_spin.setValue(int(getattr(item, "_radius", 10)))
-            self.radius_spin.blockSignals(False)
-            # Set dash style
-            dash_style = getattr(item, "line_dash", "solid")
-            dash_map = {"solid": 0, "dashed": 1, "dotted": 2, "custom": 3}
-            self.dash_combo.blockSignals(True)
-            self.dash_combo.setCurrentIndex(dash_map.get(dash_style, 0))
-            self.dash_combo.blockSignals(False)
-            # Set custom dash pattern values and visibility
-            self._set_dash_pattern_visible(dash_style == "custom")
-            self.dash_length_spin.blockSignals(True)
-            self.dash_length_spin.setValue(int(getattr(item, "dash_pattern_length", 12)))
-            self.dash_length_spin.blockSignals(False)
-            self.dash_solid_spin.blockSignals(True)
-            self.dash_solid_spin.setValue(int(getattr(item, "dash_solid_percent", 50)))
-            self.dash_solid_spin.blockSignals(False)
+            self._setup_roundedrect_controls(item, pen_color)
         elif kind == "line":
-            # Line: border, text, dash style, arrow, arrow size, text box width; no fill, no radius
-            self._set_text_rows_visible(True, True, True)
-            self._set_color_rows_visible(True, False, True)
-            self._set_extra_rows_visible(False, True, True, True, True, True)
-            self._set_preview(self.pen_color_preview, pen_color)
-            self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
-            # Set dash style
-            dash_style = getattr(item, "line_dash", "solid")
-            dash_map = {"solid": 0, "dashed": 1, "dotted": 2, "custom": 3}
-            self.dash_combo.blockSignals(True)
-            self.dash_combo.setCurrentIndex(dash_map.get(dash_style, 0))
-            self.dash_combo.blockSignals(False)
-            # Set custom dash pattern values and visibility
-            self._set_dash_pattern_visible(dash_style == "custom")
-            self.dash_length_spin.blockSignals(True)
-            self.dash_length_spin.setValue(int(getattr(item, "dash_pattern_length", 12)))
-            self.dash_length_spin.blockSignals(False)
-            self.dash_solid_spin.blockSignals(True)
-            self.dash_solid_spin.setValue(int(getattr(item, "dash_solid_percent", 50)))
-            self.dash_solid_spin.blockSignals(False)
-            # Set arrow mode
-            arrow_mode = getattr(item, "arrow_mode", "none")
-            arrow_map = {"none": 0, "start": 1, "end": 2, "both": 3}
-            self.arrow_combo.blockSignals(True)
-            self.arrow_combo.setCurrentIndex(arrow_map.get(arrow_mode, 0))
-            self.arrow_combo.blockSignals(False)
-            # Set line width
-            self.line_width_spin.blockSignals(True)
-            self.line_width_spin.setValue(int(getattr(item, "pen_width", 2)))
-            self.line_width_spin.blockSignals(False)
-            # Set arrow size
-            arrow_size = getattr(item, "arrow_size", 12.0)
-            self.arrow_size_spin.blockSignals(True)
-            self.arrow_size_spin.setValue(int(arrow_size))
-            self.arrow_size_spin.blockSignals(False)
-            # Set text box width
-            text_box_width = getattr(item.meta, "text_box_width", 0.0) if hasattr(item, "meta") else 0.0
-            self.text_box_width_spin.blockSignals(True)
-            self.text_box_width_spin.setValue(int(text_box_width))
-            self.text_box_width_spin.blockSignals(False)
+            self._setup_line_controls(item, pen_color)
         elif kind == "text":
-            # Text: text color only; no border, fill, radius, dash, arrow
-            # Hide Label and Tech rows, show only Note
-            self._set_text_rows_visible(False, False, True)
-            self._set_color_rows_visible(False, False, True)
-            self._set_extra_rows_visible(False, False, False, False, False)
-            self._set_dash_pattern_visible(False)
-            self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
-            # For text items, sync the note field with the text content
-            if isinstance(item, MetaTextItem):
-                self.note_edit.setText(item.toPlainText())
+            self._setup_text_controls(item, pen_color)
         else:
             self._set_color_rows_visible(False, False, False)
-            self._set_extra_rows_visible(False, False, False, False, False)
+            self._set_extra_rows_visible(False, False, False, False, False, text_box_width=False, text_layout=False)
             self._set_dash_pattern_visible(False)
+
+    def _setup_rect_controls(self, item, pen_color):
+        """Configure controls for rect items."""
+        self._set_text_rows_visible(True, True, True)
+        self._set_color_rows_visible(True, True, True)
+        self._set_extra_rows_visible(False, True, True, False, False, text_box_width=False, text_layout=True)
+        self._set_preview(self.pen_color_preview, pen_color)
+        self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
+        self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
+        self._setup_line_style_controls(item)
+        self._setup_text_layout_controls(item)
+
+    def _setup_ellipse_controls(self, item, pen_color):
+        """Configure controls for ellipse items."""
+        self._set_text_rows_visible(True, True, True)
+        self._set_color_rows_visible(True, True, True)
+        self._set_extra_rows_visible(False, True, True, False, False, text_box_width=False, text_layout=True)
+        self._set_preview(self.pen_color_preview, pen_color)
+        self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
+        self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
+        self._setup_line_style_controls(item)
+        self._setup_text_layout_controls(item)
+
+    def _setup_roundedrect_controls(self, item, pen_color):
+        """Configure controls for rounded rect items."""
+        self._set_text_rows_visible(True, True, True)
+        self._set_color_rows_visible(True, True, True)
+        self._set_extra_rows_visible(True, True, True, False, False, text_box_width=False, text_layout=True)
+        self._set_preview(self.pen_color_preview, pen_color)
+        self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
+        self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
+        self.radius_spin.blockSignals(True)
+        self.radius_spin.setValue(int(getattr(item, "_radius", 10)))
+        self.radius_spin.blockSignals(False)
+        self._setup_line_style_controls(item)
+        self._setup_text_layout_controls(item)
+
+    def _setup_line_controls(self, item, pen_color):
+        """Configure controls for line items."""
+        self._set_text_rows_visible(True, True, True)
+        self._set_color_rows_visible(True, False, True)
+        self._set_extra_rows_visible(False, True, True, True, True, text_box_width=True, text_layout=True)
+        self._set_preview(self.pen_color_preview, pen_color)
+        self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
+        self._setup_line_style_controls(item)
+        self._setup_text_layout_controls(item)
+
+        # Arrow mode
+        arrow_mode = getattr(item, "arrow_mode", "none")
+        arrow_map = {"none": 0, "start": 1, "end": 2, "both": 3}
+        self.arrow_combo.blockSignals(True)
+        self.arrow_combo.setCurrentIndex(arrow_map.get(arrow_mode, 0))
+        self.arrow_combo.blockSignals(False)
+
+        # Arrow size
+        arrow_size = getattr(item, "arrow_size", 12.0)
+        self.arrow_size_spin.blockSignals(True)
+        self.arrow_size_spin.setValue(int(arrow_size))
+        self.arrow_size_spin.blockSignals(False)
+
+        # Text box width
+        text_box_width = getattr(item.meta, "text_box_width", 0.0) if hasattr(item, "meta") else 0.0
+        self.text_box_width_spin.blockSignals(True)
+        self.text_box_width_spin.setValue(int(text_box_width))
+        self.text_box_width_spin.blockSignals(False)
+
+    def _setup_text_controls(self, item, pen_color):
+        """Configure controls for text items."""
+        self._set_text_rows_visible(False, False, True)
+        self._set_color_rows_visible(False, False, True)
+        self._set_extra_rows_visible(False, False, False, False, False, text_box_width=False, text_layout=False)
+        self._set_dash_pattern_visible(False)
+        self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
+        if isinstance(item, MetaTextItem):
+            self.note_edit.setText(item.toPlainText())
+
+    def _setup_line_style_controls(self, item):
+        """Configure line width and dash style controls."""
+        self.line_width_spin.blockSignals(True)
+        self.line_width_spin.setValue(int(getattr(item, "pen_width", 2)))
+        self.line_width_spin.blockSignals(False)
+
+        dash_style = getattr(item, "line_dash", "solid")
+        dash_map = {"solid": 0, "dashed": 1}
+        self.dash_combo.blockSignals(True)
+        self.dash_combo.setCurrentIndex(dash_map.get(dash_style, 0))
+        self.dash_combo.blockSignals(False)
+
+        self._set_dash_pattern_visible(dash_style == "dashed")
+        self.dash_length_spin.blockSignals(True)
+        self.dash_length_spin.setValue(int(getattr(item, "dash_pattern_length", 30)))
+        self.dash_length_spin.blockSignals(False)
+        self.dash_solid_spin.blockSignals(True)
+        self.dash_solid_spin.setValue(int(getattr(item, "dash_solid_percent", 50)))
+        self.dash_solid_spin.blockSignals(False)
+
+    def _setup_text_layout_controls(self, item):
+        """Configure text spacing and vertical alignment controls."""
+        if not hasattr(item, "meta"):
+            return
+
+        # Text spacing (0, 0.5, 1, 1.5, 2)
+        spacing = getattr(item.meta, "text_spacing", 0.0)
+        spacing_map = {0.0: 0, 0.5: 1, 1.0: 2, 1.5: 3, 2.0: 4}
+        spacing_index = spacing_map.get(spacing, 0)
+        self.text_spacing_combo.blockSignals(True)
+        self.text_spacing_combo.setCurrentIndex(spacing_index)
+        self.text_spacing_combo.blockSignals(False)
+
+        # Vertical alignment (top, middle, bottom)
+        valign = getattr(item.meta, "text_valign", "top")
+        valign_map = {"top": 0, "middle": 1, "bottom": 2}
+        valign_index = valign_map.get(valign, 0)
+        self.text_valign_combo.blockSignals(True)
+        self.text_valign_combo.setCurrentIndex(valign_index)
+        self.text_valign_combo.blockSignals(False)
 
     def _block_text_signals(self, block: bool):
         """Block or unblock signals from text formatting controls."""
@@ -617,7 +730,7 @@ class PropertyPanel(QWidget):
         self.note_size.blockSignals(block)
 
     def _apply_changes(self):
-        """Apply changes from the form to the current item (called on focus loss)."""
+        """Apply changes from the form to the current item."""
         item = self._current_item
         if item is None or not hasattr(item, "meta"):
             return
@@ -626,7 +739,6 @@ class PropertyPanel(QWidget):
         meta.tech = self.tech_edit.text().strip()
         meta.note = self.note_edit.text().strip()
 
-        # Save alignment and font size settings
         align_values = ["left", "center", "right"]
         meta.label_align = align_values[self.label_align.currentIndex()]
         meta.label_size = self.label_size.value()
@@ -637,12 +749,10 @@ class PropertyPanel(QWidget):
 
         setattr(item, "meta", meta)
 
-        # For text items, sync note to displayed text (but not while editing on canvas)
         if isinstance(item, MetaTextItem):
             if not getattr(item, '_editing', False) and item.toPlainText() != meta.note:
                 item.setPlainText(meta.note)
 
-        # Update embedded label text for items that have it
         if hasattr(item, "_update_label_text"):
             item._update_label_text()
 
@@ -667,9 +777,11 @@ class PropertyPanel(QWidget):
         if c is None:
             return
         setattr(item, "pen_color", c)
-        if isinstance(item, (MetaRectItem, MetaEllipseItem, MetaRoundedRectItem, MetaLineItem)):
-            pw = getattr(item, "pen_width", 2)
-            item.setPen(QPen(c, pw))
+        # Use item's apply method to preserve dash style
+        if isinstance(item, MetaLineItem):
+            item._apply_pen()
+        elif isinstance(item, (MetaRectItem, MetaEllipseItem, MetaRoundedRectItem)):
+            item._apply_pen_brush()
         self._set_preview(self.pen_color_preview, c)
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
@@ -702,7 +814,6 @@ class PropertyPanel(QWidget):
         setattr(item, "text_color", c)
         if isinstance(item, MetaTextItem):
             item._apply_text_style()
-        # Update embedded label text color for rect/roundedrect/line
         if hasattr(item, "_update_label_text"):
             item._update_label_text()
         self._set_preview(self.text_color_preview, c)
@@ -724,7 +835,6 @@ class PropertyPanel(QWidget):
         if item is None or not hasattr(item, "pen_width"):
             return
         item.pen_width = value
-        # Apply the pen style
         if hasattr(item, "_apply_pen"):
             item._apply_pen()
         elif hasattr(item, "_apply_pen_brush"):
@@ -737,12 +847,20 @@ class PropertyPanel(QWidget):
         item = self._current_item
         if item is None or not hasattr(item, "line_dash"):
             return
-        dash_styles = ["solid", "dashed", "dotted", "custom"]
+        dash_styles = ["solid", "dashed"]
         if 0 <= index < len(dash_styles):
             item.line_dash = dash_styles[index]
-            # Show/hide custom dash pattern controls
-            self._set_dash_pattern_visible(dash_styles[index] == "custom")
-            # Apply the pen style - different methods for different item types
+            is_dashed = dash_styles[index] == "dashed"
+            self._set_dash_pattern_visible(is_dashed)
+            if is_dashed:
+                self.dash_length_spin.blockSignals(True)
+                self.dash_length_spin.setValue(30)
+                self.dash_length_spin.blockSignals(False)
+                self.dash_solid_spin.blockSignals(True)
+                self.dash_solid_spin.setValue(50)
+                self.dash_solid_spin.blockSignals(False)
+                item.dash_pattern_length = 30.0
+                item.dash_solid_percent = 50.0
             if hasattr(item, "_apply_pen"):
                 item._apply_pen()
             elif hasattr(item, "_apply_pen_brush"):
@@ -751,14 +869,12 @@ class PropertyPanel(QWidget):
                 item._notify_changed()
 
     def _on_dash_pattern_changed(self, value: int):
-        """Handle custom dash pattern change (length or solid percentage)."""
+        """Handle custom dash pattern change."""
         item = self._current_item
         if item is None or not hasattr(item, "line_dash"):
             return
-        # Update the pattern values
         item.dash_pattern_length = float(self.dash_length_spin.value())
         item.dash_solid_percent = float(self.dash_solid_spin.value())
-        # Apply the pen style
         if hasattr(item, "_apply_pen"):
             item._apply_pen()
         elif hasattr(item, "_apply_pen_brush"):
@@ -783,7 +899,7 @@ class PropertyPanel(QWidget):
         if item is None or not isinstance(item, MetaLineItem):
             return
         item.arrow_size = float(value)
-        item.update()  # Trigger repaint to update arrowheads
+        item.update()
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
 
@@ -795,13 +911,41 @@ class PropertyPanel(QWidget):
         if not hasattr(item, "meta"):
             return
         item.meta.text_box_width = float(value)
-        # Update the text layout
         item.prepareGeometryChange()
         if hasattr(item, "_update_label_text"):
             item._update_label_text()
         item.update()
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
+
+    def _on_text_spacing_changed(self, index: int):
+        """Handle text spacing change."""
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+        # Spacing values: 0, 0.5, 1, 1.5, 2
+        spacing_values = [0.0, 0.5, 1.0, 1.5, 2.0]
+        if 0 <= index < len(spacing_values):
+            item.meta.text_spacing = spacing_values[index]
+            if hasattr(item, "_update_label_text"):
+                item._update_label_text()
+            if hasattr(item, "_notify_changed"):
+                item._notify_changed()
+
+    def _on_text_valign_changed(self, index: int):
+        """Handle text vertical alignment change."""
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+        # Valign values: top, middle, bottom
+        valign_values = ["top", "middle", "bottom"]
+        if 0 <= index < len(valign_values):
+            item.meta.text_valign = valign_values[index]
+            if hasattr(item, "_update_label_position"):
+                item._update_label_position()
+            item.update()
+            if hasattr(item, "_notify_changed"):
+                item._notify_changed()
 
     def update_radius_display(self, item, radius: float):
         """Update the radius spinbox display when radius changes via canvas handle."""

@@ -37,15 +37,11 @@ def _apply_dash_style(pen: QPen, dash_style: str, pattern_length: float, solid_p
 
     Args:
         pen: The QPen to modify
-        dash_style: One of "solid", "dashed", "dotted", "custom"
-        pattern_length: Total length of one dash+gap cycle (for custom)
-        solid_percent: Percentage of pattern that is solid (0-100, for custom)
+        dash_style: One of "solid" or "dashed"
+        pattern_length: Total length of one dash+gap cycle in pixels
+        solid_percent: Percentage of pattern that is solid (0-100)
     """
     if dash_style == "dashed":
-        pen.setStyle(Qt.PenStyle.DashLine)
-    elif dash_style == "dotted":
-        pen.setStyle(Qt.PenStyle.DotLine)
-    elif dash_style == "custom":
         # Create custom dash pattern based on length and solid percentage
         # Qt dash patterns are specified in units of pen width
         pen_width = pen.widthF() if pen.widthF() > 0 else 1.0
@@ -122,8 +118,8 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
         self.pen_width = 2
         self.brush_color = QColor(0, 0, 0, 0)
         self.text_color = QColor(self.pen_color)  # Default text color matches border
-        self.line_dash = "solid"  # solid | dashed | dotted | custom
-        self.dash_pattern_length = 12.0
+        self.line_dash = "solid"  # solid | dashed
+        self.dash_pattern_length = 30.0
         self.dash_solid_percent = 50.0
         self._apply_pen_brush()
 
@@ -142,28 +138,50 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
     def _update_label_position(self):
         r = self.rect()
         padding = 4
-        self._label_item.setPos(padding, padding)
         self._label_item.setTextWidth(max(10, r.width() - 2 * padding))
+
+        # Calculate text height after setting width (so wrapping is applied)
+        text_height = self._label_item.boundingRect().height()
+        available_height = r.height() - 2 * padding
+
+        # Get vertical alignment from meta
+        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
+
+        if valign == "middle":
+            y_pos = padding + (available_height - text_height) / 2
+        elif valign == "bottom":
+            y_pos = r.height() - padding - text_height
+        else:  # top (default)
+            y_pos = padding
+
+        self._label_item.setPos(padding, max(padding, y_pos))
 
     def _update_label_text(self):
         lines = []
         align_map = {"left": "left", "center": "center", "right": "right"}
 
+        # Get text spacing in em units (lines * 1em)
+        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
+        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
+
         if self.meta.label:
             align = align_map.get(self.meta.label_align, "center")
             size = self.meta.label_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;"><b>{self.meta.label}</b></p>')
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
         if self.meta.tech:
             align = align_map.get(self.meta.tech_align, "center")
             size = self.meta.tech_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;"><i>[{self.meta.tech}]</i></p>')
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
         if self.meta.note:
             align = align_map.get(self.meta.note_align, "center")
             size = self.meta.note_size
+            # No bottom margin on the last element
             lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
 
         self._label_item.setHtml("".join(lines) if lines else "")
         self._label_item.setDefaultTextColor(self.text_color)
+        # Update position after text changes (valign may need recalculation)
+        self._update_label_position()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         self.meta = meta
@@ -411,8 +429,8 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.pen_width = 2
         self.brush_color = QColor(0, 0, 0, 0)
         self.text_color = QColor(self.pen_color)  # Default text color matches border
-        self.line_dash = "solid"  # solid | dashed | dotted | custom
-        self.dash_pattern_length = 12.0
+        self.line_dash = "solid"  # solid | dashed
+        self.dash_pattern_length = 30.0
         self.dash_solid_percent = 50.0
         self._apply_pen_brush()
 
@@ -435,28 +453,50 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def _update_label_position(self):
         padding = 4 + self._radius * 0.3  # Extra padding for rounded corners
-        self._label_item.setPos(padding, padding)
         self._label_item.setTextWidth(max(10, self._width - 2 * padding))
+
+        # Calculate text height after setting width (so wrapping is applied)
+        text_height = self._label_item.boundingRect().height()
+        available_height = self._height - 2 * padding
+
+        # Get vertical alignment from meta
+        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
+
+        if valign == "middle":
+            y_pos = padding + (available_height - text_height) / 2
+        elif valign == "bottom":
+            y_pos = self._height - padding - text_height
+        else:  # top (default)
+            y_pos = padding
+
+        self._label_item.setPos(padding, max(padding, y_pos))
 
     def _update_label_text(self):
         lines = []
         align_map = {"left": "left", "center": "center", "right": "right"}
 
+        # Get text spacing in em units (lines * 1em)
+        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
+        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
+
         if self.meta.label:
             align = align_map.get(self.meta.label_align, "center")
             size = self.meta.label_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;"><b>{self.meta.label}</b></p>')
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
         if self.meta.tech:
             align = align_map.get(self.meta.tech_align, "center")
             size = self.meta.tech_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;"><i>[{self.meta.tech}]</i></p>')
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
         if self.meta.note:
             align = align_map.get(self.meta.note_align, "center")
             size = self.meta.note_size
+            # No bottom margin on the last element
             lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
 
         self._label_item.setHtml("".join(lines) if lines else "")
         self._label_item.setDefaultTextColor(self.text_color)
+        # Update position after text changes (valign may need recalculation)
+        self._update_label_position()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         self.meta = meta
@@ -735,16 +775,79 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         self.pen_color = QColor(Qt.GlobalColor.green)
         self.pen_width = 2
         self.brush_color = QColor(0, 0, 0, 0)
-        self.line_dash = "solid"  # solid | dashed | dotted | custom
-        self.dash_pattern_length = 12.0
+        self.text_color = QColor(Qt.GlobalColor.green)
+        self.line_dash = "solid"  # solid | dashed
+        self.dash_pattern_length = 30.0
         self.dash_solid_percent = 50.0
         self._apply_pen_brush()
+
+        # Embedded label
+        self._label_item = QGraphicsTextItem(self)
+        self._label_item.setDefaultTextColor(self.text_color)
+        self._update_label_position()
 
     def _apply_pen_brush(self):
         pen = QPen(self.pen_color, self.pen_width)
         _apply_dash_style(pen, self.line_dash, self.dash_pattern_length, self.dash_solid_percent)
         self.setPen(pen)
         self.setBrush(QBrush(self.brush_color))
+
+    def _update_label_position(self):
+        r = self.rect()
+        # Ellipse needs more padding to keep text inside the curved shape
+        padding = max(8, r.width() * 0.1, r.height() * 0.1)
+        self._label_item.setTextWidth(max(10, r.width() - 2 * padding))
+
+        # Calculate text height after setting width (so wrapping is applied)
+        text_height = self._label_item.boundingRect().height()
+        available_height = r.height() - 2 * padding
+
+        # Get vertical alignment from meta
+        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
+
+        if valign == "middle":
+            y_pos = padding + (available_height - text_height) / 2
+        elif valign == "bottom":
+            y_pos = r.height() - padding - text_height
+        else:  # top (default)
+            y_pos = padding
+
+        self._label_item.setPos(padding, max(padding, y_pos))
+
+    def _update_label_text(self):
+        lines = []
+        align_map = {"left": "left", "center": "center", "right": "right"}
+
+        # Get text spacing in em units (lines * 1em)
+        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
+        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
+
+        if self.meta.label:
+            align = align_map.get(self.meta.label_align, "center")
+            size = self.meta.label_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
+        if self.meta.tech:
+            align = align_map.get(self.meta.tech_align, "center")
+            size = self.meta.tech_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
+        if self.meta.note:
+            align = align_map.get(self.meta.note_align, "center")
+            size = self.meta.note_size
+            # No bottom margin on the last element
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
+
+        self._label_item.setHtml("".join(lines) if lines else "")
+        self._label_item.setDefaultTextColor(self.text_color)
+        # Update position after text changes (valign may need recalculation)
+        self._update_label_position()
+
+    def set_meta(self, meta: AnnotationMeta) -> None:
+        self.meta = meta
+        self._update_label_text()
+
+    def setRect(self, r: QRectF):
+        super().setRect(r)
+        self._update_label_position()
 
     def _handle_points_scene(self) -> Dict[str, QPointF]:
         """Return handle positions in scene coordinates (corners and sides)."""

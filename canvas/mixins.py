@@ -55,8 +55,8 @@ class MetaMixin:
         self.brush_color = QColor(0, 0, 0, 0)  # transparent
         self.text_color = QColor(Qt.GlobalColor.yellow)
         self.text_size_pt = 12  # font size in points
-        self.line_dash = "solid"  # solid | dashed | dotted | custom
-        self.dash_pattern_length = 12.0  # total length of one dash+gap cycle in pixels
+        self.line_dash = "solid"  # solid | dashed
+        self.dash_pattern_length = 30.0  # total length of one dash+gap cycle in pixels
         self.dash_solid_percent = 50.0  # percentage of pattern that is solid (0-100)
         self.arrow_size = 12.0  # arrow head size in pixels
 
@@ -76,15 +76,22 @@ class MetaMixin:
             "width": int(self.pen_width),
             "dash": self.line_dash,
         }
-        # Include custom dash pattern settings when dash is "custom"
-        if self.line_dash == "custom":
+        # Include dash pattern settings when dash is "dashed"
+        if self.line_dash == "dashed":
             pen_style["dash_pattern_length"] = float(self.dash_pattern_length)
             pen_style["dash_solid_percent"] = float(self.dash_solid_percent)
+
+        # Text style only contains visual properties (color, size)
+        # Layout properties (valign, spacing) are stored in meta
+        text_style = {
+            "color": qcolor_to_hex(self.text_color),
+            "size_pt": float(self.text_size_pt),
+        }
 
         style = {
             "pen": pen_style,
             "fill": {"color": qcolor_to_hex(self.brush_color, include_alpha=True)},
-            "text": {"color": qcolor_to_hex(self.text_color), "size_pt": float(self.text_size_pt)},
+            "text": text_style,
         }
         # Only include arrow_size for line items
         if hasattr(self, "arrow_mode"):
@@ -107,9 +114,9 @@ class MetaMixin:
             except Exception:
                 pass
             dash = pen.get("dash", "solid")
-            if dash in ("solid", "dashed", "dotted", "custom"):
+            if dash in ("solid", "dashed"):
                 self.line_dash = dash
-            # Read custom dash pattern settings
+            # Read dash pattern settings
             try:
                 if "dash_pattern_length" in pen:
                     self.dash_pattern_length = float(pen["dash_pattern_length"])
@@ -128,6 +135,7 @@ class MetaMixin:
                     self.text_size_pt = float(txt["size_pt"])
             except Exception:
                 pass
+            # Note: text layout options (valign, spacing) are stored in meta, not style
 
         arrow = style.get("arrow", "none")
         if hasattr(self, "arrow_mode") and isinstance(arrow, str):

@@ -23,9 +23,49 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import traceback
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+
+def compile_ui_if_needed():
+    """Compile Qt Designer .ui files to Python if they've been modified."""
+    base_dir = Path(__file__).parent
+    ui_files = [
+        (base_dir / "properties" / "properties_panel.ui",
+         base_dir / "properties" / "properties_ui.py"),
+    ]
+
+    for ui_file, py_file in ui_files:
+        if not ui_file.exists():
+            continue
+
+        # Compile if .py doesn't exist or .ui is newer
+        needs_compile = (
+            not py_file.exists() or
+            ui_file.stat().st_mtime > py_file.stat().st_mtime
+        )
+
+        if needs_compile:
+            print(f"Compiling {ui_file.name}...")
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-m", "PyQt6.uic.pyuic", "-o", str(py_file), str(ui_file)],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                print(f"  -> {py_file.name} updated")
+            except subprocess.CalledProcessError as e:
+                print(f"  Warning: Failed to compile {ui_file.name}: {e.stderr}")
+            except FileNotFoundError:
+                print(f"  Warning: pyuic6 not found, skipping UI compilation")
+
+
+# Auto-compile UI files before importing modules that depend on them
+compile_ui_if_needed()
 
 from PIL import Image
 
@@ -51,7 +91,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from models import Mode, AnnotationMeta, ANN_ID_KEY
+from models import Mode, AnnotationMeta, ANN_ID_KEY, normalize_meta
 from utils import parse_c4_text, _looks_normalized, _scale_record, sort_draft_data, sort_annotation_keys
 from canvas import (
     AnnotatorScene,
@@ -197,6 +237,7 @@ class MainWindow(QMainWindow):
 
         self._syncing_from_scene = False
         self._syncing_from_json = False
+        self._handling_selection = False  # Guard against re-entry during selection handling
 
         # Debounced JSON editing timer
         self._json_edit_timer = QTimer(self)
@@ -494,9 +535,25 @@ class MainWindow(QMainWindow):
 
     def on_selection_changed(self):
         """Handle scene selection changes."""
+        # Guard against re-entry (can happen during focus mode fold operations)
+        if self._handling_selection:
+            return
+        self._handling_selection = True
+        try:
+            self._do_selection_changed()
+        finally:
+            self._handling_selection = False
+
+    def _do_selection_changed(self):
+        """Internal handler for selection changes."""
         items = self.scene.selectedItems()
         it = items[0] if items else None
         self.props.set_item(it)
+
+        # Skip all editor operations when syncing from JSON edits
+        # (user is actively editing the editor, don't disturb their view)
+        if self._syncing_from_json:
+            return
 
         if it is None:
             self.draft.clear_highlighted_annotation()
@@ -515,12 +572,30 @@ class MainWindow(QMainWindow):
         # Update focus mode to show this annotation
         self.draft.set_focused_annotation(ann_id)
 
-        self._scroll_draft_to_id_top(ann_id)
+        # When focus mode is enabled, fold operations change the document layout.
+        # Defer the scroll to allow Qt to process the layout updates first.
+        if self.draft.is_focus_mode_enabled():
+            QTimer.singleShot(0, lambda: self._deferred_scroll_to_id(ann_id))
+        else:
+            self._scroll_draft_to_id_top(ann_id)
 
         if isinstance(it, MetaTextItem):
-            ok = self.draft.jump_to_text_field_for_id(ann_id)
-            if ok:
-                self.draft.set_status(f"Focused text for id: {ann_id}")
+            if self.draft.is_focus_mode_enabled():
+                QTimer.singleShot(0, lambda: self._deferred_scroll_to_text(ann_id))
+            else:
+                self._scroll_to_text_field(ann_id)
+
+    def _deferred_scroll_to_id(self, ann_id: str):
+        """Deferred scroll for focus mode - checks guards to prevent loops."""
+        if self._handling_selection or self._syncing_from_json:
+            return
+        self._scroll_draft_to_id_top(ann_id)
+
+    def _deferred_scroll_to_text(self, ann_id: str):
+        """Deferred scroll to text field for focus mode - checks guards to prevent loops."""
+        if self._handling_selection or self._syncing_from_json:
+            return
+        self._scroll_to_text_field(ann_id)
 
     def _scroll_draft_to_id_top(self, ann_id: str):
         """Scroll the draft editor to show the given annotation ID."""
@@ -528,8 +603,18 @@ class MainWindow(QMainWindow):
         if ok:
             self.draft.set_status(f"Focused id: {ann_id}")
 
+    def _scroll_to_text_field(self, ann_id: str):
+        """Scroll the draft editor to show the text field for the given annotation ID."""
+        ok = self.draft.jump_to_text_field_for_id(ann_id)
+        if ok:
+            self.draft.set_status(f"Focused text for id: {ann_id}")
+
     def _on_editor_cursor_annotation_changed(self, ann_id: str):
         """Handle cursor position changes in the JSON editor."""
+        # Ignore cursor changes during selection handling (prevents loops from fold operations)
+        if self._handling_selection:
+            return
+
         if not ann_id:
             # Cursor is outside any annotation
             self.draft.clear_highlighted_annotation()
@@ -873,6 +958,15 @@ class MainWindow(QMainWindow):
 
     def on_ai_finished(self, data: dict):
         """Handle successful AI extraction."""
+        # Normalize meta dicts to include all default fields
+        annotations = data.get("annotations", [])
+        if isinstance(annotations, list):
+            for rec in annotations:
+                if isinstance(rec, dict) and "kind" in rec:
+                    kind = rec["kind"]
+                    meta = rec.get("meta", {}) or {}
+                    rec["meta"] = normalize_meta(meta, kind)
+
         sorted_data = sort_draft_data(data)
         pretty = json.dumps(sorted_data, indent=2)
         self._set_draft_text_programmatically(pretty, enable_import=True, status="Draft ready. Click Import to link JSON<->Scene.", focus_id=None)
@@ -1256,8 +1350,7 @@ class MainWindow(QMainWindow):
             it.set_meta(meta)
             it.meta.kind = "rect"
             it.apply_style_from_record(rec)
-            it.setPen(QPen(it.pen_color, it.pen_width))
-            it.setBrush(QBrush(it.brush_color))
+            it._apply_pen_brush()  # Apply pen with dash pattern
             it._update_label_text()
             self.scene.addItem(it)
             if z_index:
@@ -1270,8 +1363,7 @@ class MainWindow(QMainWindow):
             it.set_meta(meta)
             it.meta.kind = "roundedrect"
             it.apply_style_from_record(rec)
-            it.setPen(QPen(it.pen_color, it.pen_width))
-            it.setBrush(QBrush(it.brush_color))
+            it._apply_pen_brush()  # Apply pen with dash pattern
             it._update_label_text()
             self.scene.addItem(it)
             if z_index:
@@ -1283,8 +1375,8 @@ class MainWindow(QMainWindow):
             it.set_meta(meta)
             it.meta.kind = "ellipse"
             it.apply_style_from_record(rec)
-            it.setPen(QPen(it.pen_color, it.pen_width))
-            it.setBrush(QBrush(it.brush_color))
+            it._apply_pen_brush()  # Apply pen with dash pattern
+            it._update_label_text()
             self.scene.addItem(it)
             if z_index:
                 it.setZValue(z_index)
@@ -1295,7 +1387,7 @@ class MainWindow(QMainWindow):
             it.set_meta(meta)
             it.meta.kind = "line"
             it.apply_style_from_record(rec)
-            it.setPen(QPen(it.pen_color, it.pen_width))
+            it._apply_pen()  # Apply pen with dash pattern
             it._update_label_text()
             self.scene.addItem(it)
             if z_index:

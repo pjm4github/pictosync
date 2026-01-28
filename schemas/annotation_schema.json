@@ -313,6 +313,31 @@
           "maximum": 72,
           "default": 10,
           "description": "Note font size in points"
+        },
+        "text_valign": {
+          "type": "string",
+          "enum": ["top", "middle", "bottom"],
+          "default": "top",
+          "description": "Vertical alignment of text block within the shape"
+        },
+        "text_spacing": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2,
+          "default": 0,
+          "description": "Spacing between label/tech/note lines (in em units: 0, 0.5, 1, 1.5, 2)"
+        },
+        "text_box_width": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "description": "Text box width for line labels (0 = auto-size)"
+        },
+        "text_box_height": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "description": "Text box height for line labels (0 = auto-size)"
         }
       },
       "additionalProperties": true
@@ -334,6 +359,26 @@
           "minimum": 0,
           "default": 2,
           "description": "Stroke width in pixels"
+        },
+        "dash": {
+          "type": "string",
+          "enum": ["solid", "dashed"],
+          "default": "solid",
+          "description": "Line dash style"
+        },
+        "dash_pattern_length": {
+          "type": "number",
+          "minimum": 4,
+          "maximum": 100,
+          "default": 30,
+          "description": "Total length of dash pattern in pixels (when dash is 'dashed')"
+        },
+        "dash_solid_percent": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 99,
+          "default": 50,
+          "description": "Percentage of pattern that is solid (when dash is 'dashed')"
         }
       }
     },
@@ -395,6 +440,13 @@
           "enum": ["none", "start", "end", "both"],
           "default": "none",
           "description": "Arrowhead mode"
+        },
+        "arrow_size": {
+          "type": "number",
+          "minimum": 4,
+          "maximum": 50,
+          "default": 12,
+          "description": "Arrowhead size in pixels"
         }
       }
     }
