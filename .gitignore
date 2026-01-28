@@ -25,3 +25,10 @@ Thumbs.db
 # Project-specific
 CLAUDE.local.md
 nul
+
+# Claude Code
+.claude/
+
+# Test images (keep locally, don't track)
+software-system.png
+C4.png
