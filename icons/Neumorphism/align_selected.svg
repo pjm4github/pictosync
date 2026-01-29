@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <!-- Target crosshair -->
+  <circle cx="12" cy="12" r="7" stroke="#6366F1" stroke-width="2" fill="none"/>
+  <circle cx="12" cy="12" r="3" stroke="#6366F1" stroke-width="1.5" fill="none"/>
+  <!-- Alignment arrows pointing inward -->
+  <path d="M12 2 L12 5 M10 4 L12 2 L14 4" stroke="#4B5563" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <path d="M12 22 L12 19 M10 20 L12 22 L14 20" stroke="#4B5563" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <path d="M2 12 L5 12 M4 10 L2 12 L4 14" stroke="#4B5563" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <path d="M22 12 L19 12 M20 10 L22 12 L20 14" stroke="#4B5563" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+</svg>

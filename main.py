@@ -107,6 +107,14 @@ from properties import PropertyPanel
 from gemini import ExtractWorker
 from styles import STYLES, DEFAULT_STYLE, CANVAS_TEXT_COLORS, LINE_NUMBER_COLORS
 
+# Optional alignment import (requires opencv-python)
+try:
+    from alignment import AlignmentWorker
+    HAS_ALIGNMENT = True
+except ImportError:
+    AlignmentWorker = None
+    HAS_ALIGNMENT = False
+
 
 class SettingsDialog(QDialog):
     """Settings dialog for application preferences."""
@@ -220,6 +228,9 @@ class MainWindow(QMainWindow):
         self.draft = DraftDock(self)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.draft)
 
+        # Pre-initialize optional action (may be set in _build_toolbar if HAS_ALIGNMENT)
+        self.align_act: Optional[QAction] = None
+
         # Build UI
         self._build_toolbar()
         self._build_menus()
@@ -266,6 +277,10 @@ class MainWindow(QMainWindow):
         # Gemini worker thread
         self._thread: Optional[QThread] = None
         self._worker: Optional[ExtractWorker] = None
+
+        # Alignment worker thread
+        self._align_thread: Optional[QThread] = None
+        self._align_worker: Optional[AlignmentWorker] = None
 
     def _build_menus(self):
         """Build the application menu bar."""
@@ -369,6 +384,14 @@ class MainWindow(QMainWindow):
         self.toggle_png_act.triggered.connect(self._toggle_png_visibility)
         self._icon_actions[self.toggle_png_act] = "hide_png"
         tb.addAction(self.toggle_png_act)
+
+        # Align element to PNG (requires opencv-python)
+        if HAS_ALIGNMENT:
+            self.align_act = QAction("Align to PNG", self)
+            self.align_act.setEnabled(False)  # Disabled until conditions met
+            self.align_act.triggered.connect(self.align_selected_to_png)
+            self._icon_actions[self.align_act] = "align"
+            tb.addAction(self.align_act)
 
         tb.addSeparator()
 
@@ -550,6 +573,9 @@ class MainWindow(QMainWindow):
         it = items[0] if items else None
         self.props.set_item(it)
 
+        # Update align button state based on selection
+        self._update_align_button_state()
+
         # Skip all editor operations when syncing from JSON edits
         # (user is actively editing the editor, don't disturb their view)
         if self._syncing_from_json:
@@ -713,6 +739,9 @@ class MainWindow(QMainWindow):
         self.toggle_png_act.setChecked(False)
         self.toggle_png_act.setText("Hide PNG")
         self._update_png_hidden_indicator(False)
+
+        # Update align button state (PNG is now loaded)
+        self._update_align_button_state()
 
     def _toggle_png_visibility(self, checked: bool):
         """Toggle the visibility of the background PNG."""
@@ -1043,6 +1072,9 @@ class MainWindow(QMainWindow):
             self._link_enabled = True
             self._rebuild_id_index()
             self._rebuild_scene_from_draft()
+
+            # Update align button state (linking is now enabled)
+            self._update_align_button_state()
 
             self._push_draft_data_to_editor(status="Linked. Edits in JSON or scene will stay in sync.", focus_id=None)
 
@@ -1404,6 +1436,203 @@ class MainWindow(QMainWindow):
             self.scene.addItem(it)
             if z_index:
                 it.setZValue(z_index)
+
+    # ---- Alignment methods ----
+
+    def _update_align_button_state(self):
+        """Update the align button enabled state based on current conditions."""
+        if not HAS_ALIGNMENT or self.align_act is None:
+            return
+
+        # Condition 1: PNG file is loaded
+        if self.bg_path is None:
+            self.align_act.setEnabled(False)
+            return
+
+        # Condition 2: JSON and canvas are linked
+        if not self._link_enabled:
+            self.align_act.setEnabled(False)
+            return
+
+        # Condition 3: Exactly one alignable item is selected
+        items = self.scene.selectedItems()
+        if len(items) != 1:
+            self.align_act.setEnabled(False)
+            return
+
+        if not self._is_alignable_item(items[0]):
+            self.align_act.setEnabled(False)
+            return
+
+        # All conditions met
+        self.align_act.setEnabled(True)
+
+    def _is_alignable_item(self, item) -> bool:
+        """Check if an item is alignable (rect, roundedrect, or ellipse)."""
+        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem))
+
+    def align_selected_to_png(self):
+        """Start alignment of the selected item to match the PNG visual."""
+        if not HAS_ALIGNMENT:
+            QMessageBox.warning(self, "Align", "Alignment requires opencv-python. Run: pip install opencv-python numpy")
+            return
+
+        items = self.scene.selectedItems()
+        if len(items) != 1:
+            QMessageBox.warning(self, "Align", "Please select exactly one shape to align.")
+            return
+
+        item = items[0]
+        if not self._is_alignable_item(item):
+            QMessageBox.warning(self, "Align", "Only rect, roundedrect, and ellipse items can be aligned.")
+            return
+
+        if self.bg_path is None:
+            QMessageBox.warning(self, "Align", "No PNG image loaded.")
+            return
+
+        # Extract geometry from item
+        pos = item.pos()
+        if isinstance(item, MetaRoundedRectItem):
+            geom = {
+                "x": pos.x(),
+                "y": pos.y(),
+                "w": item._width,
+                "h": item._height,
+                "radius": item._radius,
+            }
+            kind = "roundedrect"
+        else:
+            rect = item.rect()
+            geom = {
+                "x": pos.x(),
+                "y": pos.y(),
+                "w": rect.width(),
+                "h": rect.height(),
+            }
+            kind = "rect" if isinstance(item, MetaRectItem) else "ellipse"
+
+        # Extract pen/stroke color and width from item
+        pen_color = "#000000"  # Default black
+        pen_width = 2  # Default width
+        if hasattr(item, "pen_color"):
+            pc = item.pen_color
+            # Convert QColor to hex string
+            pen_color = "#{:02X}{:02X}{:02X}".format(pc.red(), pc.green(), pc.blue())
+        if hasattr(item, "pen_width"):
+            pen_width = int(item.pen_width)
+
+        # Disable button during alignment
+        self.align_act.setEnabled(False)
+        self.statusBar().showMessage(f"Aligning {kind} to PNG (pen color: {pen_color}, width: {pen_width})...")
+
+        # Start worker thread
+        self._align_thread = QThread()
+        self._align_worker = AlignmentWorker(self.bg_path, geom, kind, pen_color, pen_width)
+        self._align_worker.moveToThread(self._align_thread)
+
+        self._align_thread.started.connect(self._align_worker.run)
+        self._align_worker.progress.connect(self.on_align_progress)
+        self._align_worker.finished.connect(self.on_align_finished)
+        self._align_worker.failed.connect(self.on_align_failed)
+
+        self._align_worker.finished.connect(self._align_thread.quit)
+        self._align_worker.failed.connect(self._align_thread.quit)
+
+        def _reenable():
+            self._update_align_button_state()
+
+        self._align_thread.finished.connect(_reenable)
+        self._align_thread.finished.connect(self._align_thread.deleteLater)
+
+        self._align_thread.start()
+
+    def on_align_progress(self, iteration: int, message: str):
+        """Handle progress updates from alignment worker."""
+        self.statusBar().showMessage(f"Alignment: {message} (iter {iteration})")
+
+    def on_align_finished(self, result: dict):
+        """Handle successful alignment completion."""
+        items = self.scene.selectedItems()
+        if len(items) != 1:
+            self.statusBar().showMessage("Alignment complete but selection changed.")
+            return
+
+        item = items[0]
+        if not self._is_alignable_item(item):
+            self.statusBar().showMessage("Alignment complete but item type changed.")
+            return
+
+        # Apply new geometry to item
+        from PyQt6.QtCore import QPointF, QRectF
+
+        new_x = float(result["x"])
+        new_y = float(result["y"])
+        new_w = float(result["w"])
+        new_h = float(result["h"])
+
+        if isinstance(item, MetaRoundedRectItem):
+            item.setPos(QPointF(new_x, new_y))
+            item._width = new_w
+            item._height = new_h
+            if "radius" in result:
+                item._radius = float(result["radius"])
+            item._update_path()
+            item._update_label_position()
+        else:
+            item.setPos(QPointF(new_x, new_y))
+            item.setRect(QRectF(0, 0, new_w, new_h))
+
+        # Apply optimized pen width if returned
+        if "pen_width" in result and hasattr(item, "pen_width"):
+            from PyQt6.QtGui import QPen
+            new_pen_width = int(result["pen_width"])
+            item.pen_width = new_pen_width
+            # Update the item's pen
+            pen = item.pen()
+            pen.setWidth(new_pen_width)
+            item.setPen(pen)
+
+        # Apply sampled pen color if returned
+        if "pen_color" in result:
+            from PyQt6.QtGui import QColor
+            new_color_hex = result["pen_color"]
+            new_color = QColor(new_color_hex)
+
+            # Update pen color
+            if hasattr(item, "pen_color"):
+                item.pen_color = new_color
+                pen = item.pen()
+                pen.setColor(new_color)
+                item.setPen(pen)
+
+            # Update text/label color to match
+            if hasattr(item, "text_color"):
+                item.text_color = new_color
+            # Refresh the label on the canvas
+            if hasattr(item, "_update_label_text"):
+                item._update_label_text()
+
+        # Trigger JSON sync
+        item._notify_changed()
+
+        # Build status message
+        msg = "Alignment complete - element adjusted to match PNG."
+        extras = []
+        if "pen_width" in result:
+            extras.append(f"pen_width={result['pen_width']}")
+        if "pen_color" in result:
+            extras.append(f"pen_color={result['pen_color']}")
+        if "radius" in result:
+            extras.append(f"radius={result['radius']}")
+        if extras:
+            msg += f" ({', '.join(extras)})"
+        self.statusBar().showMessage(msg)
+
+    def on_align_failed(self, error: str):
+        """Handle alignment failure."""
+        QMessageBox.critical(self, "Alignment failed", error)
+        self.statusBar().showMessage("Alignment failed.")
 
 
 def main():

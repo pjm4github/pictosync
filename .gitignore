@@ -32,3 +32,6 @@ nul
 # Test images (keep locally, don't track)
 software-system.png
 C4.png
+
+# Alignment debug files
+debug_*.png
