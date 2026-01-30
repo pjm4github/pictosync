@@ -1,6 +1,6 @@
 # PictoSync
 
-**v1.0** | PNG Image Canvas Tool for Object Synchronization
+**v1.1** | PNG Image Canvas Tool for Object Synchronization
 
 Diagram annotation tool with AI-powered extraction and bidirectional sync.
 
