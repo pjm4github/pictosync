@@ -18,6 +18,14 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 - **Z-Order Control**: Right-click context menu to "Bring to Front" or "Send to Back"
 - **Auto-Stacking**: New shapes automatically appear on top of existing items
 
+### Element Alignment (OpenCV)
+- **Shape Alignment**: Snap rectangles, rounded rectangles, and ellipses to match PNG visuals
+- **Line Detection**: Detect and align line elements including endpoints, angle, and length
+- **Arrowhead Detection**: Automatically detects triangular arrowheads and extends line endpoints
+- **Dashed Line Support**: Merges collinear segments to handle dashed/dotted lines
+- **Text Matching**: Uses label/note text to locate lines in the image
+- **Color Matching**: HSV-based color detection matches pen colors in the PNG
+
 ### AI Integration
 - **AI Extraction**: Automatic diagram element detection using Google Gemini models
 - **Smart Defaults**: Extracted elements automatically get formatting defaults
@@ -64,6 +72,7 @@ pip install -r requirements.txt
 - PyQt6
 - Pillow
 - google-genai
+- opencv-python (for element alignment)
 
 Set your Google API key for AI extraction:
 ```bash
@@ -101,6 +110,7 @@ python main.py
 - **Hide PNG**: Toggle background visibility when annotations obscure the image
 - **Themes**: Access Settings to switch between 7 visual themes
 - **Text Formatting**: Use the property panel to adjust vertical alignment and spacing
+- **Element Alignment**: Select a shape or line and use "Align to PNG" to snap it to the visual
 
 ## Project Structure
 
@@ -127,6 +137,9 @@ pictosync/
 │   └── annotation_schema.json  # Annotation format specification
 ├── gemini/              # AI integration
 │   └── worker.py        # Threaded Gemini API worker
+├── alignment/           # OpenCV alignment
+│   ├── optimizer.py     # Shape and line alignment algorithms
+│   └── worker.py        # Threaded alignment workers
 ├── icons/               # Theme-aware SVG icons
 │   ├── generate_icons.py    # Icon generation script
 │   └── [Theme folders]      # Icons for each theme
@@ -144,6 +157,12 @@ Annotations follow a JSON schema with support for:
 See `schemas/annotation_schema.json` for the full specification.
 
 ## Version History
+
+### v1.1 (2025-01-29)
+- OpenCV-based element alignment for snapping shapes to PNG visuals
+- Line detection with endpoint, angle, and arrowhead detection
+- Dashed line support via collinear segment merging
+- Text matching to locate lines using label/note metadata
 
 ### v1.0 (2025-01-28)
 - Initial stable release
