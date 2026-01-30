@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200">
+2<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200">
   <defs>
     <!-- Gradient for background -->
     <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -129,4 +129,20 @@
   <!-- Decorative corner elements -->
   <path d="M 780,10 L 790,10 L 790,20" stroke="#3a3a5c" stroke-width="2" fill="none"/>
   <path d="M 10,190 L 10,180 L 20,180" stroke="#3a3a5c" stroke-width="2" fill="none"/>
+
+  <!-- Vibe Coded with Claude -->
+  <g transform="translate(640, 170)">
+    <!-- Claude sparkle symbol -->
+    <g transform="translate(0, -5)" fill="#d4a574">
+      <!-- Main star/sparkle shape -->
+      <path d="M 12,0 L 14,8 L 22,10 L 14,12 L 12,20 L 10,12 L 2,10 L 10,8 Z" transform="scale(0.7)"/>
+      <!-- Small accent sparkles -->
+      <circle cx="2" cy="3" r="1.2"/>
+      <circle cx="20" cy="5" r="0.8"/>
+    </g>
+    <!-- Italic tagline -->
+    <text x="22" y="6" font-family="Georgia, serif" font-size="12" font-style="italic" fill="#d4a574">
+      Vibe Coded with Claude
+    </text>
+  </g>
 </svg>
