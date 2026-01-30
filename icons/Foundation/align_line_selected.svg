@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <!-- Diagonal line -->
+  <line x1="4" y1="20" x2="20" y2="4" stroke="#1779BA" stroke-width="2" stroke-linecap="round"/>
+  <!-- Endpoint markers -->
+  <circle cx="4" cy="20" r="3" fill="#1779BA" stroke="#1A1A1A" stroke-width="1"/>
+  <circle cx="20" cy="4" r="3" fill="#1779BA" stroke="#1A1A1A" stroke-width="1"/>
+  <!-- Alignment arrows pointing inward -->
+  <path d="M9 9 L12 12 M11 8 L9 9 L8 11" stroke="#1A1A1A" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <path d="M15 15 L12 12 M13 16 L15 15 L16 13" stroke="#1A1A1A" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+</svg>

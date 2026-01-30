@@ -109,10 +109,11 @@ from styles import STYLES, DEFAULT_STYLE, CANVAS_TEXT_COLORS, LINE_NUMBER_COLORS
 
 # Optional alignment import (requires opencv-python)
 try:
-    from alignment import AlignmentWorker
+    from alignment import AlignmentWorker, LineAlignmentWorker
     HAS_ALIGNMENT = True
 except ImportError:
     AlignmentWorker = None
+    LineAlignmentWorker = None
     HAS_ALIGNMENT = False
 
 
@@ -228,8 +229,9 @@ class MainWindow(QMainWindow):
         self.draft = DraftDock(self)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.draft)
 
-        # Pre-initialize optional action (may be set in _build_toolbar if HAS_ALIGNMENT)
+        # Pre-initialize optional actions (may be set in _build_toolbar if HAS_ALIGNMENT)
         self.align_act: Optional[QAction] = None
+        self.align_line_act: Optional[QAction] = None
 
         # Build UI
         self._build_toolbar()
@@ -281,6 +283,10 @@ class MainWindow(QMainWindow):
         # Alignment worker thread
         self._align_thread: Optional[QThread] = None
         self._align_worker: Optional[AlignmentWorker] = None
+
+        # Line alignment worker thread
+        self._line_align_thread: Optional[QThread] = None
+        self._line_align_worker: Optional[LineAlignmentWorker] = None
 
     def _build_menus(self):
         """Build the application menu bar."""
@@ -392,6 +398,13 @@ class MainWindow(QMainWindow):
             self.align_act.triggered.connect(self.align_selected_to_png)
             self._icon_actions[self.align_act] = "align"
             tb.addAction(self.align_act)
+
+            # Align line to PNG
+            self.align_line_act = QAction("Align Line to PNG", self)
+            self.align_line_act.setEnabled(False)  # Disabled until conditions met
+            self.align_line_act.triggered.connect(self.align_selected_line_to_png)
+            self._icon_actions[self.align_line_act] = "align_line"
+            tb.addAction(self.align_line_act)
 
         tb.addSeparator()
 
@@ -1441,31 +1454,31 @@ class MainWindow(QMainWindow):
 
     def _update_align_button_state(self):
         """Update the align button enabled state based on current conditions."""
-        if not HAS_ALIGNMENT or self.align_act is None:
+        if not HAS_ALIGNMENT:
             return
 
-        # Condition 1: PNG file is loaded
-        if self.bg_path is None:
-            self.align_act.setEnabled(False)
-            return
+        # Check base conditions for all alignment operations
+        base_conditions_met = (
+            self.bg_path is not None and  # PNG file is loaded
+            self._link_enabled  # JSON and canvas are linked
+        )
 
-        # Condition 2: JSON and canvas are linked
-        if not self._link_enabled:
-            self.align_act.setEnabled(False)
-            return
-
-        # Condition 3: Exactly one alignable item is selected
         items = self.scene.selectedItems()
-        if len(items) != 1:
-            self.align_act.setEnabled(False)
-            return
+        has_single_selection = len(items) == 1
 
-        if not self._is_alignable_item(items[0]):
-            self.align_act.setEnabled(False)
-            return
+        # Update shape align button
+        if self.align_act is not None:
+            if base_conditions_met and has_single_selection and self._is_alignable_item(items[0]):
+                self.align_act.setEnabled(True)
+            else:
+                self.align_act.setEnabled(False)
 
-        # All conditions met
-        self.align_act.setEnabled(True)
+        # Update line align button
+        if self.align_line_act is not None:
+            if base_conditions_met and has_single_selection and isinstance(items[0], MetaLineItem):
+                self.align_line_act.setEnabled(True)
+            else:
+                self.align_line_act.setEnabled(False)
 
     def _is_alignable_item(self, item) -> bool:
         """Check if an item is alignable (rect, roundedrect, or ellipse)."""
@@ -1633,6 +1646,176 @@ class MainWindow(QMainWindow):
         """Handle alignment failure."""
         QMessageBox.critical(self, "Alignment failed", error)
         self.statusBar().showMessage("Alignment failed.")
+
+    # ---- Line Alignment methods ----
+
+    def align_selected_line_to_png(self):
+        """Start alignment of the selected line item to match the PNG visual."""
+        if not HAS_ALIGNMENT:
+            QMessageBox.warning(self, "Align Line", "Alignment requires opencv-python. Run: pip install opencv-python numpy")
+            return
+
+        items = self.scene.selectedItems()
+        if len(items) != 1:
+            QMessageBox.warning(self, "Align Line", "Please select exactly one line to align.")
+            return
+
+        item = items[0]
+        if not isinstance(item, MetaLineItem):
+            QMessageBox.warning(self, "Align Line", "Only line items can be aligned with this tool.")
+            return
+
+        if self.bg_path is None:
+            QMessageBox.warning(self, "Align Line", "No PNG image loaded.")
+            return
+
+        # Extract geometry from line item
+        pos = item.pos()
+        line = item.line()
+        geom = {
+            "x1": pos.x() + line.x1(),
+            "y1": pos.y() + line.y1(),
+            "x2": pos.x() + line.x2(),
+            "y2": pos.y() + line.y2(),
+        }
+
+        # Extract pen/stroke color and width from item
+        pen_color = "#000000"  # Default black
+        pen_width = 2  # Default width
+        if hasattr(item, "pen_color"):
+            pc = item.pen_color
+            pen_color = "#{:02X}{:02X}{:02X}".format(pc.red(), pc.green(), pc.blue())
+        if hasattr(item, "pen_width"):
+            pen_width = int(item.pen_width)
+
+        # Extract note and label text from meta for text matching in PNG
+        note_text = ""
+        label_text = ""
+        if hasattr(item, "meta"):
+            if hasattr(item.meta, "note"):
+                note_text = item.meta.note or ""
+            if hasattr(item.meta, "label"):
+                label_text = item.meta.label or ""
+
+        # Disable button during alignment
+        self.align_line_act.setEnabled(False)
+        status_msg = f"Aligning line to PNG (pen color: {pen_color}, width: {pen_width})"
+        if label_text:
+            status_msg += f", searching for label: '{label_text}'"
+        if note_text:
+            status_msg += f", note: '{note_text}'"
+        self.statusBar().showMessage(status_msg + "...")
+
+        # Start worker thread
+        self._line_align_thread = QThread()
+        self._line_align_worker = LineAlignmentWorker(
+            self.bg_path, geom, pen_color, pen_width, note_text, label_text
+        )
+        self._line_align_worker.moveToThread(self._line_align_thread)
+
+        self._line_align_thread.started.connect(self._line_align_worker.run)
+        self._line_align_worker.progress.connect(self.on_line_align_progress)
+        self._line_align_worker.finished.connect(self.on_line_align_finished)
+        self._line_align_worker.failed.connect(self.on_line_align_failed)
+
+        self._line_align_worker.finished.connect(self._line_align_thread.quit)
+        self._line_align_worker.failed.connect(self._line_align_thread.quit)
+
+        def _reenable():
+            self._update_align_button_state()
+
+        self._line_align_thread.finished.connect(_reenable)
+        self._line_align_thread.finished.connect(self._line_align_thread.deleteLater)
+
+        self._line_align_thread.start()
+
+    def on_line_align_progress(self, iteration: int, message: str):
+        """Handle progress updates from line alignment worker."""
+        self.statusBar().showMessage(f"Line alignment: {message} (iter {iteration})")
+
+    def on_line_align_finished(self, result: dict):
+        """Handle successful line alignment completion."""
+        items = self.scene.selectedItems()
+        if len(items) != 1:
+            self.statusBar().showMessage("Line alignment complete but selection changed.")
+            return
+
+        item = items[0]
+        if not isinstance(item, MetaLineItem):
+            self.statusBar().showMessage("Line alignment complete but item type changed.")
+            return
+
+        # Apply new geometry to line item
+        from PyQt6.QtCore import QPointF, QLineF
+
+        new_x1 = float(result["x1"])
+        new_y1 = float(result["y1"])
+        new_x2 = float(result["x2"])
+        new_y2 = float(result["y2"])
+
+        # Set position to the start point, line is relative from there
+        item.setPos(QPointF(new_x1, new_y1))
+        item.setLine(QLineF(0, 0, new_x2 - new_x1, new_y2 - new_y1))
+
+        # Apply arrow mode and size
+        if "arrow_mode" in result:
+            item.arrow_mode = result["arrow_mode"]
+        if "arrow_size" in result and hasattr(item, "arrow_size"):
+            item.arrow_size = float(result["arrow_size"])
+
+        # Apply pen color
+        if "pen_color" in result:
+            from PyQt6.QtGui import QColor
+            new_color = QColor(result["pen_color"])
+            item.pen_color = new_color
+            item.text_color = new_color
+
+        # Apply pen width
+        if "pen_width" in result:
+            item.pen_width = int(result["pen_width"])
+
+        # Apply dash properties if line is dashed
+        if "dash" in result and result["dash"] == "dashed":
+            if hasattr(item, "line_dash"):
+                item.line_dash = result["dash"]  # "dashed"
+            if hasattr(item, "dash_pattern_length") and "dash_pattern_length" in result:
+                item.dash_pattern_length = float(result["dash_pattern_length"])
+            if hasattr(item, "dash_solid_percent") and "dash_solid_percent" in result:
+                item.dash_solid_percent = float(result["dash_solid_percent"])
+
+        # Update pen and visuals
+        item._apply_pen()
+        item._update_label_text()
+
+        # Trigger JSON sync
+        item._notify_changed()
+
+        # Refresh property panel to show updated values
+        self.props.set_item(item)
+
+        # Build status message
+        msg = "Line alignment complete - line adjusted to match PNG."
+        extras = []
+        if "pen_width" in result:
+            extras.append(f"pen_width={result['pen_width']}")
+        if "pen_color" in result:
+            extras.append(f"pen_color={result['pen_color']}")
+        if "arrow_mode" in result:
+            extras.append(f"arrow={result['arrow_mode']}")
+        if "arrow_size" in result:
+            extras.append(f"arrow_size={result['arrow_size']}px")
+        if "dash" in result:
+            extras.append(f"dash={result['dash']}")
+            if "dash_pattern_length" in result:
+                extras.append(f"dash_length={result['dash_pattern_length']}px")
+        if extras:
+            msg += f" ({', '.join(extras)})"
+        self.statusBar().showMessage(msg)
+
+    def on_line_align_failed(self, error: str):
+        """Handle line alignment failure."""
+        QMessageBox.critical(self, "Line alignment failed", error)
+        self.statusBar().showMessage("Line alignment failed.")
 
 
 def main():

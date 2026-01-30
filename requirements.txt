@@ -3,3 +3,4 @@ pillow
 google-genai
 opencv-python
 numpy
+pytesseract
