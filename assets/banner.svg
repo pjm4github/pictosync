@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200">
+  <defs>
+    <!-- Gradient for background -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+
+    <!-- Gradient for sync arrows -->
+    <linearGradient id="syncGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#00d9ff"/>
+      <stop offset="100%" style="stop-color:#0099ff"/>
+    </linearGradient>
+
+    <!-- Gradient for shapes -->
+    <linearGradient id="shapeGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ff6b6b"/>
+      <stop offset="100%" style="stop-color:#ee5a5a"/>
+    </linearGradient>
+
+    <!-- Glow filter -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="200" fill="url(#bgGrad)" rx="12"/>
+
+  <!-- Grid pattern (subtle) -->
+  <g opacity="0.1" stroke="#ffffff" stroke-width="0.5">
+    <line x1="0" y1="50" x2="800" y2="50"/>
+    <line x1="0" y1="100" x2="800" y2="100"/>
+    <line x1="0" y1="150" x2="800" y2="150"/>
+    <line x1="100" y1="0" x2="100" y2="200"/>
+    <line x1="200" y1="0" x2="200" y2="200"/>
+    <line x1="300" y1="0" x2="300" y2="200"/>
+    <line x1="500" y1="0" x2="500" y2="200"/>
+    <line x1="600" y1="0" x2="600" y2="200"/>
+    <line x1="700" y1="0" x2="700" y2="200"/>
+  </g>
+
+  <!-- Left side: Canvas representation -->
+  <g transform="translate(40, 35)">
+    <!-- Canvas frame -->
+    <rect x="0" y="0" width="140" height="130" fill="#0f0f23" stroke="#3a3a5c" stroke-width="2" rx="6"/>
+
+    <!-- Rectangle annotation -->
+    <rect x="15" y="15" width="50" height="35" fill="none" stroke="#ff6b6b" stroke-width="2.5" rx="3"/>
+
+    <!-- Ellipse annotation -->
+    <ellipse cx="100" cy="32" rx="25" ry="18" fill="none" stroke="#4ecdc4" stroke-width="2.5"/>
+
+    <!-- Line with arrow -->
+    <line x1="40" y1="65" x2="100" y2="85" stroke="#ffd93d" stroke-width="2.5"/>
+    <polygon points="100,85 92,80 94,88" fill="#ffd93d"/>
+
+    <!-- Rounded rect -->
+    <rect x="20" y="90" width="45" height="25" fill="none" stroke="#a855f7" stroke-width="2.5" rx="8"/>
+
+    <!-- Small text indicator -->
+    <text x="80" y="108" font-family="monospace" font-size="8" fill="#6b7280">Aa</text>
+  </g>
+
+  <!-- Bidirectional sync arrows -->
+  <g transform="translate(200, 75)" filter="url(#glow)">
+    <!-- Top arrow (canvas to JSON) -->
+    <path d="M 0,20 L 60,20" stroke="url(#syncGrad)" stroke-width="3" fill="none"/>
+    <polygon points="60,20 52,15 52,25" fill="#00d9ff"/>
+
+    <!-- Bottom arrow (JSON to canvas) -->
+    <path d="M 60,50 L 0,50" stroke="url(#syncGrad)" stroke-width="3" fill="none"/>
+    <polygon points="0,50 8,45 8,55" fill="#0099ff"/>
+
+    <!-- Sync symbol -->
+    <circle cx="30" cy="35" r="12" fill="none" stroke="#00d9ff" stroke-width="1.5" opacity="0.5"/>
+    <text x="30" y="39" font-family="Arial, sans-serif" font-size="12" fill="#00d9ff" text-anchor="middle" font-weight="bold">&#x21C4;</text>
+  </g>
+
+  <!-- Right side: JSON representation -->
+  <g transform="translate(280, 35)">
+    <!-- JSON editor frame -->
+    <rect x="0" y="0" width="140" height="130" fill="#0f0f23" stroke="#3a3a5c" stroke-width="2" rx="6"/>
+
+    <!-- JSON content -->
+    <text font-family="monospace" font-size="9" fill="#6b7280">
+      <tspan x="10" y="22" fill="#c792ea">{</tspan>
+      <tspan x="15" y="36" fill="#82aaff">"type"</tspan><tspan fill="#6b7280">:</tspan><tspan fill="#c3e88d"> "rect"</tspan><tspan fill="#6b7280">,</tspan>
+      <tspan x="15" y="50" fill="#82aaff">"x"</tspan><tspan fill="#6b7280">:</tspan><tspan fill="#f78c6c"> 120</tspan><tspan fill="#6b7280">,</tspan>
+      <tspan x="15" y="64" fill="#82aaff">"y"</tspan><tspan fill="#6b7280">:</tspan><tspan fill="#f78c6c"> 85</tspan><tspan fill="#6b7280">,</tspan>
+      <tspan x="15" y="78" fill="#82aaff">"meta"</tspan><tspan fill="#6b7280">: {</tspan>
+      <tspan x="22" y="92" fill="#82aaff">"label"</tspan><tspan fill="#6b7280">:</tspan><tspan fill="#c3e88d"> "API"</tspan>
+      <tspan x="15" y="106" fill="#6b7280">}</tspan>
+      <tspan x="10" y="120" fill="#c792ea">}</tspan>
+    </text>
+  </g>
+
+  <!-- Project name -->
+  <g transform="translate(460, 60)">
+    <text font-family="Arial, sans-serif" font-size="52" font-weight="bold" fill="#ffffff">
+      <tspan>Picto</tspan><tspan fill="#00d9ff">Sync</tspan>
+    </text>
+
+    <!-- Tagline -->
+    <text x="0" y="40" font-family="Arial, sans-serif" font-size="14" fill="#8b8ba7">
+      Diagram Annotation with AI-Powered Extraction
+    </text>
+
+    <!-- Feature badges -->
+    <g transform="translate(0, 55)">
+      <!-- PyQt6 badge -->
+      <rect x="0" y="0" width="52" height="20" fill="#41cd52" rx="4"/>
+      <text x="26" y="14" font-family="Arial, sans-serif" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="bold">PyQt6</text>
+
+      <!-- OpenCV badge -->
+      <rect x="58" y="0" width="58" height="20" fill="#5c3ee8" rx="4"/>
+      <text x="87" y="14" font-family="Arial, sans-serif" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="bold">OpenCV</text>
+
+      <!-- Gemini badge -->
+      <rect x="122" y="0" width="56" height="20" fill="#4285f4" rx="4"/>
+      <text x="150" y="14" font-family="Arial, sans-serif" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="bold">Gemini</text>
+    </g>
+  </g>
+
+  <!-- Decorative corner elements -->
+  <path d="M 780,10 L 790,10 L 790,20" stroke="#3a3a5c" stroke-width="2" fill="none"/>
+  <path d="M 10,190 L 10,180 L 20,180" stroke="#3a3a5c" stroke-width="2" fill="none"/>
+</svg>

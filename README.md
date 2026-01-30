@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.svg" alt="PictoSync Banner" width="800"/>
+</p>
+
 # PictoSync
 
 **v1.1** | PNG Image Canvas Tool for Object Synchronization
