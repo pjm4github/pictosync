@@ -87,10 +87,23 @@ class DraftDock(QDockWidget):
         """Get the current JSON text content."""
         return self.text.toPlainText()
 
+    def _scroll_block_to_top(self, block_position: int):
+        """Scroll the editor so the block at the given document position is at the viewport top.
+
+        QPlainTextEdit's vertical scrollbar operates in block (line) units,
+        so we set the scrollbar value directly to the target block number.
+        """
+        doc = self.text.document()
+        block = doc.findBlock(block_position)
+        if not block.isValid():
+            return
+        sb = self.text.verticalScrollBar()
+        sb.setValue(block.blockNumber())
+
     def scroll_to_id_top(self, ann_id: str, suppress_signal: bool = True) -> bool:
         """
-        Scroll the editor to show the annotation's "id" field at the top.
-        Places cursor at the "id" key for reliable positioning after fold operations.
+        Scroll the editor to show the annotation at the top of the viewport.
+        Finds the opening brace of the annotation object and scrolls it to the top.
         If suppress_signal is True, prevents emitting cursor_annotation_changed.
         """
         if not ann_id:
@@ -113,11 +126,30 @@ class DraftDock(QDockWidget):
             if id_pos < 0:
                 return False
 
-            # Position cursor at the "id" key (not the opening brace)
-            # This is more reliable after fold operations
+            # Scan backward from the "id" field to find the opening brace
+            # of this annotation object, so we scroll the whole object into view
+            target_pos = id_pos
+            brace_depth = 0
+            in_string = False
+            for i in range(id_pos - 1, -1, -1):
+                ch = full[i]
+                if ch == '"' and (i == 0 or full[i - 1] != '\\'):
+                    in_string = not in_string
+                    continue
+                if in_string:
+                    continue
+                if ch == '}':
+                    brace_depth += 1
+                elif ch == '{':
+                    if brace_depth == 0:
+                        target_pos = i
+                        break
+                    brace_depth -= 1
+
+            # Position cursor at the target line
             doc = self.text.document()
             cursor = QTextCursor(doc)
-            cursor.setPosition(id_pos)
+            cursor.setPosition(target_pos)
             cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
 
             self.text.setTextCursor(cursor)
@@ -125,12 +157,8 @@ class DraftDock(QDockWidget):
             # Update the tracked annotation ID
             self.text._current_annotation_id = ann_id
 
-            # Scroll so the "id" line is at the top of the viewport
-            # First ensure it's visible, then adjust to put it at top
-            self.text.ensureCursorVisible()
-            rect = self.text.cursorRect(cursor)
-            sb = self.text.verticalScrollBar()
-            sb.setValue(sb.value() + rect.top())
+            # Scroll the target block to the top of the viewport
+            self._scroll_block_to_top(cursor.position())
             return True
         finally:
             if suppress_signal:
@@ -168,14 +196,12 @@ class DraftDock(QDockWidget):
             cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
 
             self.text.setTextCursor(cursor)
-            self.text.ensureCursorVisible()
 
             # Update the tracked annotation ID
             self.text._current_annotation_id = ann_id
 
-            rect = self.text.cursorRect(cursor)
-            sb = self.text.verticalScrollBar()
-            sb.setValue(sb.value() + rect.top())
+            # Scroll the text field block to the top of the viewport
+            self._scroll_block_to_top(cursor.position())
             return True
         finally:
             if suppress_signal:

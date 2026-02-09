@@ -29,7 +29,10 @@
           { "$ref": "#/$defs/roundedRectAnnotation" },
           { "$ref": "#/$defs/ellipseAnnotation" },
           { "$ref": "#/$defs/lineAnnotation" },
-          { "$ref": "#/$defs/textAnnotation" }
+          { "$ref": "#/$defs/textAnnotation" },
+          { "$ref": "#/$defs/hexagonAnnotation" },
+          { "$ref": "#/$defs/cylinderAnnotation" },
+          { "$ref": "#/$defs/blockArrowAnnotation" }
         ]
       }
     }
@@ -83,7 +86,7 @@
             "y": { "type": "number", "description": "Y of top-left corner" },
             "w": { "type": "number", "minimum": 1, "description": "Width" },
             "h": { "type": "number", "minimum": 1, "description": "Height" },
-            "radius": { "type": "number", "minimum": 0, "default": 10, "description": "Corner radius" }
+            "adjust1": { "type": "number", "minimum": 0, "default": 10, "description": "Corner radius in pixels" }
           }
         },
         "meta": {
@@ -201,6 +204,106 @@
             "label": { "type": "string", "description": "Category or role" },
             "note": { "type": "string", "description": "Additional context" }
           }
+        }
+      }
+    },
+    "hexagonAnnotation": {
+      "type": "object",
+      "description": "A flat-top hexagon element (external systems, processes, decision points)",
+      "required": ["kind", "geom"],
+      "properties": {
+        "kind": {
+          "const": "hexagon"
+        },
+        "geom": {
+          "type": "object",
+          "required": ["x", "y", "w", "h"],
+          "properties": {
+            "x": { "type": "number", "description": "X of bounding box top-left" },
+            "y": { "type": "number", "description": "Y of bounding box top-left" },
+            "w": { "type": "number", "minimum": 1, "description": "Width" },
+            "h": { "type": "number", "minimum": 1, "description": "Height" },
+            "adjust1": { "type": "number", "minimum": 0, "maximum": 0.5, "default": 0.25, "description": "Indent ratio for vertices" }
+          }
+        },
+        "meta": {
+          "type": "object",
+          "properties": {
+            "label": { "type": "string", "description": "Primary label/name" },
+            "tech": { "type": "string", "description": "Technology or type" },
+            "note": { "type": "string", "description": "Description or notes" }
+          }
+        },
+        "text": {
+          "type": "string",
+          "description": "C4 format: 'Label [Tech]\\nDescription'"
+        }
+      }
+    },
+    "cylinderAnnotation": {
+      "type": "object",
+      "description": "A 3D cylinder element (databases, data stores, storage)",
+      "required": ["kind", "geom"],
+      "properties": {
+        "kind": {
+          "const": "cylinder"
+        },
+        "geom": {
+          "type": "object",
+          "required": ["x", "y", "w", "h"],
+          "properties": {
+            "x": { "type": "number", "description": "X of bounding box top-left" },
+            "y": { "type": "number", "description": "Y of bounding box top-left" },
+            "w": { "type": "number", "minimum": 1, "description": "Width" },
+            "h": { "type": "number", "minimum": 1, "description": "Height" },
+            "adjust1": { "type": "number", "minimum": 0.1, "maximum": 0.5, "default": 0.15, "description": "Cap ellipse height ratio" }
+          }
+        },
+        "meta": {
+          "type": "object",
+          "properties": {
+            "label": { "type": "string", "description": "Database or store name" },
+            "tech": { "type": "string", "description": "Database technology (PostgreSQL, MongoDB, Redis, etc.)" },
+            "note": { "type": "string", "description": "Description or notes" }
+          }
+        },
+        "text": {
+          "type": "string",
+          "description": "C4 format: 'Label [Tech]\\nDescription'"
+        }
+      }
+    },
+    "blockArrowAnnotation": {
+      "type": "object",
+      "description": "A block arrow element (data flow direction, process flow, major transitions)",
+      "required": ["kind", "geom"],
+      "properties": {
+        "kind": {
+          "const": "blockarrow"
+        },
+        "geom": {
+          "type": "object",
+          "required": ["x", "y", "w", "h"],
+          "properties": {
+            "x": { "type": "number", "description": "X of bounding box top-left" },
+            "y": { "type": "number", "description": "Y of bounding box top-left" },
+            "w": { "type": "number", "minimum": 1, "description": "Width" },
+            "h": { "type": "number", "minimum": 1, "description": "Height" },
+            "adjust2": { "type": "number", "minimum": 10, "default": 15, "description": "Arrow head length in pixels" },
+            "adjust1": { "type": "number", "minimum": 0.2, "maximum": 0.9, "default": 0.5, "description": "Shaft width ratio" }
+          }
+        },
+        "meta": {
+          "type": "object",
+          "properties": {
+            "label": { "type": "string", "description": "Flow or action name" },
+            "tech": { "type": "string", "description": "Protocol or method" },
+            "note": { "type": "string", "description": "Description or notes" }
+          }
+        },
+        "text": {
+          "type": "string",
+          "description": "C4 format: 'Label [Tech]\\nDescription'"
         }
       }
     }

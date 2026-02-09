@@ -70,7 +70,7 @@ compile_ui_if_needed()
 from PIL import Image
 
 from PyQt6.QtCore import Qt, QRectF, QFileInfo, QSize, QTimer, QThread
-from PyQt6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QKeySequence, QPen, QPixmap
+from PyQt6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QKeySequence, QPen, QPixmap, QUndoStack
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -101,11 +101,17 @@ from canvas import (
     MetaEllipseItem,
     MetaLineItem,
     MetaTextItem,
+    MetaHexagonItem,
+    MetaCylinderItem,
+    MetaBlockArrowItem,
 )
 from editor import DraftDock
 from properties import PropertyPanel
 from gemini import ExtractWorker
 from styles import STYLES, DEFAULT_STYLE, CANVAS_TEXT_COLORS, LINE_NUMBER_COLORS
+from pptx_export import export_to_pptx
+from settings import SettingsManager, get_settings
+from debug_trace import trace, trace_exception, close_log
 
 # Optional alignment import (requires opencv-python)
 try:
@@ -117,38 +123,9 @@ except ImportError:
     HAS_ALIGNMENT = False
 
 
-class SettingsDialog(QDialog):
-    """Settings dialog for application preferences."""
-
-    def __init__(self, current_style: str, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Settings")
-        self.setMinimumWidth(350)
-
-        layout = QVBoxLayout(self)
-
-        # Form layout for settings
-        form = QFormLayout()
-        layout.addLayout(form)
-
-        # Style picker
-        self.style_combo = QComboBox()
-        self.style_combo.addItems(list(STYLES.keys()))
-        if current_style in STYLES:
-            self.style_combo.setCurrentText(current_style)
-        form.addRow("Theme:", self.style_combo)
-
-        # Dialog buttons
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
-    def selected_style(self) -> str:
-        """Return the selected style name."""
-        return self.style_combo.currentText()
+# Import comprehensive settings dialog
+from settings_dialog import SettingsDialog
+from undo_commands import DeleteItemCommand, DeleteMultipleItemsCommand, AddItemCommand
 
 
 # Mapping from style display names to icon directory names
@@ -192,10 +169,15 @@ def create_icon_with_states(icon_name: str, style: str) -> QIcon:
 
 
 class MainWindow(QMainWindow):
-    """Main application window for the Diagram Overlay Annotator."""
+    """Main application window for the Diagram Overlay Annotator.
 
-    def __init__(self):
+    Args:
+        settings_manager: The SettingsManager instance for application settings.
+    """
+
+    def __init__(self, settings_manager: SettingsManager):
         super().__init__()
+        self.settings_manager = settings_manager
         self.setWindowTitle("PictoSync - Diagram Annotation with AI Extraction")
 
         # Scene and view
@@ -233,9 +215,13 @@ class MainWindow(QMainWindow):
         self.align_act: Optional[QAction] = None
         self.align_line_act: Optional[QAction] = None
 
-        # Build UI
-        self._build_toolbar()
+        # Undo/Redo stack
+        self.undo_stack = QUndoStack(self)
+        self.undo_stack.setUndoLimit(100)  # Limit undo history
+
+        # Build UI (menus first since toolbar references menu actions)
         self._build_menus()
+        self._build_toolbar()
 
         # Connect signals
         self.scene.selectionChanged.connect(self.on_selection_changed)
@@ -321,12 +307,30 @@ class MainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
+        export_pptx = QAction("Export PowerPoint...", self)
+        export_pptx.triggered.connect(self.export_pptx_dialog)
+        file_menu.addAction(export_pptx)
+
+        file_menu.addSeparator()
+
         exit_act = QAction("E&xit", self)
         exit_act.triggered.connect(self.close)
         file_menu.addAction(exit_act)
 
         # Edit menu
         edit_menu = menubar.addMenu("&Edit")
+
+        # Undo/Redo (will be connected to undo_stack in _build_toolbar)
+        self._menu_undo_act = QAction("Undo", self)
+        self._menu_undo_act.setShortcut(QKeySequence.StandardKey.Undo)
+        edit_menu.addAction(self._menu_undo_act)
+
+        self._menu_redo_act = QAction("Redo", self)
+        self._menu_redo_act.setShortcut(QKeySequence.StandardKey.Redo)
+        edit_menu.addAction(self._menu_redo_act)
+
+        edit_menu.addSeparator()
+
         delete_act = QAction("Delete Selected", self)
         delete_act.setShortcut(QKeySequence(Qt.Key.Key_Delete))
         delete_act.triggered.connect(self.delete_selected_items)
@@ -337,6 +341,38 @@ class MainWindow(QMainWindow):
         settings_act = QAction("Settings...", self)
         settings_act.triggered.connect(self.show_settings_dialog)
         edit_menu.addAction(settings_act)
+
+        # View menu
+        view_menu = menubar.addMenu("&View")
+
+        zoom_in_act = QAction("Zoom In", self)
+        zoom_in_act.setShortcut(QKeySequence.StandardKey.ZoomIn)
+        zoom_in_act.triggered.connect(lambda: self.view.zoom_in())
+        view_menu.addAction(zoom_in_act)
+
+        zoom_out_act = QAction("Zoom Out", self)
+        zoom_out_act.setShortcut(QKeySequence.StandardKey.ZoomOut)
+        zoom_out_act.triggered.connect(lambda: self.view.zoom_out())
+        view_menu.addAction(zoom_out_act)
+
+        view_menu.addSeparator()
+
+        zoom_fit_act = QAction("Zoom to Fit", self)
+        zoom_fit_act.setShortcut("F")
+        zoom_fit_act.triggered.connect(self._on_zoom_fit)
+        view_menu.addAction(zoom_fit_act)
+
+        zoom_reset_act = QAction("Zoom 100%", self)
+        zoom_reset_act.setShortcut("1")
+        zoom_reset_act.triggered.connect(lambda: self.view.zoom_reset())
+        view_menu.addAction(zoom_reset_act)
+
+        view_menu.addSeparator()
+
+        self._menu_zoom_region_act = QAction("Zoom to Region", self)
+        self._menu_zoom_region_act.setShortcut("Z")
+        self._menu_zoom_region_act.setCheckable(True)
+        view_menu.addAction(self._menu_zoom_region_act)
 
     def _build_toolbar(self):
         """Build the application toolbar."""
@@ -367,7 +403,10 @@ class MainWindow(QMainWindow):
         self.act_ellipse = add_mode_action("Ellipse", Mode.ELLIPSE, "E", "ellipse")
         self.act_line = add_mode_action("Line", Mode.LINE, "L", "line")
         self.act_text = add_mode_action("Text", Mode.TEXT, "T", "text")
-        self.mode_actions = [self.act_select, self.act_rect, self.act_rrect, self.act_ellipse, self.act_line, self.act_text]
+        self.act_hexagon = add_mode_action("Hexagon", Mode.HEXAGON, "H", "hexagon")
+        self.act_cylinder = add_mode_action("Cylinder", Mode.CYLINDER, "Y", "cylinder")
+        self.act_blockarrow = add_mode_action("Block Arrow", Mode.BLOCKARROW, "A", "blockarrow")
+        self.mode_actions = [self.act_select, self.act_rect, self.act_rrect, self.act_ellipse, self.act_line, self.act_text, self.act_hexagon, self.act_cylinder, self.act_blockarrow]
         self.act_select.setChecked(True)
 
         tb.addSeparator()
@@ -422,6 +461,50 @@ class MainWindow(QMainWindow):
         self.extract_act.triggered.connect(self.auto_extract)
         self._icon_actions[self.extract_act] = "extract"
         tb.addAction(self.extract_act)
+
+        tb.addSeparator()
+
+        # Undo/Redo actions
+        self.undo_act = self.undo_stack.createUndoAction(self, "Undo")
+        self.undo_act.setShortcut(QKeySequence.StandardKey.Undo)
+        self._icon_actions[self.undo_act] = "undo"
+        tb.addAction(self.undo_act)
+
+        self.redo_act = self.undo_stack.createRedoAction(self, "Redo")
+        self.redo_act.setShortcut(QKeySequence.StandardKey.Redo)
+        self._icon_actions[self.redo_act] = "redo"
+        tb.addAction(self.redo_act)
+
+        tb.addSeparator()
+
+        # Zoom actions
+        self.zoom_region_act = QAction("Zoom Region", self)
+        self.zoom_region_act.setCheckable(True)
+        # Shortcut is on menu action, synced via toggled signal
+        self.zoom_region_act.triggered.connect(self._on_zoom_region_triggered)
+        self._icon_actions[self.zoom_region_act] = "zoom_region"
+        tb.addAction(self.zoom_region_act)
+
+        self.zoom_fit_act = QAction("Zoom Fit", self)
+        self.zoom_fit_act.setShortcut("F")
+        self.zoom_fit_act.triggered.connect(self._on_zoom_fit)
+        self._icon_actions[self.zoom_fit_act] = "zoom_fit"
+        tb.addAction(self.zoom_fit_act)
+
+        # Connect menu actions to toolbar actions
+        # Undo/Redo menu items trigger toolbar actions
+        self._menu_undo_act.triggered.connect(self.undo_act.trigger)
+        self._menu_redo_act.triggered.connect(self.redo_act.trigger)
+        # Keep menu undo/redo enabled state in sync with toolbar
+        self.undo_stack.canUndoChanged.connect(self._menu_undo_act.setEnabled)
+        self.undo_stack.canRedoChanged.connect(self._menu_redo_act.setEnabled)
+        self._menu_undo_act.setEnabled(self.undo_stack.canUndo())
+        self._menu_redo_act.setEnabled(self.undo_stack.canRedo())
+
+        # Sync zoom region menu and toolbar checkable state
+        self._menu_zoom_region_act.triggered.connect(self._on_zoom_region_triggered)
+        self.zoom_region_act.toggled.connect(self._menu_zoom_region_act.setChecked)
+        self._menu_zoom_region_act.toggled.connect(self.zoom_region_act.setChecked)
 
         # Apply initial icons and editor colors
         self._update_toolbar_icons(DEFAULT_STYLE)
@@ -480,7 +563,7 @@ class MainWindow(QMainWindow):
 
         def on_editing_finished():
             # Re-enable mode shortcuts when done editing
-            shortcuts = ["S", "R", "U", "E", "L", "T"]
+            shortcuts = ["S", "R", "U", "E", "L", "T", "H", "Y", "A"]
             for action, shortcut in zip(self.mode_actions, shortcuts):
                 action.setShortcut(shortcut)
 
@@ -494,8 +577,12 @@ class MainWindow(QMainWindow):
         MetaTextItem.on_editing_finished = on_editing_finished
         MetaTextItem.on_text_changed = on_text_changed
 
-        # Set up callback for rounded rect radius changes
-        MetaRoundedRectItem.on_radius_changed = self.props.update_radius_display
+        # Set up callbacks for shape property changes (adjust1/adjust2)
+        MetaRoundedRectItem.on_adjust1_changed = self.props.update_adjust1_display
+        MetaHexagonItem.on_adjust1_changed = self.props.update_adjust1_display
+        MetaCylinderItem.on_adjust1_changed = self.props.update_adjust1_display
+        MetaBlockArrowItem.on_adjust1_changed = self.props.update_adjust1_display
+        MetaBlockArrowItem.on_adjust2_changed = self.props.update_adjust2_display
 
         # Set initial default text color based on current theme
         self._update_default_text_color(DEFAULT_STYLE)
@@ -533,6 +620,9 @@ class MainWindow(QMainWindow):
             Mode.ELLIPSE: self.act_ellipse,
             Mode.LINE: self.act_line,
             Mode.TEXT: self.act_text,
+            Mode.HEXAGON: self.act_hexagon,
+            Mode.CYLINDER: self.act_cylinder,
+            Mode.BLOCKARROW: self.act_blockarrow,
         }
         for a in self.mode_actions:
             a.setChecked(False)
@@ -818,32 +908,60 @@ class MainWindow(QMainWindow):
             self._push_draft_data_to_editor(status="Overlay cleared; draft JSON updated.", focus_id=None)
 
     def delete_selected_items(self):
-        """Delete selected items from the scene."""
-        items = list(self.scene.selectedItems())
+        """Delete selected items from the scene (with undo support)."""
+        items = [it for it in self.scene.selectedItems()
+                 if it is not self.bg_item and hasattr(it, "meta")]
         if not items:
             return
 
-        deleted_ids: List[str] = []
-        for it in items:
-            if it is self.bg_item:
-                continue
-            if hasattr(it, "meta"):
-                ann_id = it.data(ANN_ID_KEY)
-                if isinstance(ann_id, str):
-                    deleted_ids.append(ann_id)
-                self.scene.removeItem(it)
+        # Create undo command
+        def on_item_removed(item):
+            """Callback when item is removed (redo/initial delete)."""
+            ann_id = item.data(ANN_ID_KEY)
+            if self._link_enabled and self._draft_data and isinstance(ann_id, str):
+                anns = self._draft_data.get("annotations", [])
+                if isinstance(anns, list):
+                    self._draft_data["annotations"] = [
+                        a for a in anns if not (isinstance(a, dict) and a.get("id") == ann_id)
+                    ]
+                    self._rebuild_id_index()
 
+        def on_item_restored(item):
+            """Callback when item is restored (undo)."""
+            # Re-add to JSON
+            if self._link_enabled and self._draft_data and hasattr(item, "to_record"):
+                rec = item.to_record()
+                anns = self._draft_data.get("annotations", [])
+                if isinstance(anns, list):
+                    anns.append(rec)
+                    self._draft_data["annotations"] = anns
+                    self._rebuild_id_index()
+
+        # Use DeleteMultipleItemsCommand for multiple items
+        if len(items) > 1:
+            cmd = DeleteMultipleItemsCommand(
+                self.scene, items,
+                on_add_callback=on_item_restored,
+                on_remove_callback=on_item_removed
+            )
+        else:
+            cmd = DeleteItemCommand(
+                self.scene, items[0],
+                on_add_callback=on_item_restored,
+                on_remove_callback=on_item_removed
+            )
+
+        self.undo_stack.push(cmd)
         self.props.set_item(None)
 
-        if self._link_enabled and deleted_ids and self._draft_data:
-            anns = self._draft_data.get("annotations", [])
-            if isinstance(anns, list):
-                anns = [a for a in anns if not (isinstance(a, dict) and a.get("id") in deleted_ids)]
-                self._draft_data["annotations"] = anns
-                self._rebuild_id_index()
-                self._push_draft_data_to_editor(status=f"Deleted {len(deleted_ids)} item(s); draft JSON updated.", focus_id=None)
+        # Update draft editor
+        if self._link_enabled and self._draft_data:
+            self._push_draft_data_to_editor(
+                status=f"Deleted {len(items)} item(s); draft JSON updated.",
+                focus_id=None
+            )
 
-        self.statusBar().showMessage("Deleted selected items.")
+        self.statusBar().showMessage(f"Deleted {len(items)} item(s).")
 
     def keyPressEvent(self, event):
         """Handle key press events."""
@@ -852,14 +970,36 @@ class MainWindow(QMainWindow):
             return
         super().keyPressEvent(event)
 
+    def _on_zoom_region_triggered(self, checked: bool):
+        """Handle zoom region tool activation."""
+        if checked:
+            # Enable zoom region mode with callback to uncheck the action
+            def on_zoom_complete():
+                self.zoom_region_act.setChecked(False)
+                self.statusBar().showMessage("Zoomed to region.")
+
+            self.view.set_zoom_region_mode(True, on_complete=on_zoom_complete)
+            self.statusBar().showMessage("Drag to select zoom region...")
+        else:
+            self.view.set_zoom_region_mode(False)
+            self.statusBar().clearMessage()
+
+    def _on_zoom_fit(self):
+        """Zoom to fit all content in view."""
+        self.view.zoom_fit()
+        self.zoom_region_act.setChecked(False)
+        self.statusBar().showMessage("Zoomed to fit.")
+
     def show_settings_dialog(self):
         """Show the settings dialog."""
         app = QApplication.instance()
         current_style = getattr(app, "_current_style", DEFAULT_STYLE)
 
-        dialog = SettingsDialog(current_style, self)
+        dialog = SettingsDialog(self.settings_manager, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            new_style = dialog.selected_style()
+            # Settings are saved by the dialog on OK
+            # Check if theme changed and apply it
+            new_style = self.settings_manager.settings.theme
             if new_style != current_style and new_style in STYLES:
                 app.setStyleSheet(STYLES[new_style])
                 app._current_style = new_style
@@ -868,6 +1008,8 @@ class MainWindow(QMainWindow):
                 self._update_editor_colors(new_style)
                 self._update_draft_dock_icons(new_style)
                 self.statusBar().showMessage(f"Theme changed to: {new_style}")
+            else:
+                self.statusBar().showMessage("Settings saved.")
 
     def save_draft_text_dialog(self):
         """Save draft JSON text to a file."""
@@ -917,6 +1059,40 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Saved overlay: {path}")
         except Exception as e:
             QMessageBox.critical(self, "Save failed", str(e))
+
+    def export_pptx_dialog(self):
+        """Export canvas to PowerPoint file."""
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export PowerPoint", "", "PowerPoint (*.pptx)"
+        )
+        if not path:
+            return
+
+        # Ensure .pptx extension
+        if not path.lower().endswith(".pptx"):
+            path += ".pptx"
+
+        # Collect annotations from canvas
+        annotations = []
+        for it in self.scene.items():
+            if hasattr(it, "to_record") and hasattr(it, "meta"):
+                annotations.append(it.to_record())
+        annotations.reverse()  # Maintain z-order
+
+        # Get scene rect for proper sizing
+        sr = self.scene.sceneRect()
+        scene_rect = {"x": sr.x(), "y": sr.y(), "w": sr.width(), "h": sr.height()}
+
+        try:
+            export_to_pptx(
+                annotations=annotations,
+                output_path=path,
+                scene_rect=scene_rect,
+                background_png=self.bg_path,
+            )
+            self.statusBar().showMessage(f"Exported PowerPoint: {path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export failed", str(e))
 
     def load_overlay_json_dialog(self):
         """Load overlay JSON from a file."""
@@ -1053,7 +1229,7 @@ class MainWindow(QMainWindow):
 
                     norm = False
                     try:
-                        if kind in ("rect", "ellipse", "roundedrect") and "x" in geom and "w" in geom:
+                        if kind in ("rect", "ellipse", "roundedrect", "hexagon", "cylinder", "blockarrow") and "x" in geom and "w" in geom:
                             norm = _looks_normalized(float(geom["x"])) and _looks_normalized(float(geom["w"]))
                         elif kind == "line" and "x1" in geom and "x2" in geom:
                             norm = _looks_normalized(float(geom["x1"])) and _looks_normalized(float(geom["x2"]))
@@ -1121,11 +1297,14 @@ class MainWindow(QMainWindow):
 
     def _apply_json_text_to_scene(self):
         """Apply JSON text changes to the scene (debounced)."""
+        trace("_apply_json_text_to_scene called", "SYNC")
         if self._syncing_from_scene or not self._link_enabled:
+            trace("_apply_json_text_to_scene skipped (syncing or not linked)", "SYNC")
             return
 
         txt = self.draft.get_json_text()
         try:
+            trace("Parsing JSON...", "SYNC")
             data = json.loads(txt)
             if not (isinstance(data, dict) and isinstance(data.get("annotations", None), list)):
                 self.draft.set_status("Invalid schema: must contain 'annotations' list.")
@@ -1152,8 +1331,11 @@ class MainWindow(QMainWindow):
                         if isinstance(rec["style"].get("text"), dict):
                             rec["style"]["text"].setdefault("size_pt", 12)
 
+            trace("Rebuilding ID index...", "SYNC")
             self._rebuild_id_index()
+            trace("Rebuilding scene from draft...", "SYNC")
             self._rebuild_scene_from_draft()
+            trace("Scene rebuild complete", "SYNC")
 
             if changed:
                 self._push_draft_data_to_editor(status="Added missing ids; scene updated.", focus_id=None)
@@ -1164,7 +1346,9 @@ class MainWindow(QMainWindow):
 
     def _rebuild_scene_from_draft(self):
         """Rebuild the scene from draft data."""
+        trace("_rebuild_scene_from_draft called", "REBUILD")
         if not self._draft_data:
+            trace("No draft data, returning", "REBUILD")
             return
 
         # Remember selected item ID to restore selection after rebuild
@@ -1176,8 +1360,10 @@ class MainWindow(QMainWindow):
         self._syncing_from_json = True
         try:
             # Clear property panel before removing items
+            trace("Clearing property panel", "REBUILD")
             self.props.set_item(None)
 
+            trace("Removing existing items from scene", "REBUILD")
             for it in list(self.scene.items()):
                 if it is self.bg_item or it is self._png_hidden_indicator:
                     continue
@@ -1185,10 +1371,13 @@ class MainWindow(QMainWindow):
                     self.scene.removeItem(it)
 
             anns = self._draft_data.get("annotations", [])
+            trace(f"Adding {len(anns) if isinstance(anns, list) else 0} items to scene", "REBUILD")
             if isinstance(anns, list):
-                for rec in anns:
+                for idx, rec in enumerate(anns):
                     if isinstance(rec, dict):
+                        trace(f"Adding item {idx+1}/{len(anns)}: {rec.get('kind', '?')} id={rec.get('id', '?')}", "REBUILD")
                         self._add_item_from_record(rec, on_change=self._on_scene_item_changed)
+                        trace(f"Item {idx+1} added successfully", "REBUILD")
 
             # Restore selection if the item still exists
             if selected_id:
@@ -1362,6 +1551,7 @@ class MainWindow(QMainWindow):
 
     def _add_item_from_record(self, rec: Dict[str, Any], on_change=None):
         """Create a canvas item from a JSON record."""
+        trace(f"_add_item_from_record: kind={rec.get('kind')}, id={rec.get('id')}", "ITEM")
         kind = rec.get("kind")
         ann_id = rec.get("id")
         if not isinstance(ann_id, str) or not ann_id:
@@ -1391,52 +1581,76 @@ class MainWindow(QMainWindow):
 
         if kind == "rect":
             g = rec.get("geom", {})
+            trace(f"  Creating MetaRectItem at ({g.get('x')}, {g.get('y')})", "ITEM")
             it = MetaRectItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]), ann_id, on_change)
+            trace("  Setting meta", "ITEM")
             it.set_meta(meta)
             it.meta.kind = "rect"
+            trace("  Applying style", "ITEM")
             it.apply_style_from_record(rec)
-            it._apply_pen_brush()  # Apply pen with dash pattern
+            it._apply_pen_brush()
+            trace("  Updating label text", "ITEM")
             it._update_label_text()
+            trace("  Adding to scene", "ITEM")
             self.scene.addItem(it)
             if z_index:
                 it.setZValue(z_index)
+            trace("  Rect item complete", "ITEM")
 
         elif kind == "roundedrect":
             g = rec.get("geom", {})
-            radius = float(g.get("radius", 10))
-            it = MetaRoundedRectItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]), radius, ann_id, on_change)
+            adjust1 = float(g.get("adjust1", g.get("radius", 10)))  # Support legacy "radius" key
+            trace(f"  Creating MetaRoundedRectItem at ({g.get('x')}, {g.get('y')})", "ITEM")
+            it = MetaRoundedRectItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]), adjust1, ann_id, on_change)
+            trace("  Setting meta", "ITEM")
             it.set_meta(meta)
             it.meta.kind = "roundedrect"
+            trace("  Applying style", "ITEM")
             it.apply_style_from_record(rec)
-            it._apply_pen_brush()  # Apply pen with dash pattern
+            it._apply_pen_brush()
+            trace("  Updating label text", "ITEM")
             it._update_label_text()
+            trace("  Adding to scene", "ITEM")
             self.scene.addItem(it)
             if z_index:
                 it.setZValue(z_index)
+            trace("  RoundedRect item complete", "ITEM")
 
         elif kind == "ellipse":
             g = rec.get("geom", {})
+            trace(f"  Creating MetaEllipseItem at ({g.get('x')}, {g.get('y')})", "ITEM")
             it = MetaEllipseItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]), ann_id, on_change)
+            trace("  Setting meta", "ITEM")
             it.set_meta(meta)
             it.meta.kind = "ellipse"
+            trace("  Applying style", "ITEM")
             it.apply_style_from_record(rec)
-            it._apply_pen_brush()  # Apply pen with dash pattern
+            it._apply_pen_brush()
+            trace("  Updating label text", "ITEM")
             it._update_label_text()
+            trace("  Adding to scene", "ITEM")
             self.scene.addItem(it)
             if z_index:
                 it.setZValue(z_index)
+            trace("  Ellipse item complete", "ITEM")
 
         elif kind == "line":
             g = rec.get("geom", {})
+            trace(f"  Creating MetaLineItem from ({g.get('x1')}, {g.get('y1')}) to ({g.get('x2')}, {g.get('y2')})", "ITEM")
             it = MetaLineItem(float(g["x1"]), float(g["y1"]), float(g["x2"]), float(g["y2"]), ann_id, on_change)
+            trace("  Setting meta", "ITEM")
             it.set_meta(meta)
             it.meta.kind = "line"
+            trace("  Applying style", "ITEM")
             it.apply_style_from_record(rec)
-            it._apply_pen()  # Apply pen with dash pattern
+            it._apply_pen()
+            trace("  Updating label text", "ITEM")
             it._update_label_text()
+            trace("  Adding to scene", "ITEM")
             self.scene.addItem(it)
             if z_index:
                 it.setZValue(z_index)
+            trace("  Line item complete", "ITEM")
 
         elif kind == "text":
             g = rec.get("geom", {})
@@ -1446,6 +1660,46 @@ class MainWindow(QMainWindow):
             it.meta.kind = "text"
             it.apply_style_from_record(rec)
             it._apply_text_style()
+            self.scene.addItem(it)
+            if z_index:
+                it.setZValue(z_index)
+
+        elif kind == "hexagon":
+            g = rec.get("geom", {})
+            adjust1 = float(g.get("adjust1", 0.25))
+            it = MetaHexagonItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]), adjust1, ann_id, on_change)
+            it.set_meta(meta)
+            it.meta.kind = "hexagon"
+            it.apply_style_from_record(rec)
+            it._apply_pen_brush()
+            it._update_label_text()
+            self.scene.addItem(it)
+            if z_index:
+                it.setZValue(z_index)
+
+        elif kind == "cylinder":
+            g = rec.get("geom", {})
+            adjust1 = float(g.get("adjust1", 0.15))
+            it = MetaCylinderItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]), adjust1, ann_id, on_change)
+            it.set_meta(meta)
+            it.meta.kind = "cylinder"
+            it.apply_style_from_record(rec)
+            it._apply_pen_brush()
+            it._update_label_text()
+            self.scene.addItem(it)
+            if z_index:
+                it.setZValue(z_index)
+
+        elif kind == "blockarrow":
+            g = rec.get("geom", {})
+            adjust2 = float(g.get("adjust2", 15))
+            adjust1 = float(g.get("adjust1", 0.5))
+            it = MetaBlockArrowItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]), adjust2, adjust1, ann_id, on_change)
+            it.set_meta(meta)
+            it.meta.kind = "blockarrow"
+            it.apply_style_from_record(rec)
+            it._apply_pen_brush()
+            it._update_label_text()
             self.scene.addItem(it)
             if z_index:
                 it.setZValue(z_index)
@@ -1481,8 +1735,8 @@ class MainWindow(QMainWindow):
                 self.align_line_act.setEnabled(False)
 
     def _is_alignable_item(self, item) -> bool:
-        """Check if an item is alignable (rect, roundedrect, or ellipse)."""
-        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem))
+        """Check if an item is alignable (rect, roundedrect, ellipse, hexagon, cylinder, blockarrow)."""
+        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem))
 
     def align_selected_to_png(self):
         """Start alignment of the selected item to match the PNG visual."""
@@ -1512,7 +1766,7 @@ class MainWindow(QMainWindow):
                 "y": pos.y(),
                 "w": item._width,
                 "h": item._height,
-                "radius": item._radius,
+                "adjust1": item._adjust1,
             }
             kind = "roundedrect"
         else:
@@ -1588,8 +1842,8 @@ class MainWindow(QMainWindow):
             item.setPos(QPointF(new_x, new_y))
             item._width = new_w
             item._height = new_h
-            if "radius" in result:
-                item._radius = float(result["radius"])
+            if "adjust1" in result:
+                item._adjust1 = float(result["adjust1"])
             item._update_path()
             item._update_label_position()
         else:
@@ -1636,8 +1890,8 @@ class MainWindow(QMainWindow):
             extras.append(f"pen_width={result['pen_width']}")
         if "pen_color" in result:
             extras.append(f"pen_color={result['pen_color']}")
-        if "radius" in result:
-            extras.append(f"radius={result['radius']}")
+        if "adjust1" in result:
+            extras.append(f"adjust1={result['adjust1']}")
         if extras:
             msg += f" ({', '.join(extras)})"
         self.statusBar().showMessage(msg)
@@ -1820,14 +2074,57 @@ class MainWindow(QMainWindow):
 
 def main():
     """Application entry point."""
+    trace("Application starting", "MAIN")
     app = QApplication(sys.argv)
-    app.setStyleSheet(STYLES[DEFAULT_STYLE])
-    app._current_style = DEFAULT_STYLE
-    w = MainWindow()
+
+    # Load settings (use singleton to ensure single instance)
+    trace("Loading settings", "MAIN")
+    settings_manager = get_settings()
+
+    # Ensure settings file has all sections
+    settings_manager.ensure_file_complete()
+
+    # Apply saved theme (or default if not set)
+    initial_style = settings_manager.settings.theme
+    if initial_style not in STYLES:
+        initial_style = DEFAULT_STYLE
+        settings_manager.settings.theme = initial_style
+
+    app.setStyleSheet(STYLES[initial_style])
+    app._current_style = initial_style
+
+    # Save settings on application quit
+    def save_on_quit():
+        trace("Saving settings on quit", "MAIN")
+        settings_manager.save()
+        close_log()
+
+    app.aboutToQuit.connect(save_on_quit)
+
+    trace("Creating MainWindow", "MAIN")
+    w = MainWindow(settings_manager)
     w.resize(1550, 980)
+    trace("Showing MainWindow", "MAIN")
     w.show()
+    trace("Entering event loop", "MAIN")
     sys.exit(app.exec())
 
 
 if __name__ == "__main__":
-    main()
+    # Set up global exception handler to catch crashes
+    def excepthook(exc_type, exc_value, exc_tb):
+        import traceback
+        trace("UNCAUGHT EXCEPTION:", "CRASH")
+        trace("".join(traceback.format_exception(exc_type, exc_value, exc_tb)), "CRASH")
+        close_log()
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+    sys.excepthook = excepthook
+
+    try:
+        main()
+    except Exception as e:
+        trace(f"FATAL: {type(e).__name__}: {e}", "CRASH")
+        trace_exception("Fatal exception")
+        close_log()
+        raise

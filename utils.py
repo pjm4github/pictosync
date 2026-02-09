@@ -99,8 +99,11 @@ def _scale_record(rec: dict, a: float, b: float, normalized: bool) -> dict:
     def fx(v): return float(v) * a
     def fy(v): return float(v) * b
 
+    # Shapes with x, y, w, h bounding box geometry
+    bbox_kinds = ("rect", "ellipse", "roundedrect", "hexagon", "cylinder", "blockarrow")
+
     if normalized:
-        if kind in ("rect", "ellipse", "roundedrect"):
+        if kind in bbox_kinds:
             geom["x"] = fx(geom.get("x", 0))
             geom["y"] = fy(geom.get("y", 0))
             geom["w"] = fx(geom.get("w", 0))
@@ -114,7 +117,7 @@ def _scale_record(rec: dict, a: float, b: float, normalized: bool) -> dict:
             geom["x"] = fx(geom.get("x", 0))
             geom["y"] = fy(geom.get("y", 0))
     else:
-        if kind in ("rect", "ellipse", "roundedrect"):
+        if kind in bbox_kinds:
             geom["x"] = fx(geom.get("x", 0))
             geom["y"] = fy(geom.get("y", 0))
             geom["w"] = fx(geom.get("w", 0))

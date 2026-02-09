@@ -22,8 +22,94 @@ from PyQt6.QtWidgets import (
     QStyleOptionGraphicsItem,
 )
 
-from models import AnnotationMeta, ANN_ID_KEY, HANDLE_SIZE, HIT_DIST, MIN_SIZE
+from models import AnnotationMeta, ANN_ID_KEY
 from canvas.mixins import LinkedMixin, MetaMixin
+from settings import get_settings
+from debug_trace import trace
+
+
+# =============================================================================
+# Cached canvas settings - initialized once at first access to avoid
+# repeated settings lookups during paint operations.
+# =============================================================================
+
+class _CachedCanvasSettings:
+    """Cache for canvas settings values to avoid repeated lookups during paint."""
+
+    _instance = None
+
+    def __init__(self):
+        self._initialized = False
+        # Default values (used if settings unavailable)
+        self.handle_size = 8.0
+        self.hit_distance = 10.0
+        self.min_size = 5.0
+        self.handle_border_color = QColor("#0078D7")
+        self.handle_fill_color = QColor("#FFFFFF")
+        self.selection_color = QColor("#0078D7")
+        self.min_gap_pixels = 2.0
+        self.arrow_min_multiplier = 2
+        self.default_dash_length = 30.0
+        self.default_dash_solid_percent = 50.0
+
+    def _ensure_initialized(self):
+        """Load settings on first access."""
+        if self._initialized:
+            return
+        try:
+            s = get_settings().settings.canvas
+            self.handle_size = s.handles.size
+            self.hit_distance = s.handles.hit_distance
+            self.min_size = s.shapes.min_size
+            self.handle_border_color = QColor(s.handles.border_color)
+            self.handle_fill_color = QColor(s.handles.fill_color)
+            self.selection_color = QColor(s.selection.outline_color)
+            self.min_gap_pixels = s.lines.min_gap_pixels
+            self.arrow_min_multiplier = s.lines.arrow_min_multiplier
+            self.default_dash_length = s.shapes.default_dash_length
+            self.default_dash_solid_percent = s.shapes.default_dash_solid_percent
+        except Exception:
+            pass  # Use defaults
+        self._initialized = True
+
+    @classmethod
+    def get(cls) -> "_CachedCanvasSettings":
+        """Get the singleton instance."""
+        if cls._instance is None:
+            cls._instance = cls()
+        cls._instance._ensure_initialized()
+        return cls._instance
+
+
+# Helper functions to get cached canvas settings
+def _get_handle_size() -> float:
+    """Get handle size from settings. Default: 8.0 pixels."""
+    return _CachedCanvasSettings.get().handle_size
+
+
+def _get_hit_distance() -> float:
+    """Get hit distance from settings. Default: 10.0 pixels."""
+    return _CachedCanvasSettings.get().hit_distance
+
+
+def _get_min_size() -> float:
+    """Get minimum shape size from settings. Default: 5.0 pixels."""
+    return _CachedCanvasSettings.get().min_size
+
+
+def _get_handle_border_color() -> QColor:
+    """Get handle border color from settings. Default: #0078D7 (blue)."""
+    return _CachedCanvasSettings.get().handle_border_color
+
+
+def _get_handle_fill_color() -> QColor:
+    """Get handle fill color from settings. Default: #FFFFFF (white)."""
+    return _CachedCanvasSettings.get().handle_fill_color
+
+
+def _get_selection_color() -> QColor:
+    """Get selection outline color from settings. Default: #0078D7 (blue)."""
+    return _CachedCanvasSettings.get().selection_color
 
 
 def round1(value: float) -> float:
@@ -51,8 +137,8 @@ def _apply_dash_style(pen: QPen, dash_style: str, pattern_length: float, solid_p
         solid_px = pattern_length * solid_percent / 100.0
         gap_px = pattern_length * (100 - solid_percent) / 100.0
 
-        # Ensure minimum gap of 2 pixels so it's always visible
-        min_gap_px = 2.0
+        # Minimum gap from cached settings. Default: 2.0 pixels
+        min_gap_px = _CachedCanvasSettings.get().min_gap_pixels
         if gap_px < min_gap_px:
             gap_px = min_gap_px
             solid_px = max(min_gap_px, pattern_length - gap_px)
@@ -67,10 +153,14 @@ def _apply_dash_style(pen: QPen, dash_style: str, pattern_length: float, solid_p
         pen.setStyle(Qt.PenStyle.SolidLine)
 
 
-def draw_handles(painter: QPainter, handle_positions: Dict[str, QPointF], handle_size: float = HANDLE_SIZE):
+def draw_handles(painter: QPainter, handle_positions: Dict[str, QPointF], handle_size: Optional[float] = None):
     """Draw resize handles at the given positions."""
-    handle_pen = QPen(QColor(0, 120, 215), 1)  # Blue border
-    handle_brush = QBrush(QColor(255, 255, 255))  # White fill
+    # Handle size from settings. Default: 8.0 pixels
+    if handle_size is None:
+        handle_size = _get_handle_size()
+    # Handle colors from settings. Defaults: border=#0078D7 (blue), fill=#FFFFFF (white)
+    handle_pen = QPen(_get_handle_border_color(), 1)
+    handle_brush = QBrush(_get_handle_fill_color())
     painter.setPen(handle_pen)
     painter.setBrush(handle_brush)
 
@@ -79,8 +169,11 @@ def draw_handles(painter: QPainter, handle_positions: Dict[str, QPointF], handle
         painter.drawRect(QRectF(pos.x() - half, pos.y() - half, handle_size, handle_size))
 
 
-def shape_with_handles(base_shape: QPainterPath, handle_positions: Dict[str, QPointF], handle_size: float = HIT_DIST) -> QPainterPath:
+def shape_with_handles(base_shape: QPainterPath, handle_positions: Dict[str, QPointF], handle_size: Optional[float] = None) -> QPainterPath:
     """Create a shape path that includes handle hit areas."""
+    # Hit distance from settings. Default: 10.0 pixels
+    if handle_size is None:
+        handle_size = _get_hit_distance()
     result = QPainterPath(base_shape)
     half = handle_size / 2
     for pos in handle_positions.values():
@@ -92,6 +185,7 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
     """Rectangle item with resizable corners and embedded C4 text label."""
 
     def __init__(self, x: float, y: float, w: float, h: float, ann_id: str, on_change=None):
+        trace(f"MetaRectItem.__init__ start: id={ann_id}", "ITEM_INIT")
         QGraphicsRectItem.__init__(self, QRectF(0, 0, w, h))
         MetaMixin.__init__(self)
         LinkedMixin.__init__(self, ann_id, on_change)
@@ -119,15 +213,22 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
         self.brush_color = QColor(0, 0, 0, 0)
         self.text_color = QColor(self.pen_color)  # Default text color matches border
         self.line_dash = "solid"  # solid | dashed
-        self.dash_pattern_length = 30.0
-        self.dash_solid_percent = 50.0
+        # Dash pattern settings from cached settings. Defaults: length=30.0, solid_percent=50.0
+        trace("  Getting cached settings", "ITEM_INIT")
+        cached = _CachedCanvasSettings.get()
+        self.dash_pattern_length = cached.default_dash_length
+        self.dash_solid_percent = cached.default_dash_solid_percent
+        trace("  Applying pen/brush", "ITEM_INIT")
         self._apply_pen_brush()
 
         # Embedded text for C4 properties
+        trace("  Creating label item", "ITEM_INIT")
         self._label_item = QGraphicsTextItem(self)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        trace("  Updating label position", "ITEM_INIT")
         self._update_label_position()
+        trace(f"MetaRectItem.__init__ complete: id={ann_id}", "ITEM_INIT")
 
     def _apply_pen_brush(self):
         pen = QPen(self.pen_color, self.pen_width)
@@ -137,6 +238,7 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
 
     def _update_label_position(self):
         r = self.rect()
+        # Text padding - using hardcoded default. Default: 4 pixels
         padding = 4
         self._label_item.setTextWidth(max(10, r.width() - 2 * padding))
 
@@ -226,8 +328,10 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
 
     def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
         handles = self._handle_points_scene()
+        # Hit distance from settings. Default: 10.0 pixels
+        hit_dist = _get_hit_distance()
         for k, hp in handles.items():
-            if QLineF(scene_pt, hp).length() <= HIT_DIST:
+            if QLineF(scene_pt, hp).length() <= hit_dist:
                 return k
         return None
 
@@ -295,17 +399,19 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
             elif self._active_handle == "r":
                 right += dx
 
-            if (right - left) < MIN_SIZE:
+            # Minimum size from settings. Default: 5.0 pixels
+            min_size = _get_min_size()
+            if (right - left) < min_size:
                 if self._active_handle in ("tl", "bl", "l"):
-                    left = right - MIN_SIZE
+                    left = right - min_size
                 else:
-                    right = left + MIN_SIZE
+                    right = left + min_size
 
-            if (bottom - top) < MIN_SIZE:
+            if (bottom - top) < min_size:
                 if self._active_handle in ("tl", "tr", "t"):
-                    top = bottom - MIN_SIZE
+                    top = bottom - min_size
                 else:
-                    bottom = top + MIN_SIZE
+                    bottom = top + min_size
 
             new_w = right - left
             new_h = bottom - top
@@ -329,7 +435,8 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
     def boundingRect(self) -> QRectF:
         """Expand bounding rect to include resize handles."""
         r = super().boundingRect()
-        margin = HANDLE_SIZE / 2 + 1
+        # Handle size from settings. Default: 8.0 pixels
+        margin = _get_handle_size() / 2 + 1
         return r.adjusted(-margin, -margin, margin, margin)
 
     def paint(self, painter: QPainter, option, widget=None):
@@ -340,7 +447,8 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
 
         if self.isSelected():
             # Draw selection outline matching the actual rect
-            sel_pen = QPen(QColor(0, 120, 215), 1, Qt.PenStyle.DashLine)
+            # Selection color from settings. Default: #0078D7 (blue)
+            sel_pen = QPen(_get_selection_color(), 1, Qt.PenStyle.DashLine)
             painter.setPen(sel_pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(self.rect())
@@ -392,12 +500,12 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
 
 
 class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
-    """Rounded rectangle item with configurable corner radius."""
+    """Rounded rectangle item with configurable corner radius (adjust1)."""
 
-    # Class-level callback for radius changes (set by MainWindow)
-    on_radius_changed = None  # Called with (item, new_radius) when radius changes via handle drag
+    # Class-level callback for adjust1 changes (set by MainWindow)
+    on_adjust1_changed = None  # Called with (item, new_value) when adjust1 changes via handle drag
 
-    def __init__(self, x: float, y: float, w: float, h: float, radius: float, ann_id: str, on_change=None):
+    def __init__(self, x: float, y: float, w: float, h: float, adjust1: float, ann_id: str, on_change=None):
         QGraphicsPathItem.__init__(self)
         MetaMixin.__init__(self)
         LinkedMixin.__init__(self, ann_id, on_change)
@@ -405,7 +513,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.meta.kind = "roundedrect"
         self._width = w
         self._height = h
-        self._radius = radius
+        self._adjust1 = adjust1
         self.setPos(QPointF(x, y))
         self.setData(ANN_ID_KEY, ann_id)
         self._update_path()
@@ -423,15 +531,17 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._press_scene: Optional[QPointF] = None
         self._start_pos: Optional[QPointF] = None
         self._start_size: Optional[Tuple[float, float]] = None
-        self._start_radius: Optional[float] = None
+        self._start_adjust1: Optional[float] = None
 
         self.pen_color = QColor(Qt.GlobalColor.magenta)
         self.pen_width = 2
         self.brush_color = QColor(0, 0, 0, 0)
         self.text_color = QColor(self.pen_color)  # Default text color matches border
         self.line_dash = "solid"  # solid | dashed
-        self.dash_pattern_length = 30.0
-        self.dash_solid_percent = 50.0
+        # Dash pattern settings from cached settings. Defaults: length=30.0, solid_percent=50.0
+        cached = _CachedCanvasSettings.get()
+        self.dash_pattern_length = cached.default_dash_length
+        self.dash_solid_percent = cached.default_dash_solid_percent
         self._apply_pen_brush()
 
         # Embedded text for C4 properties
@@ -442,7 +552,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def _update_path(self):
         path = QPainterPath()
-        path.addRoundedRect(QRectF(0, 0, self._width, self._height), self._radius, self._radius)
+        path.addRoundedRect(QRectF(0, 0, self._width, self._height), self._adjust1, self._adjust1)
         self.setPath(path)
 
     def _apply_pen_brush(self):
@@ -452,7 +562,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.setBrush(QBrush(self.brush_color))
 
     def _update_label_position(self):
-        padding = 4 + self._radius * 0.3  # Extra padding for rounded corners
+        padding = 4 + self._adjust1 * 0.3  # Extra padding for rounded corners
         self._label_item.setTextWidth(max(10, self._width - 2 * padding))
 
         # Calculate text height after setting width (so wrapping is applied)
@@ -511,11 +621,11 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._update_path()
         self._update_label_position()
 
-    def corner_radius(self) -> float:
-        return self._radius
+    def adjust1(self) -> float:
+        return self._adjust1
 
-    def set_corner_radius(self, r: float):
-        self._radius = max(0, r)
+    def set_adjust1(self, value: float):
+        self._adjust1 = max(0, value)
         self._update_path()
 
     def _handle_points_scene(self) -> Dict[str, QPointF]:
@@ -532,7 +642,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             "b":  QPointF(cx, p.y() + self._height),
             "l":  QPointF(p.x(), cy),
             "r":  QPointF(p.x() + self._width, cy),
-            "radius": QPointF(p.x() + self._radius, p.y()),  # Radius control handle
+            "adjust1": QPointF(p.x() + self._adjust1, p.y()),  # Adjust1 (radius) control handle
         }
 
     def _handle_points_local(self) -> Dict[str, QPointF]:
@@ -548,13 +658,15 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             "b":  QPointF(cx, self._height),
             "l":  QPointF(0, cy),
             "r":  QPointF(self._width, cy),
-            "radius": QPointF(self._radius, 0),  # Radius control handle
+            "adjust1": QPointF(self._adjust1, 0),  # Adjust1 (radius) control handle
         }
 
     def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
         handles = self._handle_points_scene()
+        # Hit distance from settings. Default: 10.0 pixels
+        hit_dist = _get_hit_distance()
         for k, hp in handles.items():
-            if QLineF(scene_pt, hp).length() <= HIT_DIST:
+            if QLineF(scene_pt, hp).length() <= hit_dist:
                 return k
         return None
 
@@ -566,7 +678,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             self.setCursor(Qt.CursorShape.SizeBDiagCursor)
         elif h in ("t", "b"):
             self.setCursor(Qt.CursorShape.SizeVerCursor)
-        elif h in ("l", "r", "radius"):
+        elif h in ("l", "r", "adjust1"):
             self.setCursor(Qt.CursorShape.SizeHorCursor)
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
@@ -581,7 +693,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 self._press_scene = event.scenePos()
                 self._start_pos = QPointF(self.pos())
                 self._start_size = (self._width, self._height)
-                self._start_radius = self._radius
+                self._start_adjust1 = self._adjust1
                 event.accept()
                 return
         super().mousePressEvent(event)
@@ -592,19 +704,19 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             dx = cur.x() - self._press_scene.x()
             dy = cur.y() - self._press_scene.y()
 
-            # Handle radius adjustment separately
-            if self._active_handle == "radius" and self._start_radius is not None:
-                new_radius = self._start_radius + dx
-                # Clamp radius between 0 and half of the smaller dimension
-                max_radius = min(self._width, self._height) / 2
-                new_radius = max(0, min(new_radius, max_radius))
-                self._radius = new_radius
+            # Handle adjust1 (corner radius) adjustment separately
+            if self._active_handle == "adjust1" and self._start_adjust1 is not None:
+                new_adjust1 = self._start_adjust1 + dx
+                # Clamp adjust1 between 0 and half of the smaller dimension
+                max_adjust1 = min(self._width, self._height) / 2
+                new_adjust1 = max(0, min(new_adjust1, max_adjust1))
+                self._adjust1 = new_adjust1
                 self._update_path()
                 self._update_label_position()
                 self._notify_changed()
-                # Notify property panel of radius change
-                if MetaRoundedRectItem.on_radius_changed:
-                    MetaRoundedRectItem.on_radius_changed(self, new_radius)
+                # Notify property panel of adjust1 change
+                if MetaRoundedRectItem.on_adjust1_changed:
+                    MetaRoundedRectItem.on_adjust1_changed(self, new_adjust1)
                 event.accept()
                 return
 
@@ -638,17 +750,19 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             elif self._active_handle == "r":
                 right += dx
 
-            if (right - left) < MIN_SIZE:
+            # Minimum size from settings. Default: 5.0 pixels
+            min_size = _get_min_size()
+            if (right - left) < min_size:
                 if self._active_handle in ("tl", "bl", "l"):
-                    left = right - MIN_SIZE
+                    left = right - min_size
                 else:
-                    right = left + MIN_SIZE
+                    right = left + min_size
 
-            if (bottom - top) < MIN_SIZE:
+            if (bottom - top) < min_size:
                 if self._active_handle in ("tl", "tr", "t"):
-                    top = bottom - MIN_SIZE
+                    top = bottom - min_size
                 else:
-                    bottom = top + MIN_SIZE
+                    bottom = top + min_size
 
             new_w = right - left
             new_h = bottom - top
@@ -675,7 +789,8 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def boundingRect(self) -> QRectF:
         """Expand bounding rect to include resize handles."""
         r = super().boundingRect()
-        margin = HANDLE_SIZE / 2 + 1
+        # Handle size from settings. Default: 8.0 pixels
+        margin = _get_handle_size() / 2 + 1
         return r.adjusted(-margin, -margin, margin, margin)
 
     def paint(self, painter: QPainter, option, widget=None):
@@ -686,22 +801,25 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
         if self.isSelected():
             # Draw selection outline matching the actual rounded rect
-            sel_pen = QPen(QColor(0, 120, 215), 1, Qt.PenStyle.DashLine)
+            # Selection color from settings. Default: #0078D7 (blue)
+            sel_pen = QPen(_get_selection_color(), 1, Qt.PenStyle.DashLine)
             painter.setPen(sel_pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRoundedRect(QRectF(0, 0, self._width, self._height), self._radius, self._radius)
+            painter.drawRoundedRect(QRectF(0, 0, self._width, self._height), self._adjust1, self._adjust1)
 
-            # Draw resize handles (excluding radius handle)
+            # Draw resize handles (excluding adjust1 handle)
             handles = self._handle_points_local()
-            radius_handle_pos = handles.pop("radius")  # Remove radius handle from regular handles
+            adjust1_handle_pos = handles.pop("adjust1")  # Remove adjust1 handle from regular handles
             draw_handles(painter, handles)
 
-            # Draw radius handle in yellow
-            half = HANDLE_SIZE / 2
+            # Draw adjust1 handle in yellow
+            # Handle size from settings. Default: 8.0 pixels
+            handle_size = _get_handle_size()
+            half = handle_size / 2
             painter.setPen(QPen(QColor(204, 153, 0), 1))  # Dark yellow border
             painter.setBrush(QBrush(QColor(255, 215, 0)))  # Gold/yellow fill
-            painter.drawEllipse(QRectF(radius_handle_pos.x() - half, radius_handle_pos.y() - half,
-                                       HANDLE_SIZE, HANDLE_SIZE))
+            painter.drawEllipse(QRectF(adjust1_handle_pos.x() - half, adjust1_handle_pos.y() - half,
+                                       handle_size, handle_size))
 
     def mouseReleaseEvent(self, event):
         if self._resizing:
@@ -710,7 +828,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             self._press_scene = None
             self._start_pos = None
             self._start_size = None
-            self._start_radius = None
+            self._start_adjust1 = None
             self._notify_changed()
             event.accept()
             return
@@ -735,7 +853,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 "y": round1(p.y()),
                 "w": round1(self._width),
                 "h": round1(self._height),
-                "radius": round1(self._radius),
+                "adjust1": round1(self._adjust1),
             },
             **self._meta_dict(self.meta),
             **self._style_dict(),
@@ -777,8 +895,10 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         self.brush_color = QColor(0, 0, 0, 0)
         self.text_color = QColor(Qt.GlobalColor.green)
         self.line_dash = "solid"  # solid | dashed
-        self.dash_pattern_length = 30.0
-        self.dash_solid_percent = 50.0
+        # Dash pattern settings from cached settings. Defaults: length=30.0, solid_percent=50.0
+        cached = _CachedCanvasSettings.get()
+        self.dash_pattern_length = cached.default_dash_length
+        self.dash_solid_percent = cached.default_dash_solid_percent
         self._apply_pen_brush()
 
         # Embedded label
@@ -884,8 +1004,10 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
 
     def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
         handles = self._handle_points_scene()
+        # Hit distance from settings. Default: 10.0 pixels
+        hit_dist = _get_hit_distance()
         for k, hp in handles.items():
-            if QLineF(scene_pt, hp).length() <= HIT_DIST:
+            if QLineF(scene_pt, hp).length() <= hit_dist:
                 return k
         return None
 
@@ -953,17 +1075,19 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
             elif self._active_handle == "r":
                 right += dx
 
-            if (right - left) < MIN_SIZE:
+            # Minimum size from settings. Default: 5.0 pixels
+            min_size = _get_min_size()
+            if (right - left) < min_size:
                 if self._active_handle in ("tl", "bl", "l"):
-                    left = right - MIN_SIZE
+                    left = right - min_size
                 else:
-                    right = left + MIN_SIZE
+                    right = left + min_size
 
-            if (bottom - top) < MIN_SIZE:
+            if (bottom - top) < min_size:
                 if self._active_handle in ("tl", "tr", "t"):
-                    top = bottom - MIN_SIZE
+                    top = bottom - min_size
                 else:
-                    bottom = top + MIN_SIZE
+                    bottom = top + min_size
 
             new_w = right - left
             new_h = bottom - top
@@ -987,7 +1111,8 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
     def boundingRect(self) -> QRectF:
         """Expand bounding rect to include resize handles."""
         r = super().boundingRect()
-        margin = HANDLE_SIZE / 2 + 1
+        # Handle size from settings. Default: 8.0 pixels
+        margin = _get_handle_size() / 2 + 1
         return r.adjusted(-margin, -margin, margin, margin)
 
     def paint(self, painter: QPainter, option, widget=None):
@@ -998,7 +1123,8 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
 
         if self.isSelected():
             # Draw selection outline matching the actual ellipse
-            sel_pen = QPen(QColor(0, 120, 215), 1, Qt.PenStyle.DashLine)
+            # Selection color from settings. Default: #0078D7 (blue)
+            sel_pen = QPen(_get_selection_color(), 1, Qt.PenStyle.DashLine)
             painter.setPen(sel_pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawEllipse(self.rect())
@@ -1350,7 +1476,8 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
         """Expand bounding rect to include resize handles, text box, and selection margin."""
         r = super().boundingRect()
         # Include 10px selection margin plus handle size
-        margin = max(HANDLE_SIZE / 2 + 1, 12.0)  # At least 12px for the 10px selection margin
+        # Handle size from settings. Default: 8.0 pixels
+        margin = max(_get_handle_size() / 2 + 1, 12.0)  # At least 12px for the 10px selection margin
         r = r.adjusted(-margin, -margin, margin, margin)
         # Include text box in bounding rect
         if self._text_box_rect is not None:
@@ -1367,7 +1494,9 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
         if self.arrow_mode != self.ARROW_NONE:
             ln = self.line()
             # Use configurable arrow_size, with minimum based on pen width
-            effective_arrow_size = max(self.arrow_size, self.pen_width * 2)
+            # Arrow min multiplier from cached settings. Default: 2x pen width
+            arrow_min_mult = _CachedCanvasSettings.get().arrow_min_multiplier
+            effective_arrow_size = max(self.arrow_size, self.pen_width * arrow_min_mult)
 
             painter.setPen(QPen(self.pen_color, self.pen_width))
             painter.setBrush(QBrush(self.pen_color))
@@ -1409,9 +1538,11 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
         painter.setPen(handle_pen)
         painter.setBrush(handle_brush)
 
-        half = HANDLE_SIZE / 2
+        # Handle size from settings. Default: 8.0 pixels
+        handle_size = _get_handle_size()
+        half = handle_size / 2
         for pos in handles.values():
-            painter.drawRect(QRectF(pos.x() - half, pos.y() - half, HANDLE_SIZE, HANDLE_SIZE))
+            painter.drawRect(QRectF(pos.x() - half, pos.y() - half, handle_size, handle_size))
 
     def _draw_arrowhead(self, painter: QPainter, from_pt: QPointF, to_pt: QPointF, size: float):
         dx = to_pt.x() - from_pt.x()
@@ -1439,9 +1570,11 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
 
     def _hit_test_endpoint(self, scene_pt: QPointF) -> Optional[str]:
         p1, p2 = self._endpoints_scene()
-        if QLineF(scene_pt, p1).length() <= HIT_DIST:
+        # Hit distance from settings. Default: 10.0 pixels
+        hit_dist = _get_hit_distance()
+        if QLineF(scene_pt, p1).length() <= hit_dist:
             return "p1"
-        if QLineF(scene_pt, p2).length() <= HIT_DIST:
+        if QLineF(scene_pt, p2).length() <= hit_dist:
             return "p2"
         return None
 
@@ -1451,8 +1584,10 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
             return None
         handles = self._text_box_handle_points()
         local_pt = self.mapFromScene(scene_pt)
+        # Hit distance from settings. Default: 10.0 pixels
+        hit_dist = _get_hit_distance()
         for name, pos in handles.items():
-            if QLineF(local_pt, pos).length() <= HIT_DIST:
+            if QLineF(local_pt, pos).length() <= hit_dist:
                 return name
         return None
 
@@ -1737,6 +1872,1197 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
             **self._style_dict(),
         }
         # Include z-index if set
+        z = self.zValue()
+        if z != 0:
+            rec["z"] = int(z)
+        return rec
+
+
+class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
+    """Flat-top hexagon item with configurable horizontal indent.
+
+    adjust1 controls how far the left/right vertices extend inward
+    from the edges. A value of 0.25 (default) creates a regular hexagon.
+    """
+
+    # Class-level callback for adjust1 changes (set by MainWindow)
+    on_adjust1_changed = None  # Called with (item, new_value) when adjust1 changes via handle drag
+
+    def __init__(self, x: float, y: float, w: float, h: float, adjust1: float, ann_id: str, on_change=None):
+        QGraphicsPathItem.__init__(self)
+        MetaMixin.__init__(self)
+        LinkedMixin.__init__(self, ann_id, on_change)
+
+        self.meta.kind = "hexagon"
+        self._width = w
+        self._height = h
+        self._adjust1 = max(0.0, min(0.5, adjust1))  # Clamp to 0.0-0.5
+        self.setPos(QPointF(x, y))
+        self.setData(ANN_ID_KEY, ann_id)
+        self._update_path()
+
+        self.setAcceptHoverEvents(True)
+
+        self.setFlags(
+            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+            | QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+            | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
+        )
+
+        self._active_handle: Optional[str] = None
+        self._resizing = False
+        self._press_scene: Optional[QPointF] = None
+        self._start_pos: Optional[QPointF] = None
+        self._start_size: Optional[Tuple[float, float]] = None
+        self._start_adjust1: Optional[float] = None
+
+        self.pen_color = QColor(Qt.GlobalColor.darkCyan)
+        self.pen_width = 2
+        self.brush_color = QColor(0, 0, 0, 0)
+        self.text_color = QColor(self.pen_color)
+        self.line_dash = "solid"
+        cached = _CachedCanvasSettings.get()
+        self.dash_pattern_length = cached.default_dash_length
+        self.dash_solid_percent = cached.default_dash_solid_percent
+        self._apply_pen_brush()
+
+        # Embedded text for C4 properties
+        self._label_item = QGraphicsTextItem(self)
+        self._label_item.setDefaultTextColor(self.text_color)
+        self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        self._update_label_position()
+
+    def _update_path(self):
+        """Build hexagon path from current dimensions and indent."""
+        path = QPainterPath()
+        w = self._width
+        h = self._height
+        indent_px = w * self._adjust1
+
+        # Flat-top hexagon vertices (clockwise from top-left)
+        #   (indent, 0) ------- (w-indent, 0)      top edge
+        #      /                         \
+        # (0, h/2)                   (w, h/2)      left/right vertices
+        #      \                         /
+        #   (indent, h) ------- (w-indent, h)     bottom edge
+
+        path.moveTo(indent_px, 0)
+        path.lineTo(w - indent_px, 0)
+        path.lineTo(w, h / 2)
+        path.lineTo(w - indent_px, h)
+        path.lineTo(indent_px, h)
+        path.lineTo(0, h / 2)
+        path.closeSubpath()
+        self.setPath(path)
+
+    def _apply_pen_brush(self):
+        pen = QPen(self.pen_color, self.pen_width)
+        _apply_dash_style(pen, self.line_dash, self.dash_pattern_length, self.dash_solid_percent)
+        self.setPen(pen)
+        self.setBrush(QBrush(self.brush_color))
+
+    def _update_label_position(self):
+        padding = 4 + self._width * self._adjust1 * 0.5
+        self._label_item.setTextWidth(max(10, self._width - 2 * padding))
+
+        text_height = self._label_item.boundingRect().height()
+        available_height = self._height - 2 * padding
+
+        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
+
+        if valign == "middle":
+            y_pos = padding + (available_height - text_height) / 2
+        elif valign == "bottom":
+            y_pos = self._height - padding - text_height
+        else:
+            y_pos = padding
+
+        self._label_item.setPos(padding, max(padding, y_pos))
+
+    def _update_label_text(self):
+        lines = []
+        align_map = {"left": "left", "center": "center", "right": "right"}
+
+        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
+        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
+
+        if self.meta.label:
+            align = align_map.get(self.meta.label_align, "center")
+            size = self.meta.label_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
+        if self.meta.tech:
+            align = align_map.get(self.meta.tech_align, "center")
+            size = self.meta.tech_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
+        if self.meta.note:
+            align = align_map.get(self.meta.note_align, "center")
+            size = self.meta.note_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
+
+        self._label_item.setHtml("".join(lines) if lines else "")
+        self._label_item.setDefaultTextColor(self.text_color)
+        self._update_label_position()
+
+    def set_meta(self, meta: AnnotationMeta) -> None:
+        self.meta = meta
+        self._update_label_text()
+
+    def rect(self) -> QRectF:
+        return QRectF(0, 0, self._width, self._height)
+
+    def setRect(self, r: QRectF):
+        self._width = r.width()
+        self._height = r.height()
+        self._update_path()
+        self._update_label_position()
+
+    def adjust1(self) -> float:
+        return self._adjust1
+
+    def set_adjust1(self, value: float):
+        self._adjust1 = max(0.0, min(0.5, value))
+        self._update_path()
+
+    def _handle_points_scene(self) -> Dict[str, QPointF]:
+        p = self.pos()
+        cx = p.x() + self._width / 2
+        cy = p.y() + self._height / 2
+        return {
+            "tl": QPointF(p.x(), p.y()),
+            "tr": QPointF(p.x() + self._width, p.y()),
+            "bl": QPointF(p.x(), p.y() + self._height),
+            "br": QPointF(p.x() + self._width, p.y() + self._height),
+            "t":  QPointF(cx, p.y()),
+            "b":  QPointF(cx, p.y() + self._height),
+            "l":  QPointF(p.x(), cy),
+            "r":  QPointF(p.x() + self._width, cy),
+            "adjust1": QPointF(p.x() + self._width * self._adjust1, p.y()),  # Upper left vertex
+        }
+
+    def _handle_points_local(self) -> Dict[str, QPointF]:
+        cx = self._width / 2
+        cy = self._height / 2
+        return {
+            "tl": QPointF(0, 0),
+            "tr": QPointF(self._width, 0),
+            "bl": QPointF(0, self._height),
+            "br": QPointF(self._width, self._height),
+            "t":  QPointF(cx, 0),
+            "b":  QPointF(cx, self._height),
+            "l":  QPointF(0, cy),
+            "r":  QPointF(self._width, cy),
+            "adjust1": QPointF(self._width * self._adjust1, 0),  # Upper left vertex for indent control
+        }
+
+    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
+        handles = self._handle_points_scene()
+        hit_dist = _get_hit_distance()
+        for k, hp in handles.items():
+            if QLineF(scene_pt, hp).length() <= hit_dist:
+                return k
+        return None
+
+    def hoverMoveEvent(self, event):
+        h = self._hit_test_handle(event.scenePos())
+        if h in ("tl", "br"):
+            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+        elif h in ("tr", "bl"):
+            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+        elif h in ("t", "b"):
+            self.setCursor(Qt.CursorShape.SizeVerCursor)
+        elif h in ("l", "r", "adjust1"):
+            self.setCursor(Qt.CursorShape.SizeHorCursor)
+        else:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+        super().hoverMoveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            h = self._hit_test_handle(event.scenePos())
+            if h:
+                self._active_handle = h
+                self._resizing = True
+                self._press_scene = event.scenePos()
+                self._start_pos = QPointF(self.pos())
+                self._start_size = (self._width, self._height)
+                self._start_adjust1 = self._adjust1
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._resizing and self._active_handle and self._press_scene and self._start_pos and self._start_size:
+            cur = event.scenePos()
+            dx = cur.x() - self._press_scene.x()
+            dy = cur.y() - self._press_scene.y()
+
+            # Handle adjust1 (indent) adjustment
+            if self._active_handle == "adjust1" and self._start_adjust1 is not None:
+                # Dragging upper left vertex right increases adjust1 (makes top/bottom edges shorter)
+                new_adjust1_px = self._width * self._start_adjust1 + dx
+                new_adjust1 = new_adjust1_px / self._width if self._width > 0 else 0.25
+                new_adjust1 = max(0.0, min(0.5, new_adjust1))
+                self._adjust1 = new_adjust1
+                self._update_path()
+                self._update_label_position()
+                self._notify_changed()
+                if MetaHexagonItem.on_adjust1_changed:
+                    MetaHexagonItem.on_adjust1_changed(self, new_adjust1)
+                event.accept()
+                return
+
+            x0 = self._start_pos.x()
+            y0 = self._start_pos.y()
+            w0, h0 = self._start_size
+
+            left = x0
+            top = y0
+            right = x0 + w0
+            bottom = y0 + h0
+
+            if self._active_handle == "tl":
+                left += dx
+                top += dy
+            elif self._active_handle == "tr":
+                right += dx
+                top += dy
+            elif self._active_handle == "bl":
+                left += dx
+                bottom += dy
+            elif self._active_handle == "br":
+                right += dx
+                bottom += dy
+            elif self._active_handle == "t":
+                top += dy
+            elif self._active_handle == "b":
+                bottom += dy
+            elif self._active_handle == "l":
+                left += dx
+            elif self._active_handle == "r":
+                right += dx
+
+            min_size = _get_min_size()
+            if (right - left) < min_size:
+                if self._active_handle in ("tl", "bl", "l"):
+                    left = right - min_size
+                else:
+                    right = left + min_size
+
+            if (bottom - top) < min_size:
+                if self._active_handle in ("tl", "tr", "t"):
+                    top = bottom - min_size
+                else:
+                    bottom = top + min_size
+
+            new_w = right - left
+            new_h = bottom - top
+
+            self.setPos(QPointF(left, top))
+            self._width = new_w
+            self._height = new_h
+            self._update_path()
+            self._update_label_position()
+
+            self._notify_changed()
+            event.accept()
+            return
+
+        super().mouseMoveEvent(event)
+
+    def shape(self) -> QPainterPath:
+        base = super().shape()
+        if self.isSelected():
+            return shape_with_handles(base, self._handle_points_local())
+        return base
+
+    def boundingRect(self) -> QRectF:
+        r = super().boundingRect()
+        margin = _get_handle_size() / 2 + 1
+        return r.adjusted(-margin, -margin, margin, margin)
+
+    def paint(self, painter: QPainter, option, widget=None):
+        my_option = QStyleOptionGraphicsItem(option)
+        my_option.state &= ~QStyle.StateFlag.State_Selected
+        super().paint(painter, my_option, widget)
+
+        if self.isSelected():
+            sel_pen = QPen(_get_selection_color(), 1, Qt.PenStyle.DashLine)
+            painter.setPen(sel_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(self.path())
+
+            handles = self._handle_points_local()
+            adjust1_handle_pos = handles.pop("adjust1")
+            draw_handles(painter, handles)
+
+            # Draw adjust1 handle in yellow
+            handle_size = _get_handle_size()
+            half = handle_size / 2
+            painter.setPen(QPen(QColor(204, 153, 0), 1))
+            painter.setBrush(QBrush(QColor(255, 215, 0)))
+            painter.drawEllipse(QRectF(adjust1_handle_pos.x() - half, adjust1_handle_pos.y() - half,
+                                       handle_size, handle_size))
+
+    def mouseReleaseEvent(self, event):
+        if self._resizing:
+            self._resizing = False
+            self._active_handle = None
+            self._press_scene = None
+            self._start_pos = None
+            self._start_size = None
+            self._start_adjust1 = None
+            self._notify_changed()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def itemChange(self, change, value):
+        out = super().itemChange(change, value)
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            if not self._resizing:
+                self._notify_changed()
+        elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+            self.prepareGeometryChange()
+        return out
+
+    def to_record(self) -> Dict[str, Any]:
+        p = self.pos()
+        rec = {
+            "id": self.ann_id,
+            "kind": "hexagon",
+            "geom": {
+                "x": round1(p.x()),
+                "y": round1(p.y()),
+                "w": round1(self._width),
+                "h": round1(self._height),
+                "adjust1": round1(self._adjust1),
+            },
+            **self._meta_dict(self.meta),
+            **self._style_dict(),
+        }
+        z = self.zValue()
+        if z != 0:
+            rec["z"] = int(z)
+        return rec
+
+
+class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
+    """3D cylinder (database icon) with configurable cap ellipse ratio.
+
+    adjust1 controls the depth/height of the elliptical cap as a
+    ratio of total height. Default is 0.15 (15% of height).
+    """
+
+    # Class-level callback for adjust1 changes (set by MainWindow)
+    on_adjust1_changed = None
+
+    def __init__(self, x: float, y: float, w: float, h: float, adjust1: float, ann_id: str, on_change=None):
+        QGraphicsPathItem.__init__(self)
+        MetaMixin.__init__(self)
+        LinkedMixin.__init__(self, ann_id, on_change)
+
+        self.meta.kind = "cylinder"
+        self._width = w
+        self._height = h
+        self._adjust1 = max(0.1, min(0.5, adjust1))
+        self.setPos(QPointF(x, y))
+        self.setData(ANN_ID_KEY, ann_id)
+        self._update_path()
+
+        self.setAcceptHoverEvents(True)
+
+        self.setFlags(
+            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+            | QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+            | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
+        )
+
+        self._active_handle: Optional[str] = None
+        self._resizing = False
+        self._press_scene: Optional[QPointF] = None
+        self._start_pos: Optional[QPointF] = None
+        self._start_size: Optional[Tuple[float, float]] = None
+        self._start_adjust1: Optional[float] = None
+
+        self.pen_color = QColor(Qt.GlobalColor.darkMagenta)
+        self.pen_width = 2
+        self.brush_color = QColor(0, 0, 0, 0)
+        self.text_color = QColor(self.pen_color)
+        self.line_dash = "solid"
+        cached = _CachedCanvasSettings.get()
+        self.dash_pattern_length = cached.default_dash_length
+        self.dash_solid_percent = cached.default_dash_solid_percent
+        self._apply_pen_brush()
+
+        self._label_item = QGraphicsTextItem(self)
+        self._label_item.setDefaultTextColor(self.text_color)
+        self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        self._update_label_position()
+
+    def _update_path(self):
+        """Build cylinder path: top ellipse, sides, bottom arc."""
+        path = QPainterPath()
+        w = self._width
+        h = self._height
+        cap_h = h * self._adjust1
+
+        # Top ellipse (full)
+        path.addEllipse(0, 0, w, cap_h * 2)
+
+        # Rectangular body sides
+        body_top = cap_h
+        body_bottom = h - cap_h
+
+        # Left side line
+        path.moveTo(0, body_top)
+        path.lineTo(0, body_bottom)
+
+        # Bottom arc (only bottom half of ellipse)
+        path.arcTo(0, h - cap_h * 2, w, cap_h * 2, 180, 180)
+
+        # Right side line
+        path.lineTo(w, body_top)
+
+        self.setPath(path)
+
+    def _apply_pen_brush(self):
+        pen = QPen(self.pen_color, self.pen_width)
+        _apply_dash_style(pen, self.line_dash, self.dash_pattern_length, self.dash_solid_percent)
+        self.setPen(pen)
+        self.setBrush(QBrush(self.brush_color))
+
+    def _update_label_position(self):
+        cap_h = self._height * self._adjust1
+        padding = 4
+        self._label_item.setTextWidth(max(10, self._width - 2 * padding))
+
+        text_height = self._label_item.boundingRect().height()
+        # Text goes in body area, below top cap
+        available_height = self._height - cap_h * 2 - 2 * padding
+
+        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
+
+        if valign == "middle":
+            y_pos = cap_h + padding + (available_height - text_height) / 2
+        elif valign == "bottom":
+            y_pos = self._height - cap_h - padding - text_height
+        else:
+            y_pos = cap_h + padding
+
+        self._label_item.setPos(padding, max(cap_h + padding, y_pos))
+
+    def _update_label_text(self):
+        lines = []
+        align_map = {"left": "left", "center": "center", "right": "right"}
+
+        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
+        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
+
+        if self.meta.label:
+            align = align_map.get(self.meta.label_align, "center")
+            size = self.meta.label_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
+        if self.meta.tech:
+            align = align_map.get(self.meta.tech_align, "center")
+            size = self.meta.tech_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
+        if self.meta.note:
+            align = align_map.get(self.meta.note_align, "center")
+            size = self.meta.note_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
+
+        self._label_item.setHtml("".join(lines) if lines else "")
+        self._label_item.setDefaultTextColor(self.text_color)
+        self._update_label_position()
+
+    def set_meta(self, meta: AnnotationMeta) -> None:
+        self.meta = meta
+        self._update_label_text()
+
+    def rect(self) -> QRectF:
+        return QRectF(0, 0, self._width, self._height)
+
+    def setRect(self, r: QRectF):
+        self._width = r.width()
+        self._height = r.height()
+        self._update_path()
+        self._update_label_position()
+
+    def adjust1(self) -> float:
+        return self._adjust1
+
+    def set_adjust1(self, value: float):
+        self._adjust1 = max(0.1, min(0.5, value))
+        self._update_path()
+        self._update_label_position()
+
+    def _handle_points_scene(self) -> Dict[str, QPointF]:
+        p = self.pos()
+        cx = p.x() + self._width / 2
+        cy = p.y() + self._height / 2
+        cap_h = self._height * self._adjust1
+        return {
+            "tl": QPointF(p.x(), p.y()),
+            "tr": QPointF(p.x() + self._width, p.y()),
+            "bl": QPointF(p.x(), p.y() + self._height),
+            "br": QPointF(p.x() + self._width, p.y() + self._height),
+            "t":  QPointF(cx, p.y()),
+            "b":  QPointF(cx, p.y() + self._height),
+            "l":  QPointF(p.x(), cy),
+            "r":  QPointF(p.x() + self._width, cy),
+            "adjust1": QPointF(p.x() + self._width, p.y() + cap_h),  # Right side of top ellipse
+        }
+
+    def _handle_points_local(self) -> Dict[str, QPointF]:
+        cx = self._width / 2
+        cy = self._height / 2
+        cap_h = self._height * self._adjust1
+        return {
+            "tl": QPointF(0, 0),
+            "tr": QPointF(self._width, 0),
+            "bl": QPointF(0, self._height),
+            "br": QPointF(self._width, self._height),
+            "t":  QPointF(cx, 0),
+            "b":  QPointF(cx, self._height),
+            "l":  QPointF(0, cy),
+            "r":  QPointF(self._width, cy),
+            "adjust1": QPointF(self._width, cap_h),
+        }
+
+    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
+        handles = self._handle_points_scene()
+        hit_dist = _get_hit_distance()
+        for k, hp in handles.items():
+            if QLineF(scene_pt, hp).length() <= hit_dist:
+                return k
+        return None
+
+    def hoverMoveEvent(self, event):
+        h = self._hit_test_handle(event.scenePos())
+        if h in ("tl", "br"):
+            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+        elif h in ("tr", "bl"):
+            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+        elif h in ("t", "b", "adjust1"):
+            self.setCursor(Qt.CursorShape.SizeVerCursor)
+        elif h in ("l", "r"):
+            self.setCursor(Qt.CursorShape.SizeHorCursor)
+        else:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+        super().hoverMoveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            h = self._hit_test_handle(event.scenePos())
+            if h:
+                self._active_handle = h
+                self._resizing = True
+                self._press_scene = event.scenePos()
+                self._start_pos = QPointF(self.pos())
+                self._start_size = (self._width, self._height)
+                self._start_adjust1 = self._adjust1
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._resizing and self._active_handle and self._press_scene and self._start_pos and self._start_size:
+            cur = event.scenePos()
+            dx = cur.x() - self._press_scene.x()
+            dy = cur.y() - self._press_scene.y()
+
+            # Handle adjust1 (cap ratio) adjustment
+            if self._active_handle == "adjust1" and self._start_adjust1 is not None:
+                new_cap_h = self._height * self._start_adjust1 + dy
+                new_ratio = new_cap_h / self._height if self._height > 0 else 0.15
+                new_ratio = max(0.1, min(0.5, new_ratio))
+                self._adjust1 = new_ratio
+                self._update_path()
+                self._update_label_position()
+                self._notify_changed()
+                if MetaCylinderItem.on_adjust1_changed:
+                    MetaCylinderItem.on_adjust1_changed(self, new_ratio)
+                event.accept()
+                return
+
+            x0 = self._start_pos.x()
+            y0 = self._start_pos.y()
+            w0, h0 = self._start_size
+
+            left = x0
+            top = y0
+            right = x0 + w0
+            bottom = y0 + h0
+
+            if self._active_handle == "tl":
+                left += dx
+                top += dy
+            elif self._active_handle == "tr":
+                right += dx
+                top += dy
+            elif self._active_handle == "bl":
+                left += dx
+                bottom += dy
+            elif self._active_handle == "br":
+                right += dx
+                bottom += dy
+            elif self._active_handle == "t":
+                top += dy
+            elif self._active_handle == "b":
+                bottom += dy
+            elif self._active_handle == "l":
+                left += dx
+            elif self._active_handle == "r":
+                right += dx
+
+            min_size = _get_min_size()
+            if (right - left) < min_size:
+                if self._active_handle in ("tl", "bl", "l"):
+                    left = right - min_size
+                else:
+                    right = left + min_size
+
+            if (bottom - top) < min_size:
+                if self._active_handle in ("tl", "tr", "t"):
+                    top = bottom - min_size
+                else:
+                    bottom = top + min_size
+
+            new_w = right - left
+            new_h = bottom - top
+
+            self.setPos(QPointF(left, top))
+            self._width = new_w
+            self._height = new_h
+            self._update_path()
+            self._update_label_position()
+
+            self._notify_changed()
+            event.accept()
+            return
+
+        super().mouseMoveEvent(event)
+
+    def shape(self) -> QPainterPath:
+        base = super().shape()
+        if self.isSelected():
+            return shape_with_handles(base, self._handle_points_local())
+        return base
+
+    def boundingRect(self) -> QRectF:
+        r = super().boundingRect()
+        margin = _get_handle_size() / 2 + 1
+        return r.adjusted(-margin, -margin, margin, margin)
+
+    def paint(self, painter: QPainter, option, widget=None):
+        my_option = QStyleOptionGraphicsItem(option)
+        my_option.state &= ~QStyle.StateFlag.State_Selected
+
+        # Custom paint for cylinder: fill body, then stroke all parts
+        w = self._width
+        h = self._height
+        cap_h = h * self._adjust1
+
+        # Fill the body (rect + bottom ellipse + top ellipse)
+        if self.brush_color.alpha() > 0:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(self.brush_color))
+            # Fill top ellipse
+            painter.drawEllipse(QRectF(0, 0, w, cap_h * 2))
+            # Fill body rectangle
+            painter.drawRect(QRectF(0, cap_h, w, h - cap_h * 2))
+            # Fill bottom ellipse
+            painter.drawEllipse(QRectF(0, h - cap_h * 2, w, cap_h * 2))
+
+        # Draw strokes
+        pen = QPen(self.pen_color, self.pen_width)
+        _apply_dash_style(pen, self.line_dash, self.dash_pattern_length, self.dash_solid_percent)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        # Top ellipse
+        painter.drawEllipse(QRectF(0, 0, w, cap_h * 2))
+        # Left side
+        painter.drawLine(QPointF(0, cap_h), QPointF(0, h - cap_h))
+        # Right side
+        painter.drawLine(QPointF(w, cap_h), QPointF(w, h - cap_h))
+        # Bottom arc (bottom half of ellipse)
+        path = QPainterPath()
+        path.arcMoveTo(0, h - cap_h * 2, w, cap_h * 2, 180)
+        path.arcTo(0, h - cap_h * 2, w, cap_h * 2, 180, 180)
+        painter.drawPath(path)
+
+        if self.isSelected():
+            sel_pen = QPen(_get_selection_color(), 1, Qt.PenStyle.DashLine)
+            painter.setPen(sel_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(QRectF(0, 0, w, h))
+
+            handles = self._handle_points_local()
+            adjust1_handle_pos = handles.pop("adjust1")
+            draw_handles(painter, handles)
+
+            # Draw adjust1 handle in yellow
+            handle_size = _get_handle_size()
+            half = handle_size / 2
+            painter.setPen(QPen(QColor(204, 153, 0), 1))
+            painter.setBrush(QBrush(QColor(255, 215, 0)))
+            painter.drawEllipse(QRectF(adjust1_handle_pos.x() - half, adjust1_handle_pos.y() - half,
+                                       handle_size, handle_size))
+
+    def mouseReleaseEvent(self, event):
+        if self._resizing:
+            self._resizing = False
+            self._active_handle = None
+            self._press_scene = None
+            self._start_pos = None
+            self._start_size = None
+            self._start_adjust1 = None
+            self._notify_changed()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def itemChange(self, change, value):
+        out = super().itemChange(change, value)
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            if not self._resizing:
+                self._notify_changed()
+        elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+            self.prepareGeometryChange()
+        return out
+
+    def to_record(self) -> Dict[str, Any]:
+        p = self.pos()
+        rec = {
+            "id": self.ann_id,
+            "kind": "cylinder",
+            "geom": {
+                "x": round1(p.x()),
+                "y": round1(p.y()),
+                "w": round1(self._width),
+                "h": round1(self._height),
+                "adjust1": round1(self._adjust1),
+            },
+            **self._meta_dict(self.meta),
+            **self._style_dict(),
+        }
+        z = self.zValue()
+        if z != 0:
+            rec["z"] = int(z)
+        return rec
+
+
+class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
+    """Right-pointing block arrow with configurable head and shaft dimensions.
+
+    adjust1: ratio of shaft height to total height (0.2 to 0.9)
+    adjust2: horizontal distance from arrow tip to head base (in pixels)
+    """
+
+    # Class-level callbacks for property changes
+    on_adjust1_changed = None
+    on_adjust2_changed = None
+
+    def __init__(self, x: float, y: float, w: float, h: float, adjust2: float, adjust1: float, ann_id: str, on_change=None):
+        QGraphicsPathItem.__init__(self)
+        MetaMixin.__init__(self)
+        LinkedMixin.__init__(self, ann_id, on_change)
+
+        self.meta.kind = "blockarrow"
+        self._width = w
+        self._height = h
+        self._adjust2 = max(10, min(w * 0.8, adjust2))
+        self._adjust1 = max(0.2, min(0.9, adjust1))
+        self.setPos(QPointF(x, y))
+        self.setData(ANN_ID_KEY, ann_id)
+        self._update_path()
+
+        self.setAcceptHoverEvents(True)
+
+        self.setFlags(
+            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+            | QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+            | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
+        )
+
+        self._active_handle: Optional[str] = None
+        self._resizing = False
+        self._press_scene: Optional[QPointF] = None
+        self._start_pos: Optional[QPointF] = None
+        self._start_size: Optional[Tuple[float, float]] = None
+        self._start_adjust2: Optional[float] = None
+        self._start_adjust1: Optional[float] = None
+
+        self.pen_color = QColor(Qt.GlobalColor.darkYellow)
+        self.pen_width = 2
+        self.brush_color = QColor(0, 0, 0, 0)
+        self.text_color = QColor(self.pen_color)
+        self.line_dash = "solid"
+        cached = _CachedCanvasSettings.get()
+        self.dash_pattern_length = cached.default_dash_length
+        self.dash_solid_percent = cached.default_dash_solid_percent
+        self._apply_pen_brush()
+
+        self._label_item = QGraphicsTextItem(self)
+        self._label_item.setDefaultTextColor(self.text_color)
+        self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        self._update_label_position()
+
+    def _update_path(self):
+        """Build block arrow path from current dimensions."""
+        path = QPainterPath()
+        w = self._width
+        h = self._height
+        head_x = w - self._adjust2  # X position where head starts
+        shaft_margin = h * (1 - self._adjust1) / 2  # Space above/below shaft
+
+        # Block arrow vertices (clockwise from top-left of shaft)
+        # (0, shaft_top) --- (head_x, shaft_top) --- (head_x, 0)
+        #                                                \
+        #                                            (w, h/2)  <- arrow point
+        #                                                /
+        # (0, shaft_bot) --- (head_x, shaft_bot) --- (head_x, h)
+
+        shaft_top = shaft_margin
+        shaft_bot = h - shaft_margin
+
+        path.moveTo(0, shaft_top)
+        path.lineTo(head_x, shaft_top)
+        path.lineTo(head_x, 0)
+        path.lineTo(w, h / 2)
+        path.lineTo(head_x, h)
+        path.lineTo(head_x, shaft_bot)
+        path.lineTo(0, shaft_bot)
+        path.closeSubpath()
+
+        self.setPath(path)
+
+    def _apply_pen_brush(self):
+        pen = QPen(self.pen_color, self.pen_width)
+        _apply_dash_style(pen, self.line_dash, self.dash_pattern_length, self.dash_solid_percent)
+        self.setPen(pen)
+        self.setBrush(QBrush(self.brush_color))
+
+    def _update_label_position(self):
+        shaft_margin = self._height * (1 - self._adjust1) / 2
+        head_x = self._width - self._adjust2
+        padding = 4
+        # Text goes in the shaft area
+        self._label_item.setTextWidth(max(10, head_x - 2 * padding))
+
+        text_height = self._label_item.boundingRect().height()
+        shaft_height = self._height * self._adjust1
+
+        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
+
+        if valign == "middle":
+            y_pos = shaft_margin + (shaft_height - text_height) / 2
+        elif valign == "bottom":
+            y_pos = self._height - shaft_margin - padding - text_height
+        else:
+            y_pos = shaft_margin + padding
+
+        self._label_item.setPos(padding, max(shaft_margin + padding, y_pos))
+
+    def _update_label_text(self):
+        lines = []
+        align_map = {"left": "left", "center": "center", "right": "right"}
+
+        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
+        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
+
+        if self.meta.label:
+            align = align_map.get(self.meta.label_align, "center")
+            size = self.meta.label_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
+        if self.meta.tech:
+            align = align_map.get(self.meta.tech_align, "center")
+            size = self.meta.tech_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
+        if self.meta.note:
+            align = align_map.get(self.meta.note_align, "center")
+            size = self.meta.note_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
+
+        self._label_item.setHtml("".join(lines) if lines else "")
+        self._label_item.setDefaultTextColor(self.text_color)
+        self._update_label_position()
+
+    def set_meta(self, meta: AnnotationMeta) -> None:
+        self.meta = meta
+        self._update_label_text()
+
+    def rect(self) -> QRectF:
+        return QRectF(0, 0, self._width, self._height)
+
+    def setRect(self, r: QRectF):
+        self._width = r.width()
+        self._height = r.height()
+        self._adjust2 = min(self._adjust2, self._width * 0.8)
+        self._update_path()
+        self._update_label_position()
+
+    def adjust2(self) -> float:
+        return self._adjust2
+
+    def set_adjust2(self, value: float):
+        self._adjust2 = max(10, min(self._width * 0.8, value))
+        self._update_path()
+        self._update_label_position()
+
+    def adjust1(self) -> float:
+        return self._adjust1
+
+    def set_adjust1(self, value: float):
+        self._adjust1 = max(0.2, min(0.9, value))
+        self._update_path()
+        self._update_label_position()
+
+    def _handle_points_scene(self) -> Dict[str, QPointF]:
+        p = self.pos()
+        cx = p.x() + self._width / 2
+        cy = p.y() + self._height / 2
+        head_x = self._width - self._adjust2
+        shaft_margin = self._height * (1 - self._adjust1) / 2
+        return {
+            "tl": QPointF(p.x(), p.y()),
+            "tr": QPointF(p.x() + self._width, p.y()),
+            "bl": QPointF(p.x(), p.y() + self._height),
+            "br": QPointF(p.x() + self._width, p.y() + self._height),
+            "t":  QPointF(cx, p.y()),
+            "b":  QPointF(cx, p.y() + self._height),
+            "l":  QPointF(p.x(), cy),
+            "r":  QPointF(p.x() + self._width, cy),
+            "adjust2": QPointF(p.x() + head_x, p.y() + shaft_margin),  # Junction of head and shaft
+            "adjust1": QPointF(p.x(), p.y() + shaft_margin),  # Left edge at shaft top
+        }
+
+    def _handle_points_local(self) -> Dict[str, QPointF]:
+        cx = self._width / 2
+        cy = self._height / 2
+        head_x = self._width - self._adjust2
+        shaft_margin = self._height * (1 - self._adjust1) / 2
+        return {
+            "tl": QPointF(0, 0),
+            "tr": QPointF(self._width, 0),
+            "bl": QPointF(0, self._height),
+            "br": QPointF(self._width, self._height),
+            "t":  QPointF(cx, 0),
+            "b":  QPointF(cx, self._height),
+            "l":  QPointF(0, cy),
+            "r":  QPointF(self._width, cy),
+            "adjust2": QPointF(head_x, shaft_margin),
+            "adjust1": QPointF(0, shaft_margin),
+        }
+
+    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
+        handles = self._handle_points_scene()
+        hit_dist = _get_hit_distance()
+        for k, hp in handles.items():
+            if QLineF(scene_pt, hp).length() <= hit_dist:
+                return k
+        return None
+
+    def hoverMoveEvent(self, event):
+        h = self._hit_test_handle(event.scenePos())
+        if h in ("tl", "br"):
+            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+        elif h in ("tr", "bl"):
+            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+        elif h in ("t", "b", "adjust1"):
+            self.setCursor(Qt.CursorShape.SizeVerCursor)
+        elif h in ("l", "r", "adjust2"):
+            self.setCursor(Qt.CursorShape.SizeHorCursor)
+        else:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+        super().hoverMoveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            h = self._hit_test_handle(event.scenePos())
+            if h:
+                self._active_handle = h
+                self._resizing = True
+                self._press_scene = event.scenePos()
+                self._start_pos = QPointF(self.pos())
+                self._start_size = (self._width, self._height)
+                self._start_adjust2 = self._adjust2
+                self._start_adjust1 = self._adjust1
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._resizing and self._active_handle and self._press_scene and self._start_pos and self._start_size:
+            cur = event.scenePos()
+            dx = cur.x() - self._press_scene.x()
+            dy = cur.y() - self._press_scene.y()
+
+            # Handle adjust2 (head length) adjustment
+            if self._active_handle == "adjust2" and self._start_adjust2 is not None:
+                new_adjust2 = self._start_adjust2 - dx  # Moving left increases head length
+                new_adjust2 = max(10, min(self._width * 0.8, new_adjust2))
+                self._adjust2 = new_adjust2
+                self._update_path()
+                self._update_label_position()
+                self._notify_changed()
+                if MetaBlockArrowItem.on_adjust2_changed:
+                    MetaBlockArrowItem.on_adjust2_changed(self, new_adjust2)
+                event.accept()
+                return
+
+            # Handle adjust1 (shaft width) adjustment
+            if self._active_handle == "adjust1" and self._start_adjust1 is not None:
+                # Moving down decreases adjust1 (increases margin)
+                old_margin = self._height * (1 - self._start_adjust1) / 2
+                new_margin = old_margin + dy
+                new_adjust1 = 1 - (2 * new_margin / self._height) if self._height > 0 else 0.5
+                new_adjust1 = max(0.2, min(0.9, new_adjust1))
+                self._adjust1 = new_adjust1
+                self._update_path()
+                self._update_label_position()
+                self._notify_changed()
+                if MetaBlockArrowItem.on_adjust1_changed:
+                    MetaBlockArrowItem.on_adjust1_changed(self, new_adjust1)
+                event.accept()
+                return
+
+            x0 = self._start_pos.x()
+            y0 = self._start_pos.y()
+            w0, h0 = self._start_size
+
+            left = x0
+            top = y0
+            right = x0 + w0
+            bottom = y0 + h0
+
+            if self._active_handle == "tl":
+                left += dx
+                top += dy
+            elif self._active_handle == "tr":
+                right += dx
+                top += dy
+            elif self._active_handle == "bl":
+                left += dx
+                bottom += dy
+            elif self._active_handle == "br":
+                right += dx
+                bottom += dy
+            elif self._active_handle == "t":
+                top += dy
+            elif self._active_handle == "b":
+                bottom += dy
+            elif self._active_handle == "l":
+                left += dx
+            elif self._active_handle == "r":
+                right += dx
+
+            min_size = _get_min_size()
+            if (right - left) < min_size:
+                if self._active_handle in ("tl", "bl", "l"):
+                    left = right - min_size
+                else:
+                    right = left + min_size
+
+            if (bottom - top) < min_size:
+                if self._active_handle in ("tl", "tr", "t"):
+                    top = bottom - min_size
+                else:
+                    bottom = top + min_size
+
+            new_w = right - left
+            new_h = bottom - top
+
+            self.setPos(QPointF(left, top))
+            self._width = new_w
+            self._height = new_h
+            self._adjust2 = min(self._adjust2, new_w * 0.8)
+            self._update_path()
+            self._update_label_position()
+
+            self._notify_changed()
+            event.accept()
+            return
+
+        super().mouseMoveEvent(event)
+
+    def shape(self) -> QPainterPath:
+        base = super().shape()
+        if self.isSelected():
+            return shape_with_handles(base, self._handle_points_local())
+        return base
+
+    def boundingRect(self) -> QRectF:
+        r = super().boundingRect()
+        margin = _get_handle_size() / 2 + 1
+        return r.adjusted(-margin, -margin, margin, margin)
+
+    def paint(self, painter: QPainter, option, widget=None):
+        my_option = QStyleOptionGraphicsItem(option)
+        my_option.state &= ~QStyle.StateFlag.State_Selected
+        super().paint(painter, my_option, widget)
+
+        if self.isSelected():
+            sel_pen = QPen(_get_selection_color(), 1, Qt.PenStyle.DashLine)
+            painter.setPen(sel_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(self.path())
+
+            handles = self._handle_points_local()
+            adjust2_handle = handles.pop("adjust2")
+            adjust1_handle = handles.pop("adjust1")
+            draw_handles(painter, handles)
+
+            # Draw custom handles in yellow
+            handle_size = _get_handle_size()
+            half = handle_size / 2
+            painter.setPen(QPen(QColor(204, 153, 0), 1))
+            painter.setBrush(QBrush(QColor(255, 215, 0)))
+            painter.drawEllipse(QRectF(adjust2_handle.x() - half, adjust2_handle.y() - half,
+                                       handle_size, handle_size))
+            painter.drawEllipse(QRectF(adjust1_handle.x() - half, adjust1_handle.y() - half,
+                                       handle_size, handle_size))
+
+    def mouseReleaseEvent(self, event):
+        if self._resizing:
+            self._resizing = False
+            self._active_handle = None
+            self._press_scene = None
+            self._start_pos = None
+            self._start_size = None
+            self._start_adjust2 = None
+            self._start_adjust1 = None
+            self._notify_changed()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def itemChange(self, change, value):
+        out = super().itemChange(change, value)
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            if not self._resizing:
+                self._notify_changed()
+        elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+            self.prepareGeometryChange()
+        return out
+
+    def to_record(self) -> Dict[str, Any]:
+        p = self.pos()
+        rec = {
+            "id": self.ann_id,
+            "kind": "blockarrow",
+            "geom": {
+                "x": round1(p.x()),
+                "y": round1(p.y()),
+                "w": round1(self._width),
+                "h": round1(self._height),
+                "adjust2": round1(self._adjust2),
+                "adjust1": round1(self._adjust1),
+            },
+            **self._meta_dict(self.meta),
+            **self._style_dict(),
+        }
         z = self.zValue()
         if z != 0:
             rec["z"] = int(z)

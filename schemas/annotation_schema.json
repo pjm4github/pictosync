@@ -72,7 +72,7 @@
         },
         "kind": {
           "type": "string",
-          "enum": ["rect", "roundedrect", "ellipse", "line", "text"],
+          "enum": ["rect", "roundedrect", "ellipse", "line", "text", "hexagon", "cylinder", "blockarrow"],
           "description": "The type of annotation item"
         },
         "geom": {
@@ -141,6 +141,36 @@
             },
             "required": ["text"]
           }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "hexagon" } }
+          },
+          "then": {
+            "properties": {
+              "geom": { "$ref": "#/$defs/hexagonGeometry" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "cylinder" } }
+          },
+          "then": {
+            "properties": {
+              "geom": { "$ref": "#/$defs/cylinderGeometry" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "blockarrow" } }
+          },
+          "then": {
+            "properties": {
+              "geom": { "$ref": "#/$defs/blockArrowGeometry" }
+            }
+          }
         }
       ]
     },
@@ -151,7 +181,10 @@
         { "$ref": "#/$defs/rectGeometry" },
         { "$ref": "#/$defs/roundedRectGeometry" },
         { "$ref": "#/$defs/lineGeometry" },
-        { "$ref": "#/$defs/pointGeometry" }
+        { "$ref": "#/$defs/pointGeometry" },
+        { "$ref": "#/$defs/hexagonGeometry" },
+        { "$ref": "#/$defs/cylinderGeometry" },
+        { "$ref": "#/$defs/blockArrowGeometry" }
       ]
     },
     "rectGeometry": {
@@ -203,11 +236,11 @@
           "minimum": 0,
           "description": "Height"
         },
-        "radius": {
+        "adjust1": {
           "type": "number",
           "minimum": 0,
           "default": 10,
-          "description": "Corner radius"
+          "description": "Corner radius in pixels"
         }
       },
       "additionalProperties": false
@@ -248,6 +281,111 @@
         "y": {
           "type": "number",
           "description": "Y position"
+        }
+      },
+      "additionalProperties": false
+    },
+    "hexagonGeometry": {
+      "type": "object",
+      "description": "Hexagon geometry with adjust1 control (indent ratio)",
+      "required": ["x", "y", "w", "h"],
+      "properties": {
+        "x": {
+          "type": "number",
+          "description": "X position of top-left corner"
+        },
+        "y": {
+          "type": "number",
+          "description": "Y position of top-left corner"
+        },
+        "w": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Width"
+        },
+        "h": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Height"
+        },
+        "adjust1": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 0.5,
+          "default": 0.25,
+          "description": "Horizontal indent ratio for top/bottom vertices (0.0-0.5)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "cylinderGeometry": {
+      "type": "object",
+      "description": "Cylinder geometry with adjust1 control (cap ratio)",
+      "required": ["x", "y", "w", "h"],
+      "properties": {
+        "x": {
+          "type": "number",
+          "description": "X position of top-left corner"
+        },
+        "y": {
+          "type": "number",
+          "description": "Y position of top-left corner"
+        },
+        "w": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Width"
+        },
+        "h": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Height"
+        },
+        "adjust1": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 0.5,
+          "default": 0.15,
+          "description": "Cap ellipse height as ratio of total height (0.1-0.5)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "blockArrowGeometry": {
+      "type": "object",
+      "description": "Block arrow geometry with adjust1 (shaft width) and adjust2 (head length) controls",
+      "required": ["x", "y", "w", "h"],
+      "properties": {
+        "x": {
+          "type": "number",
+          "description": "X position of top-left corner"
+        },
+        "y": {
+          "type": "number",
+          "description": "Y position of top-left corner"
+        },
+        "w": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Width"
+        },
+        "h": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Height"
+        },
+        "adjust2": {
+          "type": "number",
+          "minimum": 10,
+          "default": 15,
+          "description": "Arrow head length in pixels"
+        },
+        "adjust1": {
+          "type": "number",
+          "minimum": 0.2,
+          "maximum": 0.9,
+          "default": 0.5,
+          "description": "Shaft height as ratio of total height (0.2-0.9)"
         }
       },
       "additionalProperties": false

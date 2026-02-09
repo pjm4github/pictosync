@@ -143,6 +143,9 @@ def get_schema_for_kind(kind: str) -> Optional[Dict]:
         "roundedrect": "roundedRectGeometry",
         "line": "lineGeometry",
         "text": "pointGeometry",
+        "hexagon": "rectGeometry",  # Uses same base geometry as rect
+        "cylinder": "rectGeometry",
+        "blockarrow": "rectGeometry",
     }
 
     geom_name = kind_to_geom.get(kind)
@@ -174,7 +177,7 @@ def create_default_annotation(kind: str) -> Dict:
         },
         "roundedrect": {
             "kind": "roundedrect",
-            "geom": {"x": 0, "y": 0, "w": 100, "h": 50, "radius": 10},
+            "geom": {"x": 0, "y": 0, "w": 100, "h": 50, "adjust1": 10},
             "meta": {"label": "", "tech": "", "note": ""},
             "style": {
                 "pen": {"color": "#FF0000", "width": 2},
@@ -213,6 +216,36 @@ def create_default_annotation(kind: str) -> Dict:
                 "brush": {"color": "#00000000"},
                 "text": {"color": "#000000", "size_pt": 12}
             }
+        },
+        "hexagon": {
+            "kind": "hexagon",
+            "geom": {"x": 0, "y": 0, "w": 100, "h": 80, "adjust1": 0.25},
+            "meta": {"label": "", "tech": "", "note": ""},
+            "style": {
+                "pen": {"color": "#008B8B", "width": 2},
+                "brush": {"color": "#00000000"},
+                "text": {"color": "#008B8B", "size_pt": 12}
+            }
+        },
+        "cylinder": {
+            "kind": "cylinder",
+            "geom": {"x": 0, "y": 0, "w": 80, "h": 120, "adjust1": 0.15},
+            "meta": {"label": "", "tech": "", "note": ""},
+            "style": {
+                "pen": {"color": "#8B008B", "width": 2},
+                "brush": {"color": "#00000000"},
+                "text": {"color": "#8B008B", "size_pt": 12}
+            }
+        },
+        "blockarrow": {
+            "kind": "blockarrow",
+            "geom": {"x": 0, "y": 0, "w": 150, "h": 60, "adjust2": 15, "adjust1": 0.5},
+            "meta": {"label": "", "tech": "", "note": ""},
+            "style": {
+                "pen": {"color": "#B8860B", "width": 2},
+                "brush": {"color": "#00000000"},
+                "text": {"color": "#B8860B", "size_pt": 12}
+            }
         }
     }
 
@@ -220,15 +253,18 @@ def create_default_annotation(kind: str) -> Dict:
 
 
 # Valid item kinds
-VALID_KINDS = ["rect", "roundedrect", "ellipse", "line", "text"]
+VALID_KINDS = ["rect", "roundedrect", "ellipse", "line", "text", "hexagon", "cylinder", "blockarrow"]
 
 # Required geometry fields per kind
 REQUIRED_GEOM_FIELDS = {
     "rect": ["x", "y", "w", "h"],
-    "roundedrect": ["x", "y", "w", "h"],  # radius is optional with default
+    "roundedrect": ["x", "y", "w", "h"],  # adjust1 is optional with default
     "ellipse": ["x", "y", "w", "h"],
     "line": ["x1", "y1", "x2", "y2"],
     "text": ["x", "y"],
+    "hexagon": ["x", "y", "w", "h"],  # adjust1 is optional with default
+    "cylinder": ["x", "y", "w", "h"],  # adjust1 is optional with default
+    "blockarrow": ["x", "y", "w", "h"],  # adjust1 and adjust2 are optional with defaults
 }
 
 

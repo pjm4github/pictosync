@@ -29,7 +29,7 @@ try:
     HAS_SCHEMA = True
 except ImportError:
     HAS_SCHEMA = False
-    VALID_KINDS = ["rect", "roundedrect", "ellipse", "line", "text"]
+    VALID_KINDS = ["rect", "roundedrect", "ellipse", "line", "text", "hexagon", "cylinder", "blockarrow"]
 
 
 def validate_and_fix_annotations(data: Dict) -> Tuple[Dict, List[str]]:
@@ -87,7 +87,7 @@ def validate_and_fix_annotations(data: Dict) -> Tuple[Dict, List[str]]:
                     continue
 
         # Ensure positive dimensions for shapes
-        if kind in ["rect", "roundedrect", "ellipse"]:
+        if kind in ["rect", "roundedrect", "ellipse", "hexagon", "cylinder", "blockarrow"]:
             if geom.get("w", 0) <= 0 or geom.get("h", 0) <= 0:
                 warnings.append(f"Annotation {i}: invalid dimensions, skipping")
                 continue
@@ -168,6 +168,12 @@ class ExtractWorker(QObject):
         """Build the extraction prompt with schema-based structure."""
         return f"""You are a diagram element extractor. Analyze this image and extract all visual elements.
 
+IMPORTANT: This image is EXACTLY {width} pixels wide and {height} pixels tall.
+All coordinates in your response MUST be in ABSOLUTE PIXEL values within this {width}x{height} pixel space.
+Do NOT use normalized coordinates (0-1), do NOT use a 0-1000 range. Use raw pixel positions.
+For example, a shape at the horizontal center should have x ≈ {width // 2}, not x ≈ 0.5 or x ≈ 500.
+A shape halfway down should have y ≈ {height // 2}, not y ≈ 0.5 or y ≈ 500.
+
 Return ONLY valid JSON (no markdown code fences) matching this exact schema:
 
 {{
@@ -194,7 +200,7 @@ FOR RECTANGLES (sharp corners):
 FOR ROUNDED RECTANGLES (rounded corners):
 {{
   "kind": "roundedrect",
-  "geom": {{ "x": <number>, "y": <number>, "w": <number>, "h": <number>, "radius": <corner radius> }},
+  "geom": {{ "x": <number>, "y": <number>, "w": <number>, "h": <number>, "adjust1": <corner radius in pixels> }},
   "meta": {{ "label": "<text inside>", "tech": "<technology if shown>", "note": "<description>" }},
   "text": "<C4 format: Label [Tech] Description>",
   "style": {{
@@ -209,6 +215,45 @@ FOR ELLIPSES/CIRCLES (ovals, actors, users):
   "kind": "ellipse",
   "geom": {{ "x": <number>, "y": <number>, "w": <number>, "h": <number> }},
   "meta": {{ "label": "<text inside>", "note": "<description>" }},
+  "style": {{
+    "pen": {{"color":"#RRGGBB","width":2}},
+    "brush": {{"color":"#RRGGBBAA"}},
+    "text": {{"color":"#RRGGBB","size_pt":<font size>}}
+  }}
+}}
+
+FOR HEXAGONS (six-sided shapes, often used for processes, services, or decision nodes):
+{{
+  "kind": "hexagon",
+  "geom": {{ "x": <number>, "y": <number>, "w": <number>, "h": <number>, "adjust1": <indent ratio 0.0-0.5, default 0.25> }},
+  "meta": {{ "label": "<text inside>", "tech": "<technology if shown>", "note": "<description>" }},
+  "text": "<C4 format: Label [Tech] Description>",
+  "style": {{
+    "pen": {{"color":"#RRGGBB","width":2}},
+    "brush": {{"color":"#RRGGBBAA"}},
+    "text": {{"color":"#RRGGBB","size_pt":<font size>}}
+  }}
+}}
+
+FOR CYLINDERS (database/storage shapes with curved top and bottom):
+{{
+  "kind": "cylinder",
+  "geom": {{ "x": <number>, "y": <number>, "w": <number>, "h": <number>, "adjust1": <cap ratio 0.1-0.5, default 0.15> }},
+  "meta": {{ "label": "<text inside>", "tech": "<technology if shown>", "note": "<description>" }},
+  "text": "<C4 format: Label [Tech] Description>",
+  "style": {{
+    "pen": {{"color":"#RRGGBB","width":2}},
+    "brush": {{"color":"#RRGGBBAA"}},
+    "text": {{"color":"#RRGGBB","size_pt":<font size>}}
+  }}
+}}
+
+FOR BLOCK ARROWS (thick arrow shapes pointing right, used for flow direction or processes):
+{{
+  "kind": "blockarrow",
+  "geom": {{ "x": <number>, "y": <number>, "w": <number>, "h": <number>, "adjust1": <shaft width ratio 0.2-0.9, default 0.5>, "adjust2": <arrowhead length in pixels, default 15> }},
+  "meta": {{ "label": "<text inside>", "tech": "<technology if shown>", "note": "<description>" }},
+  "text": "<C4 format: Label [Tech] Description>",
   "style": {{
     "pen": {{"color":"#RRGGBB","width":2}},
     "brush": {{"color":"#RRGGBBAA"}},
@@ -239,19 +284,47 @@ FOR TEXT LABELS (standalone text NOT associated with any shape or line):
 }}
 
 COORDINATE RULES:
-- Image dimensions: {width}x{height} pixels
-- Origin (0,0) is top-left corner
-- x increases rightward, y increases downward
-- Use EXACT pixel coordinates, NOT normalized (0-1) values
-- Bounding boxes must TIGHTLY fit the visual elements
+- Image is {width} pixels wide and {height} pixels tall
+- Origin (0,0) is top-left corner of the image
+- x increases rightward (0 to {width}), y increases downward (0 to {height})
+- ALL values must be ABSOLUTE PIXEL coordinates (NOT normalized 0-1, NOT 0-1000 range)
+- A shape touching the right edge has x + w = {width}; a shape touching the bottom has y + h = {height}
+- The output bounding box must EXACTLY OVERLAY the shape as it appears in the PNG
+
+BOUNDING BOX EXTRACTION (CRITICAL - follow these steps for EVERY shape):
+Step 1: Find the four EDGES of the shape by scanning the image:
+  * LEFT EDGE:   find the leftmost visible pixel of the shape's border/fill → this is geom.x
+  * TOP EDGE:    find the topmost visible pixel of the shape's border/fill → this is geom.y
+  * RIGHT EDGE:  find the rightmost visible pixel of the shape's border/fill → right_x
+  * BOTTOM EDGE: find the bottommost visible pixel of the shape's border/fill → bottom_y
+Step 2: Calculate dimensions:
+  * geom.w = right_x - geom.x
+  * geom.h = bottom_y - geom.y
+Step 3: VERIFY the bounding box covers the ENTIRE shape:
+  * The shape's leftmost pixel must be at geom.x (NOT to the left of it)
+  * The shape's topmost pixel must be at geom.y (NOT above it)
+  * The shape's rightmost pixel must be at geom.x + geom.w (NOT to the right of it)
+  * The shape's bottommost pixel must be at geom.y + geom.h (NOT below it)
+  * 0 <= geom.x and geom.x + geom.w <= {width}
+  * 0 <= geom.y and geom.y + geom.h <= {height}
+
+COMMON MISTAKES TO AVOID:
+- Do NOT estimate x from the shape's center or text position - use the LEFTMOST visible edge
+- For HEXAGONS: x must be the leftmost pointed vertex, NOT the left side of the text area
+- For CYLINDERS: y must be the very top of the curved elliptical cap, x must be the leftmost edge of the cylinder body
+- For BLOCK ARROWS: x must be the left flat edge of the shaft, NOT the center of the arrow
+- Shapes are often wider and taller than they first appear due to borders and vertices
 
 DETECTION GUIDELINES:
-1. Detect ALL visible shapes: boxes, containers, components, actors
+1. Detect ALL visible shapes: boxes, containers, components, actors, databases, processes
 2. Distinguish sharp corners (rect) from rounded corners (roundedrect)
 3. Estimate corner radius in pixels for rounded rectangles
-4. Detect connection lines and their arrow directions
-5. Extract text labels inside shapes into that shape's meta.label field
-6. For text, estimate the font size in points
+4. Identify hexagonal shapes (six-sided polygons) as "hexagon"
+5. Identify cylinder/drum shapes (databases, storage) as "cylinder" - these have curved/elliptical top and bottom caps
+6. Identify thick block arrow shapes as "blockarrow" - these are filled arrow-shaped polygons, NOT line arrows
+7. Detect connection lines and their arrow directions
+8. Extract text labels inside shapes into that shape's meta.label field
+9. For text, estimate the font size in points
 
 LINE LABEL ASSOCIATION (IMPORTANT):
 - Text that overlays, crosses, or is positioned near a line/arrow belongs TO that line
