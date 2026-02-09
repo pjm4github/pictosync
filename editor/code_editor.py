@@ -13,6 +13,54 @@ from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPainter, QPen, QTextCursor
 from PyQt6.QtWidgets import QPlainTextEdit, QWidget
 
+from settings import get_settings
+
+
+# =============================================================================
+# Cached editor settings - initialized once to avoid repeated lookups during paint
+# =============================================================================
+
+class _CachedEditorSettings:
+    """Cache for editor settings values to avoid repeated lookups during paint."""
+
+    _instance = None
+
+    def __init__(self):
+        self._initialized = False
+        # Default values (used if settings unavailable)
+        self.fold_width = 14
+        self.left_margin = 8
+        self.right_margin = 4
+        self.highlight_bar_width = 4
+        self.font_family = "Consolas"
+        self.font_size = 10
+        self.tab_width = 4
+
+    def _ensure_initialized(self):
+        """Load settings on first access."""
+        if self._initialized:
+            return
+        try:
+            s = get_settings().settings.editor
+            self.fold_width = s.folding.width
+            self.left_margin = s.line_numbers.left_margin
+            self.right_margin = s.line_numbers.right_margin
+            self.highlight_bar_width = s.line_numbers.highlight_bar_width
+            self.font_family = s.font.family
+            self.font_size = s.font.size
+            self.tab_width = s.font.tab_width
+        except Exception:
+            pass  # Use defaults
+        self._initialized = True
+
+    @classmethod
+    def get(cls) -> "_CachedEditorSettings":
+        """Get the singleton instance."""
+        if cls._instance is None:
+            cls._instance = cls()
+        cls._instance._ensure_initialized()
+        return cls._instance
+
 
 class LineNumberArea(QWidget):
     """Widget that displays line numbers alongside the code editor."""
@@ -34,16 +82,19 @@ class LineNumberArea(QWidget):
 class FoldingArea(QWidget):
     """Widget that displays folding markers alongside the code editor."""
 
-    FOLD_WIDTH = 14
-
     def __init__(self, editor: "JsonCodeEditor"):
         super().__init__(editor)
         self.editor = editor
         self.setMouseTracking(True)
         self._hover_line = -1
 
+    @property
+    def fold_width(self) -> int:
+        """Get fold width from settings. Default: 14 pixels."""
+        return _CachedEditorSettings.get().fold_width
+
     def sizeHint(self):
-        return QSize(self.FOLD_WIDTH, 0)
+        return QSize(self.fold_width, 0)
 
     def paintEvent(self, event):
         self.editor.folding_area_paint_event(event)
@@ -133,13 +184,14 @@ class JsonCodeEditor(QPlainTextEdit):
         self._update_margins()
         self._recompute_fold_regions()
 
-        # Set monospace font
-        font = QFont("Consolas", 10)
+        # Set monospace font from settings. Defaults: "Consolas", 10pt
+        cached = _CachedEditorSettings.get()
+        font = QFont(cached.font_family, cached.font_size)
         font.setStyleHint(QFont.StyleHint.Monospace)
         self.setFont(font)
 
-        # Tab width
-        self.setTabStopDistance(self.fontMetrics().horizontalAdvance(' ') * 4)
+        # Tab width from settings. Default: 4 characters
+        self.setTabStopDistance(self.fontMetrics().horizontalAdvance(' ') * cached.tab_width)
 
     def set_line_number_colors(self, colors: Dict[str, str]):
         """
@@ -157,7 +209,9 @@ class JsonCodeEditor(QPlainTextEdit):
     def line_number_area_width(self) -> int:
         """Calculate the width needed for line numbers."""
         digits = len(str(max(1, self.blockCount())))
-        space = 8 + self.fontMetrics().horizontalAdvance('9') * digits
+        # Left margin from settings. Default: 8 pixels
+        left_margin = _CachedEditorSettings.get().left_margin
+        space = left_margin + self.fontMetrics().horizontalAdvance('9') * digits
         return space
 
     def line_number_area_size_hint(self):
@@ -165,7 +219,8 @@ class JsonCodeEditor(QPlainTextEdit):
 
     def _update_margins(self):
         """Update the viewport margins to make room for line numbers and folding."""
-        left_margin = self.line_number_area_width() + FoldingArea.FOLD_WIDTH
+        # Fold width from settings. Default: 14 pixels
+        left_margin = self.line_number_area_width() + self.folding_area.fold_width
         self.setViewportMargins(left_margin, 0, 0, 0)
 
     def _update_line_number_area(self, rect, dy):
@@ -184,7 +239,8 @@ class JsonCodeEditor(QPlainTextEdit):
         super().resizeEvent(event)
         cr = self.contentsRect()
         ln_width = self.line_number_area_width()
-        fold_width = FoldingArea.FOLD_WIDTH
+        # Fold width from settings. Default: 14 pixels
+        fold_width = self.folding_area.fold_width
 
         self.line_number_area.setGeometry(cr.left(), cr.top(), ln_width, cr.height())
         self.folding_area.setGeometry(cr.left() + ln_width, cr.top(), fold_width, cr.height())
@@ -207,8 +263,10 @@ class JsonCodeEditor(QPlainTextEdit):
         # Current line highlighting
         current_block = self.textCursor().block().blockNumber()
 
-        # Highlight bar width
-        highlight_bar_width = 4
+        # Get cached settings for paint loop. Defaults: highlight_bar=4px, right_margin=4px
+        cached = _CachedEditorSettings.get()
+        highlight_bar_width = cached.highlight_bar_width
+        right_margin = cached.right_margin
         highlight_start, highlight_end = self._highlighted_line_range
 
         while block.isValid() and top <= event.rect().bottom():
@@ -240,8 +298,9 @@ class JsonCodeEditor(QPlainTextEdit):
                     # Normal lines - dimmed text color
                     painter.setPen(QColor(colors["text"]))
 
+                # Use cached right_margin from above
                 painter.drawText(highlight_bar_width, top,
-                                self.line_number_area.width() - highlight_bar_width - 4,
+                                self.line_number_area.width() - highlight_bar_width - right_margin,
                                 block_height,
                                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, number)
 
@@ -294,8 +353,10 @@ class JsonCodeEditor(QPlainTextEdit):
                     is_hover = self.folding_area._hover_line == block_number
 
                     # Draw fold indicator
+                    # Fold width from settings. Default: 14 pixels
+                    fold_width = self.folding_area.fold_width
                     rect_size = 9
-                    x = (FoldingArea.FOLD_WIDTH - rect_size) // 2
+                    x = (fold_width - rect_size) // 2
                     y = top + (block_height - rect_size) // 2
 
                     if is_hover:

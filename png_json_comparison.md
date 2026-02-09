@@ -1,4 +1,6 @@
-# PNG-to-JSON Round-Tripping: Commercial and Open Source Alternatives
+# PNG-to-JSON Round-Tripping
+## *Commercial and Open Source Alternatives*
+
 
 ## Overview
 

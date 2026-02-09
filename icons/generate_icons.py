@@ -149,6 +149,43 @@ ICONS = {
   <circle cx="9" cy="13" r="1.5" fill="{accent}"/>
   <circle cx="15" cy="13" r="1.5" fill="{accent}"/>
 </svg>''',
+
+    "undo": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <path d="M4 10 L9 5 L9 8 C14 8 18 10 18 15 C18 18 15 20 12 20 L12 17 C14 17 15 16 15 15 C15 12 12 11 9 11 L9 14 Z" stroke="{stroke}" stroke-width="1.5" fill="{accent}" stroke-linejoin="round"/>
+</svg>''',
+
+    "redo": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <path d="M20 10 L15 5 L15 8 C10 8 6 10 6 15 C6 18 9 20 12 20 L12 17 C10 17 9 16 9 15 C9 12 12 11 15 11 L15 14 Z" stroke="{stroke}" stroke-width="1.5" fill="{accent}" stroke-linejoin="round"/>
+</svg>''',
+
+    "zoom_region": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <circle cx="10" cy="10" r="6" stroke="{stroke}" stroke-width="2" fill="{fill}"/>
+  <line x1="14.5" y1="14.5" x2="20" y2="20" stroke="{stroke}" stroke-width="2.5" stroke-linecap="round"/>
+  <rect x="7" y="7" width="6" height="6" stroke="{accent}" stroke-width="1.5" fill="none" stroke-dasharray="2,1"/>
+</svg>''',
+
+    "zoom_fit": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <path d="M3 8 L3 3 L8 3" stroke="{stroke}" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M21 8 L21 3 L16 3" stroke="{stroke}" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M3 16 L3 21 L8 21" stroke="{stroke}" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M21 16 L21 21 L16 21" stroke="{stroke}" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="7" y="7" width="10" height="10" stroke="{accent}" stroke-width="1.5" fill="{fill}"/>
+</svg>''',
+
+    "hexagon": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <polygon points="6,4 18,4 22,12 18,20 6,20 2,12" stroke="{stroke}" stroke-width="2" fill="{fill}" stroke-linejoin="round"/>
+</svg>''',
+
+    "cylinder": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <ellipse cx="12" cy="6" rx="7" ry="3" stroke="{stroke}" stroke-width="2" fill="{fill}"/>
+  <path d="M5 6 L5 18" stroke="{stroke}" stroke-width="2"/>
+  <path d="M19 6 L19 18" stroke="{stroke}" stroke-width="2"/>
+  <path d="M5 18 A7 3 0 0 0 19 18" stroke="{stroke}" stroke-width="2" fill="none"/>
+</svg>''',
+
+    "blockarrow": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <polygon points="2,8 14,8 14,4 22,12 14,20 14,16 2,16" stroke="{stroke}" stroke-width="2" fill="{fill}" stroke-linejoin="round"/>
+</svg>''',
 }
 
 

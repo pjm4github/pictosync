@@ -19,11 +19,21 @@ from canvas.items import (
     MetaEllipseItem,
     MetaLineItem,
     MetaTextItem,
+    MetaHexagonItem,
+    MetaCylinderItem,
+    MetaBlockArrowItem,
 )
+from settings import get_settings
 
-# Z-index constants
-Z_INDEX_BASE = 1000  # Starting z-index for normal items
-Z_INDEX_STEP = 10    # Gap between z-indices for room to insert
+
+def _get_z_index_base() -> int:
+    """Get z-index base from settings. Default: 1000."""
+    return get_settings().settings.canvas.zorder.base
+
+
+def _get_z_index_step() -> int:
+    """Get z-index step from settings. Default: 10."""
+    return get_settings().settings.canvas.zorder.step
 
 
 class AnnotatorScene(QGraphicsScene):
@@ -106,7 +116,7 @@ class AnnotatorScene(QGraphicsScene):
         if event.button() == Qt.MouseButton.LeftButton:
             sp = event.scenePos()
 
-            if self.mode in (Mode.RECT, Mode.ROUNDEDRECT, Mode.ELLIPSE, Mode.LINE):
+            if self.mode in (Mode.RECT, Mode.ROUNDEDRECT, Mode.ELLIPSE, Mode.LINE, Mode.HEXAGON, Mode.CYLINDER, Mode.BLOCKARROW):
                 self._drag_start = sp
                 ann_id = self._make_id() if self._make_id else "local"
                 next_z = self._get_next_z_index()
@@ -116,7 +126,9 @@ class AnnotatorScene(QGraphicsScene):
                     self.addItem(self._temp_item)
                     self._temp_item.setZValue(next_z)
                 elif self.mode == Mode.ROUNDEDRECT:
-                    self._temp_item = MetaRoundedRectItem(sp.x(), sp.y(), 0, 0, 10, ann_id, self._on_item_changed)
+                    # Default rounded radius from settings. Default: 10 pixels
+                    default_radius = get_settings().settings.canvas.shapes.default_rounded_radius
+                    self._temp_item = MetaRoundedRectItem(sp.x(), sp.y(), 0, 0, default_radius, ann_id, self._on_item_changed)
                     self.addItem(self._temp_item)
                     self._temp_item.setZValue(next_z)
                 elif self.mode == Mode.ELLIPSE:
@@ -125,6 +137,21 @@ class AnnotatorScene(QGraphicsScene):
                     self._temp_item.setZValue(next_z)
                 elif self.mode == Mode.LINE:
                     self._temp_item = MetaLineItem(sp.x(), sp.y(), sp.x(), sp.y(), ann_id, self._on_item_changed)
+                    self.addItem(self._temp_item)
+                    self._temp_item.setZValue(next_z)
+                elif self.mode == Mode.HEXAGON:
+                    # Default adjust1=0.25 (indent ratio for regular hexagon proportions)
+                    self._temp_item = MetaHexagonItem(sp.x(), sp.y(), 0, 0, 0.25, ann_id, self._on_item_changed)
+                    self.addItem(self._temp_item)
+                    self._temp_item.setZValue(next_z)
+                elif self.mode == Mode.CYLINDER:
+                    # Default adjust1=0.15 (cap ratio)
+                    self._temp_item = MetaCylinderItem(sp.x(), sp.y(), 0, 0, 0.15, ann_id, self._on_item_changed)
+                    self.addItem(self._temp_item)
+                    self._temp_item.setZValue(next_z)
+                elif self.mode == Mode.BLOCKARROW:
+                    # Default adjust2=15 (head length px), adjust1=0.5 (shaft width ratio)
+                    self._temp_item = MetaBlockArrowItem(sp.x(), sp.y(), 0, 0, 15, 0.5, ann_id, self._on_item_changed)
                     self.addItem(self._temp_item)
                     self._temp_item.setZValue(next_z)
 
@@ -150,7 +177,7 @@ class AnnotatorScene(QGraphicsScene):
             sx, sy = self._drag_start.x(), self._drag_start.y()
             cx, cy = cur.x(), cur.y()
 
-            if isinstance(self._temp_item, (MetaRectItem, MetaEllipseItem, MetaRoundedRectItem)):
+            if isinstance(self._temp_item, (MetaRectItem, MetaEllipseItem, MetaRoundedRectItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem)):
                 x = min(sx, cx)
                 y = min(sy, cy)
                 w = abs(cx - sx)
@@ -182,7 +209,7 @@ class AnnotatorScene(QGraphicsScene):
 
     def _is_annotation_item(self, item: QGraphicsItem) -> bool:
         """Check if an item is one of our annotation items."""
-        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaLineItem, MetaTextItem))
+        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaLineItem, MetaTextItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem))
 
     def _get_annotation_items(self) -> List[QGraphicsItem]:
         """Get all annotation items in the scene (excluding background, etc.)."""
@@ -192,9 +219,9 @@ class AnnotatorScene(QGraphicsScene):
         """Get the next z-index for a new item (higher than all existing items)."""
         items = self._get_annotation_items()
         if not items:
-            return Z_INDEX_BASE
+            return _get_z_index_base()
         max_z = max(i.zValue() for i in items)
-        return max_z + Z_INDEX_STEP
+        return max_z + _get_z_index_step()
 
     def _show_context_menu(self, screen_pos, item: QGraphicsItem):
         """Show context menu for the selected item."""
@@ -229,11 +256,11 @@ class AnnotatorScene(QGraphicsScene):
 
         # Reassign z-indices with gaps, starting from base
         for idx, i in enumerate(items):
-            new_z = Z_INDEX_BASE + (idx * Z_INDEX_STEP)
+            new_z = _get_z_index_base() + (idx * _get_z_index_step())
             i.setZValue(new_z)
 
         # Put target item at the front (highest z)
-        front_z = Z_INDEX_BASE + (len(items) * Z_INDEX_STEP)
+        front_z = _get_z_index_base() + (len(items) * _get_z_index_step())
         item.setZValue(front_z)
 
         # Notify that z-order changed
@@ -255,7 +282,7 @@ class AnnotatorScene(QGraphicsScene):
         min_z = min(i.zValue() for i in items)
 
         # Try to place behind the backmost item
-        new_z = min_z - Z_INDEX_STEP
+        new_z = min_z - _get_z_index_step()
 
         # If we would go too low, reset all z-indices
         if new_z < 0:
@@ -266,11 +293,11 @@ class AnnotatorScene(QGraphicsScene):
             other_items.sort(key=lambda i: i.zValue())
 
             # Put target item at the back (lowest z)
-            item.setZValue(Z_INDEX_BASE)
+            item.setZValue(_get_z_index_base())
 
             # Reassign z-indices for other items with gaps
             for idx, i in enumerate(other_items):
-                new_z = Z_INDEX_BASE + ((idx + 1) * Z_INDEX_STEP)
+                new_z = _get_z_index_base() + ((idx + 1) * _get_z_index_step())
                 i.setZValue(new_z)
         else:
             # Just set the new z-value

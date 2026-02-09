@@ -4,3 +4,7 @@ google-genai
 opencv-python
 numpy
 pytesseract
+python-pptx
+platformdirs
+tomli
+tomli-w

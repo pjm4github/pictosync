@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 from typing import Any, Dict
 
+from settings import get_settings
+
 
 # ----------------------------
 # Annotation metadata model
@@ -17,7 +19,7 @@ from typing import Any, Dict
 @dataclass
 class AnnotationMeta:
     """Metadata for diagram annotations."""
-    kind: str                  # rect | ellipse | roundedrect | line | text
+    kind: str                  # rect | ellipse | roundedrect | line | text | hexagon | cylinder | blockarrow
     label: str = ""            # semantic label (Component, Database, External, etc.)
     tech: str = ""             # optional (HTTPS/JSON, gRPC, Kafka, etc.)
     note: str = ""             # freeform note
@@ -37,18 +39,27 @@ class AnnotationMeta:
 
     @classmethod
     def get_formatting_defaults(cls) -> Dict[str, Any]:
-        """Get default values for formatting/layout meta fields only."""
+        """Get default values for formatting/layout meta fields only.
+
+        Values are loaded from settings. Defaults if settings unavailable:
+        - label_align: "center", label_size: 12
+        - tech_align: "center", tech_size: 10
+        - note_align: "center", note_size: 10
+        - text_valign: "top", text_spacing: 0.0
+        - text_box_width: 0.0, text_box_height: 0.0
+        """
+        defaults = get_settings().settings.defaults
         return {
-            "label_align": "center",
-            "label_size": 12,
-            "tech_align": "center",
-            "tech_size": 10,
-            "note_align": "center",
-            "note_size": 10,
-            "text_valign": "top",
-            "text_spacing": 0.0,
-            "text_box_width": 0.0,
-            "text_box_height": 0.0,
+            "label_align": defaults.label_align,
+            "label_size": defaults.label_size,
+            "tech_align": defaults.tech_align,
+            "tech_size": defaults.tech_size,
+            "note_align": defaults.note_align,
+            "note_size": defaults.note_size,
+            "text_valign": defaults.vertical_align,
+            "text_spacing": defaults.line_spacing,
+            "text_box_width": defaults.text_box_width,
+            "text_box_height": defaults.text_box_height,
         }
 
 
@@ -95,6 +106,9 @@ class Mode:
     ELLIPSE = "ellipse"
     LINE = "line"
     TEXT = "text"
+    HEXAGON = "hexagon"
+    CYLINDER = "cylinder"
+    BLOCKARROW = "blockarrow"
 
 
 # ----------------------------
@@ -104,6 +118,9 @@ class Mode:
 ANN_ID_KEY = 1  # QGraphicsItem.data key for annotation id
 
 # Resizable shape handle constants
-HANDLE_SIZE = 8.0
-HIT_DIST = 10.0
-MIN_SIZE = 5.0
+# NOTE: These constants are kept for backwards compatibility.
+# New code should use get_settings().settings.canvas.handles.size etc.
+# Defaults: HANDLE_SIZE=8.0, HIT_DIST=10.0, MIN_SIZE=5.0
+HANDLE_SIZE = 8.0  # Default: 8.0 pixels - use settings.canvas.handles.size instead
+HIT_DIST = 10.0    # Default: 10.0 pixels - use settings.canvas.handles.hit_distance instead
+MIN_SIZE = 5.0     # Default: 5.0 pixels - use settings.canvas.shapes.min_size instead

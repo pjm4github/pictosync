@@ -10,9 +10,12 @@ Diagram annotation tool with AI-powered extraction and bidirectional sync.
 
 ## Abstract
 
-PictoSync is a PyQt6 desktop application for creating and managing diagram annotations. It combines manual drawing tools with Google Gemini AI to automatically extract structural elements from architecture diagrams (such as C4 models). The application maintains bidirectional synchronization between a visual canvas and JSON representation, enabling a human-in-the-loop workflow where AI extracts, humans refine, and changes sync back seamlessly.
+PictoSync is a PyQt6 desktop application for creating and managing diagram annotations. It combines manual drawing tools with Google Gemini AI (see note below) to automatically extract structural elements from architecture diagrams (such as C4 models). The application maintains bidirectional synchronization between a visual canvas and JSON representation, enabling a human-in-the-loop workflow where AI extracts, humans refine, and changes sync back seamlessly.
+
+**Note**: If you don't have a Google Gemini API key, or dont want to send your picture to Google for scanning, you can still place a graphic on the picture and then use the local optimizer to match the grahpics to the PNG.
 
 ## Features
+**For a comparison to other tools and their features see this file:  [Round Tripping PNG Tools](png_json_comparison.md)**
 
 ### Drawing & Annotation
 - **Manual Drawing Tools**: Rectangle, rounded rectangle, ellipse, line, and text annotations

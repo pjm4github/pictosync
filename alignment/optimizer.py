@@ -16,6 +16,29 @@ from typing import Dict, Tuple, Optional, Callable, List
 import cv2
 import numpy as np
 
+from settings import get_settings
+
+
+def _get_alignment_settings():
+    """Get alignment settings from the global settings manager.
+
+    Defaults if settings unavailable:
+    - detection.default_min_area: 500
+    - detection.min_shape_width: 15
+    - detection.min_shape_height: 15
+    - detection.center_clustering_distance: 10
+    - detection.ellipse_fill_ratio_min: 0.75
+    - detection.ellipse_fill_ratio_max: 0.85
+    - color.hue_tolerances: [10, 15, 20, 25, 30]
+    - color.saturation_tolerance: 80
+    - color.value_tolerance: 80
+    - color.low_saturation_threshold: 30
+    - color.bgr_tolerance_multiplier: 4
+    - scoring.size_difference_weight: 50
+    - line.hue_tolerances: [15, 25, 35]
+    """
+    return get_settings().settings.alignment
+
 
 def hex_to_bgr(hex_color: str) -> Tuple[int, int, int]:
     """Convert hex color to BGR tuple."""
@@ -47,13 +70,18 @@ def bgr_to_hsv(bgr: Tuple[int, int, int]) -> Tuple[int, int, int]:
 
 def extract_shapes_from_region(
     img: np.ndarray,
-    min_area: int = 500,
+    min_area: Optional[int] = None,
     pen_color_bgr: Optional[Tuple[int, int, int]] = None
 ) -> List[Dict]:
     """
     Extract shapes from an image region using HSV color matching.
     Uses Hue for color matching with tolerance, which handles similar colors better.
     """
+    # Get settings for alignment detection. Default min_area: 500
+    align_settings = _get_alignment_settings()
+    if min_area is None:
+        min_area = align_settings.detection.default_min_area
+
     kernel = np.ones((3, 3), np.uint8)
     shapes = []
 
@@ -75,13 +103,15 @@ def extract_shapes_from_region(
     all_contours = []
     contours_by_tolerance = {}
 
-    for hue_tol in [10, 15, 20, 25, 30]:
+    # Get color tolerances from settings. Defaults: hue=[10,15,20,25,30], s_tol=80, v_tol=80
+    color_settings = align_settings.color
+    hue_tolerances = color_settings.hue_tolerances
+    s_tol = color_settings.saturation_tolerance
+    v_tol = color_settings.value_tolerance
+
+    for hue_tol in hue_tolerances:
         # Hue tolerance (circular, 0-179 in OpenCV)
         h_target = pen_hsv[0]
-
-        # Saturation and Value tolerance (wider)
-        s_tol = 80
-        v_tol = 80
 
         # Handle hue wraparound (red is at both 0 and 179)
         h_low = h_target - hue_tol
@@ -93,10 +123,14 @@ def extract_shapes_from_region(
         v_high = min(255, pen_hsv[2] + v_tol)
 
         # For low saturation colors (grays), use BGR matching instead
-        if pen_hsv[1] < 30:
+        # Low saturation threshold from settings. Default: 30
+        low_sat_threshold = color_settings.low_saturation_threshold
+        if pen_hsv[1] < low_sat_threshold:
             print(f"[ALIGN] Low saturation ({pen_hsv[1]}), using BGR matching for hue_tol={hue_tol}")
             # Fall back to BGR matching for grays
-            bgr_tol = hue_tol * 4  # Scale tolerance
+            # BGR tolerance multiplier from settings. Default: 4
+            bgr_mult = color_settings.bgr_tolerance_multiplier
+            bgr_tol = hue_tol * bgr_mult
             lower = np.array([max(0, int(c) - bgr_tol) for c in pen_color_bgr], dtype=np.uint8)
             upper = np.array([min(255, int(c) + bgr_tol) for c in pen_color_bgr], dtype=np.uint8)
             color_mask = cv2.inRange(img, lower, upper)
@@ -154,6 +188,12 @@ def extract_shapes_from_region(
     skipped_size = 0
     skipped_duplicate = 0
 
+    # Get detection settings. Defaults: min_shape_width=15, min_shape_height=15, center_clustering=10
+    detection_settings = align_settings.detection
+    min_shape_w = detection_settings.min_shape_width
+    min_shape_h = detection_settings.min_shape_height
+    center_cluster_dist = detection_settings.center_clustering_distance
+
     for contour in all_contours:
         area = cv2.contourArea(contour)
         if area < min_area:
@@ -161,14 +201,14 @@ def extract_shapes_from_region(
             continue
 
         x, y, w, h = cv2.boundingRect(contour)
-        if w < 15 or h < 15:
+        if w < min_shape_w or h < min_shape_h:
             skipped_size += 1
             continue
 
         cx = x + w / 2
         cy = y + h / 2
 
-        center_key = (int(cx / 10), int(cy / 10))
+        center_key = (int(cx / center_cluster_dist), int(cy / center_cluster_dist))
         if center_key in seen_centers:
             skipped_duplicate += 1
             continue
@@ -180,7 +220,10 @@ def extract_shapes_from_region(
         epsilon = 0.02 * cv2.arcLength(contour, True)
         approx = cv2.approxPolyDP(contour, epsilon, True)
 
-        if fill_ratio > 0.75 and fill_ratio < 0.85:
+        # Ellipse fill ratio bounds from settings. Defaults: min=0.75, max=0.85
+        ellipse_min = detection_settings.ellipse_fill_ratio_min
+        ellipse_max = detection_settings.ellipse_fill_ratio_max
+        if fill_ratio > ellipse_min and fill_ratio < ellipse_max:
             shape_type = "ellipse"
         elif len(approx) == 4:
             shape_type = "rect"
@@ -217,13 +260,16 @@ def find_closest_shape(
     best_shape = None
     best_score = float('inf')
 
+    # Size difference weight from settings. Default: 50
+    size_weight = _get_alignment_settings().scoring.size_difference_weight
+
     for shape in shapes:
         cx, cy = shape["center"]
         x, y, w, h = shape["bbox"]
 
         distance = np.sqrt((cx - target_cx)**2 + (cy - target_cy)**2)
         size_diff = abs(w - target_w) / target_w + abs(h - target_h) / target_h
-        score = distance + size_diff * 50
+        score = distance + size_diff * size_weight
 
         if score < best_score:
             best_score = score
@@ -854,27 +900,27 @@ def align_element(
 def create_color_mask(
     img: np.ndarray,
     pen_color_bgr: Tuple[int, int, int],
-    hue_tol: int = 15
+    hue_tol: int = 15,
+    s_tol: int = 50,
+    v_tol: int = 50
 ) -> np.ndarray:
     """
     Create a color mask for the given pen color.
 
-    Uses strict color matching to avoid picking up other colored items.
+    Uses color matching to find pixels similar to the pen color.
 
     Args:
         img: BGR image
         pen_color_bgr: Pen color in BGR format
         hue_tol: Hue tolerance for color matching (OpenCV hue is 0-179)
+        s_tol: Saturation tolerance (0-255)
+        v_tol: Value/brightness tolerance (0-255)
 
     Returns:
         Binary mask where pen color pixels are white
     """
     pen_hsv = bgr_to_hsv(pen_color_bgr)
     img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-
-    # Tighter tolerances to avoid color leakage from other items
-    s_tol = 50  # Reduced from 80
-    v_tol = 50  # Reduced from 80
 
     h_target = pen_hsv[0]
     h_low = h_target - hue_tol
@@ -1137,6 +1183,567 @@ def merge_collinear_segments(
     return merged
 
 
+def orthogonal_search_for_line(
+    img: np.ndarray,
+    line_x1: float, line_y1: float,
+    line_x2: float, line_y2: float,
+    pen_color_bgr: Tuple[int, int, int],
+    min_line_length: int,
+    max_search_distance: int = 200,
+    step_size: int = 20,
+    angle_tolerance: float = 20.0,
+    length_tolerance: float = 0.20,
+    report_fn: Optional[Callable[[str], None]] = None
+) -> Optional[Tuple[float, List[Dict]]]:
+    """
+    Search orthogonally to a line direction to find line features.
+
+    Uses binary search in both positive and negative orthogonal directions.
+    Returns the closest offset where line features are detected.
+
+    Only considers detected lines that match:
+    - Angle within ±angle_tolerance degrees of the target line
+    - Length within ±length_tolerance (as fraction) of the target line
+
+    Args:
+        img: Full image (padded)
+        line_x1, line_y1: Line start point in image coordinates
+        line_x2, line_y2: Line end point in image coordinates
+        pen_color_bgr: Expected pen color in BGR
+        min_line_length: Minimum line length to detect
+        max_search_distance: Maximum distance to search in each direction
+        step_size: Initial step size for search
+        angle_tolerance: Maximum angle difference in degrees (default ±20°)
+        length_tolerance: Maximum length difference as fraction (default ±20%)
+        report_fn: Optional callback for progress reporting
+
+    Returns:
+        (offset, detected_lines) tuple where offset is the orthogonal distance
+        from the original line, or None if no features found
+    """
+    def report(msg: str):
+        if report_fn:
+            report_fn(msg)
+        print(f"[ORTHO_SEARCH] {msg}")
+
+    img_h, img_w = img.shape[:2]
+
+    # Calculate line properties
+    dx = line_x2 - line_x1
+    dy = line_y2 - line_y1
+    line_length = np.sqrt(dx**2 + dy**2)
+
+    if line_length < 1:
+        report("Line too short for orthogonal search")
+        return None
+
+    # Calculate target line angle (0-180 degrees)
+    target_angle = np.degrees(np.arctan2(dy, dx)) % 180
+
+    # Orthogonal unit vector (perpendicular to line)
+    # Rotate direction by 90 degrees: (dx, dy) -> (-dy, dx)
+    ortho_x = -dy / line_length
+    ortho_y = dx / line_length
+
+    report(f"Target line: length={line_length:.1f}, angle={target_angle:.1f}°")
+    report(f"Tolerances: angle=±{angle_tolerance}°, length=±{length_tolerance*100:.0f}%")
+    report(f"Orthogonal direction: ({ortho_x:.2f}, {ortho_y:.2f})")
+
+    # Calculate search window size based on line
+    window_w = int(abs(dx) + 60)  # Line width + margin
+    window_h = int(abs(dy) + 60)  # Line height + margin
+    min_window = 80
+    window_w = max(min_window, window_w)
+    window_h = max(min_window, window_h)
+
+    # Line midpoint
+    mid_x = (line_x1 + line_x2) / 2
+    mid_y = (line_y1 + line_y2) / 2
+
+    def filter_matching_lines(lines: List[Dict]) -> List[Dict]:
+        """Filter lines that match target angle and length."""
+        matching = []
+        for line in lines:
+            # Check angle (handle wraparound at 180°)
+            angle_diff = abs(line["angle"] - target_angle)
+            angle_diff = min(angle_diff, 180 - angle_diff)
+
+            # Check length
+            length_diff_ratio = abs(line["length"] - line_length) / line_length
+
+            if angle_diff <= angle_tolerance and length_diff_ratio <= length_tolerance:
+                matching.append(line)
+                report(f"    MATCH: angle_diff={angle_diff:.1f}°, length_diff={length_diff_ratio*100:.1f}%")
+            else:
+                report(f"    REJECT: angle_diff={angle_diff:.1f}°, length_diff={length_diff_ratio*100:.1f}%")
+
+        return matching
+
+    # Counter for debug images
+    search_step_counter = [0]
+
+    def try_offset(offset: float, save_debug: bool = True) -> Optional[List[Dict]]:
+        """Try detecting lines at given orthogonal offset."""
+        search_step_counter[0] += 1
+        step_num = search_step_counter[0]
+
+        # Move window center by offset in orthogonal direction
+        new_mid_x = mid_x + offset * ortho_x
+        new_mid_y = mid_y + offset * ortho_y
+
+        # Calculate window bounds
+        wx1 = int(new_mid_x - window_w / 2)
+        wy1 = int(new_mid_y - window_h / 2)
+        wx2 = int(new_mid_x + window_w / 2)
+        wy2 = int(new_mid_y + window_h / 2)
+
+        # Clamp to image bounds
+        wx1_clamped = max(0, wx1)
+        wy1_clamped = max(0, wy1)
+        wx2_clamped = min(img_w, wx2)
+        wy2_clamped = min(img_h, wy2)
+
+        if wx2_clamped - wx1_clamped < 20 or wy2_clamped - wy1_clamped < 20:
+            return None
+
+        # Extract region
+        region = img[wy1_clamped:wy2_clamped, wx1_clamped:wx2_clamped]
+        if region.size == 0:
+            return None
+
+        # Detect lines
+        lines = detect_lines_in_region(
+            region, pen_color_bgr,
+            min_length=min_line_length,
+            filter_enclosed=True
+        )
+
+        # Filter to only lines matching angle and length criteria
+        matching_lines = []
+        if lines:
+            report(f"  Offset {offset}: found {len(lines)} raw lines, filtering...")
+            matching_lines = filter_matching_lines(lines)
+
+        # Save debug image for this search step
+        if save_debug:
+            try:
+                # Create debug image showing full image with search region
+                debug_img = img.copy()
+
+                # Draw search region rectangle (cyan for current step)
+                cv2.rectangle(debug_img, (wx1_clamped, wy1_clamped),
+                              (wx2_clamped, wy2_clamped), (255, 255, 0), 2)
+
+                # Draw the original target line (magenta)
+                cv2.line(debug_img, (int(line_x1), int(line_y1)),
+                         (int(line_x2), int(line_y2)), (255, 0, 255), 2)
+
+                # Draw center of search window (cyan dot)
+                cv2.circle(debug_img, (int(new_mid_x), int(new_mid_y)), 5, (255, 255, 0), -1)
+
+                # Add step label
+                label = f"Step {step_num}: offset={offset:.0f}"
+                if matching_lines:
+                    label += f" FOUND {len(matching_lines)} lines"
+                else:
+                    label += " (no match)"
+                cv2.putText(debug_img, label, (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+
+                # Add color info
+                color_label = f"Search color BGR: {pen_color_bgr}"
+                cv2.putText(debug_img, color_label, (10, 60),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+
+                cv2.imwrite(f"debug_ortho_search_step_{step_num:03d}.png", debug_img)
+
+                # Also save the color mask for this region
+                color_mask = create_color_mask(region, pen_color_bgr, hue_tol=25, s_tol=70, v_tol=70)
+
+                # Draw detected lines on color mask (in green)
+                mask_with_lines = cv2.cvtColor(color_mask, cv2.COLOR_GRAY2BGR)
+                if lines:
+                    for line in lines:
+                        lx1, ly1 = int(line["x1"]), int(line["y1"])
+                        lx2, ly2 = int(line["x2"]), int(line["y2"])
+                        # Red for non-matching, green for matching
+                        is_match = line in matching_lines
+                        color = (0, 255, 0) if is_match else (0, 0, 255)
+                        cv2.line(mask_with_lines, (lx1, ly1), (lx2, ly2), color, 2)
+
+                # Add label to mask image
+                cv2.putText(mask_with_lines, f"Step {step_num} mask", (5, 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+                cv2.imwrite(f"debug_ortho_mask_step_{step_num:03d}.png", mask_with_lines)
+
+                report(f"  DEBUG: Saved step {step_num} images")
+            except Exception as e:
+                report(f"  DEBUG: Could not save step images: {e}")
+
+        return matching_lines if matching_lines else None
+
+    # Binary search in positive direction
+    def binary_search_direction(direction: int) -> Optional[Tuple[float, List[Dict]]]:
+        """Binary search in one direction. direction is +1 or -1."""
+        report(f"Binary search in {'positive' if direction > 0 else 'negative'} orthogonal direction")
+
+        # First, find if there's any feature within max distance (linear search with large steps)
+        found_offset = None
+        found_lines = None
+
+        for dist in range(step_size, max_search_distance + 1, step_size):
+            offset = dist * direction
+            lines = try_offset(offset)
+            if lines:
+                report(f"  Found {len(lines)} matching lines at offset {offset} (angle ±{angle_tolerance}°, length ±{length_tolerance*100:.0f}%)")
+                found_offset = offset
+                found_lines = lines
+                break
+
+        if found_offset is None:
+            report(f"  No matching features found up to {max_search_distance}px")
+            return None
+
+        # Binary search to find the closest offset with features
+        # Search between (last_no_feature, found_offset)
+        low = abs(found_offset) - step_size
+        high = abs(found_offset)
+
+        while high - low > 5:  # 5px precision
+            mid = (low + high) // 2
+            offset = mid * direction
+            lines = try_offset(offset)
+
+            if lines:
+                high = mid
+                found_offset = offset
+                found_lines = lines
+                report(f"  Binary search: offset {offset} has features, narrowing to [{low}, {mid}]")
+            else:
+                low = mid
+                report(f"  Binary search: offset {offset} empty, narrowing to [{mid}, {high}]")
+
+        report(f"  Final offset: {found_offset} with {len(found_lines)} lines")
+        return (found_offset, found_lines)
+
+    # Search in both directions
+    report("=== ORTHOGONAL SEARCH START ===")
+    result_pos = binary_search_direction(+1)
+    result_neg = binary_search_direction(-1)
+
+    # Save summary image showing the search pattern
+    try:
+        summary_img = img.copy()
+
+        # Draw the original target line (magenta, thick)
+        cv2.line(summary_img, (int(line_x1), int(line_y1)),
+                 (int(line_x2), int(line_y2)), (255, 0, 255), 3)
+
+        # Draw the orthogonal search direction (arrows)
+        arrow_len = 50
+        # Positive direction arrow (green)
+        arrow_end_pos = (int(mid_x + arrow_len * ortho_x), int(mid_y + arrow_len * ortho_y))
+        cv2.arrowedLine(summary_img, (int(mid_x), int(mid_y)), arrow_end_pos, (0, 255, 0), 2)
+        cv2.putText(summary_img, "+", arrow_end_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+        # Negative direction arrow (red)
+        arrow_end_neg = (int(mid_x - arrow_len * ortho_x), int(mid_y - arrow_len * ortho_y))
+        cv2.arrowedLine(summary_img, (int(mid_x), int(mid_y)), arrow_end_neg, (0, 0, 255), 2)
+        cv2.putText(summary_img, "-", arrow_end_neg, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+
+        # Draw search window at center (yellow)
+        wx1 = int(mid_x - window_w / 2)
+        wy1 = int(mid_y - window_h / 2)
+        wx2 = int(mid_x + window_w / 2)
+        wy2 = int(mid_y + window_h / 2)
+        cv2.rectangle(summary_img, (wx1, wy1), (wx2, wy2), (0, 255, 255), 1)
+
+        # Mark result positions
+        if result_pos:
+            pos_offset = result_pos[0]
+            pos_x = int(mid_x + pos_offset * ortho_x)
+            pos_y = int(mid_y + pos_offset * ortho_y)
+            cv2.circle(summary_img, (pos_x, pos_y), 8, (0, 255, 0), -1)
+            cv2.putText(summary_img, f"+{pos_offset:.0f}", (pos_x + 10, pos_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+
+        if result_neg:
+            neg_offset = result_neg[0]
+            neg_x = int(mid_x + neg_offset * ortho_x)
+            neg_y = int(mid_y + neg_offset * ortho_y)
+            cv2.circle(summary_img, (neg_x, neg_y), 8, (0, 0, 255), -1)
+            cv2.putText(summary_img, f"{neg_offset:.0f}", (neg_x + 10, neg_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+
+        # Add legend
+        cv2.putText(summary_img, f"Orthogonal Search Summary", (10, 25),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(summary_img, f"Target color BGR: {pen_color_bgr}", (10, 50),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        cv2.putText(summary_img, f"Magenta=target line, Green=+dir, Red=-dir", (10, 70),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+        cv2.putText(summary_img, f"Total steps: {search_step_counter[0]}", (10, 90),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
+        cv2.imwrite("debug_ortho_search_summary.png", summary_img)
+        report(f"DEBUG: Saved orthogonal search summary image")
+    except Exception as e:
+        report(f"DEBUG: Could not save summary image: {e}")
+
+    # Choose the closest result
+    if result_pos is None and result_neg is None:
+        report("No features found in either direction")
+        return None
+
+    if result_pos is None:
+        report(f"Using negative direction result at offset {result_neg[0]}")
+        return result_neg
+
+    if result_neg is None:
+        report(f"Using positive direction result at offset {result_pos[0]}")
+        return result_pos
+
+    # Both found - use the one with smaller absolute offset
+    if abs(result_pos[0]) <= abs(result_neg[0]):
+        report(f"Positive offset {result_pos[0]} is closer than negative {result_neg[0]}")
+        return result_pos
+    else:
+        report(f"Negative offset {result_neg[0]} is closer than positive {result_pos[0]}")
+        return result_neg
+
+
+def refine_search_window(
+    img: np.ndarray,
+    center_x: float, center_y: float,
+    initial_w: int, initial_h: int,
+    target_angle: float, target_length: float,
+    pen_color_bgr: Tuple[int, int, int],
+    min_line_length: int,
+    angle_tolerance: float = 20.0,
+    length_tolerance: float = 0.20,
+    report_fn: Optional[Callable[[str], None]] = None
+) -> Tuple[List[Dict], int, int, float, float]:
+    """
+    Refine the search window in two phases:
+    1. Binary search to center the detected line in the window (orthogonal direction)
+    2. Grow the window along the line direction until length stabilizes
+
+    Args:
+        img: Full image
+        center_x, center_y: Center of search window in image coordinates
+        initial_w, initial_h: Initial window size
+        target_angle: Expected line angle in degrees (0-180)
+        target_length: Expected line length
+        pen_color_bgr: Expected pen color in BGR
+        min_line_length: Minimum line length to detect
+        angle_tolerance: Maximum angle difference in degrees (default ±20°)
+        length_tolerance: Maximum length difference as fraction (default ±20%)
+        report_fn: Optional callback for progress reporting
+
+    Returns:
+        (refined_lines, final_window_w, final_window_h, final_center_x, final_center_y)
+    """
+    def report(msg: str):
+        if report_fn:
+            report_fn(msg)
+        print(f"[REFINE_WINDOW] {msg}")
+
+    img_h, img_w = img.shape[:2]
+
+    # Calculate line direction and orthogonal vectors from target angle
+    angle_rad = np.radians(target_angle)
+    line_dir_x = np.cos(angle_rad)
+    line_dir_y = np.sin(angle_rad)
+    # Orthogonal direction (perpendicular to line)
+    ortho_x = -line_dir_y
+    ortho_y = line_dir_x
+
+    def filter_matching_lines(lines: List[Dict]) -> List[Dict]:
+        """Filter lines that match target angle and length."""
+        matching = []
+        for line in lines:
+            # Check angle (handle wraparound at 180°)
+            angle_diff = abs(line["angle"] - target_angle)
+            angle_diff = min(angle_diff, 180 - angle_diff)
+
+            # Check length - use target_length for comparison
+            length_diff_ratio = abs(line["length"] - target_length) / target_length if target_length > 0 else 1.0
+
+            if angle_diff <= angle_tolerance and length_diff_ratio <= length_tolerance:
+                matching.append(line)
+
+        return matching
+
+    def detect_at_position(cx: float, cy: float, w: int, h: int) -> Tuple[Optional[List[Dict]], Optional[Dict]]:
+        """Detect lines at given window position, return (matching_lines, best_line)."""
+        wx1 = int(cx - w / 2)
+        wy1 = int(cy - h / 2)
+        wx2 = int(cx + w / 2)
+        wy2 = int(cy + h / 2)
+        wx1, wy1 = max(0, wx1), max(0, wy1)
+        wx2, wy2 = min(img_w, wx2), min(img_h, wy2)
+
+        if wx2 - wx1 < 20 or wy2 - wy1 < 20:
+            return None, None
+
+        region = img[wy1:wy2, wx1:wx2]
+        if region.size == 0:
+            return None, None
+
+        lines = detect_lines_in_region(region, pen_color_bgr, min_length=min_line_length, filter_enclosed=True)
+        if not lines:
+            return None, None
+
+        matching = filter_matching_lines(lines)
+        if not matching:
+            return None, None
+
+        best = max(matching, key=lambda l: l["length"])
+        return matching, best
+
+    report(f"=== WINDOW REFINEMENT ===")
+    report(f"Initial: {initial_w}x{initial_h} at ({center_x:.1f}, {center_y:.1f})")
+    report(f"Target: angle={target_angle:.1f}°, length={target_length:.1f}")
+    report(f"Line direction: ({line_dir_x:.2f}, {line_dir_y:.2f}), orthogonal: ({ortho_x:.2f}, {ortho_y:.2f})")
+
+    # Initial detection
+    current_lines, best_line = detect_at_position(center_x, center_y, initial_w, initial_h)
+    if not current_lines or not best_line:
+        report("No matching lines in initial window")
+        return ([], initial_w, initial_h, center_x, center_y)
+
+    current_length = best_line["length"]
+    report(f"Initial best line length: {current_length:.1f}")
+
+    # ========================================
+    # PHASE 1: Binary search to center the line in the window (orthogonal direction)
+    # ========================================
+    report("--- Phase 1: Centering line in window (binary search) ---")
+
+    current_cx, current_cy = center_x, center_y
+    current_w, current_h = initial_w, initial_h
+
+    # Get the line's midpoint in local window coordinates
+    line_mid_x = best_line["midpoint"][0]
+    line_mid_y = best_line["midpoint"][1]
+    window_mid_x = current_w / 2
+    window_mid_y = current_h / 2
+
+    # Calculate offset of line from window center in orthogonal direction
+    # Project the offset onto the orthogonal vector
+    offset_x = line_mid_x - window_mid_x
+    offset_y = line_mid_y - window_mid_y
+    ortho_offset = offset_x * ortho_x + offset_y * ortho_y
+
+    report(f"Line midpoint in window: ({line_mid_x:.1f}, {line_mid_y:.1f})")
+    report(f"Window center: ({window_mid_x:.1f}, {window_mid_y:.1f})")
+    report(f"Orthogonal offset: {ortho_offset:.1f}px")
+
+    # Shift the window center to center the line
+    if abs(ortho_offset) > 5:  # Only adjust if offset > 5px
+        # Binary search to find the optimal center position
+        search_range = abs(ortho_offset) * 2
+        low_offset = -search_range
+        high_offset = search_range
+
+        best_center_x, best_center_y = current_cx, current_cy
+        best_centering_error = abs(ortho_offset)
+
+        for _ in range(10):  # Max 10 binary search iterations
+            mid_offset = (low_offset + high_offset) / 2
+
+            test_cx = current_cx + mid_offset * ortho_x
+            test_cy = current_cy + mid_offset * ortho_y
+
+            test_lines, test_best = detect_at_position(test_cx, test_cy, current_w, current_h)
+            if not test_lines or not test_best:
+                # No line found, narrow search
+                high_offset = mid_offset
+                continue
+
+            # Calculate new orthogonal offset
+            test_line_mid_x = test_best["midpoint"][0]
+            test_line_mid_y = test_best["midpoint"][1]
+            test_offset_x = test_line_mid_x - window_mid_x
+            test_offset_y = test_line_mid_y - window_mid_y
+            test_ortho_offset = test_offset_x * ortho_x + test_offset_y * ortho_y
+
+            report(f"  Binary search: offset {mid_offset:.1f} -> line ortho offset {test_ortho_offset:.1f}")
+
+            if abs(test_ortho_offset) < best_centering_error:
+                best_centering_error = abs(test_ortho_offset)
+                best_center_x, best_center_y = test_cx, test_cy
+                current_lines = test_lines
+                best_line = test_best
+
+            # Adjust search range based on line position
+            if test_ortho_offset > 0:
+                low_offset = mid_offset
+            else:
+                high_offset = mid_offset
+
+            if abs(test_ortho_offset) < 3:  # Close enough to center
+                break
+
+        current_cx, current_cy = best_center_x, best_center_y
+        report(f"Centered window at ({current_cx:.1f}, {current_cy:.1f}), centering error: {best_centering_error:.1f}px")
+
+    # ========================================
+    # PHASE 2: Grow window along line direction until length stabilizes
+    # ========================================
+    report("--- Phase 2: Growing window along line direction ---")
+
+    current_length = best_line["length"]
+    expansion_step = 20
+    max_expansions = 20
+    no_improvement_count = 0
+
+    # Track expansion in line direction (not uniform)
+    line_expansion = 0  # Total expansion along line direction
+
+    for i in range(max_expansions):
+        line_expansion += expansion_step
+
+        # Expand window along line direction (both ends)
+        # Window grows in the line direction, not uniformly
+        expand_x = abs(line_dir_x) * line_expansion
+        expand_y = abs(line_dir_y) * line_expansion
+
+        new_w = initial_w + int(expand_x * 2)
+        new_h = initial_h + int(expand_y * 2)
+
+        # Ensure minimum expansion in both dimensions
+        new_w = max(new_w, initial_w + i * 10)
+        new_h = max(new_h, initial_h + i * 10)
+
+        test_lines, test_best = detect_at_position(current_cx, current_cy, new_w, new_h)
+
+        if not test_lines or not test_best:
+            report(f"  Expansion {i+1}: no lines detected, stopping")
+            break
+
+        new_length = test_best["length"]
+        improvement = new_length - current_length
+
+        report(f"  Expansion {i+1}: window {new_w}x{new_h}, length {new_length:.1f} (Δ={improvement:+.1f})")
+
+        if improvement <= 1.0:
+            no_improvement_count += 1
+            if no_improvement_count >= 2:
+                report(f"  No significant improvement for 2 iterations, stopping")
+                break
+        else:
+            no_improvement_count = 0
+            current_length = new_length
+            current_lines = test_lines
+            best_line = test_best
+            current_w = new_w
+            current_h = new_h
+
+    report(f"Final: window {current_w}x{current_h} at ({current_cx:.1f}, {current_cy:.1f}), length {current_length:.1f}")
+    return (current_lines, current_w, current_h, current_cx, current_cy)
+
+
 def detect_lines_in_region(
     img: np.ndarray,
     pen_color_bgr: Tuple[int, int, int],
@@ -1169,12 +1776,15 @@ def detect_lines_in_region(
 
     lines_found = []
 
-    # Use a single strict hue tolerance to avoid color leakage from other items
-    # Start with tight tolerance, only expand if no lines found
-    hue_tolerances = [10, 15, 20]
+    # Use wider hue tolerances for line detection since:
+    # 1. Dashed lines have anti-aliased edges with color variation
+    # 2. We want to be more forgiving to find the line first, then refine color
+    # Start with moderate tolerance, expand if needed
+    hue_tolerances = [15, 25, 35]
 
     for hue_tol in hue_tolerances:
-        color_mask = create_color_mask(img, pen_color_bgr, hue_tol)
+        # Use wider S/V tolerances for line detection (dashed lines have anti-aliasing)
+        color_mask = create_color_mask(img, pen_color_bgr, hue_tol, s_tol=70, v_tol=70)
 
         # If filtering enclosed shapes, check contours
         if filter_enclosed:
@@ -1194,18 +1804,71 @@ def detect_lines_in_region(
             edges = cv2.Canny(color_mask, 50, 150, apertureSize=3)
 
         # Use Hough Line Transform (probabilistic)
-        # Large maxLineGap to bridge text in the middle of lines
+        # Very large maxLineGap to bridge text labels in the middle of lines
+        # Text blocks can be 150-200+ pixels wide, so we need a large gap
         detected = cv2.HoughLinesP(
             edges,
             rho=1,
             theta=np.pi / 180,
             threshold=15,  # Lower threshold for broken lines
             minLineLength=max(10, min_length // 4),  # Shorter min for segments
-            maxLineGap=100  # Large gap to bridge text blocks in lines
+            maxLineGap=250  # Very large gap to bridge text blocks in lines
         )
 
         if detected is not None and len(detected) > 0:
             print(f"[LINE_ALIGN] Hue tolerance {hue_tol}: found {len(detected)} line segments")
+
+            # Save debug images showing detection process
+            try:
+                import time
+                timestamp = int(time.time() * 1000) % 100000
+
+                # Create debug composite image
+                h, w = img.shape[:2]
+                debug_h = h
+                debug_w = w * 4  # Side by side: original, color_mask, edges, detected lines
+
+                debug_composite = np.zeros((debug_h, debug_w, 3), dtype=np.uint8)
+
+                # Panel 1: Original image
+                debug_composite[0:h, 0:w] = img
+
+                # Panel 2: Color mask
+                color_mask_bgr = cv2.cvtColor(color_mask, cv2.COLOR_GRAY2BGR)
+                debug_composite[0:h, w:2*w] = color_mask_bgr
+
+                # Panel 3: Edges (from line_mask if filter_enclosed, else from color_mask)
+                if filter_enclosed:
+                    edges_bgr = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+                else:
+                    edges_bgr = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+                debug_composite[0:h, 2*w:3*w] = edges_bgr
+
+                # Panel 4: Detected line segments overlaid on original
+                lines_overlay = img.copy()
+                for line in detected:
+                    lx1, ly1, lx2, ly2 = line[0]
+                    cv2.line(lines_overlay, (lx1, ly1), (lx2, ly2), (0, 255, 0), 2)
+                    # Mark endpoints
+                    cv2.circle(lines_overlay, (lx1, ly1), 4, (255, 0, 0), -1)
+                    cv2.circle(lines_overlay, (lx2, ly2), 4, (0, 0, 255), -1)
+                debug_composite[0:h, 3*w:4*w] = lines_overlay
+
+                # Add labels
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                cv2.putText(debug_composite, "Original", (10, 20), font, 0.5, (0, 255, 255), 1)
+                cv2.putText(debug_composite, f"Color Mask (hue_tol={hue_tol})", (w+10, 20), font, 0.5, (0, 255, 255), 1)
+                cv2.putText(debug_composite, "Edges", (2*w+10, 20), font, 0.5, (0, 255, 255), 1)
+                cv2.putText(debug_composite, f"Detected ({len(detected)} segs)", (3*w+10, 20), font, 0.5, (0, 255, 255), 1)
+
+                # Add color info
+                cv2.putText(debug_composite, f"Search BGR: {pen_color_bgr}", (10, h-10), font, 0.4, (0, 255, 255), 1)
+
+                cv2.imwrite(f"debug_line_detection_{timestamp}.png", debug_composite)
+                print(f"[LINE_ALIGN] Saved debug_line_detection_{timestamp}.png")
+            except Exception as e:
+                print(f"[LINE_ALIGN] Could not save detection debug image: {e}")
+
             for line in detected:
                 lx1, ly1, lx2, ly2 = line[0]
                 length = np.sqrt((lx2 - lx1)**2 + (ly2 - ly1)**2)
@@ -1251,14 +1914,47 @@ def detect_lines_in_region(
             unique_lines.append(line)
 
     print(f"[LINE_ALIGN] Unique lines before merge: {len(unique_lines)}")
+    for i, line in enumerate(unique_lines):
+        print(f"[LINE_ALIGN]   Segment {i}: ({line['x1']:.1f}, {line['y1']:.1f}) -> ({line['x2']:.1f}, {line['y2']:.1f}), len={line['length']:.1f}, angle={line['angle']:.1f}°")
 
-    # Merge collinear segments (handles dashed lines)
-    merged_lines = merge_collinear_segments(unique_lines)
+    # Merge collinear segments (handles dashed lines and lines with text labels)
+    # Use larger distance_tolerance to handle text labels in the middle of lines
+    merged_lines = merge_collinear_segments(unique_lines, angle_tolerance=15.0, distance_tolerance=80.0)
+
+    print(f"[LINE_ALIGN] After merge: {len(merged_lines)} lines")
+    for i, line in enumerate(merged_lines):
+        is_merged = line.get("is_dashed", False)
+        print(f"[LINE_ALIGN]   Line {i}: ({line['x1']:.1f}, {line['y1']:.1f}) -> ({line['x2']:.1f}, {line['y2']:.1f}), len={line['length']:.1f}, merged={is_merged}")
 
     # Filter by minimum total length
     final_lines = [l for l in merged_lines if l["length"] >= min_length]
 
-    print(f"[LINE_ALIGN] Final lines after merge and filter: {len(final_lines)}")
+    print(f"[LINE_ALIGN] Final lines after filter (min_length={min_length}): {len(final_lines)}")
+
+    # Save debug image showing merged lines
+    try:
+        import time
+        timestamp = int(time.time() * 1000) % 100000
+
+        merged_debug = img.copy()
+        colors = [(0, 255, 0), (255, 0, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255)]
+        for i, line in enumerate(final_lines):
+            color = colors[i % len(colors)]
+            x1, y1 = int(line["x1"]), int(line["y1"])
+            x2, y2 = int(line["x2"]), int(line["y2"])
+            cv2.line(merged_debug, (x1, y1), (x2, y2), color, 3)
+            cv2.circle(merged_debug, (x1, y1), 6, (255, 0, 0), -1)  # Blue = start
+            cv2.circle(merged_debug, (x2, y2), 6, (0, 0, 255), -1)  # Red = end
+            cv2.putText(merged_debug, f"L{i}: {line['length']:.0f}px", (x1, y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+
+        cv2.putText(merged_debug, f"Final: {len(final_lines)} lines", (10, 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+        cv2.imwrite(f"debug_merged_lines_{timestamp}.png", merged_debug)
+        print(f"[LINE_ALIGN] Saved debug_merged_lines_{timestamp}.png")
+    except Exception as e:
+        print(f"[LINE_ALIGN] Could not save merged lines debug image: {e}")
+
     return final_lines
 
 
@@ -2377,16 +3073,131 @@ def align_line_element(
         report(f"DEBUG: Could not save debug images: {e}")
 
     if not detected_lines:
-        report("No lines detected, keeping original position")
-        return {
-            "x1": round(x1, 1),
-            "y1": round(y1, 1),
-            "x2": round(x2, 1),
-            "y2": round(y2, 1),
-            "pen_width": pen_width,
-            "pen_color": pen_color,
-            "arrow_mode": "none",
-        }
+        report("No lines detected in initial region, trying orthogonal search...")
+
+        # Try orthogonal search to find the line
+        # Use the original line coordinates in padded image space
+        padded_line_x1 = x1 + pad_offset_x
+        padded_line_y1 = y1 + pad_offset_y
+        padded_line_x2 = x2 + pad_offset_x
+        padded_line_y2 = y2 + pad_offset_y
+
+        # Search up to 100% of line length in each orthogonal direction
+        max_ortho_distance = max(60, int(line_length * 1.0))
+        report(f"Orthogonal search distance: up to {max_ortho_distance}px (100% of line length {line_length:.1f})")
+
+        ortho_result = orthogonal_search_for_line(
+            padded_img,
+            padded_line_x1, padded_line_y1,
+            padded_line_x2, padded_line_y2,
+            pen_bgr,
+            min_line_length,
+            max_search_distance=max_ortho_distance,
+            step_size=20,
+            report_fn=report
+        )
+
+        if ortho_result is not None:
+            ortho_offset, ortho_lines = ortho_result
+            report(f"Orthogonal search found {len(ortho_lines)} lines at offset {ortho_offset}")
+
+            # Calculate the orthogonal direction
+            dx = x2 - x1
+            dy = y2 - y1
+            line_len = np.sqrt(dx**2 + dy**2)
+            if line_len > 0:
+                ortho_x = -dy / line_len
+                ortho_y = dx / line_len
+
+                # Calculate the shifted window center
+                mid_x = (x1 + x2) / 2 + pad_offset_x
+                mid_y = (y1 + y2) / 2 + pad_offset_y
+                new_mid_x = mid_x + ortho_offset * ortho_x
+                new_mid_y = mid_y + ortho_offset * ortho_y
+
+                # Initial window size
+                initial_w = int(abs(dx) + 60)
+                initial_h = int(abs(dy) + 60)
+                initial_w = max(80, initial_w)
+                initial_h = max(80, initial_h)
+
+                # Calculate target angle for refinement
+                target_angle = np.degrees(np.arctan2(dy, dx)) % 180
+
+                # Step 2: Refine the window - center line and grow along line direction
+                report("--- Refining search window ---")
+                refined_lines, final_w, final_h, final_cx, final_cy = refine_search_window(
+                    padded_img,
+                    new_mid_x, new_mid_y,
+                    initial_w, initial_h,
+                    target_angle, line_len,
+                    pen_bgr,
+                    min_line_length,
+                    angle_tolerance=20.0,
+                    length_tolerance=0.20,
+                    report_fn=report
+                )
+
+                if refined_lines:
+                    detected_lines = refined_lines
+                    # Update the window center to the refined position
+                    new_mid_x, new_mid_y = final_cx, final_cy
+                    report(f"Window refinement: {len(detected_lines)} lines in {final_w}x{final_h} at ({final_cx:.1f}, {final_cy:.1f})")
+                else:
+                    detected_lines = ortho_lines
+                    final_w, final_h = initial_w, initial_h
+                    report(f"Window refinement failed, using original {len(detected_lines)} lines")
+
+                # Shift the search coordinates by the orthogonal offset
+                shift_x = ortho_offset * ortho_x
+                shift_y = ortho_offset * ortho_y
+
+                # Update search region offsets to account for the shift
+                search_x1 += shift_x
+                search_y1 += shift_y
+
+                # Save debug image for refined result
+                try:
+                    wx1 = int(new_mid_x - final_w / 2)
+                    wy1 = int(new_mid_y - final_h / 2)
+                    wx2 = int(new_mid_x + final_w / 2)
+                    wy2 = int(new_mid_y + final_h / 2)
+
+                    # Clamp to image bounds
+                    padded_h, padded_w = padded_img.shape[:2]
+                    wx1 = max(0, wx1)
+                    wy1 = max(0, wy1)
+                    wx2 = min(padded_w, wx2)
+                    wy2 = min(padded_h, wy2)
+
+                    ortho_region = padded_img[wy1:wy2, wx1:wx2]
+                    ortho_mask = create_color_mask(ortho_region, pen_bgr, hue_tol=25, s_tol=70, v_tol=70)
+                    cv2.imwrite("debug_line_color_mask_ortho.png", ortho_mask)
+                    report(f"DEBUG: Saved refined color mask to debug_line_color_mask_ortho.png")
+
+                    # Draw detected lines on region
+                    debug_ortho = ortho_region.copy()
+                    for line in detected_lines:
+                        lx1, ly1 = int(line["x1"]), int(line["y1"])
+                        lx2, ly2 = int(line["x2"]), int(line["y2"])
+                        cv2.line(debug_ortho, (lx1, ly1), (lx2, ly2), (0, 0, 255), 2)
+                    cv2.imwrite("debug_line_search_region_ortho.png", debug_ortho)
+                    report(f"DEBUG: Saved refined search region to debug_line_search_region_ortho.png")
+                except Exception as e:
+                    report(f"DEBUG: Could not save orthogonal debug images: {e}")
+
+                report(f"Using orthogonal search results with offset ({shift_x:.1f}, {shift_y:.1f})")
+        else:
+            report("Orthogonal search found no features, keeping original position")
+            return {
+                "x1": round(x1, 1),
+                "y1": round(y1, 1),
+                "x2": round(x2, 1),
+                "y2": round(y2, 1),
+                "pen_width": pen_width,
+                "pen_color": pen_color,
+                "arrow_mode": "none",
+            }
 
     # Find the best matching line
     report("--- Step 2: Finding closest line ---")
@@ -2535,5 +3346,38 @@ def align_line_element(
     if line_pattern == "dashed":
         style_info += f", dash={result['dash']}, dash_length={result['dash_pattern_length']}, dash_solid={result['dash_solid_percent']}%"
     report(f"Style: {style_info}")
+
+    # Save final result debug image
+    try:
+        final_debug = padded_img.copy()
+
+        # Draw detected line (with arrowhead extensions) in green
+        final_x1 = int(new_x1 + pad_offset_x)
+        final_y1 = int(new_y1 + pad_offset_y)
+        final_x2 = int(new_x2 + pad_offset_x)
+        final_y2 = int(new_y2 + pad_offset_y)
+        cv2.line(final_debug, (final_x1, final_y1), (final_x2, final_y2), (0, 255, 0), 3)
+
+        # Mark endpoints: blue=start, red=end
+        cv2.circle(final_debug, (final_x1, final_y1), 8, (255, 0, 0), -1)
+        cv2.circle(final_debug, (final_x2, final_y2), 8, (0, 0, 255), -1)
+
+        # Draw original line in magenta for comparison
+        orig_x1 = int(x1 + pad_offset_x)
+        orig_y1 = int(y1 + pad_offset_y)
+        orig_x2 = int(x2 + pad_offset_x)
+        orig_y2 = int(y2 + pad_offset_y)
+        cv2.line(final_debug, (orig_x1, orig_y1), (orig_x2, orig_y2), (255, 0, 255), 1)
+
+        # Add legend
+        cv2.putText(final_debug, "FINAL RESULT", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+        cv2.putText(final_debug, "Green=detected, Magenta=original", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        cv2.putText(final_debug, f"Arrow mode: {arrow_mode}", (10, 75), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        cv2.putText(final_debug, f"Color: {result['pen_color']}", (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
+        cv2.imwrite("debug_line_final_result.png", final_debug)
+        report("DEBUG: Saved debug_line_final_result.png")
+    except Exception as e:
+        report(f"DEBUG: Could not save final result image: {e}")
 
     return result
