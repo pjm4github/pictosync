@@ -125,6 +125,7 @@ except ImportError:
 
 # Import comprehensive settings dialog
 from settings_dialog import SettingsDialog
+from help_dialog import HelpDialog, show_about_dialog
 from undo_commands import DeleteItemCommand, DeleteMultipleItemsCommand, AddItemCommand
 
 
@@ -190,7 +191,7 @@ class MainWindow(QMainWindow):
         # Hidden PNG indicator
         self._png_hidden_indicator: Optional[QGraphicsSimpleTextItem] = None
 
-        self.view = AnnotatorView(self.scene, self.load_background_png)
+        self.view = AnnotatorView(self.scene, self._on_drop_file)
 
         # Property panel (in splitter below canvas)
         self.props = PropertyPanel(self)
@@ -281,9 +282,9 @@ class MainWindow(QMainWindow):
         # File menu
         file_menu = menubar.addMenu("&File")
 
-        open_png = QAction("Open PNG...", self)
-        open_png.triggered.connect(self.open_png_dialog)
-        file_menu.addAction(open_png)
+        open_graphic = QAction("Open Graphic...", self)
+        open_graphic.triggered.connect(self.open_graphic_dialog)
+        file_menu.addAction(open_graphic)
 
         file_menu.addSeparator()
 
@@ -374,6 +375,24 @@ class MainWindow(QMainWindow):
         self._menu_zoom_region_act.setCheckable(True)
         view_menu.addAction(self._menu_zoom_region_act)
 
+        # Help menu
+        help_menu = menubar.addMenu("&Help")
+
+        help_contents_act = QAction("Help Contents", self)
+        help_contents_act.setShortcut(QKeySequence(Qt.Key.Key_F1))
+        help_contents_act.triggered.connect(self._show_help_dialog)
+        help_menu.addAction(help_contents_act)
+
+        shortcuts_act = QAction("Keyboard Shortcuts", self)
+        shortcuts_act.triggered.connect(lambda: self._show_help_dialog(tab=2))
+        help_menu.addAction(shortcuts_act)
+
+        help_menu.addSeparator()
+
+        about_act = QAction("About PictoSync", self)
+        about_act.triggered.connect(lambda: show_about_dialog(self))
+        help_menu.addAction(about_act)
+
     def _build_toolbar(self):
         """Build the application toolbar."""
         tb = QToolBar("Tools")
@@ -386,10 +405,14 @@ class MainWindow(QMainWindow):
         # Store actions with their icon names for theme switching
         self._icon_actions: Dict[QAction, str] = {}
 
-        def add_mode_action(text: str, mode: str, shortcut: str, icon_name: str):
+        def add_mode_action(text: str, mode: str, shortcut: str, icon_name: str,
+                            tooltip: str = ""):
             act = QAction(text, self)
             act.setCheckable(True)
             act.setShortcut(shortcut)
+            if tooltip:
+                act.setToolTip(f"{tooltip} ({shortcut})")
+                act.setStatusTip(tooltip)
             # Check for Ctrl modifier when triggered
             act.triggered.connect(lambda checked, m=mode: self._on_mode_action_triggered(m))
             self._icon_actions[act] = icon_name
@@ -397,28 +420,41 @@ class MainWindow(QMainWindow):
             return act
 
         # Mode actions
-        self.act_select = add_mode_action("Select", Mode.SELECT, "S", "select")
-        self.act_rect = add_mode_action("Rect", Mode.RECT, "R", "rect")
-        self.act_rrect = add_mode_action("RRect", Mode.ROUNDEDRECT, "U", "rrect")
-        self.act_ellipse = add_mode_action("Ellipse", Mode.ELLIPSE, "E", "ellipse")
-        self.act_line = add_mode_action("Line", Mode.LINE, "L", "line")
-        self.act_text = add_mode_action("Text", Mode.TEXT, "T", "text")
-        self.act_hexagon = add_mode_action("Hexagon", Mode.HEXAGON, "H", "hexagon")
-        self.act_cylinder = add_mode_action("Cylinder", Mode.CYLINDER, "Y", "cylinder")
-        self.act_blockarrow = add_mode_action("Block Arrow", Mode.BLOCKARROW, "A", "blockarrow")
+        self.act_select = add_mode_action("Select", Mode.SELECT, "S", "select",
+                                          "Select, move, and resize annotations")
+        self.act_rect = add_mode_action("Rect", Mode.RECT, "R", "rect",
+                                        "Draw a rectangle")
+        self.act_rrect = add_mode_action("RRect", Mode.ROUNDEDRECT, "U", "rrect",
+                                         "Draw a rounded rectangle")
+        self.act_ellipse = add_mode_action("Ellipse", Mode.ELLIPSE, "E", "ellipse",
+                                           "Draw an ellipse")
+        self.act_line = add_mode_action("Line", Mode.LINE, "L", "line",
+                                        "Draw a line or connector")
+        self.act_text = add_mode_action("Text", Mode.TEXT, "T", "text",
+                                        "Place a text annotation")
+        self.act_hexagon = add_mode_action("Hexagon", Mode.HEXAGON, "H", "hexagon",
+                                           "Draw a hexagon")
+        self.act_cylinder = add_mode_action("Cylinder", Mode.CYLINDER, "Y", "cylinder",
+                                            "Draw a cylinder (database)")
+        self.act_blockarrow = add_mode_action("Block Arrow", Mode.BLOCKARROW, "A", "blockarrow",
+                                              "Draw a block arrow")
         self.mode_actions = [self.act_select, self.act_rect, self.act_rrect, self.act_ellipse, self.act_line, self.act_text, self.act_hexagon, self.act_cylinder, self.act_blockarrow]
         self.act_select.setChecked(True)
 
         tb.addSeparator()
 
         # File actions
-        open_act = QAction("Open PNG...", self)
-        open_act.triggered.connect(self.open_png_dialog)
+        open_act = QAction("Open Graphic...", self)
+        open_act.triggered.connect(self.open_graphic_dialog)
+        open_act.setToolTip("Open a PNG or PUML file")
+        open_act.setStatusTip("Open a PNG or PUML file")
         self._icon_actions[open_act] = "open"
         tb.addAction(open_act)
 
         clear_act = QAction("Clear Overlay", self)
         clear_act.triggered.connect(self.clear_overlay)
+        clear_act.setToolTip("Remove all annotations from the canvas")
+        clear_act.setStatusTip("Remove all annotations from the canvas")
         self._icon_actions[clear_act] = "clear"
         tb.addAction(clear_act)
 
@@ -427,6 +463,8 @@ class MainWindow(QMainWindow):
         self.toggle_png_act.setCheckable(True)
         self.toggle_png_act.setEnabled(False)  # Disabled until PNG is loaded
         self.toggle_png_act.triggered.connect(self._toggle_png_visibility)
+        self.toggle_png_act.setToolTip("Toggle background image visibility")
+        self.toggle_png_act.setStatusTip("Toggle background image visibility")
         self._icon_actions[self.toggle_png_act] = "hide_png"
         tb.addAction(self.toggle_png_act)
 
@@ -435,6 +473,8 @@ class MainWindow(QMainWindow):
             self.align_act = QAction("Align to PNG", self)
             self.align_act.setEnabled(False)  # Disabled until conditions met
             self.align_act.triggered.connect(self.align_selected_to_png)
+            self.align_act.setToolTip("Snap selected shape to match background")
+            self.align_act.setStatusTip("Snap selected shape to match background")
             self._icon_actions[self.align_act] = "align"
             tb.addAction(self.align_act)
 
@@ -442,6 +482,8 @@ class MainWindow(QMainWindow):
             self.align_line_act = QAction("Align Line to PNG", self)
             self.align_line_act.setEnabled(False)  # Disabled until conditions met
             self.align_line_act.triggered.connect(self.align_selected_line_to_png)
+            self.align_line_act.setToolTip("Snap selected line to match background")
+            self.align_line_act.setStatusTip("Snap selected line to match background")
             self._icon_actions[self.align_line_act] = "align_line"
             tb.addAction(self.align_line_act)
 
@@ -454,11 +496,15 @@ class MainWindow(QMainWindow):
         self.model_name = "gemini-2.5-flash-image"
         cycle_act = QAction("Cycle Model", self)
         cycle_act.triggered.connect(self.cycle_model)
+        cycle_act.setToolTip("Cycle through Gemini AI models")
+        cycle_act.setStatusTip("Cycle through Gemini AI models")
         self._icon_actions[cycle_act] = "model"
         tb.addAction(cycle_act)
 
         self.extract_act = QAction("Auto-Extract (Gemini)", self)
         self.extract_act.triggered.connect(self.auto_extract)
+        self.extract_act.setToolTip("Auto-extract elements using Gemini AI")
+        self.extract_act.setStatusTip("Auto-extract elements using Gemini AI")
         self._icon_actions[self.extract_act] = "extract"
         tb.addAction(self.extract_act)
 
@@ -467,11 +513,15 @@ class MainWindow(QMainWindow):
         # Undo/Redo actions
         self.undo_act = self.undo_stack.createUndoAction(self, "Undo")
         self.undo_act.setShortcut(QKeySequence.StandardKey.Undo)
+        self.undo_act.setToolTip("Undo the last action (Ctrl+Z)")
+        self.undo_act.setStatusTip("Undo the last action")
         self._icon_actions[self.undo_act] = "undo"
         tb.addAction(self.undo_act)
 
         self.redo_act = self.undo_stack.createRedoAction(self, "Redo")
         self.redo_act.setShortcut(QKeySequence.StandardKey.Redo)
+        self.redo_act.setToolTip("Redo the last undone action (Ctrl+Y)")
+        self.redo_act.setStatusTip("Redo the last undone action")
         self._icon_actions[self.redo_act] = "redo"
         tb.addAction(self.redo_act)
 
@@ -482,12 +532,16 @@ class MainWindow(QMainWindow):
         self.zoom_region_act.setCheckable(True)
         # Shortcut is on menu action, synced via toggled signal
         self.zoom_region_act.triggered.connect(self._on_zoom_region_triggered)
+        self.zoom_region_act.setToolTip("Drag to zoom into a region (Z)")
+        self.zoom_region_act.setStatusTip("Drag to zoom into a region")
         self._icon_actions[self.zoom_region_act] = "zoom_region"
         tb.addAction(self.zoom_region_act)
 
         self.zoom_fit_act = QAction("Zoom Fit", self)
         self.zoom_fit_act.setShortcut("F")
         self.zoom_fit_act.triggered.connect(self._on_zoom_fit)
+        self.zoom_fit_act.setToolTip("Fit entire scene in view (F)")
+        self.zoom_fit_act.setStatusTip("Fit entire scene in view")
         self._icon_actions[self.zoom_fit_act] = "zoom_fit"
         tb.addAction(self.zoom_fit_act)
 
@@ -779,11 +833,79 @@ class MainWindow(QMainWindow):
         self.props.set_item(None)
         self.draft.set_status(f"Annotation in JSON: {ann_id} (no canvas item)")
 
-    def open_png_dialog(self):
-        """Open a file dialog to select a PNG image."""
-        path, _ = QFileDialog.getOpenFileName(self, "Open PNG", "", "PNG Images (*.png)")
-        if path:
+    def open_graphic_dialog(self):
+        """Open a file dialog to select a PNG image or PlantUML file."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Graphic", "",
+            "All Supported (*.png *.puml);;PNG Images (*.png);;PlantUML (*.puml)"
+        )
+        if not path:
+            return
+        if path.lower().endswith(".puml"):
+            self._import_puml(path)
+        else:
             self.load_background_png(path)
+
+    def _on_drop_file(self, path: str):
+        """Handle a file dropped onto the canvas (PNG or PUML)."""
+        if path.lower().endswith(".puml"):
+            self._import_puml(path)
+        else:
+            self.load_background_png(path)
+
+    def _import_puml(self, puml_path: str):
+        """Import a PlantUML file: render to PNG background and parse to annotations.
+
+        Args:
+            puml_path: Path to the .puml file.
+        """
+        from plantuml.renderer import render_puml_to_png
+        from plantuml.parser import parse_puml_to_annotations
+
+        # Read PUML source text
+        try:
+            with open(puml_path, "r", encoding="utf-8") as f:
+                puml_text = f.read()
+        except Exception as e:
+            QMessageBox.warning(self, "Read Error", f"Could not read PUML file:\n{e}")
+            return
+
+        # Try to render to PNG for background
+        png_path = None
+        try:
+            png_path = render_puml_to_png(puml_path)
+            self.load_background_png(png_path)
+        except RuntimeError as e:
+            QMessageBox.warning(
+                self, "PlantUML Rendering",
+                f"Could not render PNG background (Java/JAR issue).\n"
+                f"Annotations will still be parsed from PUML text.\n\n{e}"
+            )
+
+        # Determine canvas dimensions
+        if self.bg_item is not None:
+            pm = self.bg_item.pixmap()
+            canvas_w, canvas_h = pm.width(), pm.height()
+        else:
+            canvas_w, canvas_h = 1200, 800
+
+        # Parse PUML to annotations
+        data = parse_puml_to_annotations(puml_text, canvas_w, canvas_h)
+        num_annotations = len(data.get("annotations", []))
+
+        # Place JSON in editor
+        pretty = json.dumps(data, indent=2)
+        self._set_draft_text_programmatically(
+            pretty,
+            enable_import=True,
+            status=f"PUML imported: {num_annotations} annotations. Click Import to link JSON↔Scene.",
+            focus_id=None,
+        )
+
+        self.statusBar().showMessage(
+            f"Imported {puml_path} — {num_annotations} annotations extracted",
+            8000,
+        )
 
     def load_background_png(self, path: str):
         """Load a PNG image as the background."""
@@ -989,6 +1111,15 @@ class MainWindow(QMainWindow):
         self.view.zoom_fit()
         self.zoom_region_act.setChecked(False)
         self.statusBar().showMessage("Zoomed to fit.")
+
+    def _show_help_dialog(self, tab: int = 0):
+        """Show the help dialog, optionally opening to a specific tab.
+
+        Args:
+            tab: Index of the tab to show (0=Quick Start, 1=Tools, 2=Shortcuts).
+        """
+        dialog = HelpDialog(self, initial_tab=tab)
+        dialog.exec()
 
     def show_settings_dialog(self):
         """Show the settings dialog."""

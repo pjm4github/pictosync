@@ -1,0 +1,91 @@
+@startuml FIG7_Recommendation_Engine
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam rectangle {
+  RoundCorner 8
+}
+skinparam component {
+  RoundCorner 6
+}
+
+title **FIG. 7 — Recommendation Engine: Multi-Signal Scoring**
+
+rectangle "**Input Context**" as INPUT #F0F0FF {
+  component "Current Anomaly\n(type, subtype, severity)" as anomaly_input #E0E0FF
+  component "Asset Fingerprint\n(ID, class, feeder, sub)" as asset_input #E0E0FF
+  component "Prior Tag Scan\nResults" as tag_input #E0E0FF
+  component "SME Voice\nCommands" as voice_input #E0E0FF
+  component "Prior Skill\nResults (this session)" as chain_input #E0E0FF
+}
+
+rectangle "**Six Scoring Signals**" as SIGNALS #FFF8E8 {
+  component "**Signal 1: Anomaly Match**\nskill.anomaly_types ∩ trigger\n——————————\nWeight: **0.30**" as S1 #FFE8CC
+  component "**Signal 2: Asset Class**\nskill.target_classes ∩ asset\n——————————\nWeight: **0.15**" as S2 #FFE8CC
+  component "**Signal 3: Tag History**\nprior successes on\nsame asset/feeder\n——————————\nWeight: **0.25**" as S3 #FFE8CC
+  component "**Signal 4: Chain Pattern**\nescalation detected →\npromote later-stage skills\n——————————\nWeight: **0.15**" as S4 #FFE8CC
+  component "**Signal 5: SME Request**\ndirect voice command\nfor topic/skill\n——————————\nWeight: **0.40**\n(override)" as S5 #FFE0B0
+  component "**Signal 6: Prior Skill Chain**\ncomplementary skills\nsuggested by results\n——————————\nWeight: **0.20**" as S6 #FFE8CC
+}
+
+rectangle "**Quality Modifiers**" as QUALITY #F0FFF0 {
+  component "Success Rate\n(% validated results)" as QM1 #E0FFE0
+  component "Community Rating\n(0–5 from operators)" as QM2 #E0FFE0
+  component "Deployment Count\n(Bayesian confidence)" as QM3 #E0FFE0
+}
+
+rectangle "**Score Aggregation**" as AGG #E8F0FF {
+  component "Weighted Sum\nof 6 Signals\n× Quality Modifiers\n= Composite Score" as scorer #CCE0FF
+}
+
+rectangle "**Ranked Output**" as OUTPUT #F0E8FF {
+  component "1. harmonic-analysis (0.59)" as R1 #E0D0FF
+  component "2. asset-health-check (0.47)" as R2 #E0D0FF
+  component "3. load-profile-corr (0.41)" as R3 #E0D0FF
+  component "4. oil-analysis (0.33)" as R4 #E8E0FF
+  component "5. feeder-topology (0.21)" as R5 #E8E0FF
+}
+
+rectangle "**Iterative Re-Ranking**\n(after each skill execution)" as RERANK #FFF0F0 {
+  component "New fusion result\nadds context →\nre-score all remaining\nskills with updated\nsignal values" as rerank_logic #FFE0E0
+}
+
+' === Connections ===
+anomaly_input --> S1
+asset_input --> S2
+tag_input --> S3
+tag_input --> S4
+voice_input --> S5
+chain_input --> S6
+
+S1 --> scorer
+S2 --> scorer
+S3 --> scorer
+S4 --> scorer
+S5 --> scorer
+S6 --> scorer
+
+QM1 --> scorer
+QM2 --> scorer
+QM3 --> scorer
+
+scorer --> R1
+scorer --> R2
+scorer --> R3
+scorer --> R4
+scorer --> R5
+
+R1 --> rerank_logic : skill executes →\nnew context
+rerank_logic --> scorer : re-score with\nupdated signals
+
+note bottom of RERANK
+  **Example Re-Ranking:**
+  After harmonic-analysis reveals thermal stress:
+  - oil-analysis jumps from #4 → #2
+  - asset-health promoted
+  - feeder-topology demoted
+  Each iteration narrows the diagnostic focus.
+end note
+
+@enduml

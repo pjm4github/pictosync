@@ -1,0 +1,111 @@
+@startuml FIG8_Dynamic_Connector_Pipeline
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam rectangle {
+  RoundCorner 8
+}
+skinparam activity {
+  RoundCorner 10
+}
+
+title **FIG. 8 — Dynamic Connector Generation Pipeline**
+
+rectangle "**API Specification Sources**" as SOURCES #F0F0FF {
+  rectangle "OpenAPI /\nSwagger Spec" as src1 #E0E0FF
+  rectangle "GraphQL\nSchema" as src2 #E0E0FF
+  rectangle "Protocol Docs\n(PDF/HTML)" as src3 #E0E0FF
+  rectangle "Example\ncURL / Traces" as src4 #E0E0FF
+}
+
+rectangle "**Code Generation Engine**\n(LLM — local edge GPU or hosted)" as CODEGEN #FFE8CC {
+  rectangle "Parse API specification\ninto structured model" as cg1 #FFF0DD
+  rectangle "Generate typed Python\nconnector class" as cg2 #FFF0DD
+  rectangle "Generate Pydantic\ndata models" as cg3 #FFF0DD
+  rectangle "Generate auth flow\n(OAuth2, Kerberos, API key)" as cg4 #FFF0DD
+  rectangle "Generate pagination\n& rate limiting" as cg5 #FFF0DD
+  rectangle "Generate unit\ntest stubs" as cg6 #FFF0DD
+
+  cg1 -down-> cg2
+  cg2 -down-> cg3
+  cg3 -down-> cg4
+  cg4 -down-> cg5
+  cg5 -down-> cg6
+}
+
+rectangle "**AST Validation**\n(Static Analysis — No Execution)" as VALIDATE #FFF0F0 {
+  rectangle "Parse Python AST" as v1 #FFE0E0
+  rectangle "**REJECT if contains:**\n- eval() / exec()\n- subprocess / os.system\n- file I/O outside sandbox\n- network calls outside allow-list\n- import of forbidden modules" as v2 #FFE0E0
+  rectangle "Verify: typed returns,\nerror handling,\ntimeout enforcement" as v3 #FFE0E0
+
+  v1 -down-> v2
+  v2 -down-> v3
+}
+
+rectangle "**Sandboxed Execution**\n(OCI Container)" as SANDBOX #E8F0FF {
+  rectangle "OCI container with:\n- CPU/memory caps\n- Network egress allow-list\n- Enforced timeout\n- No persistent storage\n- Read-only filesystem" as sb1 #CCE0FF
+  rectangle "Connector executes\nwith short-lived\nvault-issued token" as sb2 #CCE0FF
+  rectangle "Results validated\nagainst expected schema" as sb3 #CCE0FF
+
+  sb1 -down-> sb2
+  sb2 -down-> sb3
+}
+
+rectangle "**Human-in-the-Loop Gate**\n(First-time connector type)" as HITL #FFF0E0 {
+  rectangle "Qualified operator\nreviews generated code" as h1 #FFE0B0
+  rectangle "Operator may:\n- Approve as-is\n- Modify and approve\n- Reject" as h2 #FFE0B0
+
+  h1 -down-> h2
+}
+
+rectangle "**Connector Registry**" as REGISTRY #F0FFF0 {
+  rectangle "**Dynamic / Experimental**\n(requires approval each type)" as reg_dyn #E0FFE0
+  rectangle "**Promoted / Permanent**\n(auto-approved if\ncode hash unchanged)" as reg_perm #CCFFCC
+
+  reg_dyn -down-> reg_perm : promotion after\nrepeated success\n+ operator approval
+}
+
+' === Flow ===
+src1 -down-> cg1
+src2 -down-> cg1
+src3 -down-> cg1
+src4 -down-> cg1
+
+cg6 -down-> v1 : generated\ncode
+
+v3 -down-> h1 : first-time\nconnector type
+
+h2 -down-> sb1 : approved
+
+v3 -down[#008800,dashed]-> sb1 : subsequent runs\n(same code hash)\n→ auto-approved
+
+sb3 -down-> reg_dyn : store with\nprovenance
+
+note right of HITL
+  **Provenance Tracked:**
+  - Which anomaly spawned it
+  - Who approved it
+  - What modifications were made
+  - Success/failure count
+  - Operator who promoted it
+end note
+
+note right of REGISTRY
+  **Promotion Criteria:**
+  - ≥ N successful executions
+  - Zero failures in last M runs
+  - Operator approval for promotion
+  - Code review by qualified SME
+end note
+
+note bottom of SANDBOX
+  **Security Controls:**
+  - Egress allow-list: only pre-approved
+    IT system domains
+  - No lateral network movement
+  - Container destroyed after execution
+  - All data flows through ephemeral store
+end note
+
+@enduml

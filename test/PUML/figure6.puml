@@ -1,0 +1,70 @@
+@startuml FIG6_Self_Improving_Loop
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam rectangle {
+  RoundCorner 10
+}
+
+title **FIG. 6 — Self-Improving Discovery Loop**\n(Flywheel Effect — No IT Data Retained)
+
+' === Nodes arranged in a cycle ===
+
+rectangle "**1. Anomaly Fires**\non OT stream" as N1 #FFDDDD
+rectangle "**2. Tag Store Scanned**\nfor prior results on\nsame asset/feeder/type" as N2 #E0D0FF
+rectangle "**3. Prior Results Inform**\nskill recommendations\nwith chain context" as N3 #FFE8CC
+rectangle "**4. SME Applies Skills**\niteratively via\nvoice interface" as N4 #FFE0B0
+rectangle "**5. Fusion Executes**\nin encrypted tmpfs;\nIT data erased after" as N5 #CCE5FF
+rectangle "**6. Result Tagged**\nwith semantic indexes,\ntranscript, attestation" as N6 #CCFFCC
+rectangle "**7. Patterns Emerge**\nacross accumulated\ntagged results" as N7 #E8E0FF
+rectangle "**8. New Skills Created**\nto address discovered\npatterns" as N8 #FFF0CC
+
+' === Cycle arrows ===
+N1 -[#CC0000,bold]-> N2 : triggers\npre-scan
+N2 -[#8844CC,bold]-> N3 : context\ndelivered
+N3 -[#CC8800,bold]-> N4 : ranked\nrecommendations
+N4 -[#CC6600,bold]-> N5 : skill\naccepted
+N5 -[#0066CC,bold]-> N6 : restrained\ninsight only
+N6 -[#008800,bold]-> N7 : accumulates\nover time
+N7 -[#6644CC,bold]-> N8 : recurring\npatterns
+N8 -[#CC8800,bold]-> N3 : new skills\navailable
+
+' === Feedback to tag store ===
+N6 -[#008800,dashed]-> N2 : tagged result\nbecomes future\ncontext
+
+' === What compounds vs what's erased ===
+rectangle "**COMPOUNDS**\n(persists)" as KEEPS #E0FFE0 {
+  rectangle "Tagged results (insights only)" as k1 #CCFFCC
+  rectangle "Semantic tag indexes" as k2 #CCFFCC
+  rectangle "SME reasoning transcripts" as k3 #CCFFCC
+  rectangle "Skill effectiveness metrics" as k4 #CCFFCC
+  rectangle "Operator skill scores" as k5 #CCFFCC
+  rectangle "Diagnostic chain links" as k6 #CCFFCC
+  rectangle "Cross-tag pattern library" as k7 #CCFFCC
+}
+
+rectangle "**ERASED**\n(every session)" as ERASES #FFE8E8 {
+  rectangle "AMI meter readings" as e1 #FFCCCC
+  rectangle "Customer PII" as e2 #FFCCCC
+  rectangle "Work order details" as e3 #FFCCCC
+  rectangle "Network topology" as e4 #FFCCCC
+  rectangle "Intermediate fusion data" as e5 #FFCCCC
+  rectangle "Connector runtime state" as e6 #FFCCCC
+}
+
+N6 -[#008800]-> KEEPS
+N5 -[#CC0000]-> ERASES : cryptographic\nerasure
+
+note bottom of ERASES
+  **Every fusion session:**
+  1. IT data pulled into encrypted tmpfs
+  2. Fusion logic correlates OT + IT
+  3. Restrained insight extracted
+  4. ALL IT data cryptographically erased
+  5. Erasure attestation generated
+  → System gets smarter without
+     accumulating sensitive data
+end note
+
+@enduml
