@@ -6,7 +6,7 @@ Draft JSON dock widget with enhanced code editor for diagram annotation.
 
 from __future__ import annotations
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, QTimer
 from PyQt6.QtGui import QTextCursor
 from PyQt6.QtWidgets import (
     QDockWidget,
@@ -87,18 +87,35 @@ class DraftDock(QDockWidget):
         """Get the current JSON text content."""
         return self.text.toPlainText()
 
-    def _scroll_block_to_top(self, block_position: int):
-        """Scroll the editor so the block at the given document position is at the viewport top.
+    def _scroll_cursor_to_top(self):
+        """Scroll the editor so the current cursor position is at the viewport top.
 
-        QPlainTextEdit's vertical scrollbar operates in block (line) units,
-        so we set the scrollbar value directly to the target block number.
+        setTextCursor() internally queues a deferred ensureCursorVisible() via
+        Qt's event loop, so this method must be called via QTimer.singleShot(0)
+        to run after that deferred scroll completes.
+
+        Strategy: scroll to the document bottom so the cursor is above the
+        viewport, call ensureCursorVisible() which scrolls up to reveal it
+        near the top, then fine-tune the scrollbar using the cursor's actual
+        pixel position so it sits exactly at the viewport top.
         """
-        doc = self.text.document()
-        block = doc.findBlock(block_position)
-        if not block.isValid():
-            return
-        sb = self.text.verticalScrollBar()
-        sb.setValue(block.blockNumber())
+        # Suppress cursor signals during scroll — scrolling to the bottom
+        # temporarily moves a different annotation into view, which would
+        # otherwise trigger a feedback loop via cursor_annotation_changed.
+        self.text._suppress_cursor_signal = True
+        try:
+            sb = self.text.verticalScrollBar()
+            sb.setValue(sb.maximum())
+            self.text.ensureCursorVisible()
+
+            cursor_rect = self.text.cursorRect()
+            if cursor_rect.top() > 1:
+                line_height = self.text.blockBoundingRect(
+                    self.text.firstVisibleBlock()).height()
+                if line_height > 0:
+                    sb.setValue(sb.value() + int(cursor_rect.top() / line_height))
+        finally:
+            self.text._suppress_cursor_signal = False
 
     def scroll_to_id_top(self, ann_id: str, suppress_signal: bool = True) -> bool:
         """
@@ -157,8 +174,9 @@ class DraftDock(QDockWidget):
             # Update the tracked annotation ID
             self.text._current_annotation_id = ann_id
 
-            # Scroll the target block to the top of the viewport
-            self._scroll_block_to_top(cursor.position())
+            # Deferred: setTextCursor() queues an internal ensureCursorVisible()
+            # via Qt's event loop; our scroll must run after that completes.
+            QTimer.singleShot(0, self._scroll_cursor_to_top)
             return True
         finally:
             if suppress_signal:
@@ -200,8 +218,9 @@ class DraftDock(QDockWidget):
             # Update the tracked annotation ID
             self.text._current_annotation_id = ann_id
 
-            # Scroll the text field block to the top of the viewport
-            self._scroll_block_to_top(cursor.position())
+            # Deferred: setTextCursor() queues an internal ensureCursorVisible()
+            # via Qt's event loop; our scroll must run after that completes.
+            QTimer.singleShot(0, self._scroll_cursor_to_top)
             return True
         finally:
             if suppress_signal:

@@ -1,7 +1,7 @@
 """
 plantuml/renderer.py
 
-Render .puml files to PNG using a local PlantUML Java JAR.
+Render .puml files to PNG or SVG using a local PlantUML Java JAR.
 """
 
 from __future__ import annotations
@@ -43,20 +43,17 @@ def find_plantuml_jar() -> str | None:
     return None
 
 
-def render_puml_to_png(puml_path: str, output_png: str | None = None) -> str:
-    """Render a .puml file to PNG using PlantUML.
-
-    PlantUML names output files after the ``@startuml`` diagram name
-    (not the file stem), so we render into a temporary directory and
-    pick up whatever ``.png`` file it produces.
+def _render_puml(puml_path: str, fmt: str, output_path: str | None = None) -> str:
+    """Render a .puml file to the specified format using PlantUML.
 
     Args:
         puml_path: Path to the .puml source file.
-        output_png: Optional explicit output path.  If None, the PNG is
+        fmt: Output format flag for PlantUML (e.g. ``png``, ``svg``).
+        output_path: Optional explicit output path.  If None, the output is
             placed next to the .puml file using the file stem as name.
 
     Returns:
-        Path to the generated PNG file.
+        Path to the generated output file.
 
     Raises:
         RuntimeError: If Java or the PlantUML JAR cannot be found,
@@ -91,7 +88,7 @@ def render_puml_to_png(puml_path: str, output_png: str | None = None) -> str:
 
     cmd = [
         java, "-jar", jar,
-        "-tpng",
+        f"-t{fmt}",
         "-o", tmp_dir,
         str(puml),
     ]
@@ -110,26 +107,62 @@ def render_puml_to_png(puml_path: str, output_png: str | None = None) -> str:
             f"{result.stderr.strip()}"
         )
 
-    # Find whatever PNG was generated in the temp directory
-    pngs = list(Path(tmp_dir).glob("*.png"))
-    if not pngs:
+    # Find whatever file of the target format was generated
+    generated_files = list(Path(tmp_dir).glob(f"*.{fmt}"))
+    if not generated_files:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise RuntimeError(
-            "PlantUML ran successfully but produced no PNG output.\n"
+            f"PlantUML ran successfully but produced no {fmt.upper()} output.\n"
             f"Command: {' '.join(cmd)}\n"
             f"stdout: {result.stdout.strip()}\n"
             f"stderr: {result.stderr.strip()}"
         )
 
-    generated = pngs[0]
+    generated = generated_files[0]
 
     # Decide final destination
-    if output_png:
-        final = Path(output_png).resolve()
+    if output_path:
+        final = Path(output_path).resolve()
     else:
-        final = puml.with_suffix(".png")
+        final = puml.with_suffix(f".{fmt}")
 
     shutil.copy2(str(generated), str(final))
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
     return str(final)
+
+
+def render_puml_to_png(puml_path: str, output_png: str | None = None) -> str:
+    """Render a .puml file to PNG using PlantUML.
+
+    Args:
+        puml_path: Path to the .puml source file.
+        output_png: Optional explicit output path.  If None, the PNG is
+            placed next to the .puml file using the file stem as name.
+
+    Returns:
+        Path to the generated PNG file.
+
+    Raises:
+        RuntimeError: If Java or the PlantUML JAR cannot be found,
+            or if rendering fails.
+    """
+    return _render_puml(puml_path, "png", output_png)
+
+
+def render_puml_to_svg(puml_path: str, output_svg: str | None = None) -> str:
+    """Render a .puml file to SVG using PlantUML.
+
+    Args:
+        puml_path: Path to the .puml source file.
+        output_svg: Optional explicit output path.  If None, the SVG is
+            placed next to the .puml file using the file stem as name.
+
+    Returns:
+        Path to the generated SVG file.
+
+    Raises:
+        RuntimeError: If Java or the PlantUML JAR cannot be found,
+            or if rendering fails.
+    """
+    return _render_puml(puml_path, "svg", output_svg)

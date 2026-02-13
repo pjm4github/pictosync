@@ -3067,3 +3067,532 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         if z != 0:
             rec["z"] = int(z)
         return rec
+
+
+class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
+    """Arbitrary polygon item with vertex editing.
+
+    Vertices are stored as relative coordinates (0.0–1.0) within the
+    bounding box so that the shape scales proportionally on resize.
+    Double-click to enter vertex-edit mode where individual vertices
+    can be dragged.
+    """
+
+    def __init__(self, x: float, y: float, w: float, h: float,
+                 points: list, ann_id: str, on_change=None):
+        QGraphicsPathItem.__init__(self)
+        MetaMixin.__init__(self)
+        LinkedMixin.__init__(self, ann_id, on_change)
+
+        self.meta.kind = "polygon"
+        self._width = max(w, 1.0)
+        self._height = max(h, 1.0)
+
+        # Relative points (0-1 within bounding box)
+        if points and len(points) >= 3:
+            self._rel_points = [[float(p[0]), float(p[1])] for p in points]
+        else:
+            self._rel_points = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+
+        self.setPos(QPointF(x, y))
+        self.setData(ANN_ID_KEY, ann_id)
+        self._update_path()
+
+        self.setAcceptHoverEvents(True)
+
+        self.setFlags(
+            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+            | QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+            | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
+        )
+
+        # Bounding-box resize state
+        self._active_handle: Optional[str] = None
+        self._resizing = False
+        self._press_scene: Optional[QPointF] = None
+        self._start_pos: Optional[QPointF] = None
+        self._start_size: Optional[Tuple[float, float]] = None
+
+        # Vertex editing state
+        self._vertex_editing = False
+        self._active_vertex: Optional[int] = None
+        self._vertex_dragging = False
+
+        self.pen_color = QColor(Qt.GlobalColor.darkCyan)
+        self.pen_width = 2
+        self.brush_color = QColor(0, 0, 0, 0)
+        self.text_color = QColor(self.pen_color)
+        self.line_dash = "solid"
+        cached = _CachedCanvasSettings.get()
+        self.dash_pattern_length = cached.default_dash_length
+        self.dash_solid_percent = cached.default_dash_solid_percent
+        self._apply_pen_brush()
+
+        # Embedded text for C4 properties
+        self._label_item = QGraphicsTextItem(self)
+        self._label_item.setDefaultTextColor(self.text_color)
+        self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        self._update_label_position()
+
+    # ---- Path / geometry ----
+
+    def _update_path(self):
+        """Rebuild polygon path from relative points and current dimensions."""
+        path = QPainterPath()
+        if not self._rel_points:
+            self.setPath(path)
+            return
+        w, h = self._width, self._height
+        p0 = self._rel_points[0]
+        path.moveTo(p0[0] * w, p0[1] * h)
+        for rx, ry in self._rel_points[1:]:
+            path.lineTo(rx * w, ry * h)
+        path.closeSubpath()
+        self.setPath(path)
+
+    def _recalculate_bbox(self):
+        """Recalculate bounding box to tightly enclose all vertices.
+
+        Converts relative points that may be outside 0-1 range back into
+        a new bounding box with all relative points normalized to 0-1.
+        """
+        if not self._rel_points:
+            return
+
+        # Convert current relative points to absolute scene coordinates
+        p = self.pos()
+        abs_pts = [
+            (p.x() + rx * self._width, p.y() + ry * self._height)
+            for rx, ry in self._rel_points
+        ]
+
+        # Compute new bounding box
+        xs = [pt[0] for pt in abs_pts]
+        ys = [pt[1] for pt in abs_pts]
+        new_x = min(xs)
+        new_y = min(ys)
+        new_w = max(xs) - new_x
+        new_h = max(ys) - new_y
+
+        # Enforce minimum size
+        if new_w < 1.0:
+            new_w = 1.0
+        if new_h < 1.0:
+            new_h = 1.0
+
+        # Recompute relative points within new bounding box
+        self._rel_points = [
+            [(ax - new_x) / new_w, (ay - new_y) / new_h]
+            for ax, ay in abs_pts
+        ]
+
+        # Update position and dimensions
+        self.prepareGeometryChange()
+        self.setPos(QPointF(new_x, new_y))
+        self._width = new_w
+        self._height = new_h
+        self._update_path()
+        self._update_label_position()
+
+    def _apply_pen_brush(self):
+        pen = QPen(self.pen_color, self.pen_width)
+        _apply_dash_style(pen, self.line_dash, self.dash_pattern_length, self.dash_solid_percent)
+        self.setPen(pen)
+        self.setBrush(QBrush(self.brush_color))
+
+    def _update_label_position(self):
+        padding = 8
+        self._label_item.setTextWidth(max(10, self._width - 2 * padding))
+
+        text_height = self._label_item.boundingRect().height()
+        available_height = self._height - 2 * padding
+
+        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
+
+        if valign == "middle":
+            y_pos = padding + (available_height - text_height) / 2
+        elif valign == "bottom":
+            y_pos = self._height - padding - text_height
+        else:
+            y_pos = padding
+
+        self._label_item.setPos(padding, max(padding, y_pos))
+
+    def _update_label_text(self):
+        lines = []
+        align_map = {"left": "left", "center": "center", "right": "right"}
+
+        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
+        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
+
+        if self.meta.label:
+            align = align_map.get(self.meta.label_align, "center")
+            size = self.meta.label_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
+        if self.meta.tech:
+            align = align_map.get(self.meta.tech_align, "center")
+            size = self.meta.tech_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
+        if self.meta.note:
+            align = align_map.get(self.meta.note_align, "center")
+            size = self.meta.note_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
+
+        self._label_item.setHtml("".join(lines) if lines else "")
+        self._label_item.setDefaultTextColor(self.text_color)
+        self._update_label_position()
+
+    def set_meta(self, meta: AnnotationMeta) -> None:
+        self.meta = meta
+        self._update_label_text()
+
+    def rect(self) -> QRectF:
+        return QRectF(0, 0, self._width, self._height)
+
+    def setRect(self, r: QRectF):
+        self._width = r.width()
+        self._height = r.height()
+        self._update_path()
+        self._update_label_position()
+
+    # ---- Bounding-box handles ----
+
+    def _handle_points_scene(self) -> Dict[str, QPointF]:
+        p = self.pos()
+        cx = p.x() + self._width / 2
+        cy = p.y() + self._height / 2
+        return {
+            "tl": QPointF(p.x(), p.y()),
+            "tr": QPointF(p.x() + self._width, p.y()),
+            "bl": QPointF(p.x(), p.y() + self._height),
+            "br": QPointF(p.x() + self._width, p.y() + self._height),
+            "t":  QPointF(cx, p.y()),
+            "b":  QPointF(cx, p.y() + self._height),
+            "l":  QPointF(p.x(), cy),
+            "r":  QPointF(p.x() + self._width, cy),
+        }
+
+    def _handle_points_local(self) -> Dict[str, QPointF]:
+        cx = self._width / 2
+        cy = self._height / 2
+        return {
+            "tl": QPointF(0, 0),
+            "tr": QPointF(self._width, 0),
+            "bl": QPointF(0, self._height),
+            "br": QPointF(self._width, self._height),
+            "t":  QPointF(cx, 0),
+            "b":  QPointF(cx, self._height),
+            "l":  QPointF(0, cy),
+            "r":  QPointF(self._width, cy),
+        }
+
+    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
+        handles = self._handle_points_scene()
+        hit_dist = _get_hit_distance()
+        for k, hp in handles.items():
+            if QLineF(scene_pt, hp).length() <= hit_dist:
+                return k
+        return None
+
+    # ---- Vertex editing helpers ----
+
+    def _vertex_points_scene(self) -> list:
+        """Return absolute scene positions of all vertices."""
+        p = self.pos()
+        return [
+            QPointF(p.x() + rx * self._width, p.y() + ry * self._height)
+            for rx, ry in self._rel_points
+        ]
+
+    def _vertex_points_local(self) -> list:
+        """Return local positions of all vertices."""
+        return [
+            QPointF(rx * self._width, ry * self._height)
+            for rx, ry in self._rel_points
+        ]
+
+    def _hit_test_vertex(self, scene_pt: QPointF) -> Optional[int]:
+        """Return index of vertex near scene_pt, or None."""
+        hit_dist = _get_hit_distance()
+        for i, vp in enumerate(self._vertex_points_scene()):
+            if QLineF(scene_pt, vp).length() <= hit_dist:
+                return i
+        return None
+
+    def _hit_test_edge(self, scene_pt: QPointF) -> Optional[int]:
+        """Return index of edge near scene_pt, or None.
+
+        Edge i connects vertex i to vertex (i+1) % n.
+        Returns the edge index where a new vertex should be inserted after.
+        """
+        hit_dist = _get_hit_distance()
+        verts = self._vertex_points_scene()
+        n = len(verts)
+        for i in range(n):
+            a = verts[i]
+            b = verts[(i + 1) % n]
+            # Distance from point to line segment
+            line = QLineF(a, b)
+            length = line.length()
+            if length < 1e-6:
+                continue
+            # Project scene_pt onto line segment
+            dx = b.x() - a.x()
+            dy = b.y() - a.y()
+            t = ((scene_pt.x() - a.x()) * dx + (scene_pt.y() - a.y()) * dy) / (length * length)
+            t = max(0.0, min(1.0, t))
+            proj = QPointF(a.x() + t * dx, a.y() + t * dy)
+            if QLineF(scene_pt, proj).length() <= hit_dist:
+                return i
+        return None
+
+    # ---- Mouse interaction ----
+
+    def hoverMoveEvent(self, event):
+        if self._vertex_editing:
+            idx = self._hit_test_vertex(event.scenePos())
+            if idx is not None:
+                self.setCursor(Qt.CursorShape.CrossCursor)
+            else:
+                self.setCursor(Qt.CursorShape.ArrowCursor)
+        else:
+            h = self._hit_test_handle(event.scenePos())
+            if h in ("tl", "br"):
+                self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+            elif h in ("tr", "bl"):
+                self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+            elif h in ("t", "b"):
+                self.setCursor(Qt.CursorShape.SizeVerCursor)
+            elif h in ("l", "r"):
+                self.setCursor(Qt.CursorShape.SizeHorCursor)
+            else:
+                self.setCursor(Qt.CursorShape.ArrowCursor)
+        super().hoverMoveEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._vertex_editing = not self._vertex_editing
+            self.prepareGeometryChange()
+            self.update()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.RightButton and self._vertex_editing:
+            scene_pt = event.scenePos()
+            # Right-click on vertex: delete it (min 3 vertices)
+            idx = self._hit_test_vertex(scene_pt)
+            if idx is not None:
+                if len(self._rel_points) > 3:
+                    self.prepareGeometryChange()
+                    del self._rel_points[idx]
+                    self._recalculate_bbox()
+                    self._notify_changed()
+                event.accept()
+                return
+            # Right-click on edge: insert a new vertex
+            edge_idx = self._hit_test_edge(scene_pt)
+            if edge_idx is not None:
+                p = self.pos()
+                rx = (scene_pt.x() - p.x()) / self._width if self._width > 0 else 0.5
+                ry = (scene_pt.y() - p.y()) / self._height if self._height > 0 else 0.5
+                self.prepareGeometryChange()
+                self._rel_points.insert(edge_idx + 1, [rx, ry])
+                self._update_path()
+                self._update_label_position()
+                self._notify_changed()
+                event.accept()
+                return
+
+        if event.button() == Qt.MouseButton.LeftButton:
+            # Vertex editing takes priority
+            if self._vertex_editing:
+                idx = self._hit_test_vertex(event.scenePos())
+                if idx is not None:
+                    self._active_vertex = idx
+                    self._vertex_dragging = True
+                    self._press_scene = event.scenePos()
+                    event.accept()
+                    return
+
+            # Bounding-box handle resize
+            h = self._hit_test_handle(event.scenePos())
+            if h:
+                self._active_handle = h
+                self._resizing = True
+                self._press_scene = event.scenePos()
+                self._start_pos = QPointF(self.pos())
+                self._start_size = (self._width, self._height)
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        # Vertex dragging — allow dragging outside the current bounding box
+        if self._vertex_dragging and self._active_vertex is not None:
+            cur = event.scenePos()
+            p = self.pos()
+            # Compute unclamped relative position (can exceed 0-1 range)
+            rx = (cur.x() - p.x()) / self._width if self._width > 0 else 0.5
+            ry = (cur.y() - p.y()) / self._height if self._height > 0 else 0.5
+            self._rel_points[self._active_vertex] = [rx, ry]
+            self.prepareGeometryChange()
+            self._update_path()
+            self._update_label_position()
+            self._notify_changed()
+            event.accept()
+            return
+
+        # Bounding-box handle resize
+        if self._resizing and self._active_handle and self._press_scene and self._start_pos and self._start_size:
+            cur = event.scenePos()
+            dx = cur.x() - self._press_scene.x()
+            dy = cur.y() - self._press_scene.y()
+
+            x0 = self._start_pos.x()
+            y0 = self._start_pos.y()
+            w0, h0 = self._start_size
+
+            left = x0
+            top = y0
+            right = x0 + w0
+            bottom = y0 + h0
+
+            if self._active_handle == "tl":
+                left += dx; top += dy
+            elif self._active_handle == "tr":
+                right += dx; top += dy
+            elif self._active_handle == "bl":
+                left += dx; bottom += dy
+            elif self._active_handle == "br":
+                right += dx; bottom += dy
+            elif self._active_handle == "t":
+                top += dy
+            elif self._active_handle == "b":
+                bottom += dy
+            elif self._active_handle == "l":
+                left += dx
+            elif self._active_handle == "r":
+                right += dx
+
+            min_size = _get_min_size()
+            if (right - left) < min_size:
+                if self._active_handle in ("tl", "bl", "l"):
+                    left = right - min_size
+                else:
+                    right = left + min_size
+            if (bottom - top) < min_size:
+                if self._active_handle in ("tl", "tr", "t"):
+                    top = bottom - min_size
+                else:
+                    bottom = top + min_size
+
+            self.setPos(QPointF(left, top))
+            self._width = right - left
+            self._height = bottom - top
+            self._update_path()
+            self._update_label_position()
+            self._notify_changed()
+            event.accept()
+            return
+
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._vertex_dragging:
+            self._vertex_dragging = False
+            self._active_vertex = None
+            self._recalculate_bbox()
+            self._notify_changed()
+            event.accept()
+            return
+        if self._resizing:
+            self._resizing = False
+            self._active_handle = None
+            self._press_scene = None
+            self._start_pos = None
+            self._start_size = None
+            self._notify_changed()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    # ---- Shape / bounds / paint ----
+
+    def shape(self) -> QPainterPath:
+        base = super().shape()
+        if self.isSelected() and not self._vertex_editing:
+            return shape_with_handles(base, self._handle_points_local())
+        if self.isSelected() and self._vertex_editing:
+            # Add vertex hit areas
+            hit_r = _get_handle_size() / 2 + 1
+            for vp in self._vertex_points_local():
+                base.addEllipse(vp, hit_r, hit_r)
+        return base
+
+    def boundingRect(self) -> QRectF:
+        r = super().boundingRect()
+        margin = _get_handle_size() / 2 + 1
+        return r.adjusted(-margin, -margin, margin, margin)
+
+    def paint(self, painter: QPainter, option, widget=None):
+        my_option = QStyleOptionGraphicsItem(option)
+        my_option.state &= ~QStyle.StateFlag.State_Selected
+        super().paint(painter, my_option, widget)
+
+        if not self.isSelected():
+            return
+
+        if self._vertex_editing:
+            # Draw vertex knobs
+            handle_size = _get_handle_size()
+            half = handle_size / 2
+            for i, vp in enumerate(self._vertex_points_local()):
+                if i == self._active_vertex:
+                    painter.setPen(QPen(QColor(204, 102, 0), 1))
+                    painter.setBrush(QBrush(QColor(255, 165, 0)))  # Orange for active
+                else:
+                    painter.setPen(QPen(QColor(0, 128, 0), 1))
+                    painter.setBrush(QBrush(QColor(0, 200, 0)))  # Green
+                painter.drawEllipse(QRectF(vp.x() - half, vp.y() - half,
+                                           handle_size, handle_size))
+        else:
+            # Draw selection outline and bounding-box handles
+            sel_pen = QPen(_get_selection_color(), 1, Qt.PenStyle.DashLine)
+            painter.setPen(sel_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(self.path())
+
+            draw_handles(painter, self._handle_points_local())
+
+    def itemChange(self, change, value):
+        out = super().itemChange(change, value)
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            if not self._resizing and not self._vertex_dragging:
+                self._notify_changed()
+        elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+            if not value:
+                self._vertex_editing = False
+            self.prepareGeometryChange()
+        return out
+
+    def to_record(self) -> Dict[str, Any]:
+        p = self.pos()
+        rec = {
+            "id": self.ann_id,
+            "kind": "polygon",
+            "geom": {
+                "x": round1(p.x()),
+                "y": round1(p.y()),
+                "w": round1(self._width),
+                "h": round1(self._height),
+                "points": [[round(rx, 4), round(ry, 4)] for rx, ry in self._rel_points],
+            },
+            **self._meta_dict(self.meta),
+            **self._style_dict(),
+        }
+        z = self.zValue()
+        if z != 0:
+            rec["z"] = int(z)
+        return rec

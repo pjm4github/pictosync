@@ -1,16 +1,18 @@
 """
 plantuml/parser.py
 
-Regex-based PlantUML text parser with auto-layout grid mapper.
+Regex-based PlantUML text parser with SVG-based or auto-layout grid positioning.
 
 Parses .puml text to extract diagram elements and connections,
-then maps them to PictoSync's JSON annotation schema with
-auto-layout grid positions.
+then maps them to PictoSync's JSON annotation schema.  When an SVG
+render is available, pixel-accurate positions are read from the SVG;
+otherwise an auto-layout grid is used as fallback.
 """
 
 from __future__ import annotations
 
 import re
+import xml.etree.ElementTree as ET
 from collections import defaultdict, deque
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -22,7 +24,7 @@ from typing import Any, Dict, List, Optional, Tuple
 _KIND_MAP: Dict[str, str] = {
     "rectangle": "rect",
     "component": "roundedrect",
-    "package": "rect",
+    "package": "polygon",
     "database": "cylinder",
     "actor": "ellipse",
     "participant": "rect",
@@ -297,6 +299,242 @@ def _extract_connections(puml_text: str, known_aliases: set) -> List[Dict[str, A
 
 
 # ───────────────────────────────────────────────
+# SVG position extraction
+# ───────────────────────────────────────────────
+
+_SVG_NS = "http://www.w3.org/2000/svg"
+
+
+def _path_bbox(d: str) -> Tuple[float, float, float, float]:
+    """Extract bounding box (x, y, w, h) from an SVG path ``d`` attribute.
+
+    Parses M/L coordinate pairs and A-command endpoints to compute the
+    axis-aligned bounding box.
+
+    Args:
+        d: The SVG path ``d`` attribute string.
+
+    Returns:
+        Tuple of (x, y, width, height).
+    """
+    points: List[Tuple[float, float]] = []
+
+    # M x,y and L x,y commands
+    for m in re.finditer(r'[ML]\s*([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)', d):
+        points.append((float(m.group(1)), float(m.group(2))))
+
+    # A rx,ry x-rotation large-arc sweep x,y — extract endpoint
+    for m in re.finditer(
+        r'A\s*[-+]?\d*\.?\d+[,\s][-+]?\d*\.?\d+\s+'
+        r'[-+]?\d*\.?\d+\s+'
+        r'[01]\s+[01]\s+'
+        r'([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)',
+        d,
+    ):
+        points.append((float(m.group(1)), float(m.group(2))))
+
+    if not points:
+        return (0.0, 0.0, 0.0, 0.0)
+
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    return (min_x, min_y, max_x - min_x, max_y - min_y)
+
+
+def _path_points(d: str) -> List[List[float]]:
+    """Extract all path vertices as relative coordinates within the bounding box.
+
+    Parses M/L/A commands to collect all points, then normalizes them
+    to 0.0–1.0 relative to the path's bounding box.
+
+    Args:
+        d: The SVG path ``d`` attribute string.
+
+    Returns:
+        List of [rx, ry] pairs (relative 0-1 within bounding box).
+    """
+    points: List[Tuple[float, float]] = []
+
+    # Walk through the path string, collecting points in command order
+    for m in re.finditer(
+        r'([MLA])\s*'
+        r'(?:(?:[-+]?\d*\.?\d+[,\s][-+]?\d*\.?\d+\s+)?'   # A: rx,ry (skip)
+        r'(?:[-+]?\d*\.?\d+\s+)?'                           # A: x-rotation (skip)
+        r'(?:[01]\s+[01]\s+)?)?'                             # A: flags (skip)
+        r'([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)',
+        d,
+    ):
+        points.append((float(m.group(2)), float(m.group(3))))
+
+    if len(points) < 3:
+        return []
+
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    w = max_x - min_x
+    h = max_y - min_y
+
+    if w < 1e-6 or h < 1e-6:
+        return []
+
+    return [
+        [round((px - min_x) / w, 4), round((py - min_y) / h, 4)]
+        for px, py in points
+    ]
+
+
+def _parse_svg_positions(svg_path: str) -> Dict[str, Any]:
+    """Parse a PlantUML-generated SVG to extract element positions and styles.
+
+    Extracts entity rectangles, cluster bounding boxes, title position,
+    link connections, and canvas dimensions from the SVG.
+
+    Args:
+        svg_path: Path to the SVG file.
+
+    Returns:
+        Dict with keys:
+            canvas_w, canvas_h: int — from viewBox
+            positions: Dict[alias, {x, y, w, h}]
+            elements: Dict[alias, {fill, texts}]
+            links: List[{src, dst, label, style}]
+            id_to_alias: Dict[entity_id, alias]
+    """
+    tree = ET.parse(svg_path)
+    root = tree.getroot()
+    ns = _SVG_NS
+
+    # Parse viewBox for canvas dimensions
+    viewbox = root.get("viewBox", "").split()
+    canvas_w = int(float(viewbox[2])) if len(viewbox) >= 3 else 1200
+    canvas_h = int(float(viewbox[3])) if len(viewbox) >= 4 else 800
+
+    id_to_alias: Dict[str, str] = {}
+    positions: Dict[str, Dict[str, float]] = {}
+    svg_elements: Dict[str, Dict[str, Any]] = {}
+    title_pos: Optional[Dict[str, float]] = None
+
+    for g in root.iter(f"{{{ns}}}g"):
+        cls = g.get("class", "")
+
+        if cls == "entity":
+            qname = g.get("data-qualified-name", "")
+            ent_id = g.get("id", "")
+            alias = qname.rsplit(".", 1)[-1] if "." in qname else qname
+            if not alias:
+                continue
+
+            id_to_alias[ent_id] = alias
+
+            rect = g.find(f"{{{ns}}}rect")
+            if rect is not None:
+                positions[alias] = {
+                    "x": float(rect.get("x", 0)),
+                    "y": float(rect.get("y", 0)),
+                    "w": float(rect.get("width", 0)),
+                    "h": float(rect.get("height", 0)),
+                }
+                fill = rect.get("fill", "")
+            else:
+                fill = ""
+
+            texts = [t.text for t in g.findall(f"{{{ns}}}text") if t.text]
+            svg_elements[alias] = {"texts": texts, "fill": fill}
+
+        elif cls == "cluster":
+            qname = g.get("data-qualified-name", "")
+            ent_id = g.get("id", "")
+            alias = qname.rsplit(".", 1)[-1] if "." in qname else qname
+            if not alias:
+                continue
+
+            id_to_alias[ent_id] = alias
+
+            path_el = g.find(f"{{{ns}}}path")
+            if path_el is not None:
+                d = path_el.get("d", "")
+                x, y, w, h = _path_bbox(d)
+                pos_entry: Dict[str, Any] = {"x": x, "y": y, "w": w, "h": h}
+                rel_pts = _path_points(d)
+                if rel_pts:
+                    pos_entry["points"] = rel_pts
+                positions[alias] = pos_entry
+                fill = path_el.get("fill", "")
+            else:
+                fill = ""
+
+            texts = [t.text for t in g.findall(f"{{{ns}}}text") if t.text]
+            svg_elements[alias] = {"texts": texts, "fill": fill}
+
+        elif cls == "title":
+            text_el = g.find(f"{{{ns}}}text")
+            if text_el is not None:
+                tx = float(text_el.get("x", 0))
+                ty = float(text_el.get("y", 0))
+                font_size = float(text_el.get("font-size", 14))
+                text_len = float(text_el.get("textLength", 200))
+                title_pos = {
+                    "x": tx,
+                    "y": round(ty - font_size, 1),
+                    "w": round(text_len, 1),
+                    "h": round(font_size * 1.5, 1),
+                }
+
+    # Parse links
+    svg_links: List[Dict[str, Any]] = []
+    for g in root.iter(f"{{{ns}}}g"):
+        if g.get("class") != "link":
+            continue
+        src_id = g.get("data-entity-1", "")
+        dst_id = g.get("data-entity-2", "")
+        src_alias = id_to_alias.get(src_id)
+        dst_alias = id_to_alias.get(dst_id)
+        if not src_alias or not dst_alias:
+            continue
+
+        texts = [t.text for t in g.findall(f"{{{ns}}}text") if t.text]
+        label = " ".join(texts)
+
+        path_el = g.find(f"{{{ns}}}path")
+        style = path_el.get("style", "") if path_el is not None else ""
+
+        svg_links.append({
+            "src": src_alias,
+            "dst": dst_alias,
+            "label": label,
+            "style": style,
+        })
+
+    return {
+        "canvas_w": canvas_w,
+        "canvas_h": canvas_h,
+        "positions": positions,
+        "elements": svg_elements,
+        "links": svg_links,
+        "id_to_alias": id_to_alias,
+        "title_pos": title_pos,
+    }
+
+
+def _apply_svg_link_style(conn: Dict[str, Any], svg_style: str) -> None:
+    """Update a connection dict with color/dashed info from an SVG path style.
+
+    Args:
+        conn: Connection dict (modified in place).
+        svg_style: CSS style string from the SVG ``<path>`` element.
+    """
+    stroke_match = re.search(r'stroke:\s*(#[0-9A-Fa-f]{3,8})', svg_style)
+    if stroke_match:
+        conn["color"] = stroke_match.group(1)
+    if "stroke-dasharray" in svg_style:
+        conn["dashed"] = True
+
+
+# ───────────────────────────────────────────────
 # Auto-layout
 # ───────────────────────────────────────────────
 
@@ -420,7 +658,7 @@ def _build_annotations(
     Args:
         elements: Parsed element dicts.
         connections: Parsed connection dicts.
-        positions: Layout positions from _auto_layout.
+        positions: Layout positions from _auto_layout or SVG.
 
     Returns:
         List of annotation dicts ready for PictoSync JSON.
@@ -487,6 +725,16 @@ def _build_annotations(
                 "h": pos["h"],
                 "adjust1": 0.2,
             }
+        elif kind == "polygon":
+            geom: Dict[str, Any] = {
+                "x": pos["x"],
+                "y": pos["y"],
+                "w": pos["w"],
+                "h": pos["h"],
+            }
+            if "points" in pos:
+                geom["points"] = pos["points"]
+            ann["geom"] = geom
         else:
             ann["geom"] = {
                 "x": pos["x"],
@@ -555,13 +803,20 @@ def parse_puml_to_annotations(
     puml_text: str,
     canvas_w: int = 1200,
     canvas_h: int = 800,
+    svg_path: str | None = None,
 ) -> Dict[str, Any]:
     """Parse PlantUML text and produce PictoSync JSON annotation data.
+
+    When *svg_path* is provided the element positions, fill colours and
+    link styles are read from the rendered SVG for pixel-accurate
+    alignment with the PNG background.  When it is ``None`` the
+    auto-layout grid is used as a fallback.
 
     Args:
         puml_text: The raw PlantUML source text.
         canvas_w: Canvas width in pixels for layout.
         canvas_h: Canvas height in pixels for layout.
+        svg_path: Optional path to a PlantUML-rendered SVG file.
 
     Returns:
         Dict with PictoSync schema: {"version", "image", "annotations"}.
@@ -569,7 +824,54 @@ def parse_puml_to_annotations(
     elements = _extract_elements(puml_text)
     known_aliases = {e["alias"] for e in elements}
     connections = _extract_connections(puml_text, known_aliases)
-    positions = _auto_layout(elements, connections, canvas_w, canvas_h)
+
+    if svg_path:
+        svg_data = _parse_svg_positions(svg_path)
+
+        # Use SVG viewBox dimensions
+        canvas_w = svg_data["canvas_w"]
+        canvas_h = svg_data["canvas_h"]
+
+        # Build positions from SVG, matched by alias
+        positions: Dict[str, Dict[str, float]] = {}
+        for alias, pos in svg_data["positions"].items():
+            positions[alias] = pos
+        if svg_data.get("title_pos"):
+            positions["__title__"] = svg_data["title_pos"]
+
+        # Override element fill colours from SVG
+        for elem in elements:
+            svg_elem = svg_data["elements"].get(elem["alias"])
+            if svg_elem and svg_elem.get("fill"):
+                elem["color"] = svg_elem["fill"]
+
+        # Merge SVG link styles into text-parsed connections
+        text_conn_keys = {(c["src"], c["dst"]) for c in connections}
+        svg_link_map: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        for lnk in svg_data["links"]:
+            svg_link_map[(lnk["src"], lnk["dst"])] = lnk
+
+        for conn in connections:
+            key = (conn["src"], conn["dst"])
+            svg_link = svg_link_map.get(key)
+            if svg_link:
+                _apply_svg_link_style(conn, svg_link["style"])
+
+        # Add SVG-only links not found by the text regex
+        for key, svg_link in svg_link_map.items():
+            if key not in text_conn_keys:
+                conn: Dict[str, Any] = {
+                    "src": svg_link["src"],
+                    "dst": svg_link["dst"],
+                    "label": svg_link.get("label", ""),
+                    "dashed": False,
+                    "color": None,
+                }
+                _apply_svg_link_style(conn, svg_link["style"])
+                connections.append(conn)
+    else:
+        positions = _auto_layout(elements, connections, canvas_w, canvas_h)
+
     annotations = _build_annotations(elements, connections, positions)
 
     return {

@@ -186,6 +186,10 @@ ICONS = {
     "blockarrow": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
   <polygon points="2,8 14,8 14,4 22,12 14,20 14,16 2,16" stroke="{stroke}" stroke-width="2" fill="{fill}" stroke-linejoin="round"/>
 </svg>''',
+
+    "polygon": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <polygon points="3,8 9,3 20,5 21,14 15,12 18,20 7,19 5,13" stroke="{stroke}" stroke-width="2" fill="{fill}" stroke-linejoin="round"/>
+</svg>''',
 }
 
 

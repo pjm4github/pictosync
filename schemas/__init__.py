@@ -253,7 +253,7 @@ def create_default_annotation(kind: str) -> Dict:
 
 
 # Valid item kinds
-VALID_KINDS = ["rect", "roundedrect", "ellipse", "line", "text", "hexagon", "cylinder", "blockarrow"]
+VALID_KINDS = ["rect", "roundedrect", "ellipse", "line", "text", "hexagon", "cylinder", "blockarrow", "polygon"]
 
 # Required geometry fields per kind
 REQUIRED_GEOM_FIELDS = {
@@ -265,6 +265,7 @@ REQUIRED_GEOM_FIELDS = {
     "hexagon": ["x", "y", "w", "h"],  # adjust1 is optional with default
     "cylinder": ["x", "y", "w", "h"],  # adjust1 is optional with default
     "blockarrow": ["x", "y", "w", "h"],  # adjust1 and adjust2 are optional with defaults
+    "polygon": ["x", "y", "w", "h"],  # points is optional with default
 }
 
 

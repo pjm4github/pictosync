@@ -9,8 +9,8 @@ from __future__ import annotations
 from typing import Callable, List, Optional
 
 from PyQt6.QtCore import Qt, QPointF, QRectF, QLineF
-from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import QGraphicsScene, QGraphicsItem, QMenu
+from PyQt6.QtGui import QAction, QPainterPath, QPen, QColor
+from PyQt6.QtWidgets import QGraphicsScene, QGraphicsItem, QGraphicsPathItem, QMenu
 
 from models import Mode
 from canvas.items import (
@@ -22,6 +22,7 @@ from canvas.items import (
     MetaHexagonItem,
     MetaCylinderItem,
     MetaBlockArrowItem,
+    MetaPolygonItem,
 )
 from settings import get_settings
 
@@ -55,6 +56,9 @@ class AnnotatorScene(QGraphicsScene):
         self._on_right_click: Optional[Callable[[], None]] = None  # For exiting sticky mode
         self._on_escape_key: Optional[Callable[[], None]] = None  # For exiting sticky mode
         self._on_z_order_changed: Optional[Callable[[], None]] = None  # For z-order changes
+        # Polygon multi-click drawing state
+        self._polygon_points: List[QPointF] = []
+        self._polygon_preview: Optional[QGraphicsItem] = None
 
     def set_z_order_changed_callback(self, callback: Optional[Callable[[], None]]):
         """Set callback for when z-order changes (used to sync JSON)."""
@@ -93,6 +97,11 @@ class AnnotatorScene(QGraphicsScene):
     def keyPressEvent(self, event):
         """Handle key press events."""
         if event.key() == Qt.Key.Key_Escape:
+            # Cancel polygon drawing on Escape
+            if self.mode == Mode.POLYGON and self._polygon_points:
+                self._cancel_polygon()
+                event.accept()
+                return
             if self._on_escape_key:
                 self._on_escape_key()
                 event.accept()
@@ -100,11 +109,24 @@ class AnnotatorScene(QGraphicsScene):
         super().keyPressEvent(event)
 
     def mousePressEvent(self, event):
-        # Right-click: show context menu if item is selected, otherwise exit sticky mode
+        # Right-click: close polygon if drawing, show context menu, or exit sticky mode
         if event.button() == Qt.MouseButton.RightButton:
+            # Polygon close/cancel on right-click
+            if self.mode == Mode.POLYGON and self._polygon_points:
+                if len(self._polygon_points) >= 3:
+                    self._finish_polygon()
+                else:
+                    self._cancel_polygon()
+                event.accept()
+                return
+
             item = self.itemAt(event.scenePos(), self.views()[0].transform() if self.views() else None)
             # Check if the item is one of our annotation items (not background)
             if item and self._is_annotation_item(item) and item.isSelected():
+                # Let polygon handle right-click in vertex editing mode
+                if isinstance(item, MetaPolygonItem) and item._vertex_editing:
+                    super().mousePressEvent(event)
+                    return
                 self._show_context_menu(event.screenPos(), item)
                 event.accept()
                 return
@@ -115,6 +137,13 @@ class AnnotatorScene(QGraphicsScene):
 
         if event.button() == Qt.MouseButton.LeftButton:
             sp = event.scenePos()
+
+            # Polygon multi-click mode
+            if self.mode == Mode.POLYGON:
+                self._polygon_points.append(sp)
+                self._update_polygon_preview(sp)
+                event.accept()
+                return
 
             if self.mode in (Mode.RECT, Mode.ROUNDEDRECT, Mode.ELLIPSE, Mode.LINE, Mode.HEXAGON, Mode.CYLINDER, Mode.BLOCKARROW):
                 self._drag_start = sp
@@ -172,6 +201,12 @@ class AnnotatorScene(QGraphicsScene):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        # Polygon preview: dashed line from last point to cursor
+        if self.mode == Mode.POLYGON and self._polygon_points:
+            self._update_polygon_preview(event.scenePos())
+            event.accept()
+            return
+
         if self._drag_start is not None and self._temp_item is not None:
             cur = event.scenePos()
             sx, sy = self._drag_start.x(), self._drag_start.y()
@@ -209,7 +244,7 @@ class AnnotatorScene(QGraphicsScene):
 
     def _is_annotation_item(self, item: QGraphicsItem) -> bool:
         """Check if an item is one of our annotation items."""
-        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaLineItem, MetaTextItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem))
+        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaLineItem, MetaTextItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaPolygonItem))
 
     def _get_annotation_items(self) -> List[QGraphicsItem]:
         """Get all annotation items in the scene (excluding background, etc.)."""
@@ -222,6 +257,77 @@ class AnnotatorScene(QGraphicsScene):
             return _get_z_index_base()
         max_z = max(i.zValue() for i in items)
         return max_z + _get_z_index_step()
+
+    # ---- Polygon drawing helpers ----
+
+    def _update_polygon_preview(self, cursor_pos: QPointF):
+        """Update the polygon preview path showing placed vertices and cursor position."""
+        if not self._polygon_points:
+            return
+
+        path = QPainterPath()
+        path.moveTo(self._polygon_points[0])
+        for pt in self._polygon_points[1:]:
+            path.lineTo(pt)
+        # Dashed line from last point to cursor
+        path.lineTo(cursor_pos)
+
+        if self._polygon_preview is None:
+            self._polygon_preview = QGraphicsPathItem()
+            pen = QPen(QColor(80, 80, 255, 180), 1.5, Qt.PenStyle.DashLine)
+            self._polygon_preview.setPen(pen)
+            self._polygon_preview.setZValue(999999)  # On top of everything
+            self.addItem(self._polygon_preview)
+
+        self._polygon_preview.setPath(path)
+
+    def _finish_polygon(self):
+        """Create a MetaPolygonItem from the collected polygon points."""
+        points = self._polygon_points
+
+        # Compute bounding box
+        xs = [p.x() for p in points]
+        ys = [p.y() for p in points]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        w = max_x - min_x
+        h = max_y - min_y
+
+        # Ensure minimum size
+        if w < 5:
+            w = 5
+        if h < 5:
+            h = 5
+
+        # Convert absolute points to relative (0-1) within bounding box
+        rel_points = []
+        for p in points:
+            rx = (p.x() - min_x) / w if w > 0 else 0.0
+            ry = (p.y() - min_y) / h if h > 0 else 0.0
+            rel_points.append([rx, ry])
+
+        ann_id = self._make_id() if self._make_id else "local"
+        next_z = self._get_next_z_index()
+
+        item = MetaPolygonItem(min_x, min_y, w, h, rel_points, ann_id, self._on_item_changed)
+        self.addItem(item)
+        item.setZValue(next_z)
+
+        if self._on_new_item:
+            self._on_new_item(item)
+
+        self._cleanup_polygon_preview()
+
+    def _cancel_polygon(self):
+        """Cancel the current polygon drawing operation."""
+        self._cleanup_polygon_preview()
+
+    def _cleanup_polygon_preview(self):
+        """Remove the polygon preview and reset state."""
+        if self._polygon_preview is not None:
+            self.removeItem(self._polygon_preview)
+            self._polygon_preview = None
+        self._polygon_points.clear()
 
     def _show_context_menu(self, screen_pos, item: QGraphicsItem):
         """Show context menu for the selected item."""

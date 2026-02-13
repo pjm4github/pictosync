@@ -27,6 +27,7 @@ from canvas.items import (
     MetaHexagonItem,
     MetaCylinderItem,
     MetaBlockArrowItem,
+    MetaPolygonItem,
 )
 
 # Try to import the compiled UI, fall back to None if not available
@@ -653,6 +654,8 @@ class PropertyPanel(QWidget):
             self._setup_cylinder_controls(item, pen_color)
         elif kind == "blockarrow":
             self._setup_blockarrow_controls(item, pen_color)
+        elif kind == "polygon":
+            self._setup_polygon_controls(item, pen_color)
         else:
             self._set_color_rows_visible(False, False, False)
             self._set_extra_rows_visible(False, False, False, False, False, text_box_width=False, text_layout=False)
@@ -1087,6 +1090,17 @@ class PropertyPanel(QWidget):
         self.adjust2_spin.blockSignals(True)
         self.adjust2_spin.setValue(int(adjust2))
         self.adjust2_spin.blockSignals(False)
+        self._setup_line_style_controls(item)
+        self._setup_text_layout_controls(item)
+
+    def _setup_polygon_controls(self, item, pen_color):
+        """Configure controls for polygon items."""
+        self._set_text_rows_visible(True, True, True)
+        self._set_color_rows_visible(True, True, True)
+        self._set_extra_rows_visible(False, True, True, False, False, text_box_width=False, text_layout=True)
+        self._set_preview(self.pen_color_preview, pen_color)
+        self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
+        self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
         self._setup_line_style_controls(item)
         self._setup_text_layout_controls(item)
 

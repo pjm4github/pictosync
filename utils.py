@@ -100,7 +100,7 @@ def _scale_record(rec: dict, a: float, b: float, normalized: bool) -> dict:
     def fy(v): return float(v) * b
 
     # Shapes with x, y, w, h bounding box geometry
-    bbox_kinds = ("rect", "ellipse", "roundedrect", "hexagon", "cylinder", "blockarrow")
+    bbox_kinds = ("rect", "ellipse", "roundedrect", "hexagon", "cylinder", "blockarrow", "polygon")
 
     if normalized:
         if kind in bbox_kinds:

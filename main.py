@@ -104,6 +104,7 @@ from canvas import (
     MetaHexagonItem,
     MetaCylinderItem,
     MetaBlockArrowItem,
+    MetaPolygonItem,
 )
 from editor import DraftDock
 from properties import PropertyPanel
@@ -438,7 +439,9 @@ class MainWindow(QMainWindow):
                                             "Draw a cylinder (database)")
         self.act_blockarrow = add_mode_action("Block Arrow", Mode.BLOCKARROW, "A", "blockarrow",
                                               "Draw a block arrow")
-        self.mode_actions = [self.act_select, self.act_rect, self.act_rrect, self.act_ellipse, self.act_line, self.act_text, self.act_hexagon, self.act_cylinder, self.act_blockarrow]
+        self.act_polygon = add_mode_action("Polygon", Mode.POLYGON, "P", "polygon",
+                                           "Draw a polygon (click vertices, right-click to close)")
+        self.mode_actions = [self.act_select, self.act_rect, self.act_rrect, self.act_ellipse, self.act_line, self.act_text, self.act_hexagon, self.act_cylinder, self.act_blockarrow, self.act_polygon]
         self.act_select.setChecked(True)
 
         tb.addSeparator()
@@ -677,6 +680,7 @@ class MainWindow(QMainWindow):
             Mode.HEXAGON: self.act_hexagon,
             Mode.CYLINDER: self.act_cylinder,
             Mode.BLOCKARROW: self.act_blockarrow,
+            Mode.POLYGON: self.act_polygon,
         }
         for a in self.mode_actions:
             a.setChecked(False)
@@ -859,7 +863,7 @@ class MainWindow(QMainWindow):
         Args:
             puml_path: Path to the .puml file.
         """
-        from plantuml.renderer import render_puml_to_png
+        from plantuml.renderer import render_puml_to_png, render_puml_to_svg
         from plantuml.parser import parse_puml_to_annotations
 
         # Read PUML source text
@@ -882,6 +886,13 @@ class MainWindow(QMainWindow):
                 f"Annotations will still be parsed from PUML text.\n\n{e}"
             )
 
+        # Try to render SVG for pixel-accurate position extraction
+        svg_path = None
+        try:
+            svg_path = render_puml_to_svg(puml_path)
+        except RuntimeError:
+            pass  # Fall back to auto-layout grid
+
         # Determine canvas dimensions
         if self.bg_item is not None:
             pm = self.bg_item.pixmap()
@@ -889,8 +900,8 @@ class MainWindow(QMainWindow):
         else:
             canvas_w, canvas_h = 1200, 800
 
-        # Parse PUML to annotations
-        data = parse_puml_to_annotations(puml_text, canvas_w, canvas_h)
+        # Parse PUML to annotations (SVG positions when available)
+        data = parse_puml_to_annotations(puml_text, canvas_w, canvas_h, svg_path=svg_path)
         num_annotations = len(data.get("annotations", []))
 
         # Place JSON in editor
@@ -1360,7 +1371,7 @@ class MainWindow(QMainWindow):
 
                     norm = False
                     try:
-                        if kind in ("rect", "ellipse", "roundedrect", "hexagon", "cylinder", "blockarrow") and "x" in geom and "w" in geom:
+                        if kind in ("rect", "ellipse", "roundedrect", "hexagon", "cylinder", "blockarrow", "polygon") and "x" in geom and "w" in geom:
                             norm = _looks_normalized(float(geom["x"])) and _looks_normalized(float(geom["w"]))
                         elif kind == "line" and "x1" in geom and "x2" in geom:
                             norm = _looks_normalized(float(geom["x1"])) and _looks_normalized(float(geom["x2"]))
@@ -1511,14 +1522,22 @@ class MainWindow(QMainWindow):
                         trace(f"Item {idx+1} added successfully", "REBUILD")
 
             # Restore selection if the item still exists
+            restored_id = None
             if selected_id:
                 for it in self.scene.items():
                     if hasattr(it, "meta") and it.data(ANN_ID_KEY) == selected_id:
                         it.setSelected(True)
                         self.props.set_item(it)
+                        restored_id = selected_id
                         break
         finally:
             self._syncing_from_json = False
+
+        # After syncing is done, update the editor highlight/scroll for restored selection.
+        # This must happen after _syncing_from_json is False so the handlers don't bail out.
+        if restored_id:
+            self.draft.set_highlighted_annotation(restored_id)
+            self._scroll_draft_to_id_top(restored_id)
 
     def _on_new_scene_item(self, item: QGraphicsItem):
         """Handle new item added to scene."""
@@ -1835,6 +1854,20 @@ class MainWindow(QMainWindow):
             if z_index:
                 it.setZValue(z_index)
 
+        elif kind == "polygon":
+            g = rec.get("geom", {})
+            points = g.get("points", [[0, 0], [1, 0], [1, 1], [0, 1]])
+            it = MetaPolygonItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]),
+                                 points, ann_id, on_change)
+            it.set_meta(meta)
+            it.meta.kind = "polygon"
+            it.apply_style_from_record(rec)
+            it._apply_pen_brush()
+            it._update_label_text()
+            self.scene.addItem(it)
+            if z_index:
+                it.setZValue(z_index)
+
     # ---- Alignment methods ----
 
     def _update_align_button_state(self):
@@ -1867,7 +1900,7 @@ class MainWindow(QMainWindow):
 
     def _is_alignable_item(self, item) -> bool:
         """Check if an item is alignable (rect, roundedrect, ellipse, hexagon, cylinder, blockarrow)."""
-        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem))
+        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaPolygonItem))
 
     def align_selected_to_png(self):
         """Start alignment of the selected item to match the PNG visual."""

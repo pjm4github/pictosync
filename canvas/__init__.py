@@ -14,6 +14,7 @@ from canvas.items import (
     MetaHexagonItem,
     MetaCylinderItem,
     MetaBlockArrowItem,
+    MetaPolygonItem,
 )
 from canvas.scene import AnnotatorScene
 from canvas.view import AnnotatorView
@@ -29,6 +30,7 @@ __all__ = [
     "MetaHexagonItem",
     "MetaCylinderItem",
     "MetaBlockArrowItem",
+    "MetaPolygonItem",
     "AnnotatorScene",
     "AnnotatorView",
 ]

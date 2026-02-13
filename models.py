@@ -109,6 +109,7 @@ class Mode:
     HEXAGON = "hexagon"
     CYLINDER = "cylinder"
     BLOCKARROW = "blockarrow"
+    POLYGON = "polygon"
 
 
 # ----------------------------

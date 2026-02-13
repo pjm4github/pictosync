@@ -29,7 +29,7 @@ try:
     HAS_SCHEMA = True
 except ImportError:
     HAS_SCHEMA = False
-    VALID_KINDS = ["rect", "roundedrect", "ellipse", "line", "text", "hexagon", "cylinder", "blockarrow"]
+    VALID_KINDS = ["rect", "roundedrect", "ellipse", "line", "text", "hexagon", "cylinder", "blockarrow", "polygon"]
 
 
 def validate_and_fix_annotations(data: Dict) -> Tuple[Dict, List[str]]:
@@ -87,7 +87,7 @@ def validate_and_fix_annotations(data: Dict) -> Tuple[Dict, List[str]]:
                     continue
 
         # Ensure positive dimensions for shapes
-        if kind in ["rect", "roundedrect", "ellipse", "hexagon", "cylinder", "blockarrow"]:
+        if kind in ["rect", "roundedrect", "ellipse", "hexagon", "cylinder", "blockarrow", "polygon"]:
             if geom.get("w", 0) <= 0 or geom.get("h", 0) <= 0:
                 warnings.append(f"Annotation {i}: invalid dimensions, skipping")
                 continue
