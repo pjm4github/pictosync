@@ -4,7 +4,7 @@
 
 # PictoSync
 
-**v1.1** | PNG Image Canvas Tool for Object Synchronization
+**v1.2** | PNG Image Canvas Tool for Object Synchronization
 
 Diagram annotation tool with AI-powered extraction and bidirectional sync.
 
@@ -18,7 +18,8 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 **For a comparison to other tools and their features see this file:  [Round Tripping PNG Tools](png_json_comparison.md)**
 
 ### Drawing & Annotation
-- **Manual Drawing Tools**: Rectangle, rounded rectangle, ellipse, line, and text annotations
+- **Manual Drawing Tools**: Rectangle, rounded rectangle, ellipse, hexagon, cylinder, block arrow, polygon, line, and text annotations
+- **Polygon Tool**: Multi-click vertex placement with right-click to close; double-click to enter vertex editing mode with draggable control knobs; right-click vertices to delete, right-click edges to add vertices
 - **Text Labels**: All shapes support label, tech, and note text with customizable formatting
 - **Text Alignment**: Vertical alignment (top/middle/bottom) and line spacing controls
 - **Pen Styles**: Solid or dashed lines with configurable dash pattern (length, solid percent)
@@ -32,6 +33,12 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 - **Dashed Line Support**: Merges collinear segments to handle dashed/dotted lines
 - **Text Matching**: Uses label/note text to locate lines in the image
 - **Color Matching**: HSV-based color detection matches pen colors in the PNG
+
+### PlantUML Import
+- **PlantUML Rendering**: Import `.puml` files directly via drag-and-drop or File > Open
+- **SVG Position Extraction**: Parses PlantUML-rendered SVG for pixel-accurate element positioning
+- **Cluster/Package Support**: PlantUML packages render as polygon shapes with SVG path vertices
+- **Link Style Extraction**: Stroke colors and dash patterns from SVG applied to connectors
 
 ### AI Integration
 - **AI Extraction**: Automatic diagram element detection using Google Gemini models
@@ -48,7 +55,8 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 - **Line Numbers**: Theme-aware line number gutter with selection highlighting
 - **Code Folding**: Collapse/expand JSON objects and arrays
 - **Focus Mode**: Toggle to show only the selected annotation (lamp icon)
-- **Smart Scrolling**: Clicking canvas items scrolls editor to the annotation's ID field
+- **Smart Scrolling**: Clicking canvas items scrolls editor to the annotation's opening brace
+- **Gutter Highlight Bar**: Colored bar in gutter marks the full scope of the selected annotation
 
 ### Property Panel
 - **Context-Sensitive**: Shows relevant controls based on selected item type
@@ -93,8 +101,8 @@ python main.py
 ```
 
 ### Basic Workflow
-1. **Load an image**: Drag and drop a PNG or use File > Open PNG
-2. **Draw annotations**: Select a tool (R=Rect, U=RoundedRect, E=Ellipse, L=Line, T=Text, S=Select)
+1. **Load an image**: Drag and drop a PNG/PUML file or use File > Open
+2. **Draw annotations**: Select a tool (R=Rect, U=RoundedRect, E=Ellipse, L=Line, T=Text, H=Hexagon, Y=Cylinder, A=Block Arrow, P=Polygon, S=Select)
 3. **AI extraction**: Click "Auto-Extract (Gemini)" to detect diagram elements
 4. **Edit JSON**: Modify annotations in the Draft JSON panel
 5. **Link**: Click "Import & Link" to enable bidirectional JSON ↔ Canvas sync
@@ -109,6 +117,10 @@ python main.py
 | E | Ellipse tool |
 | L | Line tool |
 | T | Text tool |
+| H | Hexagon tool |
+| Y | Cylinder tool |
+| A | Block arrow tool |
+| P | Polygon tool |
 | Delete | Delete selected item |
 
 ### Tips
@@ -128,7 +140,7 @@ pictosync/
 ├── styles.py            # Theme stylesheets, dash patterns, color configs
 ├── utils.py             # JSON parsing, coordinate scaling, markdown handling
 ├── canvas/              # Graphics layer
-│   ├── items.py         # Annotation items (Rect, Ellipse, Line, Text) with labels
+│   ├── items.py         # Annotation items (Rect, Ellipse, Hexagon, Cylinder, BlockArrow, Polygon, Line, Text)
 │   ├── mixins.py        # LinkedMixin, MetaMixin for shared behavior
 │   ├── scene.py         # AnnotatorScene (drawing, context menu, z-order)
 │   └── view.py          # AnnotatorView (zoom, pan, drag-drop)
@@ -142,6 +154,9 @@ pictosync/
 │   └── properties_ui.py      # Auto-generated from .ui file
 ├── schemas/             # JSON schemas
 │   └── annotation_schema.json  # Annotation format specification
+├── plantuml/            # PlantUML import
+│   ├── renderer.py      # PlantUML to PNG/SVG rendering
+│   └── parser.py        # PUML text parsing and SVG position extraction
 ├── gemini/              # AI integration
 │   └── worker.py        # Threaded Gemini API worker
 ├── alignment/           # OpenCV alignment
@@ -156,7 +171,7 @@ pictosync/
 ## Schema
 
 Annotations follow a JSON schema with support for:
-- **Geometry**: rect, roundedrect, ellipse, line, text
+- **Geometry**: rect, roundedrect, ellipse, hexagon, cylinder, blockarrow, polygon, line, text
 - **Meta**: label, tech, note with alignment and sizing
 - **Style**: pen (color, width, dash), brush (fill), text (color, size)
 - **Text Layout**: vertical alignment, spacing, bounding box dimensions
@@ -165,13 +180,21 @@ See `schemas/annotation_schema.json` for the full specification.
 
 ## Version History
 
-### v1.1 (2025-01-29)
+### v1.2 (2026-02-12)
+- Polygon shape tool with multi-click vertex drawing and vertex editing mode
+- SVG-based position extraction for PlantUML import (pixel-accurate placement)
+- PlantUML packages/clusters render as polygons with SVG path vertices
+- Link style extraction (stroke colors, dash patterns) from PlantUML SVG
+- Fixed editor scroll-to-selection for documents with wrapped lines
+- Gutter highlight bar shows full annotation scope on selection
+
+### v1.1 (2026-01-29)
 - OpenCV-based element alignment for snapping shapes to PNG visuals
 - Line detection with endpoint, angle, and arrowhead detection
 - Dashed line support via collinear segment merging
 - Text matching to locate lines using label/note metadata
 
-### v1.0 (2025-01-28)
+### v1.0 (2026-01-28)
 - Initial stable release
 - Text vertical alignment and spacing controls
 - Ellipse text label support
