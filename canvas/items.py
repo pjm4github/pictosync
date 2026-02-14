@@ -356,6 +356,7 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
         if event.button() == Qt.MouseButton.LeftButton:
             h = self._hit_test_handle(event.scenePos())
             if h:
+                self._begin_resize_tracking()
                 self._active_handle = h
                 self._resizing = True
                 self._press_scene = event.scenePos()
@@ -460,6 +461,7 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
 
     def mouseReleaseEvent(self, event):
         if self._resizing:
+            self._end_resize_tracking()
             self._resizing = False
             self._active_handle = None
             self._press_scene = None
@@ -693,6 +695,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         if event.button() == Qt.MouseButton.LeftButton:
             h = self._hit_test_handle(event.scenePos())
             if h:
+                self._begin_resize_tracking()
                 self._active_handle = h
                 self._resizing = True
                 self._press_scene = event.scenePos()
@@ -828,6 +831,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def mouseReleaseEvent(self, event):
         if self._resizing:
+            self._end_resize_tracking()
             self._resizing = False
             self._active_handle = None
             self._press_scene = None
@@ -1036,6 +1040,7 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         if event.button() == Qt.MouseButton.LeftButton:
             h = self._hit_test_handle(event.scenePos())
             if h:
+                self._begin_resize_tracking()
                 self._active_handle = h
                 self._resizing = True
                 self._press_scene = event.scenePos()
@@ -1140,6 +1145,7 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
 
     def mouseReleaseEvent(self, event):
         if self._resizing:
+            self._end_resize_tracking()
             self._resizing = False
             self._active_handle = None
             self._press_scene = None
@@ -1623,12 +1629,14 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
             # Check text box handles first
             tb_h = self._hit_test_text_box_handle(event.scenePos())
             if tb_h:
+                self._begin_resize_tracking()
                 self._drag_text_box = tb_h
                 event.accept()
                 return
 
             h = self._hit_test_endpoint(event.scenePos())
             if h:
+                self._begin_resize_tracking()
                 self._drag_end = h
                 event.accept()
                 return
@@ -1664,11 +1672,13 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
 
     def mouseReleaseEvent(self, event):
         if self._drag_text_box:
+            self._end_resize_tracking()
             self._drag_text_box = None
             self._notify_changed()
             event.accept()
             return
         if self._drag_end:
+            self._end_resize_tracking()
             self._drag_end = None
             self._notify_changed()
             event.accept()
@@ -1755,6 +1765,7 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
     on_editing_started = None  # Called when text editing begins
     on_editing_finished = None  # Called when text editing ends
     on_text_changed = None  # Called when text content changes during editing
+    on_text_edit_finished = None  # Called with (item, old_text, new_text) for undo
 
     # Class-level default text color (set by MainWindow based on theme)
     default_text_color = QColor("#1E293B")  # Default to dark (Tailwind slate-800)
@@ -1830,6 +1841,7 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
         if self._editing:
             return
         self._editing = True
+        self._text_before_edit = self.toPlainText()
         self.setTextInteractionFlags(Qt.TextInteractionFlag.TextEditorInteraction)
         self.setFocus(Qt.FocusReason.MouseFocusReason)
         # Select all text for easy replacement
@@ -1850,12 +1862,19 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
         cursor.clearSelection()
         self.setTextCursor(cursor)
         # Sync the displayed text to meta.note
-        self.meta.note = self.toPlainText()
+        new_text = self.toPlainText()
+        self.meta.note = new_text
         try:
             self.text_size_pt = float(self.font().pointSizeF())
         except Exception:
             pass
         self._notify_changed()
+        # Fire text edit undo callback if text changed
+        old_text = getattr(self, '_text_before_edit', None)
+        if old_text is not None and old_text != new_text:
+            if MetaTextItem.on_text_edit_finished:
+                MetaTextItem.on_text_edit_finished(self, old_text, new_text)
+        self._text_before_edit = None
         if MetaTextItem.on_editing_finished:
             MetaTextItem.on_editing_finished()
 
@@ -2093,6 +2112,7 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         if event.button() == Qt.MouseButton.LeftButton:
             h = self._hit_test_handle(event.scenePos())
             if h:
+                self._begin_resize_tracking()
                 self._active_handle = h
                 self._resizing = True
                 self._press_scene = event.scenePos()
@@ -2218,6 +2238,7 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def mouseReleaseEvent(self, event):
         if self._resizing:
+            self._end_resize_tracking()
             self._resizing = False
             self._active_handle = None
             self._press_scene = None
@@ -2470,6 +2491,7 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         if event.button() == Qt.MouseButton.LeftButton:
             h = self._hit_test_handle(event.scenePos())
             if h:
+                self._begin_resize_tracking()
                 self._active_handle = h
                 self._resizing = True
                 self._press_scene = event.scenePos()
@@ -2627,6 +2649,7 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def mouseReleaseEvent(self, event):
         if self._resizing:
+            self._end_resize_tracking()
             self._resizing = False
             self._active_handle = None
             self._press_scene = None
@@ -2899,6 +2922,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         if event.button() == Qt.MouseButton.LeftButton:
             h = self._hit_test_handle(event.scenePos())
             if h:
+                self._begin_resize_tracking()
                 self._active_handle = h
                 self._resizing = True
                 self._press_scene = event.scenePos()
@@ -3043,6 +3067,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def mouseReleaseEvent(self, event):
         if self._resizing:
+            self._end_resize_tracking()
             self._resizing = False
             self._active_handle = None
             self._press_scene = None
@@ -3429,6 +3454,7 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             if self._vertex_editing:
                 idx = self._hit_test_vertex(event.scenePos())
                 if idx is not None:
+                    self._begin_resize_tracking()
                     self._active_vertex = idx
                     self._vertex_dragging = True
                     self._press_scene = event.scenePos()
@@ -3438,6 +3464,7 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             # Bounding-box handle resize
             h = self._hit_test_handle(event.scenePos())
             if h:
+                self._begin_resize_tracking()
                 self._active_handle = h
                 self._resizing = True
                 self._press_scene = event.scenePos()
@@ -3520,6 +3547,7 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def mouseReleaseEvent(self, event):
         if self._vertex_dragging:
+            self._end_resize_tracking()
             self._vertex_dragging = False
             self._active_vertex = None
             self._recalculate_bbox()
@@ -3527,6 +3555,7 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             event.accept()
             return
         if self._resizing:
+            self._end_resize_tracking()
             self._resizing = False
             self._active_handle = None
             self._press_scene = None
@@ -3743,6 +3772,38 @@ class MetaGroupItem(QGraphicsItemGroup, MetaMixin, LinkedMixin):
             states[child] = self._snapshot_child(child)
         return states
 
+    def _restore_child_states(self, states: Dict) -> None:
+        """Restore each child's geometry from a snapshot dict."""
+        for child, state in states.items():
+            pos = state.get("pos")
+            if isinstance(child, (MetaRectItem, MetaEllipseItem)):
+                child.setRect(QRectF(0, 0, state["w"], state["h"]))
+                if pos:
+                    child.setPos(pos)
+            elif isinstance(child, (MetaRoundedRectItem, MetaHexagonItem,
+                                    MetaCylinderItem, MetaBlockArrowItem,
+                                    MetaPolygonItem)):
+                child._width = state["w"]
+                child._height = state["h"]
+                child._update_path()
+                if hasattr(child, '_update_label_position'):
+                    child._update_label_position()
+                if pos:
+                    child.setPos(pos)
+            elif isinstance(child, MetaLineItem):
+                child.setLine(QLineF(0, 0, state["dx"], state["dy"]))
+                if pos:
+                    child.setPos(pos)
+            elif isinstance(child, MetaGroupItem):
+                nested = state.get("nested", {})
+                if nested:
+                    child._restore_child_states(nested)
+                if pos:
+                    child.setPos(pos)
+            else:
+                if pos:
+                    child.setPos(pos)
+
     def _snapshot_child(self, child) -> Dict:
         """Capture geometry state of a single child item."""
         pos = QPointF(child.pos())
@@ -3822,6 +3883,7 @@ class MetaGroupItem(QGraphicsItemGroup, MetaMixin, LinkedMixin):
         if event.button() == Qt.MouseButton.LeftButton:
             h = self._hit_test_handle(event.scenePos())
             if h:
+                self._begin_resize_tracking()
                 self._active_handle = h
                 self._resizing = True
                 self._press_scene = event.scenePos()
@@ -3899,6 +3961,7 @@ class MetaGroupItem(QGraphicsItemGroup, MetaMixin, LinkedMixin):
     def mouseReleaseEvent(self, event):
         """Finish group resize."""
         if self._resizing:
+            self._end_resize_tracking()
             self._resizing = False
             self._active_handle = None
             self._press_scene = None

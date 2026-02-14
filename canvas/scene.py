@@ -23,6 +23,7 @@ from canvas.items import (
     MetaCylinderItem,
     MetaBlockArrowItem,
     MetaPolygonItem,
+    MetaGroupItem,
 )
 from settings import get_settings
 
@@ -56,6 +57,13 @@ class AnnotatorScene(QGraphicsScene):
         self._on_right_click: Optional[Callable[[], None]] = None  # For exiting sticky mode
         self._on_escape_key: Optional[Callable[[], None]] = None  # For exiting sticky mode
         self._on_z_order_changed: Optional[Callable[[], None]] = None  # For z-order changes
+        self._on_group_items: Optional[Callable[[list], None]] = None  # For grouping items
+        self._on_ungroup_item: Optional[Callable] = None  # For ungrouping
+        self._on_items_moved: Optional[Callable] = None  # For move undo tracking
+        self._undo_act = None  # QAction for undo (set from main.py)
+        self._redo_act = None  # QAction for redo (set from main.py)
+        # Move tracking state
+        self._move_start_positions: dict = {}
         # Polygon multi-click drawing state
         self._polygon_points: List[QPointF] = []
         self._polygon_preview: Optional[QGraphicsItem] = None
@@ -94,6 +102,31 @@ class AnnotatorScene(QGraphicsScene):
         """Set callback for Escape key (used to exit sticky tool mode)."""
         self._on_escape_key = callback
 
+    def set_on_items_moved(self, callback):
+        """Set callback for when items are moved (used for move undo)."""
+        self._on_items_moved = callback
+
+    def set_undo_actions(self, undo_act, redo_act):
+        """Set undo/redo actions for use in context menus."""
+        self._undo_act = undo_act
+        self._redo_act = redo_act
+
+    @staticmethod
+    def _geometry_hash(item) -> tuple:
+        """Return a hashable geometry snapshot excluding position."""
+        if hasattr(item, '_capture_child_states'):
+            cbr = item.childrenBoundingRect()
+            return ("group", round(cbr.width(), 2), round(cbr.height(), 2))
+        if hasattr(item, 'setRect') and hasattr(item, 'rect') and not hasattr(item, '_update_path'):
+            r = item.rect()
+            return ("rect", round(r.width(), 2), round(r.height(), 2))
+        if hasattr(item, '_width') and hasattr(item, '_update_path'):
+            return ("path", round(item._width, 2), round(item._height, 2))
+        if hasattr(item, 'setLine') and hasattr(item, 'line'):
+            ln = item.line()
+            return ("line", round(ln.dx(), 2), round(ln.dy(), 2))
+        return ("pos_only",)
+
     def keyPressEvent(self, event):
         """Handle key press events."""
         if event.key() == Qt.Key.Key_Escape:
@@ -109,6 +142,16 @@ class AnnotatorScene(QGraphicsScene):
         super().keyPressEvent(event)
 
     def mousePressEvent(self, event):
+        # Snapshot positions for move tracking in SELECT mode
+        if event.button() == Qt.MouseButton.LeftButton and self.mode == Mode.SELECT:
+            self._move_start_positions = {}
+            for item in self.selectedItems():
+                if hasattr(item, 'ann_id'):
+                    self._move_start_positions[item] = (
+                        QPointF(item.pos()),
+                        self._geometry_hash(item),
+                    )
+
         # Right-click: close polygon if drawing, show context menu, or exit sticky mode
         if event.button() == Qt.MouseButton.RightButton:
             # Polygon close/cancel on right-click
@@ -121,6 +164,9 @@ class AnnotatorScene(QGraphicsScene):
                 return
 
             item = self.itemAt(event.scenePos(), self.views()[0].transform() if self.views() else None)
+            # Walk up to top-level selectable item (may be a group)
+            while item and item.parentItem() and isinstance(item.parentItem(), MetaGroupItem):
+                item = item.parentItem()
             # Check if the item is one of our annotation items (not background)
             if item and self._is_annotation_item(item) and item.isSelected():
                 # Let polygon handle right-click in vertex editing mode
@@ -198,6 +244,21 @@ class AnnotatorScene(QGraphicsScene):
                 event.accept()
                 return
 
+        # In SELECT mode, ensure clicking on a group child selects the group
+        if event.button() == Qt.MouseButton.LeftButton and self.mode == Mode.SELECT:
+            item = self.itemAt(event.scenePos(), self.views()[0].transform() if self.views() else None)
+            if item and isinstance(item.parentItem(), MetaGroupItem):
+                # Walk up to the top-level group
+                group = item.parentItem()
+                while isinstance(group.parentItem(), MetaGroupItem):
+                    group = group.parentItem()
+                # Let Qt handle default behavior first, then select the group
+                super().mousePressEvent(event)
+                if not event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                    self.clearSelection()
+                group.setSelected(True)
+                return
+
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -242,9 +303,19 @@ class AnnotatorScene(QGraphicsScene):
 
         super().mouseReleaseEvent(event)
 
+        # Detect moves in SELECT mode (after super completes the drag)
+        if self._move_start_positions:
+            moved = {}
+            for item, (old_pos, old_hash) in self._move_start_positions.items():
+                if item.pos() != old_pos and self._geometry_hash(item) == old_hash:
+                    moved[item] = (old_pos, QPointF(item.pos()))
+            if moved and self._on_items_moved:
+                self._on_items_moved(moved)
+            self._move_start_positions = {}
+
     def _is_annotation_item(self, item: QGraphicsItem) -> bool:
         """Check if an item is one of our annotation items."""
-        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaLineItem, MetaTextItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaPolygonItem))
+        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaLineItem, MetaTextItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaPolygonItem, MetaGroupItem))
 
     def _get_annotation_items(self) -> List[QGraphicsItem]:
         """Get all annotation items in the scene (excluding background, etc.)."""
@@ -332,6 +403,29 @@ class AnnotatorScene(QGraphicsScene):
     def _show_context_menu(self, screen_pos, item: QGraphicsItem):
         """Show context menu for the selected item."""
         menu = QMenu()
+        selected = self.selectedItems()
+
+        # Undo/Redo
+        if self._undo_act:
+            menu.addAction(self._undo_act)
+        if self._redo_act:
+            menu.addAction(self._redo_act)
+        if self._undo_act or self._redo_act:
+            menu.addSeparator()
+
+        # Group option: multiple items selected
+        if len(selected) > 1:
+            group_act = QAction("Group", menu)
+            group_act.triggered.connect(lambda: self._request_group(selected))
+            menu.addAction(group_act)
+            menu.addSeparator()
+
+        # Ungroup option: single group selected
+        if isinstance(item, MetaGroupItem):
+            ungroup_act = QAction("Ungroup", menu)
+            ungroup_act.triggered.connect(lambda: self._request_ungroup(item))
+            menu.addAction(ungroup_act)
+            menu.addSeparator()
 
         bring_to_front = QAction("Bring to Front", menu)
         bring_to_front.triggered.connect(lambda: self._bring_to_front(item))
@@ -412,3 +506,25 @@ class AnnotatorScene(QGraphicsScene):
         # Notify that z-order changed
         if self._on_z_order_changed:
             self._on_z_order_changed()
+
+    def set_group_callbacks(self, on_group, on_ungroup):
+        """Set callbacks for group/ungroup operations."""
+        self._on_group_items = on_group
+        self._on_ungroup_item = on_ungroup
+
+    def _request_group(self, items):
+        """Request grouping of items via callback."""
+        if self._on_group_items:
+            self._on_group_items(list(items))
+
+    def _request_ungroup(self, group_item):
+        """Request ungrouping via callback."""
+        if self._on_ungroup_item:
+            self._on_ungroup_item(group_item)
+
+    def _get_top_level_annotation_items(self) -> list:
+        """Get annotation items that are NOT children of a MetaGroupItem."""
+        return [
+            item for item in self.items()
+            if self._is_annotation_item(item) and not isinstance(item.parentItem(), MetaGroupItem)
+        ]

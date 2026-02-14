@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import traceback
@@ -105,6 +106,7 @@ from canvas import (
     MetaCylinderItem,
     MetaBlockArrowItem,
     MetaPolygonItem,
+    MetaGroupItem,
 )
 from editor import DraftDock
 from properties import PropertyPanel
@@ -127,7 +129,12 @@ except ImportError:
 # Import comprehensive settings dialog
 from settings_dialog import SettingsDialog
 from help_dialog import HelpDialog, show_about_dialog
-from undo_commands import DeleteItemCommand, DeleteMultipleItemsCommand, AddItemCommand
+from undo_commands import (
+    DeleteItemCommand, DeleteMultipleItemsCommand, AddItemCommand,
+    GroupItemsCommand, UngroupItemsCommand,
+    MoveItemCommand, ItemGeometryCommand, TextEditCommand,
+)
+from canvas.mixins import LinkedMixin
 
 
 # Mapping from style display names to icon directory names
@@ -258,8 +265,20 @@ class MainWindow(QMainWindow):
         # Set up callback for z-order changes
         self.scene.set_z_order_changed_callback(self._on_z_order_changed)
 
+        # Set up group/ungroup callbacks
+        self.scene.set_group_callbacks(self._do_group_items, self._do_ungroup_item)
+
         # Set up text editing callbacks to disable shortcuts during editing
         self._setup_text_editing_callbacks()
+
+        # Set up undo callbacks for move, resize, and text edit
+        self.scene.set_on_items_moved(self._on_items_moved)
+        LinkedMixin.on_resize_finished = self._on_item_resize_finished
+        MetaTextItem.on_text_edit_finished = self._on_text_edit_finished
+
+        # Give property panel and scene access to undo stack/actions
+        self.props.undo_stack = self.undo_stack
+        self.scene.set_undo_actions(self.undo_act, self.redo_act)
 
         self.statusBar().showMessage("Drop a PNG. Auto-Extract or edit Draft JSON. Import links JSON<->Scene.")
         self.props.set_image_info({})
@@ -289,23 +308,15 @@ class MainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
-        save_overlay = QAction("Save Overlay JSON...", self)
-        save_overlay.triggered.connect(self.save_overlay_json_dialog)
-        file_menu.addAction(save_overlay)
+        save_project = QAction("Save Project...", self)
+        save_project.setShortcut(QKeySequence.StandardKey.Save)
+        save_project.triggered.connect(self.save_project_dialog)
+        file_menu.addAction(save_project)
 
-        load_overlay = QAction("Load Overlay JSON...", self)
-        load_overlay.triggered.connect(self.load_overlay_json_dialog)
-        file_menu.addAction(load_overlay)
-
-        file_menu.addSeparator()
-
-        save_draft = QAction("Save Draft JSON Text...", self)
-        save_draft.triggered.connect(self.save_draft_text_dialog)
-        file_menu.addAction(save_draft)
-
-        load_draft = QAction("Load Draft JSON Text...", self)
-        load_draft.triggered.connect(self.load_draft_text_dialog)
-        file_menu.addAction(load_draft)
+        open_project = QAction("Open Project...", self)
+        open_project.setShortcut(QKeySequence.StandardKey.Open)
+        open_project.triggered.connect(self.open_project_dialog)
+        file_menu.addAction(open_project)
 
         file_menu.addSeparator()
 
@@ -325,10 +336,12 @@ class MainWindow(QMainWindow):
         # Undo/Redo (will be connected to undo_stack in _build_toolbar)
         self._menu_undo_act = QAction("Undo", self)
         self._menu_undo_act.setShortcut(QKeySequence.StandardKey.Undo)
+        self._menu_undo_act.setEnabled(False)
         edit_menu.addAction(self._menu_undo_act)
 
         self._menu_redo_act = QAction("Redo", self)
         self._menu_redo_act.setShortcut(QKeySequence.StandardKey.Redo)
+        self._menu_redo_act.setEnabled(False)
         edit_menu.addAction(self._menu_redo_act)
 
         edit_menu.addSeparator()
@@ -513,16 +526,14 @@ class MainWindow(QMainWindow):
 
         tb.addSeparator()
 
-        # Undo/Redo actions
+        # Undo/Redo actions (shortcuts are on menu actions, not here, to avoid ambiguity)
         self.undo_act = self.undo_stack.createUndoAction(self, "Undo")
-        self.undo_act.setShortcut(QKeySequence.StandardKey.Undo)
         self.undo_act.setToolTip("Undo the last action (Ctrl+Z)")
         self.undo_act.setStatusTip("Undo the last action")
         self._icon_actions[self.undo_act] = "undo"
         tb.addAction(self.undo_act)
 
         self.redo_act = self.undo_stack.createRedoAction(self, "Redo")
-        self.redo_act.setShortcut(QKeySequence.StandardKey.Redo)
         self.redo_act.setToolTip("Redo the last undone action (Ctrl+Y)")
         self.redo_act.setStatusTip("Redo the last undone action")
         self._icon_actions[self.redo_act] = "redo"
@@ -1031,6 +1042,8 @@ class MainWindow(QMainWindow):
         for it in list(self.scene.items()):
             if it is self.bg_item or it is self._png_hidden_indicator:
                 continue
+            if it.scene() is None:
+                continue  # Already removed (e.g. child of a removed group)
             if hasattr(it, "meta"):
                 self.scene.removeItem(it)
         self.props.set_item(None)
@@ -1096,6 +1109,31 @@ class MainWindow(QMainWindow):
 
         self.statusBar().showMessage(f"Deleted {len(items)} item(s).")
 
+    # ---- Undo callbacks for move, resize, text edit ----
+
+    def _on_items_moved(self, moved: dict):
+        """Handle items moved — push MoveItemCommand(s) to undo stack."""
+        if len(moved) == 1:
+            item, (old_pos, new_pos) = next(iter(moved.items()))
+            cmd = MoveItemCommand(item, old_pos, new_pos)
+            self.undo_stack.push(cmd)
+        else:
+            self.undo_stack.beginMacro(f"Move {len(moved)} items")
+            for item, (old_pos, new_pos) in moved.items():
+                cmd = MoveItemCommand(item, old_pos, new_pos)
+                self.undo_stack.push(cmd)
+            self.undo_stack.endMacro()
+
+    def _on_item_resize_finished(self, item, old_state, new_state):
+        """Handle item resize finished — push ItemGeometryCommand to undo stack."""
+        cmd = ItemGeometryCommand(item, old_state, new_state)
+        self.undo_stack.push(cmd)
+
+    def _on_text_edit_finished(self, item, old_text, new_text):
+        """Handle text edit finished — push TextEditCommand to undo stack."""
+        cmd = TextEditCommand(item, old_text, new_text)
+        self.undo_stack.push(cmd)
+
     def keyPressEvent(self, event):
         """Handle key press events."""
         if event.key() == Qt.Key.Key_Delete:
@@ -1153,54 +1191,55 @@ class MainWindow(QMainWindow):
             else:
                 self.statusBar().showMessage("Settings saved.")
 
-    def save_draft_text_dialog(self):
-        """Save draft JSON text to a file."""
-        path, _ = QFileDialog.getSaveFileName(self, "Save Draft JSON Text", "", "JSON (*.json);;Text (*.txt)")
+    def save_project_dialog(self):
+        """Save project (overlay JSON + PNG) to workspace directory."""
+        workspace = str(self.settings_manager.get_workspace_dir())
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Project", workspace, "JSON (*.json)"
+        )
         if not path:
             return
+
+        save_dir = os.path.dirname(path)
+        data = self._export_overlay_json()
+
+        # Copy background PNG to save directory if it exists elsewhere
+        bg = data.get("background_png", "")
+        if bg and os.path.isfile(bg):
+            bg_name = os.path.basename(bg)
+            dest_png = os.path.join(save_dir, bg_name)
+            if os.path.normpath(bg) != os.path.normpath(dest_png):
+                try:
+                    shutil.copy2(bg, dest_png)
+                except Exception:
+                    pass  # Keep absolute path if copy fails
+                else:
+                    data["background_png"] = bg_name
+
         try:
+            os.makedirs(save_dir, exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
-                f.write(self.draft.get_json_text())
-            self.statusBar().showMessage(f"Saved draft text: {path}")
+                json.dump(data, f, indent=2)
+            self.statusBar().showMessage(f"Saved project: {path}")
         except Exception as e:
             QMessageBox.critical(self, "Save failed", str(e))
 
-    def load_draft_text_dialog(self):
-        """Load draft JSON text from a file."""
-        path, _ = QFileDialog.getOpenFileName(self, "Load Draft JSON Text", "", "JSON (*.json);;Text (*.txt)")
+    def open_project_dialog(self):
+        """Open a project (overlay JSON) from workspace directory."""
+        workspace = str(self.settings_manager.get_workspace_dir())
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Project", workspace, "JSON (*.json)"
+        )
         if not path:
             return
         try:
             with open(path, "r", encoding="utf-8") as f:
-                text = f.read()
-
-            enable = False
-            status = ""
-            try:
-                data = json.loads(text)
-                enable = isinstance(data, dict) and isinstance(data.get("annotations", None), list)
-                status = "Loaded; click Import to link JSON<->Scene." if enable else "Loaded (not valid draft schema)."
-            except Exception:
-                enable = False
-                status = "Loaded (invalid JSON)."
-
-            self._set_draft_text_programmatically(text, enable_import=enable, status=status, focus_id=None)
-            self.statusBar().showMessage(f"Loaded draft text: {path}")
+                data = json.load(f)
         except Exception as e:
-            QMessageBox.critical(self, "Load failed", str(e))
-
-    def save_overlay_json_dialog(self):
-        """Save overlay JSON to a file."""
-        path, _ = QFileDialog.getSaveFileName(self, "Save Overlay JSON", "", "JSON (*.json)")
-        if not path:
+            QMessageBox.critical(self, "Open failed", str(e))
             return
-        data = self._export_overlay_json()
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-            self.statusBar().showMessage(f"Saved overlay: {path}")
-        except Exception as e:
-            QMessageBox.critical(self, "Save failed", str(e))
+        self._apply_overlay_import(data, base_dir=os.path.dirname(path))
+        self.statusBar().showMessage(f"Opened project: {path}")
 
     def export_pptx_dialog(self):
         """Export canvas to PowerPoint file."""
@@ -1214,10 +1253,12 @@ class MainWindow(QMainWindow):
         if not path.lower().endswith(".pptx"):
             path += ".pptx"
 
-        # Collect annotations from canvas
+        # Collect annotations from canvas (skip group children)
         annotations = []
         for it in self.scene.items():
             if hasattr(it, "to_record") and hasattr(it, "meta"):
+                if isinstance(it.parentItem(), MetaGroupItem):
+                    continue
                 annotations.append(it.to_record())
         annotations.reverse()  # Maintain z-order
 
@@ -1236,25 +1277,14 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Export failed", str(e))
 
-    def load_overlay_json_dialog(self):
-        """Load overlay JSON from a file."""
-        path, _ = QFileDialog.getOpenFileName(self, "Load Overlay JSON", "", "JSON (*.json)")
-        if not path:
-            return
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception as e:
-            QMessageBox.critical(self, "Load failed", str(e))
-            return
-        self._apply_overlay_import(data, base_dir=os.path.dirname(path))
-        self.statusBar().showMessage(f"Loaded overlay: {path}")
-
     def _export_overlay_json(self) -> Dict[str, Any]:
         """Export current overlay as JSON."""
         ann: List[Dict[str, Any]] = []
         for it in self.scene.items():
             if hasattr(it, "to_record") and hasattr(it, "meta"):
+                # Skip items that are children of a group (they're serialized by the group)
+                if isinstance(it.parentItem(), MetaGroupItem):
+                    continue
                 ann.append(sort_annotation_keys(it.to_record()))
         ann.reverse()
         sr = self.scene.sceneRect()
@@ -1547,6 +1577,10 @@ class MainWindow(QMainWindow):
         if self._syncing_from_json:
             return
 
+        # Skip items that are children of a group (they're managed by the group)
+        if isinstance(item.parentItem(), MetaGroupItem):
+            return
+
         # Auto-enable linking and initialize draft data when items are created
         if self._draft_data is None:
             self._draft_data = {"version": "draft-1", "image": {}, "annotations": []}
@@ -1579,6 +1613,10 @@ class MainWindow(QMainWindow):
     def _on_scene_item_changed(self, item: QGraphicsItem):
         """Handle scene item geometry/style changes."""
         if self._syncing_from_json:
+            return
+
+        # Skip items that are children of a group (they're managed by the group)
+        if isinstance(item.parentItem(), MetaGroupItem):
             return
 
         # Auto-enable linking when items are modified
@@ -1625,6 +1663,139 @@ class MainWindow(QMainWindow):
         if item in self.scene.selectedItems():
             self.props.set_item(item)
 
+    def _do_group_items(self, items):
+        """Group selected items into a MetaGroupItem."""
+        if len(items) < 2:
+            return
+
+        ann_id = self._new_ann_id()
+        # Use 'g' prefix for group IDs
+        ann_id = "g" + ann_id[1:]
+        group_item = MetaGroupItem(ann_id, self._on_scene_item_changed)
+        group_item.meta.kind = "group"
+
+        # Determine z-value for the group (max of children)
+        max_z = max(it.zValue() for it in items)
+        self.scene.addItem(group_item)
+        group_item.setZValue(max_z)
+
+        # Add children to group
+        for child in items:
+            group_item.add_member(child)
+
+        # Update JSON: remove individual child records, add group record
+        if self._link_enabled and self._draft_data:
+            anns = self._draft_data.get("annotations", [])
+            child_ids = {getattr(it, "ann_id", None) for it in items}
+            self._draft_data["annotations"] = [
+                a for a in anns if not (isinstance(a, dict) and a.get("id") in child_ids)
+            ]
+            rec = group_item.to_record()
+            self._draft_data["annotations"].append(rec)
+            self._rebuild_id_index()
+            self._push_draft_data_to_editor(
+                status=f"Grouped {len(items)} items.", focus_id=ann_id
+            )
+
+        def on_grouped(g, children):
+            """Redo callback: re-sync JSON after grouping."""
+            if self._link_enabled and self._draft_data:
+                anns = self._draft_data.get("annotations", [])
+                child_ids = {getattr(c, "ann_id", None) for c in children}
+                self._draft_data["annotations"] = [
+                    a for a in anns if not (isinstance(a, dict) and a.get("id") in child_ids)
+                ]
+                self._draft_data["annotations"].append(g.to_record())
+                self._rebuild_id_index()
+                self._push_draft_data_to_editor(status="Grouped items (redo).", focus_id=g.ann_id)
+
+        def on_ungrouped(g, children):
+            """Undo callback: re-sync JSON after ungrouping."""
+            if self._link_enabled and self._draft_data:
+                anns = self._draft_data.get("annotations", [])
+                self._draft_data["annotations"] = [
+                    a for a in anns if not (isinstance(a, dict) and a.get("id") == g.ann_id)
+                ]
+                for child in children:
+                    if hasattr(child, "to_record"):
+                        self._draft_data["annotations"].append(child.to_record())
+                self._rebuild_id_index()
+                self._push_draft_data_to_editor(status="Ungrouped items (undo).")
+
+        cmd = GroupItemsCommand(
+            self.scene, group_item, items,
+            on_grouped_callback=on_grouped,
+            on_ungrouped_callback=on_ungrouped,
+        )
+        self.undo_stack.push(cmd)
+        group_item.setSelected(True)
+
+    def _do_ungroup_item(self, group_item):
+        """Ungroup a MetaGroupItem, restoring children as independent items."""
+        if not isinstance(group_item, MetaGroupItem):
+            return
+
+        children = list(group_item.member_items())
+        if not children:
+            return
+
+        # Get absolute positions from group's to_record before ungrouping
+        group_rec = group_item.to_record()
+        child_recs = group_rec.get("children", [])
+
+        # Remove children from group (restores flags)
+        for child in children:
+            group_item.remove_member(child)
+
+        # Remove group from scene
+        self.scene.removeItem(group_item)
+
+        # Update JSON: remove group record, add individual child records
+        if self._link_enabled and self._draft_data:
+            anns = self._draft_data.get("annotations", [])
+            self._draft_data["annotations"] = [
+                a for a in anns if not (isinstance(a, dict) and a.get("id") == group_item.ann_id)
+            ]
+            for child_rec in child_recs:
+                self._draft_data["annotations"].append(child_rec)
+            self._rebuild_id_index()
+            self._push_draft_data_to_editor(
+                status=f"Ungrouped {len(children)} items."
+            )
+
+        def on_grouped(g, child_items):
+            """Undo callback: re-sync JSON after re-grouping."""
+            if self._link_enabled and self._draft_data:
+                anns = self._draft_data.get("annotations", [])
+                child_ids = {getattr(c, "ann_id", None) for c in child_items}
+                self._draft_data["annotations"] = [
+                    a for a in anns if not (isinstance(a, dict) and a.get("id") in child_ids)
+                ]
+                self._draft_data["annotations"].append(g.to_record())
+                self._rebuild_id_index()
+                self._push_draft_data_to_editor(status="Grouped items (undo).", focus_id=g.ann_id)
+
+        def on_ungrouped(g, child_items):
+            """Redo callback: re-sync JSON after ungrouping."""
+            if self._link_enabled and self._draft_data:
+                anns = self._draft_data.get("annotations", [])
+                self._draft_data["annotations"] = [
+                    a for a in anns if not (isinstance(a, dict) and a.get("id") == g.ann_id)
+                ]
+                for child in child_items:
+                    if hasattr(child, "to_record"):
+                        self._draft_data["annotations"].append(child.to_record())
+                self._rebuild_id_index()
+                self._push_draft_data_to_editor(status="Ungrouped items (redo).")
+
+        cmd = UngroupItemsCommand(
+            self.scene, group_item, children,
+            on_grouped_callback=on_grouped,
+            on_ungrouped_callback=on_ungrouped,
+        )
+        self.undo_stack.push(cmd)
+        self.props.set_item(None)
+
     def _on_z_order_changed(self):
         """Handle z-order changes - update all items in JSON."""
         if self._syncing_from_json or self._draft_data is None:
@@ -1637,9 +1808,11 @@ class MainWindow(QMainWindow):
         if not isinstance(anns, list):
             return
 
-        # Update z-index for all annotation items
+        # Update z-index for all annotation items (skip group children)
         for item in self.scene.items():
             if not (hasattr(item, "to_record") and hasattr(item, "ann_id")):
+                continue
+            if isinstance(item.parentItem(), MetaGroupItem):
                 continue
 
             ann_id = item.data(ANN_ID_KEY)
@@ -1728,6 +1901,8 @@ class MainWindow(QMainWindow):
 
         # Get z-index from record (will be applied after item is created)
         z_index = rec.get("z", 0)
+
+        it = None
 
         if kind == "rect":
             g = rec.get("geom", {})
@@ -1867,6 +2042,20 @@ class MainWindow(QMainWindow):
             self.scene.addItem(it)
             if z_index:
                 it.setZValue(z_index)
+
+        elif kind == "group":
+            children_recs = rec.get("children", [])
+            it = MetaGroupItem(ann_id, on_change)
+            it.set_meta(meta)
+            self.scene.addItem(it)
+            for child_rec in children_recs:
+                child_item = self._add_item_from_record(child_rec, on_change=on_change)
+                if child_item:
+                    it.add_member(child_item)
+            if z_index:
+                it.setZValue(z_index)
+
+        return it
 
     # ---- Alignment methods ----
 

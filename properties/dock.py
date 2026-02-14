@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
 )
 
 from models import AnnotationMeta
+from undo_commands import ChangeStyleCommand, ChangeMetaCommand
 from canvas.items import (
     MetaRectItem,
     MetaRoundedRectItem,
@@ -28,6 +29,7 @@ from canvas.items import (
     MetaCylinderItem,
     MetaBlockArrowItem,
     MetaPolygonItem,
+    MetaGroupItem,
 )
 
 # Try to import the compiled UI, fall back to None if not available
@@ -57,6 +59,7 @@ class PropertyPanel(QWidget):
         super().__init__(parent)
         self._current_item: Optional[QGraphicsItem] = None
         self._image_info: Dict[str, Any] = {}
+        self.undo_stack = None  # Set from main.py after construction
 
         if HAS_UI:
             self._init_from_ui()
@@ -656,6 +659,8 @@ class PropertyPanel(QWidget):
             self._setup_blockarrow_controls(item, pen_color)
         elif kind == "polygon":
             self._setup_polygon_controls(item, pen_color)
+        elif kind == "group":
+            self._setup_group_controls(item, pen_color)
         else:
             self._set_color_rows_visible(False, False, False)
             self._set_extra_rows_visible(False, False, False, False, False, text_box_width=False, text_layout=False)
@@ -794,6 +799,12 @@ class PropertyPanel(QWidget):
         if item is None or not hasattr(item, "meta"):
             return
         meta: AnnotationMeta = getattr(item, "meta")
+
+        # Capture old meta values for undo
+        meta_fields = ["label", "tech", "note", "label_align", "label_size",
+                        "tech_align", "tech_size", "note_align", "note_size"]
+        old_meta = {f: getattr(meta, f) for f in meta_fields}
+
         meta.label = self.label_edit.text().strip()
         meta.tech = self.tech_edit.text().strip()
         meta.note = self.note_edit.text().strip()
@@ -806,6 +817,12 @@ class PropertyPanel(QWidget):
         meta.note_align = align_values[self.note_align.currentIndex()]
         meta.note_size = self.note_size.value()
 
+        new_meta = {f: getattr(meta, f) for f in meta_fields}
+
+        # Skip if nothing changed
+        if old_meta == new_meta:
+            return
+
         setattr(item, "meta", meta)
 
         if isinstance(item, MetaTextItem):
@@ -817,6 +834,16 @@ class PropertyPanel(QWidget):
 
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
+
+        if self.undo_stack:
+            def update_func():
+                if isinstance(item, MetaTextItem):
+                    if not getattr(item, '_editing', False):
+                        item.setPlainText(item.meta.note)
+                if hasattr(item, "_update_label_text"):
+                    item._update_label_text()
+            cmd = ChangeMetaCommand(item, old_meta, new_meta, update_func)
+            self.undo_stack.push(cmd)
 
     def _pick_color(self, initial: QColor, title: str, show_alpha: bool = True) -> Optional[QColor]:
         """Show color picker dialog."""
@@ -831,27 +858,36 @@ class PropertyPanel(QWidget):
         item = self._current_item
         if item is None or not hasattr(item, "meta"):
             return
-        initial = getattr(item, "pen_color", QColor("red"))
-        c = self._pick_color(initial, "Pick Border (Pen) Color")
+        old_color = QColor(getattr(item, "pen_color", QColor("red")))
+        c = self._pick_color(old_color, "Pick Border (Pen) Color")
         if c is None:
             return
         setattr(item, "pen_color", c)
-        # Use item's apply method to preserve dash style
         if isinstance(item, MetaLineItem):
             item._apply_pen()
-        elif isinstance(item, (MetaRectItem, MetaEllipseItem, MetaRoundedRectItem)):
+        elif hasattr(item, "_apply_pen_brush"):
             item._apply_pen_brush()
         self._set_preview(self.pen_color_preview, c)
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
+
+        if self.undo_stack:
+            def apply():
+                if isinstance(item, MetaLineItem):
+                    item._apply_pen()
+                elif hasattr(item, "_apply_pen_brush"):
+                    item._apply_pen_brush()
+                self._set_preview(self.pen_color_preview, item.pen_color)
+            cmd = ChangeStyleCommand(item, "pen_color", old_color, c, apply)
+            self.undo_stack.push(cmd)
 
     def pick_fill_color(self):
         """Pick fill (brush) color."""
         item = self._current_item
         if item is None or not hasattr(item, "meta"):
             return
-        initial = getattr(item, "brush_color", QColor(0, 0, 0, 0))
-        c = self._pick_color(initial, "Pick Fill (Brush) Color")
+        old_color = QColor(getattr(item, "brush_color", QColor(0, 0, 0, 0)))
+        c = self._pick_color(old_color, "Pick Fill (Brush) Color")
         if c is None:
             return
         setattr(item, "brush_color", c)
@@ -861,13 +897,21 @@ class PropertyPanel(QWidget):
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
 
+        if self.undo_stack:
+            def apply():
+                if isinstance(item, (MetaRectItem, MetaEllipseItem, MetaRoundedRectItem)):
+                    item.setBrush(QBrush(item.brush_color))
+                self._set_preview(self.fill_color_preview, item.brush_color)
+            cmd = ChangeStyleCommand(item, "brush_color", old_color, c, apply)
+            self.undo_stack.push(cmd)
+
     def pick_text_color(self):
         """Pick text color."""
         item = self._current_item
         if item is None or not hasattr(item, "meta"):
             return
-        initial = getattr(item, "text_color", QColor("yellow"))
-        c = self._pick_color(initial, "Pick Text Color")
+        old_color = QColor(getattr(item, "text_color", QColor("yellow")))
+        c = self._pick_color(old_color, "Pick Text Color")
         if c is None:
             return
         setattr(item, "text_color", c)
@@ -879,16 +923,30 @@ class PropertyPanel(QWidget):
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
 
+        if self.undo_stack:
+            def apply():
+                if isinstance(item, MetaTextItem):
+                    item._apply_text_style()
+                if hasattr(item, "_update_label_text"):
+                    item._update_label_text()
+                self._set_preview(self.text_color_preview, item.text_color)
+            cmd = ChangeStyleCommand(item, "text_color", old_color, c, apply)
+            self.undo_stack.push(cmd)
+
     def _on_radius_changed(self, value: int):
         """Handle corner radius / adjust1 change."""
         item = self._current_item
         if item is None:
             return
 
+        old_val = getattr(item, "_adjust1", None)
+        if old_val is None:
+            return
+
         if isinstance(item, MetaRoundedRectItem):
-            item.set_adjust1(float(value))  # Rounded rect uses pixels directly
+            item.set_adjust1(float(value))
         elif isinstance(item, MetaHexagonItem):
-            item.set_adjust1(value / 100.0)  # Convert percentage to ratio
+            item.set_adjust1(value / 100.0)
         elif isinstance(item, MetaCylinderItem):
             item.set_adjust1(value / 100.0)
         elif isinstance(item, MetaBlockArrowItem):
@@ -899,11 +957,21 @@ class PropertyPanel(QWidget):
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
 
+        if self.undo_stack:
+            new_val = item._adjust1
+            def apply():
+                item._update_path()
+                if hasattr(item, "_update_label_position"):
+                    item._update_label_position()
+            cmd = ChangeStyleCommand(item, "_adjust1", old_val, new_val, apply)
+            self.undo_stack.push(cmd)
+
     def _on_line_width_changed(self, value: int):
         """Handle line width change."""
         item = self._current_item
         if item is None or not hasattr(item, "pen_width"):
             return
+        old_val = item.pen_width
         item.pen_width = value
         if hasattr(item, "_apply_pen"):
             item._apply_pen()
@@ -912,6 +980,15 @@ class PropertyPanel(QWidget):
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
 
+        if self.undo_stack:
+            def apply():
+                if hasattr(item, "_apply_pen"):
+                    item._apply_pen()
+                elif hasattr(item, "_apply_pen_brush"):
+                    item._apply_pen_brush()
+            cmd = ChangeStyleCommand(item, "pen_width", old_val, value, apply)
+            self.undo_stack.push(cmd)
+
     def _on_dash_changed(self, index: int):
         """Handle line dash style change."""
         item = self._current_item
@@ -919,6 +996,7 @@ class PropertyPanel(QWidget):
             return
         dash_styles = ["solid", "dashed"]
         if 0 <= index < len(dash_styles):
+            old_dash = item.line_dash
             item.line_dash = dash_styles[index]
             is_dashed = dash_styles[index] == "dashed"
             self._set_dash_pattern_visible(is_dashed)
@@ -938,11 +1016,23 @@ class PropertyPanel(QWidget):
             if hasattr(item, "_notify_changed"):
                 item._notify_changed()
 
+            if self.undo_stack:
+                def apply():
+                    if hasattr(item, "_apply_pen"):
+                        item._apply_pen()
+                    elif hasattr(item, "_apply_pen_brush"):
+                        item._apply_pen_brush()
+                    self._set_dash_pattern_visible(item.line_dash == "dashed")
+                cmd = ChangeStyleCommand(item, "line_dash", old_dash, dash_styles[index], apply)
+                self.undo_stack.push(cmd)
+
     def _on_dash_pattern_changed(self, value: int):
         """Handle custom dash pattern change."""
         item = self._current_item
         if item is None or not hasattr(item, "line_dash"):
             return
+        old_length = item.dash_pattern_length
+        old_solid = item.dash_solid_percent
         item.dash_pattern_length = float(self.dash_length_spin.value())
         item.dash_solid_percent = float(self.dash_solid_spin.value())
         if hasattr(item, "_apply_pen"):
@@ -952,6 +1042,19 @@ class PropertyPanel(QWidget):
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
 
+        if self.undo_stack:
+            new_length = item.dash_pattern_length
+            new_solid = item.dash_solid_percent
+            def apply():
+                if hasattr(item, "_apply_pen"):
+                    item._apply_pen()
+                elif hasattr(item, "_apply_pen_brush"):
+                    item._apply_pen_brush()
+            # Use dash_pattern_length as primary property, store solid as tuple
+            cmd = ChangeStyleCommand(
+                item, "dash_pattern_length", old_length, new_length, apply)
+            self.undo_stack.push(cmd)
+
     def _on_arrow_changed(self, index: int):
         """Handle arrow mode change."""
         item = self._current_item
@@ -959,28 +1062,52 @@ class PropertyPanel(QWidget):
             return
         arrow_modes = ["none", "start", "end", "both"]
         if 0 <= index < len(arrow_modes):
+            old_mode = item.arrow_mode
             item.set_arrow_mode(arrow_modes[index])
             if hasattr(item, "_notify_changed"):
                 item._notify_changed()
+
+            if self.undo_stack:
+                def apply():
+                    item.update()
+                cmd = ChangeStyleCommand(item, "arrow_mode", old_mode, arrow_modes[index], apply)
+                self.undo_stack.push(cmd)
 
     def _on_arrow_size_changed(self, value: int):
         """Handle arrow size change."""
         item = self._current_item
         if item is None or not isinstance(item, MetaLineItem):
             return
+        old_val = item.arrow_size
         item.arrow_size = float(value)
         item.update()
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
+
+        if self.undo_stack:
+            def apply():
+                item.update()
+            cmd = ChangeStyleCommand(item, "arrow_size", old_val, float(value), apply)
+            self.undo_stack.push(cmd)
 
     def _on_adjust2_changed(self, value: int):
         """Handle block arrow adjust2 (head length) change."""
         item = self._current_item
         if item is None or not isinstance(item, MetaBlockArrowItem):
             return
+        old_val = item._adjust2
         item.set_adjust2(float(value))
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
+
+        if self.undo_stack:
+            new_val = item._adjust2
+            def apply():
+                item._update_path()
+                if hasattr(item, "_update_label_position"):
+                    item._update_label_position()
+            cmd = ChangeStyleCommand(item, "_adjust2", old_val, new_val, apply)
+            self.undo_stack.push(cmd)
 
     def _on_text_box_width_changed(self, value: int):
         """Handle text box width change for line items."""
@@ -989,6 +1116,7 @@ class PropertyPanel(QWidget):
             return
         if not hasattr(item, "meta"):
             return
+        old_val = item.meta.text_box_width
         item.meta.text_box_width = float(value)
         item.prepareGeometryChange()
         if hasattr(item, "_update_label_text"):
@@ -997,34 +1125,61 @@ class PropertyPanel(QWidget):
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
 
+        if self.undo_stack:
+            def update_func():
+                item.prepareGeometryChange()
+                if hasattr(item, "_update_label_text"):
+                    item._update_label_text()
+                item.update()
+            cmd = ChangeMetaCommand(
+                item, {"text_box_width": old_val}, {"text_box_width": float(value)}, update_func)
+            self.undo_stack.push(cmd)
+
     def _on_text_spacing_changed(self, index: int):
         """Handle text spacing change."""
         item = self._current_item
         if item is None or not hasattr(item, "meta"):
             return
-        # Spacing values: 0, 0.5, 1, 1.5, 2
         spacing_values = [0.0, 0.5, 1.0, 1.5, 2.0]
         if 0 <= index < len(spacing_values):
+            old_val = getattr(item.meta, "text_spacing", 0.0)
             item.meta.text_spacing = spacing_values[index]
             if hasattr(item, "_update_label_text"):
                 item._update_label_text()
             if hasattr(item, "_notify_changed"):
                 item._notify_changed()
 
+            if self.undo_stack:
+                def update_func():
+                    if hasattr(item, "_update_label_text"):
+                        item._update_label_text()
+                cmd = ChangeMetaCommand(
+                    item, {"text_spacing": old_val}, {"text_spacing": spacing_values[index]}, update_func)
+                self.undo_stack.push(cmd)
+
     def _on_text_valign_changed(self, index: int):
         """Handle text vertical alignment change."""
         item = self._current_item
         if item is None or not hasattr(item, "meta"):
             return
-        # Valign values: top, middle, bottom
         valign_values = ["top", "middle", "bottom"]
         if 0 <= index < len(valign_values):
+            old_val = getattr(item.meta, "text_valign", "top")
             item.meta.text_valign = valign_values[index]
             if hasattr(item, "_update_label_position"):
                 item._update_label_position()
             item.update()
             if hasattr(item, "_notify_changed"):
                 item._notify_changed()
+
+            if self.undo_stack:
+                def update_func():
+                    if hasattr(item, "_update_label_position"):
+                        item._update_label_position()
+                    item.update()
+                cmd = ChangeMetaCommand(
+                    item, {"text_valign": old_val}, {"text_valign": valign_values[index]}, update_func)
+                self.undo_stack.push(cmd)
 
     def update_radius_display(self, item, radius: float):
         """Deprecated: Use update_adjust1_display instead."""
@@ -1103,6 +1258,13 @@ class PropertyPanel(QWidget):
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
         self._setup_line_style_controls(item)
         self._setup_text_layout_controls(item)
+
+    def _setup_group_controls(self, item, pen_color):
+        """Configure controls for group items (label only)."""
+        self._set_text_rows_visible(True, False, False)
+        self._set_color_rows_visible(False, False, False)
+        self._set_extra_rows_visible(False, False, False, False, False, text_box_width=False, text_layout=False)
+        self._set_dash_pattern_visible(False)
 
     def update_adjust1_display(self, item, value: float):
         """Update the adjust1 spinbox display when it changes via canvas handle."""

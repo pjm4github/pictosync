@@ -11,7 +11,7 @@ from typing import Any, Callable, Dict, Optional
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QGraphicsItem
+from PyQt6.QtWidgets import QGraphicsItem, QGraphicsItemGroup
 
 from models import AnnotationMeta, ANN_ID_KEY
 from utils import qcolor_to_hex, hex_to_qcolor
@@ -23,9 +23,13 @@ class LinkedMixin:
     Enables bidirectional sync between JSON and scene.
     """
 
+    # Class-level callback for resize/geometry changes (set by MainWindow)
+    on_resize_finished = None  # Called with (item, old_state, new_state)
+
     def __init__(self, ann_id: str, on_change: Optional[Callable[[QGraphicsItem], None]]):
         self.ann_id = ann_id
         self.on_change = on_change
+        self._geometry_before_resize = None
 
     def _notify_changed(self):
         """Notify that this item has changed."""
@@ -36,6 +40,20 @@ class LinkedMixin:
         """Set the annotation ID for this item."""
         self.ann_id = ann_id
         self.setData(ANN_ID_KEY, ann_id)
+
+    def _begin_resize_tracking(self):
+        """Snapshot geometry before a resize/endpoint-drag operation."""
+        from undo_commands import capture_geometry
+        self._geometry_before_resize = capture_geometry(self)
+
+    def _end_resize_tracking(self):
+        """Fire resize callback with before/after geometry if changed."""
+        if self._geometry_before_resize is not None:
+            from undo_commands import capture_geometry
+            new_geo = capture_geometry(self)
+            if LinkedMixin.on_resize_finished:
+                LinkedMixin.on_resize_finished(self, self._geometry_before_resize, new_geo)
+            self._geometry_before_resize = None
 
 
 class MetaMixin:
@@ -59,6 +77,14 @@ class MetaMixin:
         self.dash_pattern_length = 30.0  # total length of one dash+gap cycle in pixels
         self.dash_solid_percent = 50.0  # percentage of pattern that is solid (0-100)
         self.arrow_size = 12.0  # arrow head size in pixels
+
+    def _should_paint_handles(self) -> bool:
+        """Check if this item should paint selection handles.
+
+        Returns False when the item is a child of a group, since
+        the group draws its own handles.
+        """
+        return self.isSelected() and not isinstance(self.parentItem(), QGraphicsItemGroup)
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         """Set the annotation metadata."""
