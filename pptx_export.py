@@ -487,6 +487,18 @@ def export_to_pptx(
         except Exception:
             pass  # Skip if image can't be added
 
+    # Flatten groups recursively before export
+    def _flatten_annotations(anns):
+        flat = []
+        for rec in anns:
+            if rec.get("kind") == "group":
+                flat.extend(_flatten_annotations(rec.get("children", [])))
+            else:
+                flat.append(rec)
+        return flat
+
+    annotations = _flatten_annotations(annotations)
+
     # Sort annotations by z-index to maintain layering
     sorted_annotations = sorted(
         annotations,

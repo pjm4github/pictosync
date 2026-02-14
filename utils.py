@@ -93,8 +93,15 @@ def _scale_record(rec: dict, a: float, b: float, normalized: bool) -> dict:
         New dict with scaled coordinates
     """
     out = dict(rec)
-    geom = dict(out.get("geom", {}) or {})
     kind = out.get("kind")
+
+    # Groups have no geom, only recurse into children
+    if kind == "group":
+        children = out.get("children", [])
+        out["children"] = [_scale_record(c, a, b, normalized) for c in children]
+        return out
+
+    geom = dict(out.get("geom", {}) or {})
 
     def fx(v): return float(v) * a
     def fy(v): return float(v) * b
@@ -185,14 +192,14 @@ def hex_to_qcolor(s: str, fallback: QColor) -> QColor:
 
 
 # Canonical key order for annotation records
-ANNOTATION_KEY_ORDER = ["id", "kind", "geom", "meta", "style", "text"]
+ANNOTATION_KEY_ORDER = ["id", "kind", "children", "geom", "meta", "style", "text"]
 
 
 def sort_annotation_keys(rec: dict) -> dict:
     """
     Sort annotation record keys in canonical order.
 
-    Order: id, kind, geom, meta, style, text
+    Order: id, kind, children, geom, meta, style, text
     Any keys not in this list are appended at the end in their original order.
 
     Args:
@@ -205,7 +212,13 @@ def sort_annotation_keys(rec: dict) -> dict:
     # Add keys in canonical order first
     for key in ANNOTATION_KEY_ORDER:
         if key in rec:
-            result[key] = rec[key]
+            if key == "children" and isinstance(rec[key], list):
+                result[key] = [
+                    sort_annotation_keys(c) if isinstance(c, dict) else c
+                    for c in rec[key]
+                ]
+            else:
+                result[key] = rec[key]
     # Add any remaining keys not in the canonical order
     for key in rec:
         if key not in result:

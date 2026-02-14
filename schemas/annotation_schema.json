@@ -63,7 +63,7 @@
     "annotationItem": {
       "type": "object",
       "description": "A single annotation item",
-      "required": ["kind", "geom"],
+      "required": ["kind"],
       "properties": {
         "id": {
           "type": "string",
@@ -72,11 +72,18 @@
         },
         "kind": {
           "type": "string",
-          "enum": ["rect", "roundedrect", "ellipse", "line", "text", "hexagon", "cylinder", "blockarrow"],
+          "enum": ["rect", "roundedrect", "ellipse", "line", "text", "hexagon", "cylinder", "blockarrow", "group"],
           "description": "The type of annotation item"
         },
         "geom": {
           "$ref": "#/$defs/geometry"
+        },
+        "children": {
+          "type": "array",
+          "description": "Child annotations for group items",
+          "items": {
+            "$ref": "#/$defs/annotationItem"
+          }
         },
         "meta": {
           "$ref": "#/$defs/annotationMeta"
@@ -169,6 +176,20 @@
           "then": {
             "properties": {
               "geom": { "$ref": "#/$defs/blockArrowGeometry" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "group" } }
+          },
+          "then": {
+            "required": ["children"],
+            "properties": {
+              "children": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/annotationItem" }
+              }
             }
           }
         }

@@ -253,7 +253,7 @@ def create_default_annotation(kind: str) -> Dict:
 
 
 # Valid item kinds
-VALID_KINDS = ["rect", "roundedrect", "ellipse", "line", "text", "hexagon", "cylinder", "blockarrow", "polygon"]
+VALID_KINDS = ["rect", "roundedrect", "ellipse", "line", "text", "hexagon", "cylinder", "blockarrow", "polygon", "group"]
 
 # Required geometry fields per kind
 REQUIRED_GEOM_FIELDS = {
@@ -266,6 +266,7 @@ REQUIRED_GEOM_FIELDS = {
     "cylinder": ["x", "y", "w", "h"],  # adjust1 is optional with default
     "blockarrow": ["x", "y", "w", "h"],  # adjust1 and adjust2 are optional with defaults
     "polygon": ["x", "y", "w", "h"],  # points is optional with default
+    "group": [],  # No required geometry fields
 }
 
 
@@ -286,6 +287,13 @@ def quick_validate_annotation(annotation: Dict) -> Tuple[bool, str]:
     kind = annotation.get("kind")
     if kind not in VALID_KINDS:
         return False, f"Invalid kind '{kind}'. Must be one of: {VALID_KINDS}"
+
+    # Groups use children instead of geom
+    if kind == "group":
+        children = annotation.get("children")
+        if not isinstance(children, list):
+            return False, "Group annotations require a 'children' array"
+        return True, ""
 
     geom = annotation.get("geom")
     if not isinstance(geom, dict):
