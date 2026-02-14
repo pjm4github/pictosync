@@ -13,6 +13,7 @@ from PyQt6.QtCore import Qt, QPointF, QRectF, QLineF
 from PyQt6.QtGui import QBrush, QPen, QColor, QPainter, QPainterPath, QPolygonF
 from PyQt6.QtWidgets import (
     QGraphicsItem,
+    QGraphicsItemGroup,
     QGraphicsRectItem,
     QGraphicsEllipseItem,
     QGraphicsLineItem,
@@ -327,6 +328,8 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
         }
 
     def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
+        if not self._should_paint_handles():
+            return None
         handles = self._handle_points_scene()
         # Hit distance from settings. Default: 10.0 pixels
         hit_dist = _get_hit_distance()
@@ -428,7 +431,7 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
     def shape(self) -> QPainterPath:
         """Return shape including handle areas when selected."""
         base = super().shape()
-        if self.isSelected():
+        if self._should_paint_handles():
             return shape_with_handles(base, self._handle_points_local())
         return base
 
@@ -445,7 +448,7 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
         my_option.state &= ~QStyle.StateFlag.State_Selected
         super().paint(painter, my_option, widget)
 
-        if self.isSelected():
+        if self._should_paint_handles():
             # Draw selection outline matching the actual rect
             # Selection color from settings. Default: #0078D7 (blue)
             sel_pen = QPen(_get_selection_color(), 1, Qt.PenStyle.DashLine)
@@ -662,6 +665,8 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         }
 
     def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
+        if not self._should_paint_handles():
+            return None
         handles = self._handle_points_scene()
         # Hit distance from settings. Default: 10.0 pixels
         hit_dist = _get_hit_distance()
@@ -782,7 +787,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def shape(self) -> QPainterPath:
         """Return shape including handle areas when selected."""
         base = super().shape()
-        if self.isSelected():
+        if self._should_paint_handles():
             return shape_with_handles(base, self._handle_points_local())
         return base
 
@@ -799,7 +804,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         my_option.state &= ~QStyle.StateFlag.State_Selected
         super().paint(painter, my_option, widget)
 
-        if self.isSelected():
+        if self._should_paint_handles():
             # Draw selection outline matching the actual rounded rect
             # Selection color from settings. Default: #0078D7 (blue)
             sel_pen = QPen(_get_selection_color(), 1, Qt.PenStyle.DashLine)
@@ -1003,6 +1008,8 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         }
 
     def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
+        if not self._should_paint_handles():
+            return None
         handles = self._handle_points_scene()
         # Hit distance from settings. Default: 10.0 pixels
         hit_dist = _get_hit_distance()
@@ -1104,7 +1111,7 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
     def shape(self) -> QPainterPath:
         """Return shape including handle areas when selected."""
         base = super().shape()
-        if self.isSelected():
+        if self._should_paint_handles():
             return shape_with_handles(base, self._handle_points_local())
         return base
 
@@ -1121,7 +1128,7 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         my_option.state &= ~QStyle.StateFlag.State_Selected
         super().paint(painter, my_option, widget)
 
-        if self.isSelected():
+        if self._should_paint_handles():
             # Draw selection outline matching the actual ellipse
             # Selection color from settings. Default: #0078D7 (blue)
             sel_pen = QPen(_get_selection_color(), 1, Qt.PenStyle.DashLine)
@@ -1457,7 +1464,7 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
         stroker.setCapStyle(Qt.PenCapStyle.RoundCap)
         wide_path = stroker.createStroke(line_path)
 
-        if self.isSelected():
+        if self._should_paint_handles():
             all_handles = self._handle_points_local()
             all_handles.update(self._text_box_handle_points())
             result = shape_with_handles(wide_path, all_handles)
@@ -1520,7 +1527,7 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
             painter.drawRect(self._text_box_rect)
 
         # Draw resize handles when selected
-        if self.isSelected():
+        if self._should_paint_handles():
             draw_handles(painter, self._handle_points_local())
             # Draw text box handles in a different color
             if self._text_box_rect is not None:
@@ -1569,6 +1576,8 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
         return p1, p2
 
     def _hit_test_endpoint(self, scene_pt: QPointF) -> Optional[str]:
+        if not self._should_paint_handles():
+            return None
         p1, p2 = self._endpoints_scene()
         # Hit distance from settings. Default: 10.0 pixels
         hit_dist = _get_hit_distance()
@@ -1580,6 +1589,8 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
 
     def _hit_test_text_box_handle(self, scene_pt: QPointF) -> Optional[str]:
         """Test if scene point hits a text box resize handle."""
+        if not self._should_paint_handles():
+            return None
         if self._text_box_rect is None:
             return None
         handles = self._text_box_handle_points()
@@ -2055,6 +2066,8 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         }
 
     def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
+        if not self._should_paint_handles():
+            return None
         handles = self._handle_points_scene()
         hit_dist = _get_hit_distance()
         for k, hp in handles.items():
@@ -2171,7 +2184,7 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def shape(self) -> QPainterPath:
         base = super().shape()
-        if self.isSelected():
+        if self._should_paint_handles():
             return shape_with_handles(base, self._handle_points_local())
         return base
 
@@ -2185,7 +2198,7 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         my_option.state &= ~QStyle.StateFlag.State_Selected
         super().paint(painter, my_option, widget)
 
-        if self.isSelected():
+        if self._should_paint_handles():
             sel_pen = QPen(_get_selection_color(), 1, Qt.PenStyle.DashLine)
             painter.setPen(sel_pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -2430,6 +2443,8 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         }
 
     def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
+        if not self._should_paint_handles():
+            return None
         handles = self._handle_points_scene()
         hit_dist = _get_hit_distance()
         for k, hp in handles.items():
@@ -2545,7 +2560,7 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def shape(self) -> QPainterPath:
         base = super().shape()
-        if self.isSelected():
+        if self._should_paint_handles():
             return shape_with_handles(base, self._handle_points_local())
         return base
 
@@ -2592,7 +2607,7 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         path.arcTo(0, h - cap_h * 2, w, cap_h * 2, 180, 180)
         painter.drawPath(path)
 
-        if self.isSelected():
+        if self._should_paint_handles():
             sel_pen = QPen(_get_selection_color(), 1, Qt.PenStyle.DashLine)
             painter.setPen(sel_pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -2857,6 +2872,8 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         }
 
     def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
+        if not self._should_paint_handles():
+            return None
         handles = self._handle_points_scene()
         hit_dist = _get_hit_distance()
         for k, hp in handles.items():
@@ -2989,7 +3006,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def shape(self) -> QPainterPath:
         base = super().shape()
-        if self.isSelected():
+        if self._should_paint_handles():
             return shape_with_handles(base, self._handle_points_local())
         return base
 
@@ -3003,7 +3020,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         my_option.state &= ~QStyle.StateFlag.State_Selected
         super().paint(painter, my_option, widget)
 
-        if self.isSelected():
+        if self._should_paint_handles():
             sel_pen = QPen(_get_selection_color(), 1, Qt.PenStyle.DashLine)
             painter.setPen(sel_pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -3287,6 +3304,8 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         }
 
     def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
+        if not self._should_paint_handles():
+            return None
         handles = self._handle_points_scene()
         hit_dist = _get_hit_distance()
         for k, hp in handles.items():
@@ -3522,9 +3541,9 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def shape(self) -> QPainterPath:
         base = super().shape()
-        if self.isSelected() and not self._vertex_editing:
+        if self._should_paint_handles() and not self._vertex_editing:
             return shape_with_handles(base, self._handle_points_local())
-        if self.isSelected() and self._vertex_editing:
+        if self._should_paint_handles() and self._vertex_editing:
             # Add vertex hit areas
             hit_r = _get_handle_size() / 2 + 1
             for vp in self._vertex_points_local():
@@ -3541,7 +3560,7 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         my_option.state &= ~QStyle.StateFlag.State_Selected
         super().paint(painter, my_option, widget)
 
-        if not self.isSelected():
+        if not self._should_paint_handles():
             return
 
         if self._vertex_editing:
@@ -3596,3 +3615,353 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         if z != 0:
             rec["z"] = int(z)
         return rec
+
+
+class MetaGroupItem(QGraphicsItemGroup, MetaMixin, LinkedMixin):
+    """Group item that contains multiple annotation items as a single unit."""
+
+    def __init__(self, ann_id: str, on_change=None):
+        QGraphicsItemGroup.__init__(self)
+        MetaMixin.__init__(self)
+        LinkedMixin.__init__(self, ann_id, on_change)
+
+        self.meta.kind = "group"
+        self.setData(ANN_ID_KEY, ann_id)
+
+        self.setFiltersChildEvents(False)
+
+        self.setFlags(
+            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+            | QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+            | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
+        )
+
+        self.setAcceptHoverEvents(True)
+
+        # Resize state
+        self._active_handle: Optional[str] = None
+        self._resizing = False
+        self._press_scene: Optional[QPointF] = None
+        self._start_cbr: Optional[QRectF] = None
+        self._child_start_states: Dict = {}
+
+    def add_member(self, item: QGraphicsItem):
+        """Add an item to this group, removing its individual selectability."""
+        item.setSelected(False)
+        self.addToGroup(item)
+        item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
+        item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
+
+    def remove_member(self, item: QGraphicsItem):
+        """Remove an item from this group, restoring its selectability."""
+        self.removeFromGroup(item)
+        item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+        item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
+
+    def member_items(self) -> list:
+        """Return direct child annotation items (excluding non-annotation children)."""
+        return [c for c in self.childItems() if hasattr(c, "ann_id")]
+
+    def set_meta(self, meta: AnnotationMeta) -> None:
+        """Set the annotation metadata."""
+        self.meta = meta
+
+    def _offset_geom(self, rec: dict, dx: float, dy: float) -> dict:
+        """Offset geometry coordinates in a record by dx, dy (group-local to scene)."""
+        out = dict(rec)
+        kind = out.get("kind")
+        if kind == "group":
+            children = out.get("children", [])
+            out["children"] = [self._offset_geom(c, dx, dy) for c in children]
+        else:
+            geom = dict(out.get("geom", {}))
+            if kind == "line":
+                geom["x1"] = round1(geom.get("x1", 0) + dx)
+                geom["y1"] = round1(geom.get("y1", 0) + dy)
+                geom["x2"] = round1(geom.get("x2", 0) + dx)
+                geom["y2"] = round1(geom.get("y2", 0) + dy)
+            else:
+                geom["x"] = round1(geom.get("x", 0) + dx)
+                geom["y"] = round1(geom.get("y", 0) + dy)
+            out["geom"] = geom
+        return out
+
+    def to_record(self) -> Dict[str, Any]:
+        """Serialize group and children with absolute scene coordinates."""
+        gx = self.pos().x()
+        gy = self.pos().y()
+        children_recs = []
+        for child in self.member_items():
+            if hasattr(child, "to_record"):
+                child_rec = child.to_record()
+                # Child to_record returns group-local coords; offset to scene-absolute
+                child_rec = self._offset_geom(child_rec, gx, gy)
+                children_recs.append(child_rec)
+        rec = {
+            "id": self.ann_id,
+            "kind": "group",
+            "children": children_recs,
+            **self._meta_dict(self.meta),
+        }
+        z = self.zValue()
+        if z != 0:
+            rec["z"] = int(z)
+        return rec
+
+    # ---- Group resize helpers ----
+
+    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
+        """Test if a scene point hits one of the group resize handles."""
+        if not self._should_paint_handles():
+            return None
+        handles = self._handle_points_scene()
+        hit_dist = _get_hit_distance()
+        for k, hp in handles.items():
+            if QLineF(scene_pt, hp).length() <= hit_dist:
+                return k
+        return None
+
+    def _get_anchor(self, handle: str) -> QPointF:
+        """Return the anchor point (opposite corner/edge) in group-local coords."""
+        s = self._start_cbr
+        anchors = {
+            "tl": QPointF(s.right(), s.bottom()),
+            "tr": QPointF(s.left(), s.bottom()),
+            "bl": QPointF(s.right(), s.top()),
+            "br": QPointF(s.left(), s.top()),
+            "t":  QPointF(s.left(), s.bottom()),
+            "b":  QPointF(s.left(), s.top()),
+            "l":  QPointF(s.right(), s.top()),
+            "r":  QPointF(s.left(), s.top()),
+        }
+        return anchors[handle]
+
+    def _capture_child_states(self) -> Dict:
+        """Snapshot each child's geometry for resize calculations."""
+        states = {}
+        for child in self.member_items():
+            states[child] = self._snapshot_child(child)
+        return states
+
+    def _snapshot_child(self, child) -> Dict:
+        """Capture geometry state of a single child item."""
+        pos = QPointF(child.pos())
+        if isinstance(child, (MetaRectItem, MetaEllipseItem)):
+            r = child.rect()
+            return {"pos": pos, "w": r.width(), "h": r.height()}
+        elif isinstance(child, (MetaRoundedRectItem, MetaHexagonItem,
+                                MetaCylinderItem, MetaBlockArrowItem,
+                                MetaPolygonItem)):
+            return {"pos": pos, "w": child._width, "h": child._height}
+        elif isinstance(child, MetaLineItem):
+            ln = child.line()
+            return {"pos": pos, "dx": ln.dx(), "dy": ln.dy()}
+        elif isinstance(child, MetaGroupItem):
+            nested = {}
+            for gc in child.member_items():
+                nested[gc] = self._snapshot_child(gc)
+            cbr = QRectF(child.childrenBoundingRect())
+            return {"pos": pos, "nested": nested, "cbr": cbr}
+        else:
+            # MetaTextItem or unknown — position only
+            return {"pos": pos}
+
+    def _apply_child_scale(self, child, state: Dict,
+                           anchor: QPointF, sx: float, sy: float):
+        """Scale a single child relative to anchor by (sx, sy)."""
+        old_pos = state["pos"]
+        new_x = anchor.x() + (old_pos.x() - anchor.x()) * sx
+        new_y = anchor.y() + (old_pos.y() - anchor.y()) * sy
+
+        if isinstance(child, (MetaRectItem, MetaEllipseItem)):
+            child.setPos(QPointF(new_x, new_y))
+            child.setRect(QRectF(0, 0, state["w"] * sx, state["h"] * sy))
+        elif isinstance(child, (MetaRoundedRectItem, MetaHexagonItem,
+                                MetaCylinderItem, MetaBlockArrowItem,
+                                MetaPolygonItem)):
+            child.setPos(QPointF(new_x, new_y))
+            child._width = state["w"] * sx
+            child._height = state["h"] * sy
+            child._update_path()
+            child._update_label_position()
+        elif isinstance(child, MetaLineItem):
+            child.setPos(QPointF(new_x, new_y))
+            child.setLine(QLineF(0, 0, state["dx"] * sx, state["dy"] * sy))
+        elif isinstance(child, MetaGroupItem):
+            child.setPos(QPointF(new_x, new_y))
+            # Recursively scale nested children relative to (0,0) within the nested group
+            nested = state.get("nested", {})
+            nested_cbr = state.get("cbr", QRectF())
+            if not nested_cbr.isNull():
+                nested_anchor = QPointF(0, 0)
+                for gc, gs in nested.items():
+                    self._apply_child_scale(gc, gs, nested_anchor, sx, sy)
+        else:
+            # MetaTextItem — position only
+            child.setPos(QPointF(new_x, new_y))
+
+    # ---- Mouse events for group resize ----
+
+    def hoverMoveEvent(self, event):
+        """Update cursor shape when hovering over resize handles."""
+        h = self._hit_test_handle(event.scenePos())
+        if h in ("tl", "br"):
+            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+        elif h in ("tr", "bl"):
+            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+        elif h in ("t", "b"):
+            self.setCursor(Qt.CursorShape.SizeVerCursor)
+        elif h in ("l", "r"):
+            self.setCursor(Qt.CursorShape.SizeHorCursor)
+        else:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+        super().hoverMoveEvent(event)
+
+    def mousePressEvent(self, event):
+        """Start group resize if a handle is clicked."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            h = self._hit_test_handle(event.scenePos())
+            if h:
+                self._active_handle = h
+                self._resizing = True
+                self._press_scene = event.scenePos()
+                self._start_cbr = QRectF(self.childrenBoundingRect())
+                self._child_start_states = self._capture_child_states()
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """Scale group children proportionally during handle drag."""
+        if self._resizing and self._active_handle and self._press_scene and self._start_cbr:
+            cur = event.scenePos()
+            dx = cur.x() - self._press_scene.x()
+            dy = cur.y() - self._press_scene.y()
+
+            s = self._start_cbr
+            left = s.left()
+            top = s.top()
+            right = s.right()
+            bottom = s.bottom()
+
+            h = self._active_handle
+            if h == "tl":
+                left += dx; top += dy
+            elif h == "tr":
+                right += dx; top += dy
+            elif h == "bl":
+                left += dx; bottom += dy
+            elif h == "br":
+                right += dx; bottom += dy
+            elif h == "t":
+                top += dy
+            elif h == "b":
+                bottom += dy
+            elif h == "l":
+                left += dx
+            elif h == "r":
+                right += dx
+
+            min_size = _get_min_size()
+            if (right - left) < min_size:
+                if h in ("tl", "bl", "l"):
+                    left = right - min_size
+                else:
+                    right = left + min_size
+            if (bottom - top) < min_size:
+                if h in ("tl", "tr", "t"):
+                    top = bottom - min_size
+                else:
+                    bottom = top + min_size
+
+            new_w = right - left
+            new_h = bottom - top
+            sx = new_w / s.width() if s.width() > 0 else 1.0
+            sy = new_h / s.height() if s.height() > 0 else 1.0
+
+            # Side handles lock the perpendicular axis
+            if h in ("l", "r"):
+                sy = 1.0
+            elif h in ("t", "b"):
+                sx = 1.0
+
+            anchor = self._get_anchor(h)
+
+            self.prepareGeometryChange()
+            for child, state in self._child_start_states.items():
+                self._apply_child_scale(child, state, anchor, sx, sy)
+            self._notify_changed()
+            event.accept()
+            return
+
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """Finish group resize."""
+        if self._resizing:
+            self._resizing = False
+            self._active_handle = None
+            self._press_scene = None
+            self._start_cbr = None
+            self._child_start_states = {}
+            self._notify_changed()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def _handle_points_local(self) -> Dict[str, QPointF]:
+        """Return handle positions in local coordinates for the group bounding rect."""
+        r = self.childrenBoundingRect()
+        if r.isNull():
+            return {}
+        cx = r.left() + r.width() / 2
+        cy = r.top() + r.height() / 2
+        return {
+            "tl": QPointF(r.left(), r.top()),
+            "tr": QPointF(r.right(), r.top()),
+            "bl": QPointF(r.left(), r.bottom()),
+            "br": QPointF(r.right(), r.bottom()),
+            "t":  QPointF(cx, r.top()),
+            "b":  QPointF(cx, r.bottom()),
+            "l":  QPointF(r.left(), cy),
+            "r":  QPointF(r.right(), cy),
+        }
+
+    def _handle_points_scene(self) -> Dict[str, QPointF]:
+        """Return handle positions in scene coordinates."""
+        p = self.pos()
+        return {
+            k: QPointF(pt.x() + p.x(), pt.y() + p.y())
+            for k, pt in self._handle_points_local().items()
+        }
+
+    def boundingRect(self) -> QRectF:
+        """Expand bounding rect to include resize handles."""
+        r = self.childrenBoundingRect()
+        if r.isNull():
+            return r
+        margin = _get_handle_size() / 2 + 2
+        return r.adjusted(-margin, -margin, margin, margin)
+
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget=None):
+        """Draw selection outline and control handles when selected."""
+        if self._should_paint_handles():
+            cr = self.childrenBoundingRect()
+            if not cr.isNull():
+                sel_color = _get_selection_color()
+                pen = QPen(sel_color, 1, Qt.PenStyle.DashLine)
+                painter.setPen(pen)
+                painter.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+                painter.drawRect(cr)
+                # Draw resize handles at corners and sides
+                draw_handles(painter, self._handle_points_local())
+
+    def itemChange(self, change, value):
+        """Notify on position changes and update geometry on selection change."""
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            self._notify_changed()
+            # Force scene to repaint the area we moved from/to
+            self.update()
+        elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+            self.prepareGeometryChange()
+        return super().itemChange(change, value)
