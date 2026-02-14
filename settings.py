@@ -350,6 +350,7 @@ class AppSettings:
 
     Attributes:
         theme: The UI theme name (must match a key in styles.STYLES).
+        workspace_dir: Default directory for saving/loading projects.
         editor: Editor-related settings.
         canvas: Canvas-related settings.
         alignment: Alignment-related settings.
@@ -357,6 +358,9 @@ class AppSettings:
     """
     # UI Settings
     theme: str = "Tailwind"  # Default: "Tailwind"
+
+    # Workspace directory for project save/load (empty = ~/Documents/PictoSync)
+    workspace_dir: str = ""
 
     # Nested settings categories
     editor: EditorSettings = field(default_factory=EditorSettings)
@@ -425,6 +429,7 @@ class SettingsManager:
         # General section
         general = data.get("general", {})
         settings.theme = general.get("theme", settings.theme)
+        settings.workspace_dir = general.get("workspace_dir", settings.workspace_dir)
 
         # Editor section
         editor = data.get("editor", {})
@@ -555,6 +560,7 @@ class SettingsManager:
         return {
             "general": {
                 "theme": s.theme,
+                "workspace_dir": s.workspace_dir,
             },
             "editor": {
                 "font": {
@@ -665,6 +671,17 @@ class SettingsManager:
         """
         data = self._to_toml_dict()
         return tomli_w.dumps(data)
+
+    def get_workspace_dir(self) -> Path:
+        """Get the resolved workspace directory path.
+
+        Returns:
+            Path to workspace directory. Falls back to ~/Documents/PictoSync
+            if workspace_dir setting is empty.
+        """
+        if self.settings.workspace_dir:
+            return Path(self.settings.workspace_dir)
+        return Path.home() / "Documents" / "PictoSync"
 
     def get_settings_path(self) -> Path:
         """Get the path to the settings file.

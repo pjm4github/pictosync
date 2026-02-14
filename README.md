@@ -48,7 +48,7 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 ### Synchronization
 - **Bidirectional Sync**: Real-time synchronization between canvas elements and JSON editor
 - **Human-in-the-Loop**: AI extracts → Human edits → Syncs back (round-trip workflow)
-- **Import/Export**: Save and load overlay annotations as JSON
+- **Project Save/Load**: Save and load projects (annotations + PNG) to a configurable workspace directory
 
 ### JSON Editor
 - **Syntax Highlighting**: Full JSON syntax highlighting
@@ -106,7 +106,7 @@ python main.py
 3. **AI extraction**: Click "Auto-Extract (Gemini)" to detect diagram elements
 4. **Edit JSON**: Modify annotations in the Draft JSON panel
 5. **Link**: Click "Import & Link" to enable bidirectional JSON ↔ Canvas sync
-6. **Save**: Export your annotations via File > Save Overlay JSON
+6. **Save**: Save your project via File > Save Project (Ctrl+S)
 
 ### Keyboard Shortcuts
 | Key | Action |
@@ -121,6 +121,8 @@ python main.py
 | Y | Cylinder tool |
 | A | Block arrow tool |
 | P | Polygon tool |
+| Ctrl+S | Save project |
+| Ctrl+O | Open project |
 | Delete | Delete selected item |
 
 ### Tips

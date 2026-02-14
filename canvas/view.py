@@ -105,6 +105,21 @@ class AnnotatorView(QGraphicsView):
 
         super().mousePressEvent(event)
 
+    def mouseMoveEvent(self, event):
+        """Update handle-enclosed selection live during rubber band drag."""
+        super().mouseMoveEvent(event)
+
+        if not self._rb_active or self._zoom_region_mode:
+            return
+        if self.dragMode() != QGraphicsView.DragMode.RubberBandDrag:
+            return
+
+        rb = self.rubberBandRect()
+        if rb.isNull() or rb.width() < 2 or rb.height() < 2:
+            return
+
+        self._apply_handle_selection(rb)
+
     def mouseReleaseEvent(self, event):
         """Handle mouse release with fully-enclosed selection enforcement."""
         # Handle zoom region mode - get rubber band rect BEFORE calling super
@@ -143,37 +158,54 @@ class AnnotatorView(QGraphicsView):
                 self._on_zoom_region_complete()
             return
 
+        # Capture rubber band rect BEFORE super clears it
+        rb = self.rubberBandRect() if self._rb_active else None
+
         super().mouseReleaseEvent(event)
 
-        # If rubber-band was used (normal mode), enforce "fully enclosed" selection
-        if self._rb_active and self.dragMode() == QGraphicsView.DragMode.RubberBandDrag:
+        # Final selection pass on release
+        if rb is not None and self.dragMode() == QGraphicsView.DragMode.RubberBandDrag:
             self._rb_active = False
+            self._apply_handle_selection(rb)
 
-            rb = self.rubberBandRect()
-            if rb.isNull() or rb.width() < 2 or rb.height() < 2:
-                return
+    def _apply_handle_selection(self, rb):
+        """Select only items whose handles are fully enclosed by the rubber band rect."""
+        if rb.isNull() or rb.width() < 2 or rb.height() < 2:
+            return
 
-            scene_rect = self.mapToScene(rb).boundingRect()
+        scene_rect = self.mapToScene(rb).boundingRect()
 
-            # Gather candidates intersecting rubber rect, then filter by FULL containment
-            candidates = self.scene().items(scene_rect, Qt.ItemSelectionMode.IntersectsItemBoundingRect)
-            fully_contained: List[QGraphicsItem] = []
-            for it in candidates:
-                # Ignore non-selectable items (like background pixmap)
-                if not (it.flags() & QGraphicsItem.GraphicsItemFlag.ItemIsSelectable):
-                    continue
-                br = it.sceneBoundingRect()
-                if scene_rect.contains(br):
-                    fully_contained.append(it)
+        # Clear Qt's default intersect-based selection
+        self.scene().clearSelection()
 
-            ctrl = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
-            if not ctrl:
-                # Replace selection
-                for it in self.scene().selectedItems():
-                    it.setSelected(False)
-
-            for it in fully_contained:
+        # Select only items with ALL handles enclosed
+        candidates = self.scene().items(scene_rect, Qt.ItemSelectionMode.IntersectsItemBoundingRect)
+        for it in candidates:
+            if not (it.flags() & QGraphicsItem.GraphicsItemFlag.ItemIsSelectable):
+                continue
+            if self._all_handles_enclosed(it, scene_rect):
                 it.setSelected(True)
+
+    def _all_handles_enclosed(self, item: QGraphicsItem, rect: QRectF) -> bool:
+        """Check if all control handles of an item are enclosed in rect.
+
+        Uses handle points for shapes with handles, endpoints for lines,
+        and bounding rect for text and group items.
+        """
+        # Items with _handle_points_scene (shapes with corner/side handles)
+        if hasattr(item, "_handle_points_scene"):
+            for pt in item._handle_points_scene().values():
+                if not rect.contains(pt):
+                    return False
+            return True
+
+        # Lines use endpoints
+        if hasattr(item, "_endpoints_scene"):
+            p1, p2 = item._endpoints_scene()
+            return rect.contains(p1) and rect.contains(p2)
+
+        # Fallback: full bounding rect containment (text, group, etc.)
+        return rect.contains(item.sceneBoundingRect())
 
     def set_zoom_region_mode(self, enabled: bool, on_complete: Optional[Callable[[], None]] = None):
         """Enable or disable zoom region mode.
