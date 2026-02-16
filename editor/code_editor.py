@@ -171,6 +171,11 @@ class JsonCodeEditor(QPlainTextEdit):
         # Flag to prevent circular updates
         self._suppress_cursor_signal = False
 
+        # Re-entrancy guard for _update_margins (prevents infinite loop:
+        # _update_margins -> setViewportMargins -> updateRequest ->
+        # _update_line_number_area -> _update_margins)
+        self._updating_margins = False
+
         # Line number area colors (theme-aware)
         self._line_colors = dict(self.DEFAULT_LINE_COLORS)
 
@@ -219,9 +224,15 @@ class JsonCodeEditor(QPlainTextEdit):
 
     def _update_margins(self):
         """Update the viewport margins to make room for line numbers and folding."""
-        # Fold width from settings. Default: 14 pixels
-        left_margin = self.line_number_area_width() + self.folding_area.fold_width
-        self.setViewportMargins(left_margin, 0, 0, 0)
+        if self._updating_margins:
+            return
+        self._updating_margins = True
+        try:
+            # Fold width from settings. Default: 14 pixels
+            left_margin = self.line_number_area_width() + self.folding_area.fold_width
+            self.setViewportMargins(left_margin, 0, 0, 0)
+        finally:
+            self._updating_margins = False
 
     def _update_line_number_area(self, rect, dy):
         """Update line number area when scrolling or content changes."""
@@ -604,11 +615,20 @@ class JsonCodeEditor(QPlainTextEdit):
         """
         Focus mode: fold all annotations except the one with the given ID.
         If ann_id is empty, fold all annotations.
-        """
-        # First unfold all to reset state
-        self.unfold_all()
 
-        # Recompute fold regions after unfold
+        Uses batched block-visibility changes to avoid per-fold update
+        cycles that would otherwise trigger excessive repaints.
+        """
+        doc = self.document()
+
+        # Make all blocks visible (reset fold state without per-block updates)
+        block = doc.begin()
+        while block.isValid():
+            block.setVisible(True)
+            block = block.next()
+        self._folded_blocks.clear()
+
+        # Recompute fold regions on the fully-visible document
         self._recompute_fold_regions()
 
         text = self.toPlainText()
@@ -616,11 +636,26 @@ class JsonCodeEditor(QPlainTextEdit):
         # Find the block number of the annotation to keep open
         keep_open_block = self._find_annotation_block_number(ann_id) if ann_id else -1
 
-        # Fold all annotation regions except the one to keep open
+        # Batch-fold all annotation regions except the one to keep open
+        # (hide blocks directly, skip per-fold viewport/margin updates)
         for block_number in sorted(self._fold_regions.keys(), reverse=True):
-            if self._is_annotation_fold_region(block_number, text):
-                if block_number != keep_open_block:
-                    self._fold(block_number)
+            if block_number == keep_open_block:
+                continue
+            if not self._is_annotation_fold_region(block_number, text):
+                continue
+            start_pos, end_pos = self._fold_regions[block_number]
+            start_block = doc.findBlock(start_pos)
+            end_block = doc.findBlock(end_pos)
+            blk = start_block.next()
+            while blk.isValid() and blk.blockNumber() < end_block.blockNumber():
+                blk.setVisible(False)
+                blk = blk.next()
+            self._folded_blocks.add(block_number)
+
+        # Single update after all folds complete
+        self.viewport().update()
+        self.folding_area.update()
+        self._update_margins()
 
     def _on_cursor_position_changed(self):
         """Handle cursor position changes to track which annotation we're in."""

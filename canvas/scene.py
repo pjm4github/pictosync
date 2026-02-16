@@ -60,13 +60,30 @@ class AnnotatorScene(QGraphicsScene):
         self._on_group_items: Optional[Callable[[list], None]] = None  # For grouping items
         self._on_ungroup_item: Optional[Callable] = None  # For ungrouping
         self._on_items_moved: Optional[Callable] = None  # For move undo tracking
+        self._on_select_mouse_up: Optional[Callable] = None  # For scroll-on-release
         self._undo_act = None  # QAction for undo (set from main.py)
         self._redo_act = None  # QAction for redo (set from main.py)
         # Move tracking state
         self._move_start_positions: dict = {}
+        self._mouse_down_in_select = False
         # Polygon multi-click drawing state
         self._polygon_points: List[QPointF] = []
         self._polygon_preview: Optional[QGraphicsItem] = None
+
+    @property
+    def is_interacting(self) -> bool:
+        """True while the user has the mouse down in SELECT mode."""
+        if self._mouse_down_in_select:
+            return True
+        # Check if any selected item is being resized / endpoint-dragged
+        for item in self.selectedItems():
+            if getattr(item, "_resizing", False):
+                return True
+            if getattr(item, "_drag_end", None):
+                return True
+            if getattr(item, "_drag_text_box", None):
+                return True
+        return False
 
     def set_z_order_changed_callback(self, callback: Optional[Callable[[], None]]):
         """Set callback for when z-order changes (used to sync JSON)."""
@@ -106,6 +123,10 @@ class AnnotatorScene(QGraphicsScene):
         """Set callback for when items are moved (used for move undo)."""
         self._on_items_moved = callback
 
+    def set_on_select_mouse_up(self, callback):
+        """Set callback for mouse release in SELECT mode (scroll-on-release)."""
+        self._on_select_mouse_up = callback
+
     def set_undo_actions(self, undo_act, redo_act):
         """Set undo/redo actions for use in context menus."""
         self._undo_act = undo_act
@@ -144,6 +165,7 @@ class AnnotatorScene(QGraphicsScene):
     def mousePressEvent(self, event):
         # Snapshot positions for move tracking in SELECT mode
         if event.button() == Qt.MouseButton.LeftButton and self.mode == Mode.SELECT:
+            self._mouse_down_in_select = True
             self._move_start_positions = {}
             for item in self.selectedItems():
                 if hasattr(item, 'ann_id'):
@@ -312,6 +334,12 @@ class AnnotatorScene(QGraphicsScene):
             if moved and self._on_items_moved:
                 self._on_items_moved(moved)
             self._move_start_positions = {}
+
+        # Clear mouse-down flag and notify MainWindow to unlock scroll
+        if self._mouse_down_in_select:
+            self._mouse_down_in_select = False
+            if self._on_select_mouse_up:
+                self._on_select_mouse_up()
 
     def _is_annotation_item(self, item: QGraphicsItem) -> bool:
         """Check if an item is one of our annotation items."""

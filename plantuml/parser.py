@@ -66,6 +66,44 @@ def _normalize_color(color: str) -> str:
     return color.upper()
 
 
+def _make_line_style(
+    pen_color: str = "#555555",
+    pen_width: int = 2,
+    dashed: bool = False,
+    arrow: str = "end",
+    text_color: str | None = None,
+) -> Dict[str, Any]:
+    """Build a line annotation style dict matching the annotation schema.
+
+    Args:
+        pen_color: Stroke colour (hex).
+        pen_width: Stroke width in pixels.
+        dashed: Whether the line is dashed.
+        arrow: Arrowhead mode (``"none"``, ``"start"``, ``"end"``, ``"both"``).
+        text_color: Label colour; defaults to *pen_color*.
+
+    Returns:
+        Complete style dict for a ``kind: "line"`` annotation.
+    """
+    if text_color is None:
+        text_color = pen_color
+    pen: Dict[str, Any] = {
+        "color": pen_color,
+        "width": pen_width,
+        "dash": "dashed" if dashed else "solid",
+    }
+    if dashed:
+        pen["dash_pattern_length"] = 30.0
+        pen["dash_solid_percent"] = 50.0
+    return {
+        "pen": pen,
+        "fill": {"color": "#00000000"},
+        "text": {"color": text_color, "size_pt": 10.0},
+        "arrow_size": 12.0,
+        "arrow": arrow,
+    }
+
+
 def _parse_label(raw: str) -> Tuple[str, str, str]:
     """Parse a PlantUML label into (label, tech, note).
 
@@ -340,7 +378,7 @@ def _path_bbox(d: str) -> Tuple[float, float, float, float]:
     ys = [p[1] for p in points]
     min_x, max_x = min(xs), max(xs)
     min_y, max_y = min(ys), max(ys)
-    return (min_x, min_y, max_x - min_x, max_y - min_y)
+    return (round(min_x, 2), round(min_y, 2), round(max_x - min_x, 2), round(max_y - min_y, 2))
 
 
 def _path_points(d: str) -> List[List[float]]:
@@ -438,10 +476,10 @@ def _parse_svg_positions(svg_path: str) -> Dict[str, Any]:
             rect = g.find(f"{{{ns}}}rect")
             if rect is not None:
                 positions[alias] = {
-                    "x": float(rect.get("x", 0)),
-                    "y": float(rect.get("y", 0)),
-                    "w": float(rect.get("width", 0)),
-                    "h": float(rect.get("height", 0)),
+                    "x": round(float(rect.get("x", 0)), 2),
+                    "y": round(float(rect.get("y", 0)), 2),
+                    "w": round(float(rect.get("width", 0)), 2),
+                    "h": round(float(rect.get("height", 0)), 2),
                 }
                 fill = rect.get("fill", "")
             else:
@@ -476,10 +514,10 @@ def _parse_svg_positions(svg_path: str) -> Dict[str, Any]:
                 fill = path_el.get("fill", "")
             elif rect_el is not None:
                 positions[alias] = {
-                    "x": float(rect_el.get("x", 0)),
-                    "y": float(rect_el.get("y", 0)),
-                    "w": float(rect_el.get("width", 0)),
-                    "h": float(rect_el.get("height", 0)),
+                    "x": round(float(rect_el.get("x", 0)), 2),
+                    "y": round(float(rect_el.get("y", 0)), 2),
+                    "w": round(float(rect_el.get("width", 0)), 2),
+                    "h": round(float(rect_el.get("height", 0)), 2),
                 }
                 fill = rect_el.get("fill", "")
             else:
@@ -496,10 +534,10 @@ def _parse_svg_positions(svg_path: str) -> Dict[str, Any]:
                 font_size = float(text_el.get("font-size", 14))
                 text_len = float(text_el.get("textLength", 200))
                 title_pos = {
-                    "x": tx,
-                    "y": round(ty - font_size, 1),
-                    "w": round(text_len, 1),
-                    "h": round(font_size * 1.5, 1),
+                    "x": round(tx, 2),
+                    "y": round(ty - font_size, 2),
+                    "w": round(text_len, 2),
+                    "h": round(font_size * 1.5, 2),
                 }
 
     # Parse links
@@ -619,10 +657,10 @@ def _parse_activity_diagram_svg(
                 tl = float(text_el.get("textLength", 200))
                 title_text = text_el.text or ""
                 title_pos = {
-                    "x": tx,
-                    "y": round(ty - fs, 1),
-                    "w": round(tl, 1),
-                    "h": round(fs * 1.5, 1),
+                    "x": round(tx, 2),
+                    "y": round(ty - fs, 2),
+                    "w": round(tl, 2),
+                    "h": round(fs * 1.5, 2),
                 }
 
     # Need at least a background rect + one shape rect
@@ -647,10 +685,10 @@ def _parse_activity_diagram_svg(
 
     def _bounds(rect_el: ET.Element) -> Tuple[float, float, float, float]:
         return (
-            float(rect_el.get("x", 0)),
-            float(rect_el.get("y", 0)),
-            float(rect_el.get("width", 0)),
-            float(rect_el.get("height", 0)),
+            round(float(rect_el.get("x", 0)), 2),
+            round(float(rect_el.get("y", 0)), 2),
+            round(float(rect_el.get("width", 0)), 2),
+            round(float(rect_el.get("height", 0)), 2),
         )
 
     def _texts_inside(
@@ -888,8 +926,8 @@ def _parse_activity_diagram_svg(
             "id": ann_id,
             "kind": "ellipse",
             "geom": {
-                "x": cx - max_rx, "y": cy - max_ry,
-                "w": max_rx * 2, "h": max_ry * 2,
+                "x": round(cx - max_rx, 2), "y": round(cy - max_ry, 2),
+                "w": round(max_rx * 2, 2), "h": round(max_ry * 2, 2),
             },
             "meta": {
                 "kind": "ellipse", "label": label, "tech": "", "note": "",
@@ -922,15 +960,9 @@ def _parse_activity_diagram_svg(
         line_anns.append({
             "id": ann_id,
             "kind": "line",
-            "geom": {"x1": x1, "y1": y1_val, "x2": x2, "y2": y2_val},
+            "geom": {"x1": round(x1, 2), "y1": round(y1_val, 2), "x2": round(x2, 2), "y2": round(y2_val, 2)},
             "meta": {"kind": "line", "label": "", "tech": "", "note": ""},
-            "style": {
-                "pen": {
-                    "color": stroke_color, "width": stroke_width, "dash": "solid",
-                },
-                "arrow": "end",
-                "text": {"color": stroke_color, "size_pt": 10},
-            },
+            "style": _make_line_style(stroke_color, stroke_width),
             "text": "",
         })
 
@@ -966,6 +998,469 @@ def _parse_activity_diagram_svg(
         "version": "draft-1",
         "image": {"width": canvas_w, "height": canvas_h},
         "annotations": top_level,
+    }
+
+
+# ───────────────────────────────────────────────
+# Sequence diagram SVG parser
+# ───────────────────────────────────────────────
+
+
+def _parse_sequence_diagram_svg(
+    tree: ET.ElementTree,
+) -> Dict[str, Any]:
+    """Parse a sequence diagram SVG into PictoSync annotations.
+
+    Sequence diagram SVGs use classified ``<g>`` groups for participants,
+    lifelines, and messages, plus unnamed ``<g>`` elements for activation
+    boxes and bare ``<text>``/``<rect>``/``<line>`` elements for phase
+    separators and the diagram title.
+
+    Args:
+        tree: Parsed ElementTree of the SVG file.
+
+    Returns:
+        Dict with PictoSync schema: ``{"version", "image", "annotations"}``.
+    """
+    root = tree.getroot()
+    ns = _SVG_NS
+
+    # Canvas dimensions from viewBox
+    viewbox = root.get("viewBox", "").split()
+    canvas_w = int(float(viewbox[2])) if len(viewbox) >= 3 else 1200
+    canvas_h = int(float(viewbox[3])) if len(viewbox) >= 4 else 800
+
+    empty: Dict[str, Any] = {
+        "version": "draft-1",
+        "image": {"width": canvas_w, "height": canvas_h},
+        "annotations": [],
+    }
+
+    root_g = root.find(f"{{{ns}}}g")
+    if root_g is None:
+        return empty
+
+    # ── Classify children of root <g> in a single pass ────
+    title_text_el: Optional[ET.Element] = None
+    head_groups: List[ET.Element] = []
+    tail_groups: List[ET.Element] = []
+    lifeline_groups: List[ET.Element] = []
+    activation_groups: List[ET.Element] = []
+    message_groups: List[ET.Element] = []
+    phase_texts: List[ET.Element] = []
+    phase_label_rects: List[ET.Element] = []
+    separator_lines: List[ET.Element] = []
+
+    seen_activation_keys: set = set()
+
+    for child in root_g:
+        tag = child.tag.rsplit("}", 1)[-1]
+        cls = child.get("class", "")
+
+        if tag == "text":
+            fs = float(child.get("font-size", "0") or "0")
+            if fs >= 20:
+                title_text_el = child
+            elif child.get("font-weight") == "bold":
+                phase_texts.append(child)
+
+        elif tag == "rect":
+            h = float(child.get("height", 0))
+            style = child.get("style", "")
+            # Phase label rects: ~19.5px tall, black stroke border
+            if 15 < h < 25 and "stroke:#000000" in style:
+                phase_label_rects.append(child)
+
+        elif tag == "line":
+            # Bare <line> elements are phase separator rules
+            separator_lines.append(child)
+
+        elif tag == "g":
+            if "participant-head" in cls:
+                head_groups.append(child)
+            elif "participant-tail" in cls:
+                tail_groups.append(child)
+            elif cls == "participant-lifeline":
+                lifeline_groups.append(child)
+            elif cls == "message":
+                message_groups.append(child)
+            elif not cls:
+                # Unnamed <g> with <title> + <rect> = activation box
+                title_child = child.find(f"{{{ns}}}title")
+                rect_child = child.find(f"{{{ns}}}rect")
+                if title_child is not None and rect_child is not None:
+                    w = float(rect_child.get("width", 0))
+                    if abs(w - 10) < 2:
+                        # Deduplicate (SVG renders each activation twice)
+                        key = (rect_child.get("x"), rect_child.get("y"))
+                        if key not in seen_activation_keys:
+                            seen_activation_keys.add(key)
+                            activation_groups.append(child)
+
+    # ── Helpers ───────────────────────────────────────────
+
+    def _extract_stroke(el: ET.Element) -> Tuple[str, int]:
+        style = el.get("style", "")
+        sm = re.search(r'stroke:\s*(#[0-9A-Fa-f]{3,8})', style)
+        wm = re.search(r'stroke-width:\s*(\d+(?:\.\d+)?)', style)
+        return (
+            sm.group(1).upper() if sm else "#000000",
+            int(float(wm.group(1))) if wm else 1,
+        )
+
+    def _safe_fill(fill: str) -> str:
+        if not fill or fill.lower() == "none" or not fill.startswith("#"):
+            return "#00000000"
+        return _normalize_color(fill)
+
+    # ── Build annotations ─────────────────────────────────
+    annotations: List[Dict[str, Any]] = []
+    counter = 1
+
+    # 1. Title
+    if title_text_el is not None:
+        tx = float(title_text_el.get("x", 0))
+        ty = float(title_text_el.get("y", 0))
+        fs = float(title_text_el.get("font-size", 22))
+        tl = float(title_text_el.get("textLength", 200))
+        title_text = title_text_el.text or ""
+
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        annotations.append({
+            "id": ann_id,
+            "kind": "text",
+            "geom": {
+                "x": round(tx, 2), "y": round(ty - fs, 2),
+                "w": round(tl, 2), "h": round(fs * 1.5, 2),
+            },
+            "meta": {
+                "kind": "text", "label": title_text, "tech": "", "note": "",
+            },
+            "style": {
+                "pen": {"color": "#555555", "width": 2, "dash": "solid"},
+                "fill": {"color": "#00000000"},
+                "text": {"color": "#000000", "size_pt": 12.0},
+            },
+            "text": title_text,
+        })
+
+    # 2. Participant heads (rounded rects at top)
+    for g in head_groups:
+        rect = g.find(f"{{{ns}}}rect")
+        if rect is None:
+            continue
+        texts = [t.text for t in g.findall(f"{{{ns}}}text") if t.text]
+        label = "\n".join(texts) if texts else ""
+
+        x = round(float(rect.get("x", 0)), 2)
+        y = round(float(rect.get("y", 0)), 2)
+        w = round(float(rect.get("width", 0)), 2)
+        h = round(float(rect.get("height", 0)), 2)
+        fill = _safe_fill(rect.get("fill", ""))
+        stroke_color, stroke_width = _extract_stroke(rect)
+
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        annotations.append({
+            "id": ann_id,
+            "kind": "roundedrect",
+            "geom": {"x": x, "y": y, "w": w, "h": h},
+            "meta": {
+                "kind": "roundedrect", "label": label, "tech": "", "note": "",
+            },
+            "style": {
+                "pen": {
+                    "color": stroke_color, "width": stroke_width, "dash": "solid",
+                },
+                "fill": {"color": fill},
+                "text": {"color": "#000000", "size_pt": 10.0},
+            },
+            "text": label,
+        })
+
+    # 3. Participant tails (rounded rects at bottom)
+    for g in tail_groups:
+        rect = g.find(f"{{{ns}}}rect")
+        if rect is None:
+            continue
+        texts = [t.text for t in g.findall(f"{{{ns}}}text") if t.text]
+        label = "\n".join(texts) if texts else ""
+
+        x = round(float(rect.get("x", 0)), 2)
+        y = round(float(rect.get("y", 0)), 2)
+        w = round(float(rect.get("width", 0)), 2)
+        h = round(float(rect.get("height", 0)), 2)
+        fill = _safe_fill(rect.get("fill", ""))
+        stroke_color, stroke_width = _extract_stroke(rect)
+
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        annotations.append({
+            "id": ann_id,
+            "kind": "roundedrect",
+            "geom": {"x": x, "y": y, "w": w, "h": h},
+            "meta": {
+                "kind": "roundedrect", "label": label, "tech": "", "note": "",
+            },
+            "style": {
+                "pen": {
+                    "color": stroke_color, "width": stroke_width, "dash": "solid",
+                },
+                "fill": {"color": fill},
+                "text": {"color": "#000000", "size_pt": 10.0},
+            },
+            "text": label,
+        })
+
+    # 4. Lifelines (dashed vertical lines)
+    for g in lifeline_groups:
+        inner_g = g.find(f"{{{ns}}}g")
+        if inner_g is None:
+            continue
+        line = inner_g.find(f"{{{ns}}}line")
+        if line is None:
+            continue
+
+        x1 = round(float(line.get("x1", 0)), 2)
+        y1 = round(float(line.get("y1", 0)), 2)
+        x2 = round(float(line.get("x2", 0)), 2)
+        y2 = round(float(line.get("y2", 0)), 2)
+        stroke_color, stroke_width = _extract_stroke(line)
+
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        annotations.append({
+            "id": ann_id,
+            "kind": "line",
+            "geom": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
+            "meta": {"kind": "line", "label": "", "tech": "", "note": ""},
+            "style": _make_line_style(
+                stroke_color, stroke_width, dashed=True, arrow="none",
+            ),
+            "text": "",
+        })
+
+    # 5. Activation boxes (narrow rects on lifelines)
+    for g in activation_groups:
+        rect = g.find(f"{{{ns}}}rect")
+        if rect is None:
+            continue
+
+        x = round(float(rect.get("x", 0)), 2)
+        y = round(float(rect.get("y", 0)), 2)
+        w = round(float(rect.get("width", 0)), 2)
+        h = round(float(rect.get("height", 0)), 2)
+        fill = _safe_fill(rect.get("fill", ""))
+        stroke_color, stroke_width = _extract_stroke(rect)
+
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        annotations.append({
+            "id": ann_id,
+            "kind": "rect",
+            "geom": {"x": x, "y": y, "w": w, "h": h},
+            "meta": {"kind": "rect", "label": "", "tech": "", "note": ""},
+            "style": {
+                "pen": {
+                    "color": stroke_color, "width": stroke_width, "dash": "solid",
+                },
+                "fill": {"color": fill},
+                "text": {"color": "#000000", "size_pt": 10.0},
+            },
+            "text": "",
+        })
+
+    # 6. Messages (normal, return, self-loop)
+    for g in message_groups:
+        e1 = g.get("data-entity-1", "")
+        e2 = g.get("data-entity-2", "")
+
+        lines = g.findall(f"{{{ns}}}line")
+        polygon = g.find(f"{{{ns}}}polygon")
+        texts = [t.text for t in g.findall(f"{{{ns}}}text") if t.text]
+        label = "\n".join(texts) if texts else ""
+
+        is_self = (e1 == e2)
+
+        if is_self:
+            # Self-loop: bounding box of the U-shaped line group
+            all_x: List[float] = []
+            all_y: List[float] = []
+            for ln in lines:
+                all_x.extend([
+                    float(ln.get("x1", 0)), float(ln.get("x2", 0)),
+                ])
+                all_y.extend([
+                    float(ln.get("y1", 0)), float(ln.get("y2", 0)),
+                ])
+            if not all_x:
+                continue
+
+            stroke_color, stroke_width = _extract_stroke(lines[0])
+
+            ann_id = f"p{counter:06d}"
+            counter += 1
+            annotations.append({
+                "id": ann_id,
+                "kind": "line",
+                "geom": {
+                    "x1": round(min(all_x), 2), "y1": round(min(all_y), 2),
+                    "x2": round(max(all_x), 2), "y2": round(max(all_y), 2),
+                },
+                "meta": {
+                    "kind": "line", "label": label, "tech": "", "note": "",
+                },
+                "style": _make_line_style(stroke_color, stroke_width),
+                "text": label,
+            })
+        else:
+            # Normal or return message (single line + polygon arrowhead)
+            if not lines:
+                continue
+            line = lines[0]
+
+            lx1 = float(line.get("x1", 0))
+            ly1 = float(line.get("y1", 0))
+            lx2 = float(line.get("x2", 0))
+            ly2 = float(line.get("y2", 0))
+
+            stroke_color, stroke_width = _extract_stroke(line)
+            style_str = line.get("style", "")
+            is_dashed = "stroke-dasharray" in style_str
+
+            # Arrow direction: polygon tip is at the target end.
+            # Swap endpoints if arrowhead is closer to (x1,y1) so
+            # arrow always points toward (x2,y2).
+            if polygon is not None:
+                pts_str = polygon.get("points", "")
+                pts = re.findall(
+                    r'([-+]?\d*\.?\d+),([-+]?\d*\.?\d+)', pts_str,
+                )
+                if pts:
+                    poly_xs = [float(p[0]) for p in pts]
+                    poly_cx = sum(poly_xs) / len(poly_xs)
+                    if abs(poly_cx - lx1) < abs(poly_cx - lx2):
+                        lx1, lx2 = lx2, lx1
+                        ly1, ly2 = ly2, ly1
+
+            ann_id = f"p{counter:06d}"
+            counter += 1
+            annotations.append({
+                "id": ann_id,
+                "kind": "line",
+                "geom": {"x1": round(lx1, 2), "y1": round(ly1, 2), "x2": round(lx2, 2), "y2": round(ly2, 2)},
+                "meta": {
+                    "kind": "line", "label": label, "tech": "", "note": "",
+                },
+                "style": _make_line_style(
+                    stroke_color, stroke_width, dashed=is_dashed,
+                ),
+                "text": label,
+            })
+
+    # 7. Phase separators (bold text labels with bordered rects)
+    for text_el in phase_texts:
+        ty = float(text_el.get("y", 0))
+        fs = float(text_el.get("font-size", 10))
+        tl = float(text_el.get("textLength", 100))
+        tx = float(text_el.get("x", 0))
+        phase_label = text_el.text or ""
+
+        # Find closest label rect by Y proximity
+        best_rect: Optional[ET.Element] = None
+        best_dist = float("inf")
+        for rect in phase_label_rects:
+            ry = float(rect.get("y", 0))
+            rh = float(rect.get("height", 0))
+            rect_cy = ry + rh / 2
+            dist = abs(rect_cy - ty)
+            if dist < best_dist:
+                best_dist = dist
+                best_rect = rect
+
+        # Use label rect geometry if close, else fall back to text
+        if best_rect is not None and best_dist < 20:
+            geom: Dict[str, Any] = {
+                "x": round(float(best_rect.get("x", 0)), 2),
+                "y": round(float(best_rect.get("y", 0)), 2),
+                "w": round(float(best_rect.get("width", 0)), 2),
+                "h": round(float(best_rect.get("height", 0)), 2),
+            }
+        else:
+            geom = {
+                "x": round(tx, 2), "y": round(ty - fs, 2),
+                "w": round(tl, 2), "h": round(fs * 1.5, 2),
+            }
+
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        annotations.append({
+            "id": ann_id,
+            "kind": "text",
+            "geom": geom,
+            "meta": {
+                "kind": "text", "label": phase_label, "tech": "", "note": "",
+            },
+            "style": {
+                "pen": {"color": "#000000", "width": 1, "dash": "solid"},
+                "fill": {"color": "#FFFFFF"},
+                "text": {"color": "#000000", "size_pt": 10.0},
+            },
+            "text": phase_label,
+        })
+
+    # 8. Phase separator lines (horizontal rules spanning diagram width)
+    # Lines come in pairs ~3px apart; emit one line annotation per pair
+    # at the midpoint Y.
+    sep_ys: List[Tuple[float, ET.Element]] = []
+    for ln in separator_lines:
+        ly = float(ln.get("y1", 0))
+        sep_ys.append((ly, ln))
+    sep_ys.sort(key=lambda t: t[0])
+
+    used: set = set()
+    for i, (y_i, ln_i) in enumerate(sep_ys):
+        if i in used:
+            continue
+        # Find the partner line within 5px
+        partner_idx: Optional[int] = None
+        for j in range(i + 1, len(sep_ys)):
+            if j in used:
+                continue
+            if abs(sep_ys[j][0] - y_i) <= 5:
+                partner_idx = j
+                break
+        if partner_idx is not None:
+            used.add(i)
+            used.add(partner_idx)
+            ln_j = sep_ys[partner_idx][1]
+            mid_y = round((y_i + sep_ys[partner_idx][0]) / 2, 2)
+        else:
+            used.add(i)
+            mid_y = round(y_i, 2)
+
+        lx1 = round(float(ln_i.get("x1", 0)), 2)
+        lx2 = round(float(ln_i.get("x2", 0)), 2)
+        stroke_color, stroke_width = _extract_stroke(ln_i)
+
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        annotations.append({
+            "id": ann_id,
+            "kind": "line",
+            "geom": {"x1": lx1, "y1": mid_y, "x2": lx2, "y2": mid_y},
+            "meta": {"kind": "line", "label": "", "tech": "", "note": ""},
+            "style": _make_line_style(
+                stroke_color, stroke_width, arrow="none",
+            ),
+            "text": "",
+        })
+
+    return {
+        "version": "draft-1",
+        "image": {"width": canvas_w, "height": canvas_h},
+        "annotations": annotations,
     }
 
 
@@ -1070,10 +1565,10 @@ def _auto_layout(
             cx = pad_x + col_idx * cell_w + cell_w / 2
             cy = pad_y + row_idx * cell_h + cell_h / 2
             positions[alias] = {
-                "x": round(cx - shape_w / 2, 1),
-                "y": round(cy - shape_h_local / 2, 1),
-                "w": round(shape_w, 1),
-                "h": round(shape_h_local, 1),
+                "x": round(cx - shape_w / 2, 2),
+                "y": round(cy - shape_h_local / 2, 2),
+                "w": round(shape_w, 2),
+                "h": round(shape_h_local, 2),
             }
 
     return positions
@@ -1262,23 +1757,16 @@ def _build_annotations(
         ann_id = f"p{counter:06d}"
         counter += 1
 
-        x1 = round(src_pos["x"] + src_pos["w"] / 2, 1)
-        y1 = round(src_pos["y"] + src_pos["h"] / 2, 1)
-        x2 = round(dst_pos["x"] + dst_pos["w"] / 2, 1)
-        y2 = round(dst_pos["y"] + dst_pos["h"] / 2, 1)
+        x1 = round(src_pos["x"] + src_pos["w"] / 2, 2)
+        y1 = round(src_pos["y"] + src_pos["h"] / 2, 2)
+        x2 = round(dst_pos["x"] + dst_pos["w"] / 2, 2)
+        y2 = round(dst_pos["y"] + dst_pos["h"] / 2, 2)
 
         label = conn.get("label", "")
         dashed = conn.get("dashed", False)
         color = conn.get("color")
 
         pen_color = _normalize_color(color) if color else "#808080"
-        dash = "dash" if dashed else "solid"
-
-        style: Dict[str, Any] = {
-            "pen": {"color": pen_color, "width": 2, "dash": dash},
-            "arrow": "end",
-            "text": {"color": pen_color, "size_pt": 10},
-        }
 
         ann: Dict[str, Any] = {
             "id": ann_id,
@@ -1290,7 +1778,7 @@ def _build_annotations(
                 "tech": "",
                 "note": label,
             },
-            "style": style,
+            "style": _make_line_style(pen_color, 2, dashed=dashed),
             "text": label,
         }
 
@@ -1331,6 +1819,8 @@ def parse_puml_to_annotations(
         tree = ET.parse(svg_path)
         if tree.getroot().get("data-diagram-type") == "ACTIVITY":
             return _parse_activity_diagram_svg(tree)
+        if tree.getroot().get("data-diagram-type") == "SEQUENCE":
+            return _parse_sequence_diagram_svg(tree)
 
     elements = _extract_elements(puml_text)
     known_aliases = {e["alias"] for e in elements}

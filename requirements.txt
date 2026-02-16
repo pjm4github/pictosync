@@ -8,3 +8,4 @@ python-pptx
 platformdirs
 tomli
 tomli-w
+pytest

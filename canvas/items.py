@@ -114,8 +114,8 @@ def _get_selection_color() -> QColor:
 
 
 def round1(value: float) -> float:
-    """Round a value to 1 decimal place precision."""
-    return round(value, 1)
+    """Round a value to 2 decimal place precision for geometry."""
+    return round(value, 2)
 
 
 def _apply_dash_style(pen: QPen, dash_style: str, pattern_length: float, solid_percent: float):

@@ -104,14 +104,14 @@ class MetaMixin:
         }
         # Include dash pattern settings when dash is "dashed"
         if self.line_dash == "dashed":
-            pen_style["dash_pattern_length"] = float(self.dash_pattern_length)
-            pen_style["dash_solid_percent"] = float(self.dash_solid_percent)
+            pen_style["dash_pattern_length"] = round(self.dash_pattern_length, 1)
+            pen_style["dash_solid_percent"] = round(self.dash_solid_percent, 1)
 
         # Text style only contains visual properties (color, size)
         # Layout properties (valign, spacing) are stored in meta
         text_style = {
             "color": qcolor_to_hex(self.text_color),
-            "size_pt": float(self.text_size_pt),
+            "size_pt": round(self.text_size_pt, 1),
         }
 
         style = {
@@ -121,7 +121,7 @@ class MetaMixin:
         }
         # Only include arrow_size for line items
         if hasattr(self, "arrow_mode"):
-            style["arrow_size"] = float(self.arrow_size)
+            style["arrow_size"] = round(self.arrow_size, 1)
         return {"style": style}
 
     def apply_style_from_record(self, rec: Dict[str, Any]):

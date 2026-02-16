@@ -66,6 +66,9 @@ class DraftDock(QDockWidget):
         self._focus_mode_enabled = False
         self._focused_annotation_id = ""
 
+        # Scroll lock: when set, scroll position is pinned to this value
+        self._locked_scroll: int | None = None
+
         self.import_btn = QPushButton("Import && Link")
         self.import_btn.setEnabled(False)
         layout.addWidget(self.import_btn)
@@ -78,6 +81,37 @@ class DraftDock(QDockWidget):
         self.text.setPlainText(s)
         self.import_btn.setEnabled(enable_import)
         self.status.setText(status)
+
+    def replace_json_text_keep_scroll(self, s: str, status: str = ""):
+        """Replace text content while preserving the scroll position.
+
+        Uses QTextCursor to swap content as an edit operation rather than
+        setPlainText() which resets the cursor, scroll, and fold state.
+        If scroll is locked, restores to the locked value.
+        """
+        sb = self.text.verticalScrollBar()
+        target = self._locked_scroll if self._locked_scroll is not None else sb.value()
+
+        self.text._suppress_cursor_signal = True
+        cursor = QTextCursor(self.text.document())
+        cursor.beginEditBlock()
+        cursor.select(QTextCursor.SelectionType.Document)
+        cursor.insertText(s)
+        cursor.endEditBlock()
+
+        sb.setValue(target)
+        QTimer.singleShot(0, lambda: sb.setValue(target))
+        self.text._suppress_cursor_signal = False
+        self.status.setText(status)
+
+    def lock_scroll(self):
+        """Lock the scroll position at its current value (first call only)."""
+        if self._locked_scroll is None:
+            self._locked_scroll = self.text.verticalScrollBar().value()
+
+    def unlock_scroll(self):
+        """Unlock the scroll position."""
+        self._locked_scroll = None
 
     def set_status(self, status: str):
         """Update the status label."""

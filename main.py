@@ -273,6 +273,7 @@ class MainWindow(QMainWindow):
 
         # Set up undo callbacks for move, resize, and text edit
         self.scene.set_on_items_moved(self._on_items_moved)
+        self.scene.set_on_select_mouse_up(self._on_select_mouse_up)
         LinkedMixin.on_resize_finished = self._on_item_resize_finished
         MetaTextItem.on_text_edit_finished = self._on_text_edit_finished
 
@@ -770,6 +771,11 @@ class MainWindow(QMainWindow):
         # Update focus mode to show this annotation
         self.draft.set_focused_annotation(ann_id)
 
+        # Defer scroll to mouse-release when the mouse is down in SELECT mode
+        # so that click-and-drag doesn't fight with the selection scroll.
+        if self.scene._mouse_down_in_select:
+            return
+
         # When focus mode is enabled, fold operations change the document layout.
         # Defer the scroll to allow Qt to process the layout updates first.
         if self.draft.is_focus_mode_enabled():
@@ -1130,6 +1136,20 @@ class MainWindow(QMainWindow):
                 cmd = MoveItemCommand(item, old_pos, new_pos)
                 self.undo_stack.push(cmd)
             self.undo_stack.endMacro()
+
+        # Scroll is handled by _on_select_mouse_up (fired on mouse release).
+
+    def _on_select_mouse_up(self):
+        """Handle mouse release in SELECT mode — unlock scroll and scroll to selection."""
+        self.draft.unlock_scroll()
+        items = self.scene.selectedItems()
+        if items:
+            ann_id = items[0].data(ANN_ID_KEY)
+            if isinstance(ann_id, str) and ann_id:
+                if isinstance(items[0], MetaTextItem):
+                    self.draft.jump_to_text_field_for_id(ann_id)
+                else:
+                    self._scroll_draft_to_id_top(ann_id)
 
     def _on_item_resize_finished(self, item, old_state, new_state):
         """Handle item resize finished — push ItemGeometryCommand to undo stack."""
@@ -1666,12 +1686,27 @@ class MainWindow(QMainWindow):
         else:
             anns[idx] = rec
 
-        self._push_draft_data_to_editor(status="Draft JSON updated from scene change.", focus_id=ann_id)
+        # During active mouse drag/resize, update JSON text live but keep
+        # the editor scroll position stable.  Scroll is deferred to
+        # mouse-release (see _on_items_moved / resize finish).
+        interacting = self.scene.is_interacting
 
-        if isinstance(item, MetaTextItem):
-            self.draft.jump_to_text_field_for_id(ann_id)
+        if interacting:
+            self.draft.lock_scroll()
         else:
-            self._scroll_draft_to_id_top(ann_id)
+            self.draft.unlock_scroll()
+
+        self._push_draft_data_to_editor(
+            status="Draft JSON updated from scene change.",
+            focus_id=None if interacting else ann_id,
+            keep_scroll=interacting,
+        )
+
+        if not interacting:
+            if isinstance(item, MetaTextItem):
+                self.draft.jump_to_text_field_for_id(ann_id)
+            else:
+                self._scroll_draft_to_id_top(ann_id)
 
         if item in self.scene.selectedItems():
             self.props.set_item(item)
@@ -1846,20 +1881,28 @@ class MainWindow(QMainWindow):
 
         self._push_draft_data_to_editor(status="Z-order updated.")
 
-    def _push_draft_data_to_editor(self, status: str = "", focus_id: Optional[str] = None):
+    def _push_draft_data_to_editor(self, status: str = "", focus_id: Optional[str] = None,
+                                    keep_scroll: bool = False):
         """Push draft data to the editor."""
         if self._draft_data is None:
             return
         sorted_data = sort_draft_data(self._draft_data)
         pretty = json.dumps(sorted_data, indent=2)
-        self._set_draft_text_programmatically(pretty, enable_import=True, status=status, focus_id=focus_id)
+        self._set_draft_text_programmatically(pretty, enable_import=True, status=status,
+                                              focus_id=focus_id, keep_scroll=keep_scroll)
 
-    def _set_draft_text_programmatically(self, text: str, enable_import: bool, status: str = "", focus_id: Optional[str] = None):
+    def _set_draft_text_programmatically(self, text: str, enable_import: bool, status: str = "",
+                                         focus_id: Optional[str] = None, keep_scroll: bool = False):
         """Set draft text without triggering change handlers."""
         self._syncing_from_scene = True
         try:
             self.draft.text.blockSignals(True)
-            self.draft.set_json_text(text, enable_import=enable_import, status=status)
+            if keep_scroll:
+                # Replace content via QTextCursor edit — preserves scroll
+                # position unlike setPlainText() which resets everything.
+                self.draft.replace_json_text_keep_scroll(text, status=status)
+            else:
+                self.draft.set_json_text(text, enable_import=enable_import, status=status)
             self.draft.text.blockSignals(False)
         finally:
             self._syncing_from_scene = False

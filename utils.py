@@ -103,8 +103,8 @@ def _scale_record(rec: dict, a: float, b: float, normalized: bool) -> dict:
 
     geom = dict(out.get("geom", {}) or {})
 
-    def fx(v): return float(v) * a
-    def fy(v): return float(v) * b
+    def fx(v): return round(float(v) * a, 2)
+    def fy(v): return round(float(v) * b, 2)
 
     # Shapes with x, y, w, h bounding box geometry
     bbox_kinds = ("rect", "ellipse", "roundedrect", "hexagon", "cylinder", "blockarrow", "polygon")

@@ -80,7 +80,7 @@ def validate_and_fix_annotations(data: Dict) -> Tuple[Dict, List[str]]:
         for key in geom:
             if not isinstance(geom[key], (int, float)):
                 try:
-                    geom[key] = float(geom[key])
+                    geom[key] = round(float(geom[key]), 2)
                     warnings.append(f"Annotation {i}: converted geom.{key} to number")
                 except (ValueError, TypeError):
                     warnings.append(f"Annotation {i}: invalid geom.{key}, skipping")

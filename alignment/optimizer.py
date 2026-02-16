@@ -875,15 +875,15 @@ def align_element(
 
     # Build result
     result = {
-        "x": round(final_x, 1),
-        "y": round(final_y, 1),
-        "w": round(final_w, 1),
-        "h": round(final_h, 1),
+        "x": round(final_x, 2),
+        "y": round(final_y, 2),
+        "w": round(final_w, 2),
+        "h": round(final_h, 2),
         "pen_width": optimized_pen_width,
         "pen_color": sampled_pen_hex,
     }
     if kind == "roundedrect":
-        result["radius"] = round(optimized_radius, 1)
+        result["radius"] = round(optimized_radius, 2)
 
     report(f"=== ALIGNMENT COMPLETE ===")
     report(f"Output: x={result['x']}, y={result['y']}, w={result['w']}, h={result['h']}")
@@ -3190,10 +3190,10 @@ def align_line_element(
         else:
             report("Orthogonal search found no features, keeping original position")
             return {
-                "x1": round(x1, 1),
-                "y1": round(y1, 1),
-                "x2": round(x2, 1),
-                "y2": round(y2, 1),
+                "x1": round(x1, 2),
+                "y1": round(y1, 2),
+                "x2": round(x2, 2),
+                "y2": round(y2, 2),
                 "pen_width": pen_width,
                 "pen_color": pen_color,
                 "arrow_mode": "none",
@@ -3206,10 +3206,10 @@ def align_line_element(
     if best_line is None:
         report("No matching line found")
         return {
-            "x1": round(x1, 1),
-            "y1": round(y1, 1),
-            "x2": round(x2, 1),
-            "y2": round(y2, 1),
+            "x1": round(x1, 2),
+            "y1": round(y1, 2),
+            "x2": round(x2, 2),
+            "y2": round(y2, 2),
             "pen_width": pen_width,
             "pen_color": pen_color,
             "arrow_mode": "none",
@@ -3319,10 +3319,10 @@ def align_line_element(
 
     # Build result
     result = {
-        "x1": round(new_x1, 1),
-        "y1": round(new_y1, 1),
-        "x2": round(new_x2, 1),
-        "y2": round(new_y2, 1),
+        "x1": round(new_x1, 2),
+        "y1": round(new_y1, 2),
+        "x2": round(new_x2, 2),
+        "y2": round(new_y2, 2),
         "pen_width": estimated_width,
         "pen_color": detected_line_hex,  # Use detected color from PNG
         "arrow_mode": arrow_mode,
