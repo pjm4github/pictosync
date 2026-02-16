@@ -1039,13 +1039,20 @@ class MainWindow(QMainWindow):
 
     def clear_overlay(self):
         """Clear all overlay items from the scene."""
-        for it in list(self.scene.items()):
-            if it is self.bg_item or it is self._png_hidden_indicator:
-                continue
-            if it.scene() is None:
-                continue  # Already removed (e.g. child of a removed group)
-            if hasattr(it, "meta"):
-                self.scene.removeItem(it)
+        self.scene.clearSelection()
+        self.scene.blockSignals(True)
+        try:
+            for it in list(self.scene.items()):
+                if it is self.bg_item or it is self._png_hidden_indicator:
+                    continue
+                if it.scene() is None:
+                    continue  # Already removed (child of a removed group)
+                if isinstance(it.parentItem(), MetaGroupItem):
+                    continue  # Will be removed with its parent group
+                if hasattr(it, "meta"):
+                    self.scene.removeItem(it)
+        finally:
+            self.scene.blockSignals(False)
         self.props.set_item(None)
 
         if self._link_enabled and self._draft_data and isinstance(self._draft_data.get("annotations", None), list):
@@ -1394,10 +1401,12 @@ class MainWindow(QMainWindow):
 
                 scaled = []
                 for rec in data.get("annotations", []):
-                    if not (isinstance(rec, dict) and "kind" in rec and "geom" in rec):
+                    if not isinstance(rec, dict) or "kind" not in rec:
+                        continue
+                    kind = rec.get("kind", "")
+                    if kind != "group" and "geom" not in rec:
                         continue
                     geom = rec.get("geom", {}) or {}
-                    kind = rec.get("kind", "")
 
                     norm = False
                     try:
@@ -1539,6 +1548,10 @@ class MainWindow(QMainWindow):
             for it in list(self.scene.items()):
                 if it is self.bg_item or it is self._png_hidden_indicator:
                     continue
+                if it.scene() is None:
+                    continue  # Already removed (child of a removed group)
+                if isinstance(it.parentItem(), MetaGroupItem):
+                    continue  # Will be removed with its parent group
                 if hasattr(it, "meta"):
                     self.scene.removeItem(it)
 

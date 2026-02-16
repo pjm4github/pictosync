@@ -416,6 +416,7 @@ def _parse_svg_positions(svg_path: str) -> Dict[str, Any]:
     id_to_alias: Dict[str, str] = {}
     positions: Dict[str, Dict[str, float]] = {}
     svg_elements: Dict[str, Dict[str, Any]] = {}
+    parent_map: Dict[str, str] = {}  # child_alias -> parent_alias
     title_pos: Optional[Dict[str, float]] = None
 
     for g in root.iter(f"{{{ns}}}g"):
@@ -427,6 +428,10 @@ def _parse_svg_positions(svg_path: str) -> Dict[str, Any]:
             alias = qname.rsplit(".", 1)[-1] if "." in qname else qname
             if not alias:
                 continue
+
+            if "." in qname:
+                parent_alias = qname.rsplit(".", 1)[0].rsplit(".", 1)[-1]
+                parent_map[alias] = parent_alias
 
             id_to_alias[ent_id] = alias
 
@@ -452,9 +457,14 @@ def _parse_svg_positions(svg_path: str) -> Dict[str, Any]:
             if not alias:
                 continue
 
+            if "." in qname:
+                parent_alias = qname.rsplit(".", 1)[0].rsplit(".", 1)[-1]
+                parent_map[alias] = parent_alias
+
             id_to_alias[ent_id] = alias
 
             path_el = g.find(f"{{{ns}}}path")
+            rect_el = g.find(f"{{{ns}}}rect")
             if path_el is not None:
                 d = path_el.get("d", "")
                 x, y, w, h = _path_bbox(d)
@@ -464,6 +474,14 @@ def _parse_svg_positions(svg_path: str) -> Dict[str, Any]:
                     pos_entry["points"] = rel_pts
                 positions[alias] = pos_entry
                 fill = path_el.get("fill", "")
+            elif rect_el is not None:
+                positions[alias] = {
+                    "x": float(rect_el.get("x", 0)),
+                    "y": float(rect_el.get("y", 0)),
+                    "w": float(rect_el.get("width", 0)),
+                    "h": float(rect_el.get("height", 0)),
+                }
+                fill = rect_el.get("fill", "")
             else:
                 fill = ""
 
@@ -517,6 +535,7 @@ def _parse_svg_positions(svg_path: str) -> Dict[str, Any]:
         "links": svg_links,
         "id_to_alias": id_to_alias,
         "title_pos": title_pos,
+        "parent_map": parent_map,
     }
 
 
@@ -532,6 +551,422 @@ def _apply_svg_link_style(conn: Dict[str, Any], svg_style: str) -> None:
         conn["color"] = stroke_match.group(1)
     if "stroke-dasharray" in svg_style:
         conn["dashed"] = True
+
+
+# ───────────────────────────────────────────────
+# Activity diagram SVG parser
+# ───────────────────────────────────────────────
+
+
+def _parse_activity_diagram_svg(
+    tree: ET.ElementTree,
+) -> Dict[str, Any]:
+    """Parse an activity diagram SVG into PictoSync annotations.
+
+    Activity diagram SVGs use a flat structure with raw shapes rather
+    than classified ``<g>`` groups.  Elements are identified by shape
+    type: rounded ``<rect>`` for activities, plain ``<rect>`` for
+    partition containers.
+
+    Args:
+        tree: Parsed ElementTree of the SVG file.
+
+    Returns:
+        Dict with PictoSync schema: ``{"version", "image", "annotations"}``.
+    """
+    root = tree.getroot()
+    ns = _SVG_NS
+
+    # Canvas dimensions from viewBox
+    viewbox = root.get("viewBox", "").split()
+    canvas_w = int(float(viewbox[2])) if len(viewbox) >= 3 else 1200
+    canvas_h = int(float(viewbox[3])) if len(viewbox) >= 4 else 800
+
+    empty: Dict[str, Any] = {
+        "version": "draft-1",
+        "image": {"width": canvas_w, "height": canvas_h},
+        "annotations": [],
+    }
+
+    root_g = root.find(f"{{{ns}}}g")
+    if root_g is None:
+        return empty
+
+    # ── Collect elements from the root <g> ─────────────────
+    all_rects: List[ET.Element] = []
+    all_texts: List[ET.Element] = []
+    all_lines: List[ET.Element] = []
+    all_ellipses: List[ET.Element] = []
+    title_text = ""
+    title_pos: Optional[Dict[str, float]] = None
+
+    for child in root_g:
+        tag = child.tag.rsplit("}", 1)[-1]
+        if tag == "rect":
+            all_rects.append(child)
+        elif tag == "text":
+            all_texts.append(child)
+        elif tag == "line":
+            all_lines.append(child)
+        elif tag == "ellipse":
+            all_ellipses.append(child)
+        elif tag == "g" and child.get("class") == "title":
+            text_el = child.find(f"{{{ns}}}text")
+            if text_el is not None:
+                tx = float(text_el.get("x", 0))
+                ty = float(text_el.get("y", 0))
+                fs = float(text_el.get("font-size", 14))
+                tl = float(text_el.get("textLength", 200))
+                title_text = text_el.text or ""
+                title_pos = {
+                    "x": tx,
+                    "y": round(ty - fs, 1),
+                    "w": round(tl, 1),
+                    "h": round(fs * 1.5, 1),
+                }
+
+    # Need at least a background rect + one shape rect
+    if len(all_rects) < 2:
+        return empty
+
+    # First rect is always the background fill — skip it
+    shape_rects = all_rects[1:]
+
+    # ── Classify rects ─────────────────────────────────────
+    activity_rects: List[ET.Element] = []
+    partition_rects: List[ET.Element] = []
+
+    for rect in shape_rects:
+        rx = float(rect.get("rx", 0))
+        if rx > 0:
+            activity_rects.append(rect)
+        else:
+            partition_rects.append(rect)
+
+    # ── Helpers ────────────────────────────────────────────
+
+    def _bounds(rect_el: ET.Element) -> Tuple[float, float, float, float]:
+        return (
+            float(rect_el.get("x", 0)),
+            float(rect_el.get("y", 0)),
+            float(rect_el.get("width", 0)),
+            float(rect_el.get("height", 0)),
+        )
+
+    def _texts_inside(
+        rect_el: ET.Element, margin: float = 5.0,
+    ) -> List[ET.Element]:
+        x, y, w, h = _bounds(rect_el)
+        return [
+            t for t in all_texts
+            if (x - margin <= float(t.get("x", 0)) <= x + w + margin
+                and y - margin <= float(t.get("y", 0)) <= y + h + margin)
+        ]
+
+    def _extract_stroke(
+        rect_el: ET.Element,
+    ) -> Tuple[str, int]:
+        style = rect_el.get("style", "")
+        sm = re.search(r'stroke:\s*(#[0-9A-Fa-f]{3,8})', style)
+        wm = re.search(r'stroke-width:\s*(\d+(?:\.\d+)?)', style)
+        return (
+            sm.group(1).upper() if sm else "#000000",
+            int(float(wm.group(1))) if wm else 1,
+        )
+
+    def _safe_fill(fill: str) -> str:
+        if not fill or fill.lower() == "none" or not fill.startswith("#"):
+            return "#00000000"
+        return _normalize_color(fill)
+
+    def _contains(
+        ox: float, oy: float, ow: float, oh: float,
+        ix: float, iy: float, iw: float, ih: float,
+        margin: float = 2,
+    ) -> bool:
+        """Return True if outer rect fully contains inner rect."""
+        return (
+            ox - margin <= ix
+            and oy - margin <= iy
+            and ix + iw <= ox + ow + margin
+            and iy + ih <= oy + oh + margin
+        )
+
+    # ── Build activity annotations ─────────────────────────
+    counter = 1
+
+    # Title annotation
+    title_ann: Optional[Dict[str, Any]] = None
+    if title_pos and title_text:
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        title_ann = {
+            "id": ann_id,
+            "kind": "text",
+            "geom": dict(title_pos),
+            "meta": {
+                "kind": "text", "label": title_text, "tech": "", "note": "",
+            },
+            "style": {
+                "pen": {"color": "#555555", "width": 2, "dash": "solid"},
+                "fill": {"color": "#00000000"},
+                "text": {"color": "#000000", "size_pt": 12.0},
+            },
+            "text": title_text,
+        }
+
+    # Activities (rounded rects)
+    act_anns: Dict[int, Dict[str, Any]] = {}  # index → annotation
+
+    for i, rect in enumerate(activity_rects):
+        texts = _texts_inside(rect)
+        text_lines = [t.text for t in texts if t.text]
+        label = "\n".join(text_lines) if text_lines else "Activity"
+        fill = _safe_fill(rect.get("fill", ""))
+        stroke_color, stroke_width = _extract_stroke(rect)
+        x, y, w, h = _bounds(rect)
+
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        act_anns[i] = {
+            "id": ann_id,
+            "kind": "roundedrect",
+            "geom": {"x": x, "y": y, "w": w, "h": h},
+            "meta": {
+                "kind": "roundedrect", "label": label, "tech": "", "note": "",
+            },
+            "style": {
+                "pen": {
+                    "color": stroke_color, "width": stroke_width, "dash": "solid",
+                },
+                "fill": {"color": fill},
+                "text": {"color": "#000000", "size_pt": 11.0},
+            },
+            "text": label,
+        }
+
+    # ── Build partition data ───────────────────────────────
+    part_list: List[Dict[str, Any]] = []
+
+    for rect in partition_rects:
+        texts = _texts_inside(rect)
+        bold = [t for t in texts if t.get("font-weight") == "bold"]
+        title = bold[0].text if bold else ""
+        fill = _safe_fill(rect.get("fill", ""))
+        stroke_color, stroke_width = _extract_stroke(rect)
+        x, y, w, h = _bounds(rect)
+
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        part_list.append({
+            "ann": {
+                "id": ann_id,
+                "kind": "rect",
+                "geom": {"x": x, "y": y, "w": w, "h": h},
+                "meta": {
+                    "kind": "rect", "label": title, "tech": "", "note": "",
+                },
+                "style": {
+                    "pen": {
+                        "color": stroke_color, "width": stroke_width,
+                        "dash": "solid",
+                    },
+                    "fill": {"color": fill},
+                    "text": {"color": "#000000", "size_pt": 11.0},
+                },
+                "text": title,
+            },
+            "x": x, "y": y, "w": w, "h": h,
+            "area": w * h,
+        })
+
+    # Sort partitions by area (smallest first) for containment lookup
+    part_list.sort(key=lambda p: p["area"])
+
+    # ── Containment mapping ────────────────────────────────
+    # Activity → smallest containing partition
+    act_to_part: Dict[int, int] = {}
+    for ai, rect in enumerate(activity_rects):
+        ax, ay, aw, ah = _bounds(rect)
+        for pi, pd in enumerate(part_list):
+            if _contains(pd["x"], pd["y"], pd["w"], pd["h"],
+                         ax, ay, aw, ah):
+                act_to_part[ai] = pi
+                break
+
+    # Partition → smallest containing parent partition
+    part_to_parent: Dict[int, int] = {}
+    for pi, pd in enumerate(part_list):
+        for pj, pd2 in enumerate(part_list):
+            if pi == pj:
+                continue
+            if (pd2["area"] > pd["area"]
+                    and _contains(pd2["x"], pd2["y"], pd2["w"], pd2["h"],
+                                  pd["x"], pd["y"], pd["w"], pd["h"])):
+                part_to_parent[pi] = pj
+                break
+
+    # ── Build group annotations (bottom-up) ────────────────
+    # Collect direct activity children for each partition
+    part_children: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+    for ai, pi in act_to_part.items():
+        part_children[pi].append(act_anns[ai])
+
+    def _child_y(ann: Dict[str, Any]) -> float:
+        if "geom" in ann:
+            g = ann["geom"]
+            return g.get("y", g.get("y1", 0))
+        if ann.get("children"):
+            return _child_y(ann["children"][0])
+        return 0.0
+
+    part_groups: Dict[int, Dict[str, Any]] = {}
+
+    for pi, pd in enumerate(part_list):
+        direct_acts = list(part_children.get(pi, []))
+
+        # Collect nested partition groups whose parent is this partition
+        nested = []
+        for pj in range(len(part_list)):
+            if part_to_parent.get(pj) == pi:
+                nested.append(part_groups.get(pj, part_list[pj]["ann"]))
+
+        # Interleave nested groups and direct activities by Y position
+        mixed = nested + direct_acts
+        mixed.sort(key=_child_y)
+
+        # Partition rect as first child + sorted contents
+        all_children = [pd["ann"]] + mixed
+
+        if len(all_children) > 1:
+            group_id = "g" + pd["ann"]["id"][1:]
+            part_groups[pi] = {
+                "id": group_id,
+                "kind": "group",
+                "children": all_children,
+                "meta": {
+                    "kind": "group",
+                    "label": pd["ann"]["meta"]["label"],
+                    "tech": "",
+                    "note": "",
+                },
+                "style": pd["ann"]["style"],
+                "text": pd["ann"].get("text", ""),
+            }
+
+    # ── Ellipse annotations (start/end nodes) ─────────────
+    ellipse_anns: List[Dict[str, Any]] = []
+    seen_centers: set = set()
+
+    for ell in all_ellipses:
+        cx = float(ell.get("cx", 0))
+        cy = float(ell.get("cy", 0))
+        center_key = (round(cx, 1), round(cy, 1))
+        if center_key in seen_centers:
+            continue  # Skip concentric ellipse (end-node inner circle)
+        seen_centers.add(center_key)
+
+        # Use the largest radius among concentric ellipses at this center
+        max_rx = 0.0
+        max_ry = 0.0
+        for e in all_ellipses:
+            if (round(float(e.get("cx", 0)), 1),
+                    round(float(e.get("cy", 0)), 1)) == center_key:
+                erx = float(e.get("rx", 0))
+                ery = float(e.get("ry", 0))
+                if erx > max_rx:
+                    max_rx = erx
+                    max_ry = ery
+
+        fill = ell.get("fill", "#FFFFFF")
+        stroke_color, stroke_width = _extract_stroke(ell)
+        label = "Start" if cy < canvas_h / 2 else "End"
+
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        ellipse_anns.append({
+            "id": ann_id,
+            "kind": "ellipse",
+            "geom": {
+                "x": cx - max_rx, "y": cy - max_ry,
+                "w": max_rx * 2, "h": max_ry * 2,
+            },
+            "meta": {
+                "kind": "ellipse", "label": label, "tech": "", "note": "",
+            },
+            "style": {
+                "pen": {
+                    "color": stroke_color, "width": stroke_width, "dash": "solid",
+                },
+                "fill": {"color": _safe_fill(fill)},
+                "text": {"color": "#000000", "size_pt": 11.0},
+            },
+            "text": label,
+        })
+
+    # ── Line annotations (flow connectors) ─────────────────
+    # Each <line> is paired with a <polygon> arrowhead in the SVG;
+    # we emit a single line annotation with arrow style per connector.
+    line_anns: List[Dict[str, Any]] = []
+
+    for line_el in all_lines:
+        x1 = float(line_el.get("x1", 0))
+        y1_val = float(line_el.get("y1", 0))
+        x2 = float(line_el.get("x2", 0))
+        y2_val = float(line_el.get("y2", 0))
+
+        stroke_color, stroke_width = _extract_stroke(line_el)
+
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        line_anns.append({
+            "id": ann_id,
+            "kind": "line",
+            "geom": {"x1": x1, "y1": y1_val, "x2": x2, "y2": y2_val},
+            "meta": {"kind": "line", "label": "", "tech": "", "note": ""},
+            "style": {
+                "pen": {
+                    "color": stroke_color, "width": stroke_width, "dash": "solid",
+                },
+                "arrow": "end",
+                "text": {"color": stroke_color, "size_pt": 10},
+            },
+            "text": "",
+        })
+
+    # ── Collect top-level annotations ──────────────────────
+    top_level: List[Dict[str, Any]] = []
+
+    if title_ann:
+        top_level.append(title_ann)
+
+    # Top-level activities (not inside any partition)
+    for ai, ann in act_anns.items():
+        if ai not in act_to_part:
+            top_level.append(ann)
+
+    # Top-level partitions (not inside any parent partition)
+    for pi in range(len(part_list)):
+        if pi not in part_to_parent:
+            top_level.append(part_groups.get(pi, part_list[pi]["ann"]))
+
+    # Ellipses and lines are always top-level
+    top_level.extend(ellipse_anns)
+    top_level.extend(line_anns)
+
+    # Sort everything after title by Y coordinate
+    if title_ann and len(top_level) > 1:
+        rest = top_level[1:]
+        rest.sort(key=_child_y)
+        top_level = [title_ann] + rest
+    else:
+        top_level.sort(key=_child_y)
+
+    return {
+        "version": "draft-1",
+        "image": {"width": canvas_w, "height": canvas_h},
+        "annotations": top_level,
+    }
 
 
 # ───────────────────────────────────────────────
@@ -648,22 +1083,95 @@ def _auto_layout(
 # Annotation builder
 # ───────────────────────────────────────────────
 
+def _build_element_annotation(
+    elem: Dict[str, Any],
+    pos: Dict[str, Any],
+    ann_id: str,
+) -> Dict[str, Any]:
+    """Build a single shape annotation from a parsed element and position.
+
+    Args:
+        elem: Parsed element dict.
+        pos: Position dict with x, y, w, h (and optional points).
+        ann_id: Annotation ID string.
+
+    Returns:
+        Annotation dict.
+    """
+    kind = _KIND_MAP.get(elem["puml_type"], "rect")
+    label = elem["label"]
+    tech = elem.get("tech", "")
+    note = elem.get("note", "")
+
+    text_parts = [label]
+    if tech:
+        text_parts.append(f"[{tech}]")
+    text = " ".join(text_parts)
+
+    color = elem.get("color")
+    style: Dict[str, Any] = {
+        "pen": {"color": "#555555", "width": 2, "dash": "solid"},
+        "fill": {"color": "#00000000"},
+        "text": {"color": "#000000", "size_pt": 12.0},
+    }
+    if color:
+        style["fill"]["color"] = _normalize_color(color)
+
+    ann: Dict[str, Any] = {
+        "id": ann_id,
+        "kind": kind,
+        "meta": {"kind": kind, "label": label, "tech": tech, "note": note},
+        "style": style,
+        "text": text,
+    }
+
+    if kind == "cylinder":
+        ann["geom"] = {
+            "x": pos["x"], "y": pos["y"],
+            "w": pos["w"], "h": pos["h"],
+            "adjust1": 0.2,
+        }
+    elif kind == "polygon":
+        geom: Dict[str, Any] = {
+            "x": pos["x"], "y": pos["y"],
+            "w": pos["w"], "h": pos["h"],
+        }
+        if "points" in pos:
+            geom["points"] = pos["points"]
+        ann["geom"] = geom
+    else:
+        ann["geom"] = {
+            "x": pos["x"], "y": pos["y"],
+            "w": pos["w"], "h": pos["h"],
+        }
+
+    return ann
+
+
 def _build_annotations(
     elements: List[Dict[str, Any]],
     connections: List[Dict[str, Any]],
     positions: Dict[str, Dict[str, float]],
+    parent_map: Optional[Dict[str, str]] = None,
 ) -> List[Dict[str, Any]]:
     """Build PictoSync annotation records from parsed elements and connections.
+
+    When *parent_map* is provided (from SVG parsing), clusters that contain
+    children are emitted as ``kind: "group"`` annotations with nested
+    ``children`` lists.
 
     Args:
         elements: Parsed element dicts.
         connections: Parsed connection dicts.
         positions: Layout positions from _auto_layout or SVG.
+        parent_map: Optional mapping of child_alias → parent_alias from SVG.
 
     Returns:
         List of annotation dicts ready for PictoSync JSON.
     """
-    annotations: List[Dict[str, Any]] = []
+    # Phase 1: build individual annotations keyed by alias
+    alias_to_ann: Dict[str, Dict[str, Any]] = {}
+    alias_to_elem: Dict[str, Dict[str, Any]] = {}
     counter = 1
 
     for elem in elements:
@@ -672,92 +1180,88 @@ def _build_annotations(
         if pos is None:
             continue
 
-        kind = _KIND_MAP.get(elem["puml_type"], "rect")
         ann_id = f"p{counter:06d}"
         counter += 1
 
-        label = elem["label"]
-        tech = elem.get("tech", "")
-        note = elem.get("note", "")
+        ann = _build_element_annotation(elem, pos, ann_id)
+        alias_to_ann[alias] = ann
+        alias_to_elem[alias] = elem
 
-        # Build display text
-        text_parts = [label]
-        if tech:
-            text_parts.append(f"[{tech}]")
-        text = " ".join(text_parts)
+    # Phase 2: assemble groups if parent_map is provided
+    grouped_aliases: set = set()
 
-        # Build style from color
-        color = elem.get("color")
-        style: Dict[str, Any] = {
-            "pen": {"color": "#555555", "width": 2, "dash": "solid"},
-            "fill": {"color": "#00000000"},
-            "text": {"color": "#000000", "size_pt": 12.0},
-        }
-        if color:
-            normalized = _normalize_color(color)
-            style["fill"]["color"] = normalized
+    if parent_map:
+        # Invert: parent -> [child1, child2, ...] (only children in alias_to_ann)
+        children_map: Dict[str, List[str]] = defaultdict(list)
+        for child, parent in parent_map.items():
+            if child in alias_to_ann and parent in alias_to_ann:
+                children_map[parent].append(child)
 
-        ann: Dict[str, Any] = {
-            "id": ann_id,
-            "kind": kind,
-            "meta": {
-                "kind": kind,
-                "label": label,
-                "tech": tech,
-                "note": note,
-            },
-            "style": style,
-            "text": text,
-        }
+        # Compute depth of each potential group parent for bottom-up assembly
+        # depth = how many ancestor hops until root (no parent)
+        def _depth(alias: str) -> int:
+            d = 0
+            cur = alias
+            while cur in parent_map:
+                d += 1
+                cur = parent_map[cur]
+            return d
 
-        if kind == "text":
-            ann["geom"] = {
-                "x": pos["x"],
-                "y": pos["y"],
-                "w": pos["w"],
-                "h": pos["h"],
-            }
-        elif kind == "cylinder":
-            ann["geom"] = {
-                "x": pos["x"],
-                "y": pos["y"],
-                "w": pos["w"],
-                "h": pos["h"],
-                "adjust1": 0.2,
-            }
-        elif kind == "polygon":
-            geom: Dict[str, Any] = {
-                "x": pos["x"],
-                "y": pos["y"],
-                "w": pos["w"],
-                "h": pos["h"],
-            }
-            if "points" in pos:
-                geom["points"] = pos["points"]
-            ann["geom"] = geom
-        else:
-            ann["geom"] = {
-                "x": pos["x"],
-                "y": pos["y"],
-                "w": pos["w"],
-                "h": pos["h"],
+        # Sort parents deepest-first so nested groups are built before outer
+        parents_by_depth = sorted(children_map.keys(), key=_depth, reverse=True)
+
+        for parent_alias in parents_by_depth:
+            child_aliases = children_map[parent_alias]
+            if not child_aliases:
+                continue
+
+            # Collect child annotations (may be sub-groups already replaced)
+            child_anns = [alias_to_ann[ca] for ca in child_aliases]
+
+            # Build group annotation from the parent cluster.
+            # The cluster's own rect annotation (with geom, fill, text)
+            # is kept as the first child so its visual boundary appears
+            # on the canvas.
+            parent_ann = alias_to_ann[parent_alias]
+            group_id = "g" + parent_ann["id"][1:]
+            group_ann: Dict[str, Any] = {
+                "id": group_id,
+                "kind": "group",
+                "children": [parent_ann] + child_anns,
+                "meta": {
+                    "kind": "group",
+                    "label": parent_ann["meta"]["label"],
+                    "tech": parent_ann["meta"].get("tech", ""),
+                    "note": parent_ann["meta"].get("note", ""),
+                },
+                "style": parent_ann["style"],
+                "text": parent_ann.get("text", ""),
             }
 
-        annotations.append(ann)
+            # Replace parent entry with the group
+            alias_to_ann[parent_alias] = group_ann
+            grouped_aliases.update(child_aliases)
+
+    # Phase 3: collect top-level annotations (not consumed as children)
+    annotations: List[Dict[str, Any]] = []
+    for elem in elements:
+        alias = elem["alias"]
+        if alias in grouped_aliases:
+            continue
+        ann = alias_to_ann.get(alias)
+        if ann:
+            annotations.append(ann)
 
     # Build line annotations from connections
-    alias_to_pos = positions
-
     for conn in connections:
-        src_pos = alias_to_pos.get(conn["src"])
-        dst_pos = alias_to_pos.get(conn["dst"])
+        src_pos = positions.get(conn["src"])
+        dst_pos = positions.get(conn["dst"])
         if not src_pos or not dst_pos:
             continue
 
         ann_id = f"p{counter:06d}"
         counter += 1
 
-        # Compute line endpoints from shape centers
         x1 = round(src_pos["x"] + src_pos["w"] / 2, 1)
         y1 = round(src_pos["y"] + src_pos["h"] / 2, 1)
         x2 = round(dst_pos["x"] + dst_pos["w"] / 2, 1)
@@ -821,6 +1325,13 @@ def parse_puml_to_annotations(
     Returns:
         Dict with PictoSync schema: {"version", "image", "annotations"}.
     """
+    # Activity diagrams have a completely different SVG structure
+    # (flat shapes, no <g class="entity/cluster"> groups).
+    if svg_path:
+        tree = ET.parse(svg_path)
+        if tree.getroot().get("data-diagram-type") == "ACTIVITY":
+            return _parse_activity_diagram_svg(tree)
+
     elements = _extract_elements(puml_text)
     known_aliases = {e["alias"] for e in elements}
     connections = _extract_connections(puml_text, known_aliases)
@@ -872,7 +1383,8 @@ def parse_puml_to_annotations(
     else:
         positions = _auto_layout(elements, connections, canvas_w, canvas_h)
 
-    annotations = _build_annotations(elements, connections, positions)
+    parent_map = svg_data.get("parent_map") if svg_path else None
+    annotations = _build_annotations(elements, connections, positions, parent_map)
 
     return {
         "version": "draft-1",

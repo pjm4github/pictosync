@@ -31,7 +31,7 @@ def hex_to_rgb(hex_color: str) -> Optional[Tuple[int, int, int]]:
     Convert hex color string to RGB tuple.
 
     Args:
-        hex_color: Color in format "#RRGGBB" or "#AARRGGBB"
+        hex_color: Color in format "#RRGGBB" or "#RRGGBBAA"
 
     Returns:
         Tuple of (r, g, b) or None if invalid
@@ -41,9 +41,9 @@ def hex_to_rgb(hex_color: str) -> Optional[Tuple[int, int, int]]:
 
     hex_color = hex_color.lstrip("#")
 
-    # Handle alpha channel (#AARRGGBB format)
+    # Handle alpha channel (#RRGGBBAA format) — strip trailing alpha
     if len(hex_color) == 8:
-        hex_color = hex_color[2:]  # Skip alpha bytes
+        hex_color = hex_color[:6]
 
     if len(hex_color) != 6:
         return None
@@ -62,7 +62,7 @@ def has_alpha_transparency(hex_color: str) -> bool:
     Check if a hex color has alpha transparency (not fully opaque).
 
     Args:
-        hex_color: Color in format "#RRGGBB" or "#AARRGGBB"
+        hex_color: Color in format "#RRGGBB" or "#RRGGBBAA"
 
     Returns:
         True if the color has transparency (alpha < FF)
@@ -73,7 +73,7 @@ def has_alpha_transparency(hex_color: str) -> bool:
     hex_color = hex_color.lstrip("#")
 
     if len(hex_color) == 8:
-        alpha = hex_color[0:2].upper()
+        alpha = hex_color[6:8].upper()
         return alpha != "FF"
 
     return False
@@ -151,18 +151,22 @@ def _add_text_to_shape(shape, meta: Dict[str, Any], text_style: Dict[str, Any]):
     tf = shape.text_frame
     tf.word_wrap = True
 
-    # Set vertical alignment
+    # Set vertical alignment (python-pptx 1.0.2 uses vertical_anchor, not anchor)
     valign = meta.get("text_valign", "top")
     if valign == "middle":
-        tf.anchor = MSO_ANCHOR.MIDDLE
+        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
     elif valign == "bottom":
-        tf.anchor = MSO_ANCHOR.BOTTOM
+        tf.vertical_anchor = MSO_ANCHOR.BOTTOM
     else:
-        tf.anchor = MSO_ANCHOR.TOP
+        tf.vertical_anchor = MSO_ANCHOR.TOP
 
     # Get text color
-    text_color = text_style.get("color", "#FFFF00")
+    text_color = text_style.get("color", "#000000")
     rgb = hex_to_rgb(text_color)
+
+    # Paragraph spacing from meta (in lines: 0, 0.5, 1, 1.5, 2)
+    text_spacing = meta.get("text_spacing", 0.0)
+    spacing_pt = Pt(int(text_spacing * 12)) if text_spacing else None
 
     # Collect text lines
     lines = []
@@ -185,7 +189,14 @@ def _add_text_to_shape(shape, meta: Dict[str, Any], text_style: Dict[str, Any]):
         else:
             p = tf.add_paragraph()
 
-        p.text = text
+        # Use explicit run creation to reliably override theme defaults
+        p.clear()
+        run = p.add_run()
+        run.text = text
+        run.font.size = Pt(size)
+        run.font.bold = bold
+        if rgb:
+            run.font.color.rgb = RGBColor(*rgb)
 
         # Set alignment
         if align == "left":
@@ -195,13 +206,9 @@ def _add_text_to_shape(shape, meta: Dict[str, Any], text_style: Dict[str, Any]):
         else:
             p.alignment = PP_ALIGN.CENTER
 
-        # Style the run
-        if p.runs:
-            run = p.runs[0]
-            run.font.size = Pt(size)
-            run.font.bold = bold
-            if rgb:
-                run.font.color.rgb = RGBColor(*rgb)
+        # Apply inter-paragraph spacing
+        if spacing_pt:
+            p.space_before = spacing_pt
 
 
 def _add_rectangle(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -321,6 +328,50 @@ def _add_line(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
                 head_end = etree.SubElement(ln, qn("a:headEnd"))
             head_end.set("type", "triangle")
 
+    # Add text label as a text box at the midpoint of the line
+    meta = record.get("meta", {})
+    label = meta.get("label", "")
+    if label:
+        text_style = style.get("text", {})
+        font_size = text_style.get("size_pt", 10)
+        text_color = text_style.get("color", "#000000")
+        rgb = hex_to_rgb(text_color)
+
+        mid_x = (geom.get("x1", 0) + geom.get("x2", 0)) / 2
+        mid_y = (geom.get("y1", 0) + geom.get("y2", 0)) / 2
+
+        # Size from meta text_box dimensions or estimate from text
+        box_w = meta.get("text_box_width", 0)
+        if not box_w:
+            box_w = max(50, len(label) * font_size * 0.6 + 20)
+        box_h = meta.get("text_box_height", 0)
+        if not box_h:
+            box_h = font_size * 1.5 + 10
+
+        tx = px_to_emu((mid_x - box_w / 2) * scale_x)
+        ty = px_to_emu((mid_y - box_h / 2) * scale_y)
+        tw = px_to_emu(box_w * scale_x)
+        th = px_to_emu(box_h * scale_y)
+
+        tbox = slide.shapes.add_textbox(tx, ty, tw, th)
+        tf = tbox.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        p.clear()
+        run = p.add_run()
+        run.text = label
+        run.font.size = Pt(font_size)
+        if rgb:
+            run.font.color.rgb = RGBColor(*rgb)
+
+        align = meta.get("label_align", "center")
+        if align == "left":
+            p.alignment = PP_ALIGN.LEFT
+        elif align == "right":
+            p.alignment = PP_ALIGN.RIGHT
+        else:
+            p.alignment = PP_ALIGN.CENTER
+
 
 def _add_text(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
     """Add a text box to the slide."""
@@ -328,33 +379,64 @@ def _add_text(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
     x = px_to_emu(geom.get("x", 0) * scale_x)
     y = px_to_emu(geom.get("y", 0) * scale_y)
 
-    # Text boxes need a width/height - estimate from text or use default
     text = record.get("text", "")
     style = record.get("style", {})
     text_style = style.get("text", {})
     font_size = text_style.get("size_pt", 12)
 
-    # Estimate dimensions based on text length
-    char_width = font_size * 0.6  # Approximate character width
-    w = px_to_emu(max(50, len(text) * char_width + 20) * scale_x)
-    h = px_to_emu((font_size * 1.5 + 10) * scale_y)
+    # Use geom dimensions when available, otherwise estimate
+    if geom.get("w"):
+        w = px_to_emu(geom["w"] * scale_x)
+    else:
+        char_width = font_size * 0.6
+        w = px_to_emu(max(50, len(text) * char_width + 20) * scale_x)
+
+    if geom.get("h"):
+        h = px_to_emu(geom["h"] * scale_y)
+    else:
+        h = px_to_emu((font_size * 1.5 + 10) * scale_y)
 
     shape = slide.shapes.add_textbox(x, y, w, h)
 
+    # Text items have no outline border
+    shape.line.fill.background()
+
+    # Apply fill style (usually transparent for text items)
+    _apply_fill_style(shape.fill, style)
+
     tf = shape.text_frame
-    tf.word_wrap = False
+    tf.word_wrap = True
+
+    # Vertical alignment (python-pptx 1.0.2 uses vertical_anchor, not anchor)
+    meta = record.get("meta", {})
+    valign = meta.get("text_valign", "top")
+    if valign == "middle":
+        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    elif valign == "bottom":
+        tf.vertical_anchor = MSO_ANCHOR.BOTTOM
+    else:
+        tf.vertical_anchor = MSO_ANCHOR.TOP
+
     p = tf.paragraphs[0]
-    p.text = text
+    p.clear()
+    run = p.add_run()
+    run.text = text
 
     # Apply text styling
     text_color = text_style.get("color", "#000000")
     rgb = hex_to_rgb(text_color)
+    run.font.size = Pt(font_size)
+    if rgb:
+        run.font.color.rgb = RGBColor(*rgb)
 
-    if p.runs:
-        run = p.runs[0]
-        run.font.size = Pt(font_size)
-        if rgb:
-            run.font.color.rgb = RGBColor(*rgb)
+    # Horizontal alignment
+    align = meta.get("label_align", "center")
+    if align == "left":
+        p.alignment = PP_ALIGN.LEFT
+    elif align == "right":
+        p.alignment = PP_ALIGN.RIGHT
+    else:
+        p.alignment = PP_ALIGN.CENTER
 
 
 def _add_hexagon(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -428,6 +510,43 @@ def _add_blockarrow(slide, record: Dict[str, Any], scale_x: float, scale_y: floa
             shape.adjustments[1] = adjust2 / total_w
     except (IndexError, AttributeError):
         pass
+
+    style = record.get("style", {})
+    _apply_line_style(shape.line, style)
+    _apply_fill_style(shape.fill, style)
+
+    meta = record.get("meta", {})
+    _add_text_to_shape(shape, meta, style.get("text", {}))
+
+
+def _add_polygon(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
+    """Add a polygon (freeform) shape to the slide."""
+    geom = record.get("geom", {})
+    x = geom.get("x", 0) * scale_x
+    y = geom.get("y", 0) * scale_y
+    w = geom.get("w", 100) * scale_x
+    h = geom.get("h", 100) * scale_y
+
+    points = geom.get("points", [])
+    if not points or len(points) < 3:
+        # Fall back to rectangle if no valid polygon points
+        _add_rectangle(slide, record, scale_x, scale_y)
+        return
+
+    # Build freeform shape from relative points
+    # points are [[rx, ry], ...] where rx/ry are 0.0-1.0 relative to w/h
+    start_x = px_to_emu(x + points[0][0] * w)
+    start_y = px_to_emu(y + points[0][1] * h)
+    builder = slide.shapes.build_freeform(start_x, start_y)
+
+    # add_line_segments takes an iterable of (x, y) pairs and auto-closes
+    vertices = [
+        (px_to_emu(x + pt[0] * w), px_to_emu(y + pt[1] * h))
+        for pt in points[1:]
+    ]
+    builder.add_line_segments(vertices, close=True)
+
+    shape = builder.convert_to_shape()
 
     style = record.get("style", {})
     _apply_line_style(shape.line, style)
@@ -525,5 +644,7 @@ def export_to_pptx(
             _add_cylinder(slide, record, scale_x, scale_y)
         elif kind == "blockarrow":
             _add_blockarrow(slide, record, scale_x, scale_y)
+        elif kind == "polygon":
+            _add_polygon(slide, record, scale_x, scale_y)
 
     prs.save(output_path)

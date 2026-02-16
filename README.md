@@ -4,7 +4,7 @@
 
 # PictoSync
 
-**v1.2** | PNG Image Canvas Tool for Object Synchronization
+**v1.3** | PNG Image Canvas Tool for Object Synchronization
 
 Diagram annotation tool with AI-powered extraction and bidirectional sync.
 
@@ -38,6 +38,8 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 - **PlantUML Rendering**: Import `.puml` files directly via drag-and-drop or File > Open
 - **SVG Position Extraction**: Parses PlantUML-rendered SVG for pixel-accurate element positioning
 - **Cluster/Package Support**: PlantUML packages render as polygon shapes with SVG path vertices
+- **Nested Group Hierarchy**: Cluster/entity parent-child relationships parsed into group annotations
+- **Activity Diagram Support**: Parses activity diagram SVGs with partitions, activities, flow lines, and start/end nodes
 - **Link Style Extraction**: Stroke colors and dash patterns from SVG applied to connectors
 
 ### AI Integration
@@ -88,6 +90,7 @@ pip install -r requirements.txt
 - Pillow
 - google-genai
 - opencv-python (for element alignment)
+- python-pptx (for PowerPoint export)
 
 Set your Google API key for AI extraction:
 ```bash
@@ -161,6 +164,7 @@ pictosync/
 │   └── parser.py        # PUML text parsing and SVG position extraction
 ├── gemini/              # AI integration
 │   └── worker.py        # Threaded Gemini API worker
+├── pptx_export.py       # PowerPoint slide export
 ├── alignment/           # OpenCV alignment
 │   ├── optimizer.py     # Shape and line alignment algorithms
 │   └── worker.py        # Threaded alignment workers
@@ -181,6 +185,16 @@ Annotations follow a JSON schema with support for:
 See `schemas/annotation_schema.json` for the full specification.
 
 ## Version History
+
+### v1.3 (2026-02-15)
+- Activity diagram SVG parser with partition groups, flow lines, ellipses, and polygons
+- Nested group hierarchy from PlantUML cluster/entity parent-child relationships
+- PowerPoint export: fill colors, border colors, text colors, font sizes, and alignment
+- PowerPoint export: polygon freeform shapes, line labels, vertical text alignment
+- Fixed PPTX color format handling (`#RRGGBBAA` instead of `#AARRGGBB`)
+- Fixed PPTX text styling to reliably override PowerPoint theme defaults
+- Fixed PPTX vertical alignment using `vertical_anchor` (python-pptx 1.0.2 API)
+- Fixed crash when clearing grouped items from canvas
 
 ### v1.2 (2026-02-12)
 - Polygon shape tool with multi-click vertex drawing and vertex editing mode
