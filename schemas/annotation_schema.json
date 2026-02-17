@@ -260,8 +260,11 @@
         "adjust1": {
           "type": "number",
           "minimum": 0,
+          "maximum": 200,
           "default": 10,
-          "description": "Corner radius in pixels"
+          "description": "Corner radius in pixels",
+          "ui_label": "Radius",
+          "ui_suffix": " px"
         }
       },
       "additionalProperties": false
@@ -334,7 +337,9 @@
           "minimum": 0,
           "maximum": 0.5,
           "default": 0.25,
-          "description": "Horizontal indent ratio for top/bottom vertices (0.0-0.5)"
+          "description": "Horizontal indent ratio for top/bottom vertices (0.0-0.5)",
+          "ui_label": "Indent",
+          "ui_suffix": " %"
         }
       },
       "additionalProperties": false
@@ -364,10 +369,12 @@
         },
         "adjust1": {
           "type": "number",
-          "minimum": 0.1,
+          "minimum": 0.01,
           "maximum": 0.5,
           "default": 0.15,
-          "description": "Cap ellipse height as ratio of total height (0.1-0.5)"
+          "description": "Cap ellipse height as ratio of total height (0.01-0.5)",
+          "ui_label": "Cap",
+          "ui_suffix": " %"
         }
       },
       "additionalProperties": false
@@ -398,15 +405,20 @@
         "adjust2": {
           "type": "number",
           "minimum": 10,
+          "maximum": 1200,
           "default": 15,
-          "description": "Arrow head length in pixels"
+          "description": "Arrow head length in pixels",
+          "ui_label": "Head",
+          "ui_suffix": " px"
         },
         "adjust1": {
           "type": "number",
-          "minimum": 0.2,
-          "maximum": 0.9,
-          "default": 0.5,
-          "description": "Shaft height as ratio of total height (0.2-0.9)"
+          "minimum": 0.01,
+          "maximum": 1.0,
+          "default": 0.65,
+          "description": "Shaft height as ratio of total height (0.0-0.9)",
+          "ui_label": "Shaft",
+          "ui_suffix": " %"
         }
       },
       "additionalProperties": false

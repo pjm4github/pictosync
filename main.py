@@ -1635,7 +1635,20 @@ class MainWindow(QMainWindow):
             anns = []
             self._draft_data["annotations"] = anns
 
-        anns.append(rec)
+        # Guard against duplicate entries: if an annotation with this ID
+        # already exists (e.g. from a _notify_changed during drawing drag),
+        # update it in place instead of appending a second copy.
+        ann_id_val = rec.get("id")
+        existing_idx = None
+        if ann_id_val:
+            for i, existing in enumerate(anns):
+                if isinstance(existing, dict) and existing.get("id") == ann_id_val:
+                    existing_idx = i
+                    break
+        if existing_idx is not None:
+            anns[existing_idx] = rec
+        else:
+            anns.append(rec)
         self._rebuild_id_index()
         self._push_draft_data_to_editor(status="Added item from scene; draft JSON updated.", focus_id=rec["id"])
 

@@ -17,6 +17,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+import json
+import os
+
 from models import AnnotationMeta
 from undo_commands import ChangeStyleCommand, ChangeMetaCommand
 from canvas.items import (
@@ -31,6 +34,64 @@ from canvas.items import (
     MetaPolygonItem,
     MetaGroupItem,
 )
+
+
+def _build_adjust_config_from_schema() -> dict:
+    """Build ADJUST_CONFIG from annotation_schema.json.
+
+    Scans the schema's ``allOf`` rules to map annotation ``kind`` values to
+    geometry definitions, then extracts adjust1/adjust2 properties that carry
+    ``ui_label``, ``ui_suffix``, ``ui_min``, and ``ui_max`` metadata.
+
+    Returns:
+        Dict keyed by annotation kind (e.g. "roundedrect") with nested dicts
+        for "adjust1" and optionally "adjust2".
+    """
+    schema_path = os.path.join(
+        os.path.dirname(__file__), "..", "schemas", "annotation_schema.json"
+    )
+    with open(schema_path, "r", encoding="utf-8") as f:
+        schema = json.load(f)
+
+    defs = schema.get("$defs", {})
+
+    # Build kind → geometry def name from annotationItem.allOf
+    kind_to_geom_def: dict[str, str] = {}
+    ann_item = defs.get("annotationItem", {})
+    for rule in ann_item.get("allOf", []):
+        if_block = rule.get("if", {}).get("properties", {}).get("kind", {})
+        kind_val = if_block.get("const")
+        if not kind_val:
+            continue
+        then_geom = rule.get("then", {}).get("properties", {}).get("geom", {})
+        ref = then_geom.get("$ref", "")
+        if ref.startswith("#/$defs/"):
+            kind_to_geom_def[kind_val] = ref.split("/")[-1]
+
+    config: dict = {}
+    for kind_val, geom_def_name in kind_to_geom_def.items():
+        geom_def = defs.get(geom_def_name, {})
+        props = geom_def.get("properties", {})
+        adjusts: dict = {}
+        for key in ("adjust1", "adjust2"):
+            adj = props.get(key)
+            if adj and "ui_label" in adj:
+                suffix = adj["ui_suffix"]
+                scale = 100 if suffix == " %" else 1
+                adjusts[key] = {
+                    "label": adj["ui_label"],
+                    "suffix": suffix,
+                    "min": int(round(adj.get("minimum", 0) * scale)),
+                    "max": int(round(adj.get("maximum", 0) * scale)),
+                }
+        if adjusts:
+            config[kind_val] = adjusts
+
+    return config
+
+
+# Single source of truth: built from annotation_schema.json at import time.
+ADJUST_CONFIG = _build_adjust_config_from_schema()
 
 # Try to import the compiled UI, fall back to None if not available
 try:
@@ -123,10 +184,15 @@ class PropertyPanel(QWidget):
         self.text_color_preview = self.ui.lbl_text_color_preview
         self.text_row = self.ui.row_text_color
 
-        # Properties tab - Extra controls
-        self.radius_spin = self.ui.spin_radius
-        self.radius_row = self.ui.row_radius
+        # Properties tab - Adjust controls (unified row)
+        self.adjust_row = self.ui.row_adjust
+        self.adjust1_spin = self.ui.spin_adjust1
+        self.adjust1_label = self.ui.label_adjust1
+        self.adjust2_spin = self.ui.spin_adjust2
+        self.adjust2_label = self.ui.label_adjust2
+        self.radius_spin = self.adjust1_spin  # compat alias
 
+        # Properties tab - Extra controls
         self.line_width_spin = self.ui.spin_line_width
         self.line_width_row = self.ui.row_line_width
 
@@ -142,34 +208,6 @@ class PropertyPanel(QWidget):
 
         self.arrow_size_spin = self.ui.spin_arrow_size
         self.arrow_size_row = self.ui.row_arrow_size
-
-        # Head length control (may not exist in UI file, create fallback)
-        if hasattr(self.ui, 'spin_adjust2'):
-            self.adjust2_spin = self.ui.spin_adjust2
-            self.adjust2_row = self.ui.row_head_length
-        else:
-            # Create programmatically if not in UI file
-            from PyQt6.QtWidgets import QSpinBox, QHBoxLayout, QWidget, QLabel, QFormLayout
-            self.adjust2_row = QWidget()
-            adjust2_l = QHBoxLayout(self.adjust2_row)
-            adjust2_l.setContentsMargins(0, 0, 0, 0)
-            self.adjust2_spin = QSpinBox()
-            self.adjust2_spin.setRange(10, 500)
-            self.adjust2_spin.setValue(15)
-            self.adjust2_spin.setSuffix(" px")
-            adjust2_l.addWidget(self.adjust2_spin)
-            adjust2_l.addStretch(1)
-            # Find the QFormLayout by traversing up from arrow_size_row
-            parent = self.arrow_size_row.parentWidget()
-            while parent:
-                layout = parent.layout()
-                if isinstance(layout, QFormLayout):
-                    idx = layout.indexOf(self.arrow_size_row)
-                    if idx >= 0:
-                        row_num = layout.getWidgetPosition(self.arrow_size_row)[0]
-                        layout.insertRow(row_num + 1, "Adjust 2:", self.adjust2_row)
-                    break
-                parent = parent.parentWidget()
 
         self.text_box_width_spin = self.ui.spin_text_box_width
         self.text_box_width_row = self.ui.row_text_box_width
@@ -352,16 +390,26 @@ class PropertyPanel(QWidget):
         tr_l.addWidget(self.text_color_preview)
         tr_l.addStretch(1)
 
-        # Corner radius control
-        self.radius_row = QWidget()
-        rad_l = QHBoxLayout(self.radius_row)
-        rad_l.setContentsMargins(0, 0, 0, 0)
-        self.radius_spin = QSpinBox()
-        self.radius_spin.setRange(0, 200)
-        self.radius_spin.setValue(10)
-        self.radius_spin.setSuffix(" px")
-        rad_l.addWidget(self.radius_spin)
-        rad_l.addStretch(1)
+        # Unified adjust controls row (adjust1 + adjust2 in one row)
+        self.adjust_row = QWidget()
+        adjust_l = QHBoxLayout(self.adjust_row)
+        adjust_l.setContentsMargins(0, 0, 0, 0)
+        self.adjust1_label = QLabel("Adjust1")
+        self.adjust1_spin = QSpinBox()
+        self.adjust1_spin.setRange(0, 200)
+        self.adjust1_spin.setValue(10)
+        self.adjust1_spin.setSuffix(" px")
+        self.adjust2_label = QLabel("Adjust2")
+        self.adjust2_spin = QSpinBox()
+        self.adjust2_spin.setRange(10, 500)
+        self.adjust2_spin.setValue(15)
+        self.adjust2_spin.setSuffix(" px")
+        adjust_l.addWidget(self.adjust1_label)
+        adjust_l.addWidget(self.adjust1_spin)
+        adjust_l.addWidget(self.adjust2_label)
+        adjust_l.addWidget(self.adjust2_spin)
+        adjust_l.addStretch(1)
+        self.radius_spin = self.adjust1_spin  # compat alias
 
         # Line width control with text spacing and valign
         self.line_width_row = QWidget()
@@ -439,18 +487,6 @@ class PropertyPanel(QWidget):
         arrow_size_l.addWidget(self.arrow_size_spin)
         arrow_size_l.addStretch(1)
 
-        # Head length control (for block arrows)
-        self.adjust2_row = QWidget()
-        adjust2_l = QHBoxLayout(self.adjust2_row)
-        adjust2_l.setContentsMargins(0, 0, 0, 0)
-        self.adjust2_spin = QSpinBox()
-        self.adjust2_spin.setRange(10, 500)
-        self.adjust2_spin.setValue(15)
-        self.adjust2_spin.setSuffix(" px")
-        self.adjust2_spin.setStyleSheet(compact_spin_with_suffix)
-        adjust2_l.addWidget(self.adjust2_spin)
-        adjust2_l.addStretch(1)
-
         # Text box width control
         self.text_box_width_row = QWidget()
         text_box_width_l = QHBoxLayout(self.text_box_width_row)
@@ -467,13 +503,12 @@ class PropertyPanel(QWidget):
         form.addRow("Border color:", self.pen_row)
         form.addRow("Fill color:", self.fill_row)
         form.addRow("Text color:", self.text_row)
-        form.addRow("Corner radius:", self.radius_row)
+        form.addRow("Adjust:", self.adjust_row)
         form.addRow("Line width:", self.line_width_row)
         form.addRow("Line style:", self.dash_row)
         form.addRow("Dash pattern:", self.dash_pattern_row)
         form.addRow("Arrow:", self.arrow_row)
         form.addRow("Arrow size:", self.arrow_size_row)
-        form.addRow("Adjust 2:", self.adjust2_row)
         form.addRow("Text box width:", self.text_box_width_row)
 
         props_layout.addStretch(1)
@@ -500,7 +535,7 @@ class PropertyPanel(QWidget):
         self.text_color_btn.clicked.connect(self.pick_text_color)
 
         # Extra controls
-        self.radius_spin.valueChanged.connect(self._on_radius_changed)
+        self.adjust1_spin.valueChanged.connect(self._on_adjust1_changed)
         self.line_width_spin.valueChanged.connect(self._on_line_width_changed)
         self.dash_combo.currentIndexChanged.connect(self._on_dash_changed)
         self.dash_length_spin.valueChanged.connect(self._on_dash_pattern_changed)
@@ -541,29 +576,33 @@ class PropertyPanel(QWidget):
         self.pen_color_btn.setEnabled(enabled)
         self.fill_color_btn.setEnabled(enabled)
         self.text_color_btn.setEnabled(enabled)
-        self.radius_spin.setEnabled(enabled)
+        self.adjust1_spin.setEnabled(enabled)
+        self.adjust2_spin.setEnabled(enabled)
         self.line_width_spin.setEnabled(enabled)
         self.dash_combo.setEnabled(enabled)
         self.dash_length_spin.setEnabled(enabled)
         self.dash_solid_spin.setEnabled(enabled)
         self.arrow_combo.setEnabled(enabled)
         self.arrow_size_spin.setEnabled(enabled)
-        self.adjust2_spin.setEnabled(enabled)
         self.text_box_width_spin.setEnabled(enabled)
         self.text_spacing_combo.setEnabled(enabled)
         self.text_valign_combo.setEnabled(enabled)
 
-    def _set_extra_rows_visible(self, radius: bool, line_width: bool, dash: bool, arrow: bool, arrow_size: bool, text_box_width: bool = False, text_layout: bool = False, adjust2: bool = False):
+    def _set_extra_rows_visible(self, adjust: bool, line_width: bool, dash: bool, arrow: bool, arrow_size: bool, text_box_width: bool = False, text_layout: bool = False, adjust2: bool = False):
         """Show or hide extra control rows."""
-        self.radius_row.setVisible(radius)
-        self.radius_spin.setVisible(radius)
+        self.adjust_row.setVisible(adjust)
+        self.adjust1_spin.setVisible(adjust)
+        self.adjust1_label.setVisible(adjust)
+        # Show/hide adjust2 within the same row
+        self.adjust2_label.setVisible(adjust and adjust2)
+        self.adjust2_spin.setVisible(adjust and adjust2)
         self.line_width_row.setVisible(line_width)
         # text_box_width_row contains both text_box_width spin AND text layout controls
         # Show the row if either text_box_width or text_layout is needed
         self.text_box_width_row.setVisible(text_box_width or text_layout)
         # But only show the text_box_width spin/label for line items
         self.text_box_width_spin.setVisible(text_box_width)
-        if hasattr(self.ui, 'label_text_box_width_title'):
+        if HAS_UI and hasattr(self.ui, 'label_text_box_width_title'):
             self.ui.label_text_box_width_title.setVisible(text_box_width)
         self.line_width_spin.setVisible(line_width)
         self.dash_row.setVisible(dash)
@@ -572,8 +611,26 @@ class PropertyPanel(QWidget):
         self.arrow_combo.setVisible(arrow)
         self.arrow_size_row.setVisible(arrow_size)
         self.arrow_size_spin.setVisible(arrow_size)
-        self.adjust2_row.setVisible(adjust2)
-        self.adjust2_spin.setVisible(adjust2)
+
+    def _configure_adjust_controls(self, kind: str):
+        """Configure adjust1/adjust2 labels, suffixes, and ranges from ADJUST_CONFIG."""
+        cfg = ADJUST_CONFIG.get(kind)
+        if not cfg:
+            return
+        a1 = cfg.get("adjust1")
+        if a1:
+            self.adjust1_label.setText(a1["label"])
+            self.adjust1_spin.blockSignals(True)
+            self.adjust1_spin.setSuffix(a1["suffix"])
+            self.adjust1_spin.setRange(a1["min"], a1["max"])
+            self.adjust1_spin.blockSignals(False)
+        a2 = cfg.get("adjust2")
+        if a2:
+            self.adjust2_label.setText(a2["label"])
+            self.adjust2_spin.blockSignals(True)
+            self.adjust2_spin.setSuffix(a2["suffix"])
+            self.adjust2_spin.setRange(a2["min"], a2["max"])
+            self.adjust2_spin.blockSignals(False)
 
     def _set_dash_pattern_visible(self, visible: bool):
         """Show or hide the custom dash pattern controls."""
@@ -696,11 +753,10 @@ class PropertyPanel(QWidget):
         self._set_preview(self.pen_color_preview, pen_color)
         self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
-        self.radius_spin.blockSignals(True)
-        self.radius_spin.setSuffix(" px")  # Reset suffix for rounded rect
-        self.radius_spin.setRange(0, 200)  # Reset range
-        self.radius_spin.setValue(int(getattr(item, "_adjust1", 10)))
-        self.radius_spin.blockSignals(False)
+        self._configure_adjust_controls("roundedrect")
+        self.adjust1_spin.blockSignals(True)
+        self.adjust1_spin.setValue(int(getattr(item, "_adjust1", 10)))
+        self.adjust1_spin.blockSignals(False)
         self._setup_line_style_controls(item)
         self._setup_text_layout_controls(item)
 
@@ -933,8 +989,8 @@ class PropertyPanel(QWidget):
             cmd = ChangeStyleCommand(item, "text_color", old_color, c, apply)
             self.undo_stack.push(cmd)
 
-    def _on_radius_changed(self, value: int):
-        """Handle corner radius / adjust1 change."""
+    def _on_adjust1_changed(self, value: int):
+        """Handle adjust1 change (radius, indent, cap, shaft depending on kind)."""
         item = self._current_item
         if item is None:
             return
@@ -1190,18 +1246,15 @@ class PropertyPanel(QWidget):
         """Configure controls for hexagon items."""
         self._set_text_rows_visible(True, True, True)
         self._set_color_rows_visible(True, True, True)
-        # Reuse radius row for adjust1
         self._set_extra_rows_visible(True, True, True, False, False, text_box_width=False, text_layout=True)
         self._set_preview(self.pen_color_preview, pen_color)
         self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
-        # Use radius spinbox for adjust1 (show as percentage)
+        self._configure_adjust_controls("hexagon")
         adjust1 = getattr(item, "_adjust1", 0.25)
-        self.radius_spin.blockSignals(True)
-        self.radius_spin.setValue(int(adjust1 * 100))  # Show as percentage
-        self.radius_spin.setSuffix(" %")
-        self.radius_spin.setRange(0, 50)
-        self.radius_spin.blockSignals(False)
+        self.adjust1_spin.blockSignals(True)
+        self.adjust1_spin.setValue(int(adjust1 * 100))
+        self.adjust1_spin.blockSignals(False)
         self._setup_line_style_controls(item)
         self._setup_text_layout_controls(item)
 
@@ -1209,18 +1262,15 @@ class PropertyPanel(QWidget):
         """Configure controls for cylinder items."""
         self._set_text_rows_visible(True, True, True)
         self._set_color_rows_visible(True, True, True)
-        # Reuse radius row for adjust1
         self._set_extra_rows_visible(True, True, True, False, False, text_box_width=False, text_layout=True)
         self._set_preview(self.pen_color_preview, pen_color)
         self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
-        # Use radius spinbox for adjust1 (show as percentage)
+        self._configure_adjust_controls("cylinder")
         adjust1 = getattr(item, "_adjust1", 0.15)
-        self.radius_spin.blockSignals(True)
-        self.radius_spin.setValue(int(adjust1 * 100))
-        self.radius_spin.setSuffix(" %")
-        self.radius_spin.setRange(10, 50)
-        self.radius_spin.blockSignals(False)
+        self.adjust1_spin.blockSignals(True)
+        self.adjust1_spin.setValue(int(adjust1 * 100))
+        self.adjust1_spin.blockSignals(False)
         self._setup_line_style_controls(item)
         self._setup_text_layout_controls(item)
 
@@ -1228,19 +1278,15 @@ class PropertyPanel(QWidget):
         """Configure controls for block arrow items."""
         self._set_text_rows_visible(True, True, True)
         self._set_color_rows_visible(True, True, True)
-        # Reuse radius row for adjust1, show adjust2 row
         self._set_extra_rows_visible(True, True, True, False, False, text_box_width=False, text_layout=True, adjust2=True)
         self._set_preview(self.pen_color_preview, pen_color)
         self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
-        # Use radius spinbox for adjust1 (show as percentage)
+        self._configure_adjust_controls("blockarrow")
         adjust1 = getattr(item, "_adjust1", 0.5)
-        self.radius_spin.blockSignals(True)
-        self.radius_spin.setValue(int(adjust1 * 100))
-        self.radius_spin.setSuffix(" %")
-        self.radius_spin.setRange(20, 90)
-        self.radius_spin.blockSignals(False)
-        # Adjust2 control
+        self.adjust1_spin.blockSignals(True)
+        self.adjust1_spin.setValue(int(adjust1 * 100))
+        self.adjust1_spin.blockSignals(False)
         adjust2 = getattr(item, "_adjust2", 15)
         self.adjust2_spin.blockSignals(True)
         self.adjust2_spin.setValue(int(adjust2))
@@ -1270,14 +1316,12 @@ class PropertyPanel(QWidget):
         """Update the adjust1 spinbox display when it changes via canvas handle."""
         if self._current_item is not item:
             return
-        self.radius_spin.blockSignals(True)
+        self.adjust1_spin.blockSignals(True)
         if isinstance(item, MetaRoundedRectItem):
-            # Rounded rect uses pixels directly
-            self.radius_spin.setValue(int(value))
+            self.adjust1_spin.setValue(int(value))
         elif isinstance(item, (MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem)):
-            # Other shapes use percentage (0-1 ratio)
-            self.radius_spin.setValue(int(value * 100))
-        self.radius_spin.blockSignals(False)
+            self.adjust1_spin.setValue(int(value * 100))
+        self.adjust1_spin.blockSignals(False)
 
     def update_adjust2_display(self, item, value: float):
         """Update the adjust2 spinbox display when it changes via canvas handle."""

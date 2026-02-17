@@ -247,8 +247,8 @@ class AnnotatorScene(QGraphicsScene):
                     self.addItem(self._temp_item)
                     self._temp_item.setZValue(next_z)
                 elif self.mode == Mode.BLOCKARROW:
-                    # Default adjust2=15 (head length px), adjust1=0.5 (shaft width ratio)
-                    self._temp_item = MetaBlockArrowItem(sp.x(), sp.y(), 0, 0, 15, 0.5, ann_id, self._on_item_changed)
+                    # adjust2 tracks 35% of width during drawing; adjust1=0.5 (shaft width ratio)
+                    self._temp_item = MetaBlockArrowItem(sp.x(), sp.y(), 0, 0, 0, 0.5, ann_id, self._on_item_changed)
                     self.addItem(self._temp_item)
                     self._temp_item.setZValue(next_z)
 
@@ -302,6 +302,9 @@ class AnnotatorScene(QGraphicsScene):
                 h = abs(cy - sy)
                 self._temp_item.setPos(QPointF(x, y))
                 self._temp_item.setRect(QRectF(0, 0, w, h))
+                # Keep arrow head at 35% of width while drawing
+                if isinstance(self._temp_item, MetaBlockArrowItem):
+                    self._temp_item.set_adjust2(w * 0.35)
             elif isinstance(self._temp_item, MetaLineItem):
                 x1, y1 = sx, sy
                 x2, y2 = cx, cy

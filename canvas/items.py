@@ -2710,7 +2710,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.meta.kind = "blockarrow"
         self._width = w
         self._height = h
-        self._adjust2 = max(10, min(w * 0.8, adjust2))
+        self._adjust2 = max(10, min(w * 0.8, adjust2)) if w > 0 else adjust2
         self._adjust1 = max(0.2, min(0.9, adjust1))
         self.setPos(QPointF(x, y))
         self.setData(ANN_ID_KEY, ann_id)
