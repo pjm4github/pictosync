@@ -161,9 +161,93 @@ class TestScrollPreservationDuringDrag:
         mw.scene._move_start_positions = {}
         mw.draft.unlock_scroll()
 
+    def test_scroll_on_click_then_freeze(self, linked_scene, qapp):
+        """Selecting an item with mouse-down should scroll once, then freeze."""
+        mw, items = linked_scene
+
+        item = items[len(items) // 2]
+        ann_id = item.ann_id
+
+        # Simulate mouse-down in SELECT mode (before selection)
+        mw.scene._mouse_down_in_select = True
+        mw.scene._move_start_positions = {}
+
+        # Select the item — this triggers _do_selection_changed which should
+        # scroll to the annotation AND set _lock_after_scroll.
+        item.setSelected(True)
+        qapp.processEvents()
+        qapp.processEvents()  # let deferred _scroll_cursor_to_top run
+
+        sb = mw.draft.text.verticalScrollBar()
+        scroll_after_click = sb.value()
+        assert scroll_after_click > 0, "Should have scrolled to the item"
+        assert mw.draft._locked_scroll is not None, (
+            "Scroll should be locked after click-select"
+        )
+
+        # Now simulate drag — scroll must not change
+        for _ in range(5):
+            old = item.pos()
+            item.setPos(old.x() + 1, old.y())
+            qapp.processEvents()
+
+        scroll_after_drag = sb.value()
+        assert scroll_after_drag == scroll_after_click, (
+            f"Scroll drifted during drag: {scroll_after_click} -> {scroll_after_drag}"
+        )
+
+        # Simulate mouse release
+        mw.scene._mouse_down_in_select = False
+        mw.scene._move_start_positions = {}
+        mw.draft.unlock_scroll()
+
 
 class TestPumlImport:
     """PUML import must still work correctly with scroll-lock changes."""
+
+    def test_line_meta_has_formatting_defaults(self, linked_scene, qapp):
+        """Line annotations from PUML import should have full meta formatting fields."""
+        mw, items = linked_scene
+        text = mw.draft.get_json_text()
+        data = json.loads(text)
+        lines = [a for a in data["annotations"] if a.get("kind") == "line"]
+        assert len(lines) > 0, "Should have at least one line annotation"
+        expected_keys = {
+            "kind", "label", "tech", "note",
+            "label_align", "label_size",
+            "tech_align", "tech_size",
+            "note_align", "note_size",
+            "text_valign", "text_spacing",
+            "text_box_width", "text_box_height",
+        }
+        for line in lines:
+            meta = line["meta"]
+            missing = expected_keys - set(meta.keys())
+            assert not missing, (
+                f"Line {line['id']} meta missing keys: {missing}"
+            )
+
+    def test_shape_meta_has_formatting_defaults(self, linked_scene, qapp):
+        """Shape annotations from PUML import should have full meta formatting fields."""
+        mw, items = linked_scene
+        text = mw.draft.get_json_text()
+        data = json.loads(text)
+        shapes = [a for a in data["annotations"] if a.get("kind") not in ("line", "group")]
+        assert len(shapes) > 0, "Should have at least one shape annotation"
+        expected_keys = {
+            "kind", "label", "tech", "note",
+            "label_align", "label_size",
+            "tech_align", "tech_size",
+            "note_align", "note_size",
+            "text_valign", "text_spacing",
+            "text_box_width", "text_box_height",
+        }
+        for shape in shapes:
+            meta = shape["meta"]
+            missing = expected_keys - set(meta.keys())
+            assert not missing, (
+                f"Shape {shape['id']} ({shape.get('kind')}) meta missing keys: {missing}"
+            )
 
     def test_import_produces_annotations(self, linked_scene, qapp):
         """Importing a PUML file should produce annotations in the JSON."""

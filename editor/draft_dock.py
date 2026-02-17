@@ -68,6 +68,7 @@ class DraftDock(QDockWidget):
 
         # Scroll lock: when set, scroll position is pinned to this value
         self._locked_scroll: int | None = None
+        self._lock_after_scroll = False
 
         self.import_btn = QPushButton("Import && Link")
         self.import_btn.setEnabled(False)
@@ -112,6 +113,7 @@ class DraftDock(QDockWidget):
     def unlock_scroll(self):
         """Unlock the scroll position."""
         self._locked_scroll = None
+        self._lock_after_scroll = False
 
     def set_status(self, status: str):
         """Update the status label."""
@@ -148,6 +150,12 @@ class DraftDock(QDockWidget):
                     self.text.firstVisibleBlock()).height()
                 if line_height > 0:
                     sb.setValue(sb.value() + int(cursor_rect.top() / line_height))
+            # Lock scroll after the deferred scroll completes so that
+            # subsequent drag frames keep the annotation pinned in place.
+            # Force-capture: overwrite any stale value from an early drag frame.
+            if self._lock_after_scroll:
+                self._lock_after_scroll = False
+                self._locked_scroll = sb.value()
         finally:
             self.text._suppress_cursor_signal = False
 

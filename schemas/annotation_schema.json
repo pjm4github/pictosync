@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://nanobanana.io/schemas/annotation_schema.json",
-  "title": "NanoBANANA Annotation Schema",
-  "description": "JSON Schema for diagram annotation items used in NanoBANANA for canvas, property panel, and AI extraction interchange.",
+  "$id": "https://pictosync.io/schemas/annotation_schema.json",
+  "title": "PictoSync Annotation Schema",
+  "description": "JSON Schema for diagram annotation items used in PictoSync for canvas, property panel, and AI extraction interchange.",
   "type": "object",
   "required": ["annotations"],
   "properties": {

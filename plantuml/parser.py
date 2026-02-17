@@ -16,6 +16,20 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict, deque
 from typing import Any, Dict, List, Optional, Tuple
 
+from models import normalize_meta
+
+
+def _normalize_annotations(annotations: List[Dict[str, Any]]) -> None:
+    """Apply formatting defaults to all annotation meta dicts in place."""
+    for ann in annotations:
+        if isinstance(ann, dict) and "meta" in ann:
+            kind = ann.get("kind", ann["meta"].get("kind", ""))
+            ann["meta"] = normalize_meta(ann["meta"], kind)
+        for child in ann.get("children", []):
+            if isinstance(child, dict) and "meta" in child:
+                kind = child.get("kind", child["meta"].get("kind", ""))
+                child["meta"] = normalize_meta(child["meta"], kind)
+
 
 # ───────────────────────────────────────────────
 # PUML element type → PictoSync kind mapping
@@ -994,6 +1008,7 @@ def _parse_activity_diagram_svg(
     else:
         top_level.sort(key=_child_y)
 
+    _normalize_annotations(top_level)
     return {
         "version": "draft-1",
         "image": {"width": canvas_w, "height": canvas_h},
@@ -1457,6 +1472,7 @@ def _parse_sequence_diagram_svg(
             "text": "",
         })
 
+    _normalize_annotations(annotations)
     return {
         "version": "draft-1",
         "image": {"width": canvas_w, "height": canvas_h},
@@ -1876,6 +1892,7 @@ def parse_puml_to_annotations(
     parent_map = svg_data.get("parent_map") if svg_path else None
     annotations = _build_annotations(elements, connections, positions, parent_map)
 
+    _normalize_annotations(annotations)
     return {
         "version": "draft-1",
         "image": {

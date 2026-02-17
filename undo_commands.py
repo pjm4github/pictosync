@@ -374,11 +374,19 @@ class GroupItemsCommand(QUndoCommand):
         self._first_redo = True
 
     def undo(self):
-        # Remove children from group and restore flags
-        for child in self.child_items:
-            self.group_item.remove_member(child)
-            child.setZValue(self.child_z_values.get(child, 0))
-        self.scene.removeItem(self.group_item)
+        # Suppress callbacks — removeFromGroup() adjusts child positions,
+        # triggering ItemPositionHasChanged which would create duplicates.
+        mw = self.scene.views()[0].window() if self.scene.views() else None
+        if mw and hasattr(mw, '_syncing_from_json'):
+            mw._syncing_from_json = True
+        try:
+            for child in self.child_items:
+                self.group_item.remove_member(child)
+                child.setZValue(self.child_z_values.get(child, 0))
+            self.scene.removeItem(self.group_item)
+        finally:
+            if mw and hasattr(mw, '_syncing_from_json'):
+                mw._syncing_from_json = False
         if self.on_ungrouped_callback:
             self.on_ungrouped_callback(self.group_item, self.child_items)
 
@@ -386,9 +394,17 @@ class GroupItemsCommand(QUndoCommand):
         if self._first_redo:
             self._first_redo = False
             return
-        self.scene.addItem(self.group_item)
-        for child in self.child_items:
-            self.group_item.add_member(child)
+        # Suppress callbacks — addToGroup() adjusts child positions.
+        mw = self.scene.views()[0].window() if self.scene.views() else None
+        if mw and hasattr(mw, '_syncing_from_json'):
+            mw._syncing_from_json = True
+        try:
+            self.scene.addItem(self.group_item)
+            for child in self.child_items:
+                self.group_item.add_member(child)
+        finally:
+            if mw and hasattr(mw, '_syncing_from_json'):
+                mw._syncing_from_json = False
         if self.on_grouped_callback:
             self.on_grouped_callback(self.group_item, self.child_items)
 
@@ -409,11 +425,20 @@ class UngroupItemsCommand(QUndoCommand):
         self._first_redo = True
 
     def undo(self):
-        # Re-group: add group back to scene and add children
-        self.scene.addItem(self.group_item)
-        self.group_item.setZValue(self.group_z)
-        for child in self.child_items:
-            self.group_item.add_member(child)
+        # Re-group: add group back to scene and add children.
+        # Suppress callbacks — addToGroup() adjusts child positions,
+        # triggering ItemPositionHasChanged.
+        mw = self.scene.views()[0].window() if self.scene.views() else None
+        if mw and hasattr(mw, '_syncing_from_json'):
+            mw._syncing_from_json = True
+        try:
+            self.scene.addItem(self.group_item)
+            self.group_item.setZValue(self.group_z)
+            for child in self.child_items:
+                self.group_item.add_member(child)
+        finally:
+            if mw and hasattr(mw, '_syncing_from_json'):
+                mw._syncing_from_json = False
         if self.on_grouped_callback:
             self.on_grouped_callback(self.group_item, self.child_items)
 
@@ -421,9 +446,17 @@ class UngroupItemsCommand(QUndoCommand):
         if self._first_redo:
             self._first_redo = False
             return
-        # Remove children from group
-        for child in self.child_items:
-            self.group_item.remove_member(child)
-        self.scene.removeItem(self.group_item)
+        # Suppress callbacks — removeFromGroup() adjusts child positions,
+        # triggering ItemPositionHasChanged which would create duplicates.
+        mw = self.scene.views()[0].window() if self.scene.views() else None
+        if mw and hasattr(mw, '_syncing_from_json'):
+            mw._syncing_from_json = True
+        try:
+            for child in self.child_items:
+                self.group_item.remove_member(child)
+            self.scene.removeItem(self.group_item)
+        finally:
+            if mw and hasattr(mw, '_syncing_from_json'):
+                mw._syncing_from_json = False
         if self.on_ungrouped_callback:
             self.on_ungrouped_callback(self.group_item, self.child_items)

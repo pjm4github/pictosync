@@ -771,10 +771,11 @@ class MainWindow(QMainWindow):
         # Update focus mode to show this annotation
         self.draft.set_focused_annotation(ann_id)
 
-        # Defer scroll to mouse-release when the mouse is down in SELECT mode
-        # so that click-and-drag doesn't fight with the selection scroll.
+        # When mouse is down, scroll to the annotation once then lock so
+        # subsequent drag frames don't jump.  The lock is applied after the
+        # deferred _scroll_cursor_to_top completes (see DraftDock).
         if self.scene._mouse_down_in_select:
-            return
+            self.draft._lock_after_scroll = True
 
         # When focus mode is enabled, fold operations change the document layout.
         # Defer the scroll to allow Qt to process the layout updates first.
@@ -1692,7 +1693,11 @@ class MainWindow(QMainWindow):
         interacting = self.scene.is_interacting
 
         if interacting:
-            self.draft.lock_scroll()
+            # Only lock here if the deferred selection-scroll isn't pending.
+            # When _lock_after_scroll is True, the deferred scroll hasn't
+            # completed yet — locking now would capture the wrong position.
+            if not self.draft._lock_after_scroll:
+                self.draft.lock_scroll()
         else:
             self.draft.unlock_scroll()
 
@@ -1727,9 +1732,14 @@ class MainWindow(QMainWindow):
         self.scene.addItem(group_item)
         group_item.setZValue(max_z)
 
-        # Add children to group
-        for child in items:
-            group_item.add_member(child)
+        # Suppress callbacks — addToGroup() adjusts child positions,
+        # triggering ItemPositionHasChanged which would create duplicates.
+        self._syncing_from_json = True
+        try:
+            for child in items:
+                group_item.add_member(child)
+        finally:
+            self._syncing_from_json = False
 
         # Update JSON: remove individual child records, add group record
         if self._link_enabled and self._draft_data:
@@ -1791,12 +1801,17 @@ class MainWindow(QMainWindow):
         group_rec = group_item.to_record()
         child_recs = group_rec.get("children", [])
 
-        # Remove children from group (restores flags)
-        for child in children:
-            group_item.remove_member(child)
-
-        # Remove group from scene
-        self.scene.removeItem(group_item)
+        # Suppress callbacks — removeFromGroup() adjusts child positions
+        # from group-local to scene coords, which triggers
+        # ItemPositionHasChanged → _on_scene_item_changed.  Without
+        # suppression that creates duplicate annotation records.
+        self._syncing_from_json = True
+        try:
+            for child in children:
+                group_item.remove_member(child)
+            self.scene.removeItem(group_item)
+        finally:
+            self._syncing_from_json = False
 
         # Update JSON: remove group record, add individual child records
         if self._link_enabled and self._draft_data:
@@ -1904,6 +1919,11 @@ class MainWindow(QMainWindow):
             else:
                 self.draft.set_json_text(text, enable_import=enable_import, status=status)
             self.draft.text.blockSignals(False)
+
+            # blockSignals suppressed textChanged/blockCountChanged — manually
+            # trigger the updates that those signals would have driven.
+            self.draft.text._recompute_fold_regions()
+            self.draft.text._update_margins()
         finally:
             self._syncing_from_scene = False
 
