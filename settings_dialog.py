@@ -178,6 +178,9 @@ class SettingsDialog(QDialog):
         workspace_row.addWidget(browse_btn)
         workspace_layout.addRow("Project Directory:", workspace_row)
 
+        self.pptx_source_dir_cb = QCheckBox("Export PPTX to source file directory")
+        workspace_layout.addRow("", self.pptx_source_dir_cb)
+
         layout.addWidget(workspace_group)
         layout.addStretch()
 
@@ -592,6 +595,7 @@ class SettingsDialog(QDialog):
             # General
             "theme": s.theme,
             "workspace_dir": s.workspace_dir,
+            "pptx_export_to_source_dir": s.pptx_export_to_source_dir,
             # Editor
             "editor_font_family": s.editor.font.family,
             "editor_font_size": s.editor.font.size,
@@ -658,6 +662,7 @@ class SettingsDialog(QDialog):
         # General
         self.theme_combo.setCurrentText(s.theme)
         self.workspace_dir_edit.setText(s.workspace_dir)
+        self.pptx_source_dir_cb.setChecked(s.pptx_export_to_source_dir)
 
         # Editor - Font
         self.editor_font_family.setText(s.editor.font.family)
@@ -749,6 +754,7 @@ class SettingsDialog(QDialog):
         # General
         s.theme = self.theme_combo.currentText()
         s.workspace_dir = self.workspace_dir_edit.text().strip()
+        s.pptx_export_to_source_dir = self.pptx_source_dir_cb.isChecked()
 
         # Editor - Font
         s.editor.font.family = self.editor_font_family.text()
@@ -852,6 +858,7 @@ class SettingsDialog(QDialog):
         # General
         s.theme = snapshot["theme"]
         s.workspace_dir = snapshot["workspace_dir"]
+        s.pptx_export_to_source_dir = snapshot["pptx_export_to_source_dir"]
 
         # Editor
         s.editor.font.family = snapshot["editor_font_family"]
@@ -947,6 +954,7 @@ class SettingsDialog(QDialog):
         s = self.settings_manager.settings
         s.theme = defaults.theme
         s.workspace_dir = defaults.workspace_dir
+        s.pptx_export_to_source_dir = defaults.pptx_export_to_source_dir
         s.editor = defaults.editor
         s.canvas = defaults.canvas
         s.alignment = defaults.alignment

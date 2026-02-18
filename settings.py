@@ -362,6 +362,9 @@ class AppSettings:
     # Workspace directory for project save/load (empty = ~/Documents/PictoSync)
     workspace_dir: str = ""
 
+    # PPTX export defaults to source file directory when True
+    pptx_export_to_source_dir: bool = True
+
     # Nested settings categories
     editor: EditorSettings = field(default_factory=EditorSettings)
     canvas: CanvasSettings = field(default_factory=CanvasSettings)
@@ -430,6 +433,7 @@ class SettingsManager:
         general = data.get("general", {})
         settings.theme = general.get("theme", settings.theme)
         settings.workspace_dir = general.get("workspace_dir", settings.workspace_dir)
+        settings.pptx_export_to_source_dir = general.get("pptx_export_to_source_dir", settings.pptx_export_to_source_dir)
 
         # Editor section
         editor = data.get("editor", {})
@@ -561,6 +565,7 @@ class SettingsManager:
             "general": {
                 "theme": s.theme,
                 "workspace_dir": s.workspace_dir,
+                "pptx_export_to_source_dir": s.pptx_export_to_source_dir,
             },
             "editor": {
                 "font": {
