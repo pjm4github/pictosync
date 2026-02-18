@@ -559,9 +559,13 @@ def _add_polygon(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
 def _add_curve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
     """Add a curve (freeform path) shape to the slide.
 
-    Approximates the curve by sampling node anchors as line segments.
-    Bezier curves are approximated as straight lines between anchor points.
+    Emits native OOXML ``a:cubicBezTo`` and ``a:quadBezTo`` elements so
+    that cubic and quadratic bezier control points are preserved in the
+    PowerPoint file.
     """
+    from lxml import etree
+    from pptx.oxml.ns import qn
+
     geom = record.get("geom", {})
     x = geom.get("x", 0) * scale_x
     y = geom.get("y", 0) * scale_y
@@ -572,7 +576,8 @@ def _add_curve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
     if not nodes or len(nodes) < 2:
         return
 
-    # Build freeform from node anchors (line approximation)
+    # Collect ALL coordinates (anchors + control points) so the freeform
+    # builder computes a bounding box that encompasses everything.
     first_node = nodes[0]
     fx = first_node.get("x", 0)
     fy = first_node.get("y", 0)
@@ -580,25 +585,196 @@ def _add_curve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
     start_y = px_to_emu(y + fy * h)
     builder = slide.shapes.build_freeform(start_x, start_y)
 
-    vertices = []
+    all_vertices: List[Tuple[float, float]] = []
     for node in nodes[1:]:
-        cmd = node.get("cmd", "L")
-        if cmd == "Z":
+        if node.get("cmd") == "Z":
             continue
-        nx = node.get("x", fx)
-        ny = node.get("y", fy)
-        vertices.append((px_to_emu(x + nx * w), px_to_emu(y + ny * h)))
-        fx, fy = nx, ny
+        all_vertices.append(
+            (px_to_emu(x + node.get("x", 0) * w),
+             px_to_emu(y + node.get("y", 0) * h))
+        )
+        for kx, ky in (("c1x", "c1y"), ("c2x", "c2y"), ("cx", "cy")):
+            if kx in node:
+                all_vertices.append(
+                    (px_to_emu(x + node[kx] * w),
+                     px_to_emu(y + node[ky] * h))
+                )
 
-    if vertices:
-        builder.add_line_segments(vertices, close=False)
+    if not all_vertices:
+        return
 
+    builder.add_line_segments(all_vertices, close=False)
     shape = builder.convert_to_shape()
+
+    # ── Replace the builder's line-only path with proper bezier XML ──
+    sp = shape._element
+    path_el = sp.find(f'.//{qn("a:path")}')
+    if path_el is not None:
+        # Read shape offset so path coordinates are relative to shape origin
+        offset_x = int(shape.left)
+        offset_y = int(shape.top)
+
+        def _px(rel: float) -> str:
+            return str(int(round(px_to_emu(x + rel * w) - offset_x)))
+
+        def _py(rel: float) -> str:
+            return str(int(round(px_to_emu(y + rel * h) - offset_y)))
+
+        def _pt(parent: etree._Element, rx: float, ry: float) -> None:
+            pt = etree.SubElement(parent, qn("a:pt"))
+            pt.set("x", _px(rx))
+            pt.set("y", _py(ry))
+
+        # Clear existing path children (moveTo + lnTo from builder)
+        for child in list(path_el):
+            path_el.remove(child)
+
+        # Rebuild with native bezier elements
+        move = etree.SubElement(path_el, qn("a:moveTo"))
+        _pt(move, fx, fy)
+
+        for node in nodes[1:]:
+            cmd = node.get("cmd", "L")
+
+            if cmd == "C":
+                el = etree.SubElement(path_el, qn("a:cubicBezTo"))
+                _pt(el, node["c1x"], node["c1y"])
+                _pt(el, node["c2x"], node["c2y"])
+                _pt(el, node["x"], node["y"])
+
+            elif cmd == "Q":
+                el = etree.SubElement(path_el, qn("a:quadBezTo"))
+                _pt(el, node["cx"], node["cy"])
+                _pt(el, node["x"], node["y"])
+
+            elif cmd == "L":
+                el = etree.SubElement(path_el, qn("a:lnTo"))
+                _pt(el, node["x"], node["y"])
+
+            elif cmd == "M":
+                el = etree.SubElement(path_el, qn("a:moveTo"))
+                _pt(el, node["x"], node["y"])
+
+            elif cmd == "Z":
+                etree.SubElement(path_el, qn("a:close"))
 
     style = record.get("style", {})
     _apply_line_style(shape.line, style)
     # No fill for curves
     shape.fill.background()
+
+    # Arrowheads — same XML approach used by _add_line
+    arrow_mode = style.get("arrow", "none")
+    if arrow_mode != "none":
+        spPr = sp.find(qn("a:spPr")) if sp.find(qn("a:spPr")) is not None else sp.spPr
+        ln = spPr.find(qn("a:ln"))
+        if ln is None:
+            ln = etree.SubElement(spPr, qn("a:ln"))
+        if arrow_mode in ("end", "both"):
+            tail_end = ln.find(qn("a:tailEnd"))
+            if tail_end is None:
+                tail_end = etree.SubElement(ln, qn("a:tailEnd"))
+            tail_end.set("type", "triangle")
+        if arrow_mode in ("start", "both"):
+            head_end = ln.find(qn("a:headEnd"))
+            if head_end is None:
+                head_end = etree.SubElement(ln, qn("a:headEnd"))
+            head_end.set("type", "triangle")
+
+    # ── Text label at curve midpoint ──
+    meta = record.get("meta", {})
+    text_style = style.get("text", {})
+    text_color = text_style.get("color", "#000000")
+    rgb = hex_to_rgb(text_color)
+
+    # Collect label / tech / note lines
+    text_lines: List[Tuple[str, float, bool]] = []  # (text, size_pt, bold)
+    if meta.get("label"):
+        text_lines.append((meta["label"], meta.get("label_size", 12), True))
+    if meta.get("tech"):
+        text_lines.append((f"[{meta['tech']}]", meta.get("tech_size", 10), False))
+    if meta.get("note"):
+        text_lines.append((meta["note"], meta.get("note_size", 10), False))
+
+    if text_lines:
+        # Estimate text box size from the longest line
+        max_size = max(sz for _, sz, _ in text_lines)
+        longest = max(text_lines, key=lambda t: len(t[0]))[0]
+        box_w = max(50, len(longest) * max_size * 0.6 + 20)
+        box_h = sum(sz * 1.5 for _, sz, _ in text_lines) + 10
+
+        # Evaluate the actual curve midpoint (halfway along the path)
+        geom = record.get("geom", {})
+        gx = geom.get("x", 0)
+        gy = geom.get("y", 0)
+        gw = geom.get("w", 0)
+        gh = geom.get("h", 0)
+
+        segments: List[Tuple[Tuple[float, float], Dict[str, Any]]] = []
+        cur_x, cur_y = nodes[0].get("x", 0), nodes[0].get("y", 0)
+        for nd in nodes[1:]:
+            cmd = nd.get("cmd", "L")
+            if cmd == "Z":
+                continue
+            segments.append(((cur_x, cur_y), nd))
+            cur_x, cur_y = nd.get("x", cur_x), nd.get("y", cur_y)
+
+        if segments:
+            # Pick the middle segment and evaluate at t=0.5
+            seg_start, seg_node = segments[len(segments) // 2]
+            cmd = seg_node.get("cmd", "L")
+            t = 0.5
+            if cmd == "C":
+                # Cubic bezier: B(t) = (1-t)^3*P0 + 3(1-t)^2*t*P1
+                #                     + 3(1-t)*t^2*P2 + t^3*P3
+                p0x, p0y = seg_start
+                p1x, p1y = seg_node["c1x"], seg_node["c1y"]
+                p2x, p2y = seg_node["c2x"], seg_node["c2y"]
+                p3x, p3y = seg_node["x"], seg_node["y"]
+                u = 1 - t
+                rx = u**3*p0x + 3*u**2*t*p1x + 3*u*t**2*p2x + t**3*p3x
+                ry = u**3*p0y + 3*u**2*t*p1y + 3*u*t**2*p2y + t**3*p3y
+            elif cmd == "Q":
+                # Quadratic bezier: B(t) = (1-t)^2*P0 + 2(1-t)*t*P1 + t^2*P2
+                p0x, p0y = seg_start
+                p1x, p1y = seg_node["cx"], seg_node["cy"]
+                p2x, p2y = seg_node["x"], seg_node["y"]
+                u = 1 - t
+                rx = u**2*p0x + 2*u*t*p1x + t**2*p2x
+                ry = u**2*p0y + 2*u*t*p1y + t**2*p2y
+            else:
+                # Line: midpoint
+                rx = (seg_start[0] + seg_node.get("x", 0)) / 2
+                ry = (seg_start[1] + seg_node.get("y", 0)) / 2
+            mid_x = (gx + rx * gw) * scale_x
+            mid_y = (gy + ry * gh) * scale_y
+        else:
+            mid_x = (gx + gw / 2) * scale_x
+            mid_y = (gy + gh / 2) * scale_y
+
+        tx = px_to_emu(mid_x - box_w * scale_x / 2)
+        ty = px_to_emu(mid_y - box_h * scale_y / 2)
+        tw = px_to_emu(box_w * scale_x)
+        th = px_to_emu(box_h * scale_y)
+
+        tbox = slide.shapes.add_textbox(tx, ty, tw, th)
+        tf = tbox.text_frame
+        tf.word_wrap = True
+        first = True
+        for text, size, bold in text_lines:
+            if first:
+                p = tf.paragraphs[0]
+                first = False
+            else:
+                p = tf.add_paragraph()
+            p.clear()
+            run = p.add_run()
+            run.text = text
+            run.font.size = Pt(size)
+            run.font.bold = bold
+            if rgb:
+                run.font.color.rgb = RGBColor(*rgb)
+            p.alignment = PP_ALIGN.CENTER
 
 
 def export_to_pptx(

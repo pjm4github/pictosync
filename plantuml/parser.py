@@ -663,6 +663,15 @@ def _parse_svg_positions(svg_path: str) -> Dict[str, Any]:
 
             path_el = g.find(f"{{{ns}}}path")
             rect_el = g.find(f"{{{ns}}}rect")
+            # When both rect and path exist and the path is stroke-only
+            # (fill="none"), the rect is the main body and the path is a
+            # decorative tab (folder/frame).  Prefer the rect for geometry.
+            if (
+                path_el is not None
+                and rect_el is not None
+                and (path_el.get("fill", "").lower() in ("none", ""))
+            ):
+                path_el = None  # ignore decorative tab path
             if path_el is not None:
                 d = path_el.get("d", "")
                 x, y, w, h = _path_bbox(d)
@@ -1734,6 +1743,16 @@ def _parse_description_diagram_svg(
             polygon_el = g.find(f"{{{ns}}}polygon")
             path_el = g.find(f"{{{ns}}}path")
             rect_el = g.find(f"{{{ns}}}rect")
+
+            # When both rect and path exist and the path is stroke-only
+            # (fill="none"), the rect is the main body and the path is a
+            # decorative tab (folder/frame).  Prefer the rect.
+            if (
+                path_el is not None
+                and rect_el is not None
+                and (path_el.get("fill", "").lower() in ("none", ""))
+            ):
+                path_el = None  # ignore decorative tab path
 
             kind = "rect"
             geom: Dict[str, Any] = {"x": 0, "y": 0, "w": 0, "h": 0}
