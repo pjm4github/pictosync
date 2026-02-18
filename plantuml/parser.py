@@ -385,6 +385,17 @@ def _path_bbox(d: str) -> Tuple[float, float, float, float]:
     ):
         points.append((float(m.group(1)), float(m.group(2))))
 
+    # C x1,y1 x2,y2 x,y — cubic Bezier control points and endpoint
+    for m in re.finditer(
+        r'C\s*([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)\s+'
+        r'([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)\s+'
+        r'([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)',
+        d,
+    ):
+        points.append((float(m.group(1)), float(m.group(2))))
+        points.append((float(m.group(3)), float(m.group(4))))
+        points.append((float(m.group(5)), float(m.group(6))))
+
     if not points:
         return (0.0, 0.0, 0.0, 0.0)
 
@@ -1481,6 +1492,539 @@ def _parse_sequence_diagram_svg(
 
 
 # ───────────────────────────────────────────────
+# Description diagram SVG parser
+# ───────────────────────────────────────────────
+
+
+def _parse_description_diagram_svg(
+    tree: ET.ElementTree,
+) -> Dict[str, Any]:
+    """Parse a DESCRIPTION diagram SVG into PictoSync annotations.
+
+    DESCRIPTION diagrams include component, deployment, use-case, and
+    architecture diagrams.  They use classified ``<g>`` groups (entity,
+    cluster, link) much like the default path, but this parser extracts
+    everything directly from the SVG—bypassing text-regex—so that
+    bracket-notation components (``[Name] as alias``) and other elements
+    missed by ``_extract_elements()`` are captured reliably.
+
+    Args:
+        tree: Parsed ElementTree of the SVG file.
+
+    Returns:
+        Dict with PictoSync schema: ``{"version", "image", "annotations"}``.
+    """
+    root = tree.getroot()
+    ns = _SVG_NS
+
+    # ── Canvas dimensions ────────────────────────────
+    viewbox = root.get("viewBox", "").split()
+    canvas_w = int(float(viewbox[2])) if len(viewbox) >= 3 else 1200
+    canvas_h = int(float(viewbox[3])) if len(viewbox) >= 4 else 800
+
+    empty: Dict[str, Any] = {
+        "version": "draft-1",
+        "image": {"width": canvas_w, "height": canvas_h},
+        "annotations": [],
+    }
+
+    # ── Helpers ──────────────────────────────────────
+
+    def _safe_fill(fill: str) -> str:
+        if not fill or fill.lower() == "none" or not fill.startswith("#"):
+            return "#00000000"
+        return _normalize_color(fill)
+
+    def _extract_stroke(el: ET.Element) -> Tuple[str, int]:
+        style = el.get("style", "")
+        sm = re.search(r'stroke:\s*(#[0-9A-Fa-f]{3,8})', style)
+        wm = re.search(r'stroke-width:\s*(\d+(?:\.\d+)?)', style)
+        return (
+            sm.group(1).upper() if sm else "#000000",
+            int(float(wm.group(1))) if wm else 1,
+        )
+
+    def _child_y(ann: Dict[str, Any]) -> float:
+        if "geom" in ann:
+            g = ann["geom"]
+            return g.get("y", g.get("y1", 0))
+        if ann.get("children"):
+            return _child_y(ann["children"][0])
+        return 0.0
+
+    # ── Pass 1: collect data from <g> elements ───────
+    title_info: Optional[Dict[str, Any]] = None
+    # Keyed by SVG id (ent0002, ent0003, etc.)
+    cluster_info: Dict[str, Dict[str, Any]] = {}
+    entity_info: Dict[str, Dict[str, Any]] = {}
+    all_geom: Dict[str, Dict[str, Any]] = {}
+    id_to_qname: Dict[str, str] = {}
+    qname_to_id: Dict[str, str] = {}  # clusters only
+
+    link_list: List[Dict[str, Any]] = []
+
+    for g in root.iter(f"{{{ns}}}g"):
+        cls = g.get("class", "")
+
+        if cls == "title":
+            text_el = g.find(f"{{{ns}}}text")
+            if text_el is not None:
+                tx = float(text_el.get("x", 0))
+                ty = float(text_el.get("y", 0))
+                fs = float(text_el.get("font-size", 14))
+                tl = float(text_el.get("textLength", 200))
+                title_info = {
+                    "text": text_el.text or "",
+                    "geom": {
+                        "x": round(tx, 2),
+                        "y": round(ty - fs, 2),
+                        "w": round(tl, 2),
+                        "h": round(fs * 1.5, 2),
+                    },
+                }
+
+        elif cls == "cluster":
+            qname = g.get("data-qualified-name", "")
+            ent_id = g.get("id", "")
+            if not ent_id:
+                continue
+            id_to_qname[ent_id] = qname
+            qname_to_id[qname] = ent_id
+
+            # Determine shape and geometry
+            polygon_el = g.find(f"{{{ns}}}polygon")
+            path_el = g.find(f"{{{ns}}}path")
+            rect_el = g.find(f"{{{ns}}}rect")
+
+            kind = "rect"
+            geom: Dict[str, Any] = {"x": 0, "y": 0, "w": 0, "h": 0}
+            fill = "#FFFFFF"
+            stroke_color = "#000000"
+            stroke_width = 1
+
+            if polygon_el is not None:
+                pts_str = polygon_el.get("points", "")
+                pts = re.findall(
+                    r'([-+]?\d*\.?\d+),([-+]?\d*\.?\d+)', pts_str,
+                )
+                if pts:
+                    xs = [float(p[0]) for p in pts]
+                    ys = [float(p[1]) for p in pts]
+                    x, y = min(xs), min(ys)
+                    w, h = max(xs) - x, max(ys) - y
+                    geom = {
+                        "x": round(x, 2), "y": round(y, 2),
+                        "w": round(w, 2), "h": round(h, 2),
+                    }
+                    if w > 0 and h > 0:
+                        geom["points"] = [
+                            [round((float(px) - x) / w, 4),
+                             round((float(py) - y) / h, 4)]
+                            for px, py in pts
+                        ]
+                    kind = "polygon"
+                fill = polygon_el.get("fill", "#FFFFFF")
+                stroke_color, stroke_width = _extract_stroke(polygon_el)
+
+            elif path_el is not None:
+                d = path_el.get("d", "")
+                has_curves = bool(re.search(r'[CcSsQqTt]', d))
+                bx, by, bw, bh = _path_bbox(d)
+                geom = {"x": bx, "y": by, "w": bw, "h": bh}
+                if has_curves:
+                    # Cloud shape — use ellipse kind with bounding box
+                    kind = "ellipse"
+                else:
+                    # Package / frame tab — polygon with path points
+                    kind = "polygon"
+                    rel_pts = _path_points(d)
+                    if rel_pts:
+                        geom["points"] = rel_pts
+                fill = path_el.get("fill", "#FFFFFF")
+                stroke_color, stroke_width = _extract_stroke(path_el)
+
+            elif rect_el is not None:
+                geom = {
+                    "x": round(float(rect_el.get("x", 0)), 2),
+                    "y": round(float(rect_el.get("y", 0)), 2),
+                    "w": round(float(rect_el.get("width", 0)), 2),
+                    "h": round(float(rect_el.get("height", 0)), 2),
+                }
+                fill = rect_el.get("fill", "#FFFFFF")
+                stroke_color, stroke_width = _extract_stroke(rect_el)
+
+            # Text labels
+            texts = [t.text for t in g.findall(f"{{{ns}}}text") if t.text]
+            label = texts[0] if texts else (
+                qname.rsplit(".", 1)[-1] if qname else ""
+            )
+            tech = texts[1] if len(texts) > 1 else ""
+            note = " ".join(texts[2:]) if len(texts) > 2 else ""
+
+            cluster_info[ent_id] = {
+                "kind": kind,
+                "geom": geom,
+                "fill": fill,
+                "label": label,
+                "tech": tech,
+                "note": note,
+                "stroke_color": stroke_color,
+                "stroke_width": stroke_width,
+            }
+            all_geom[ent_id] = {
+                "x": geom["x"], "y": geom["y"],
+                "w": geom["w"], "h": geom["h"],
+            }
+
+        elif cls == "entity":
+            qname = g.get("data-qualified-name", "")
+            ent_id = g.get("id", "")
+            if not ent_id:
+                continue
+            id_to_qname[ent_id] = qname
+
+            # Determine shape type
+            ellipse_el = g.find(f"{{{ns}}}ellipse")
+            rects = g.findall(f"{{{ns}}}rect")
+            path_el = g.find(f"{{{ns}}}path")
+
+            kind = "rect"
+            geom = {"x": 0, "y": 0, "w": 0, "h": 0}
+            fill = "#FFFFFF"
+            stroke_color = "#000000"
+            stroke_width = 1
+
+            if ellipse_el is not None:
+                # Actor (stick figure) or use-case ellipse
+                cx = float(ellipse_el.get("cx", 0))
+                cy = float(ellipse_el.get("cy", 0))
+                rx = float(ellipse_el.get("rx", 8))
+                ry = float(ellipse_el.get("ry", 8))
+                all_x: List[float] = [cx - rx, cx + rx]
+                all_y: List[float] = [cy - ry, cy + ry]
+                if path_el is not None:
+                    d = path_el.get("d", "")
+                    for pm in re.finditer(
+                        r'[ML]\s*([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)',
+                        d,
+                    ):
+                        all_x.append(float(pm.group(1)))
+                        all_y.append(float(pm.group(2)))
+                x = min(all_x)
+                y = min(all_y)
+                geom = {
+                    "x": round(x, 2), "y": round(y, 2),
+                    "w": round(max(all_x) - x, 2),
+                    "h": round(max(all_y) - y, 2),
+                }
+                kind = "ellipse"
+                fill = ellipse_el.get("fill", "#FFFFFF")
+                stroke_color, stroke_width = _extract_stroke(ellipse_el)
+
+            elif rects:
+                # Find main rect (largest by area)
+                main_rect = max(
+                    rects,
+                    key=lambda r: (
+                        float(r.get("width", 0)) * float(r.get("height", 0))
+                    ),
+                )
+                geom = {
+                    "x": round(float(main_rect.get("x", 0)), 2),
+                    "y": round(float(main_rect.get("y", 0)), 2),
+                    "w": round(float(main_rect.get("width", 0)), 2),
+                    "h": round(float(main_rect.get("height", 0)), 2),
+                }
+                # Detect UML component icon (extra small rects beside
+                # the main shape).  Plain rectangles have a single rect.
+                has_component_icon = len(rects) > 1
+                kind = "roundedrect" if has_component_icon else "rect"
+                fill = main_rect.get("fill", "#FFFFFF")
+                stroke_color, stroke_width = _extract_stroke(main_rect)
+
+            elif path_el is not None:
+                # Note shape or other path-based entity
+                d = path_el.get("d", "")
+                bx, by, bw, bh = _path_bbox(d)
+                geom = {"x": bx, "y": by, "w": bw, "h": bh}
+                kind = "roundedrect"
+                fill = path_el.get("fill", "#FFFFFF")
+                stroke_color, stroke_width = _extract_stroke(path_el)
+
+            else:
+                continue  # No recognizable shape
+
+            # Text labels
+            texts = [t.text for t in g.findall(f"{{{ns}}}text") if t.text]
+            label = texts[0] if texts else (
+                qname.rsplit(".", 1)[-1] if qname else ""
+            )
+            tech = texts[1] if len(texts) > 1 else ""
+            note = " ".join(texts[2:]) if len(texts) > 2 else ""
+
+            entity_info[ent_id] = {
+                "kind": kind,
+                "geom": geom,
+                "fill": fill,
+                "label": label,
+                "tech": tech,
+                "note": note,
+                "stroke_color": stroke_color,
+                "stroke_width": stroke_width,
+            }
+            all_geom[ent_id] = {
+                "x": geom["x"], "y": geom["y"],
+                "w": geom["w"], "h": geom["h"],
+            }
+
+        elif cls == "link":
+            src_id = g.get("data-entity-1", "")
+            dst_id = g.get("data-entity-2", "")
+            if not src_id or not dst_id:
+                continue
+
+            texts = [t.text for t in g.findall(f"{{{ns}}}text") if t.text]
+            label = " ".join(texts)
+
+            link_path = g.find(f"{{{ns}}}path")
+            style_str = (
+                link_path.get("style", "") if link_path is not None else ""
+            )
+
+            link_list.append({
+                "src_id": src_id,
+                "dst_id": dst_id,
+                "label": label,
+                "style": style_str,
+            })
+
+    if not cluster_info and not entity_info:
+        return empty
+
+    # ── Build parent map using qualified-name prefixes ─
+    parent_map: Dict[str, str] = {}  # child_id → parent_id
+    cluster_qnames_sorted = sorted(
+        qname_to_id.keys(), key=len, reverse=True,
+    )
+    for ent_id, qname in id_to_qname.items():
+        if not qname:
+            continue
+        for cq in cluster_qnames_sorted:
+            if qname.startswith(cq + ".") and qname_to_id[cq] != ent_id:
+                parent_map[ent_id] = qname_to_id[cq]
+                break
+
+    # ── Build individual annotations ─────────────────
+    counter = 1
+    id_to_ann: Dict[str, Dict[str, Any]] = {}
+
+    # Title
+    title_ann: Optional[Dict[str, Any]] = None
+    if title_info:
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        title_ann = {
+            "id": ann_id,
+            "kind": "text",
+            "geom": dict(title_info["geom"]),
+            "meta": {
+                "kind": "text", "label": title_info["text"],
+                "tech": "", "note": "",
+            },
+            "style": {
+                "pen": {"color": "#555555", "width": 2, "dash": "solid"},
+                "fill": {"color": "#00000000"},
+                "text": {"color": "#000000", "size_pt": 12.0},
+            },
+            "text": title_info["text"],
+        }
+
+    # Entities
+    for ent_id, data in entity_info.items():
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        text_parts = [data["label"]]
+        if data["tech"]:
+            text_parts.append(f"[{data['tech']}]")
+        text = " ".join(text_parts)
+
+        ann: Dict[str, Any] = {
+            "id": ann_id,
+            "kind": data["kind"],
+            "geom": dict(data["geom"]),
+            "meta": {
+                "kind": data["kind"],
+                "label": data["label"],
+                "tech": data["tech"],
+                "note": data["note"],
+            },
+            "style": {
+                "pen": {
+                    "color": data["stroke_color"],
+                    "width": data["stroke_width"],
+                    "dash": "solid",
+                },
+                "fill": {"color": _safe_fill(data["fill"])},
+                "text": {"color": "#000000", "size_pt": 11.0},
+            },
+            "text": text,
+        }
+        id_to_ann[ent_id] = ann
+
+    # Clusters (as individual shape annotations)
+    for ent_id, data in cluster_info.items():
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        text_parts = [data["label"]]
+        if data["tech"]:
+            text_parts.append(f"[{data['tech']}]")
+        text = " ".join(text_parts)
+
+        geom_copy = dict(data["geom"])
+        ann = {
+            "id": ann_id,
+            "kind": data["kind"],
+            "geom": geom_copy,
+            "meta": {
+                "kind": data["kind"],
+                "label": data["label"],
+                "tech": data["tech"],
+                "note": data["note"],
+            },
+            "style": {
+                "pen": {
+                    "color": data["stroke_color"],
+                    "width": data["stroke_width"],
+                    "dash": "solid",
+                },
+                "fill": {"color": _safe_fill(data["fill"])},
+                "text": {"color": "#000000", "size_pt": 11.0},
+            },
+            "text": text,
+        }
+        id_to_ann[ent_id] = ann
+
+    # ── Group assembly (bottom-up) ───────────────────
+    children_map: Dict[str, List[str]] = defaultdict(list)
+    for child_id, parent_id in parent_map.items():
+        if child_id in id_to_ann and parent_id in id_to_ann:
+            children_map[parent_id].append(child_id)
+
+    def _depth(ent_id: str) -> int:
+        d = 0
+        cur = ent_id
+        while cur in parent_map:
+            d += 1
+            cur = parent_map[cur]
+        return d
+
+    grouped_ids: set = set()
+    group_parents = sorted(
+        [eid for eid in cluster_info if eid in children_map],
+        key=_depth,
+        reverse=True,
+    )
+
+    for parent_id in group_parents:
+        child_ids = children_map[parent_id]
+        if not child_ids:
+            continue
+
+        child_anns = [id_to_ann[cid] for cid in child_ids if cid in id_to_ann]
+        child_anns.sort(key=_child_y)
+
+        parent_ann = id_to_ann[parent_id]
+        group_id = "g" + parent_ann["id"][1:]
+        group_ann: Dict[str, Any] = {
+            "id": group_id,
+            "kind": "group",
+            "children": [parent_ann] + child_anns,
+            "meta": {
+                "kind": "group",
+                "label": parent_ann["meta"]["label"],
+                "tech": parent_ann["meta"].get("tech", ""),
+                "note": parent_ann["meta"].get("note", ""),
+            },
+            "style": parent_ann["style"],
+            "text": parent_ann.get("text", ""),
+        }
+        id_to_ann[parent_id] = group_ann
+        grouped_ids.update(child_ids)
+
+    # ── Line annotations ─────────────────────────────
+    line_anns: List[Dict[str, Any]] = []
+    for link in link_list:
+        src_geom = all_geom.get(link["src_id"])
+        dst_geom = all_geom.get(link["dst_id"])
+        if not src_geom or not dst_geom:
+            continue
+
+        x1 = round(src_geom["x"] + src_geom["w"] / 2, 2)
+        y1 = round(src_geom["y"] + src_geom["h"] / 2, 2)
+        x2 = round(dst_geom["x"] + dst_geom["w"] / 2, 2)
+        y2 = round(dst_geom["y"] + dst_geom["h"] / 2, 2)
+
+        pen_color = "#808080"
+        dashed = False
+        style_str = link["style"]
+        stroke_m = re.search(r'stroke:\s*(#[0-9A-Fa-f]{3,8})', style_str)
+        if stroke_m:
+            pen_color = stroke_m.group(1)
+        if "stroke-dasharray" in style_str:
+            dashed = True
+
+        width_m = re.search(
+            r'stroke-width:\s*(\d+(?:\.\d+)?)', style_str,
+        )
+        pen_width = int(float(width_m.group(1))) if width_m else 2
+
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        line_anns.append({
+            "id": ann_id,
+            "kind": "line",
+            "geom": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
+            "meta": {
+                "kind": "line", "label": link["label"],
+                "tech": "", "note": "",
+            },
+            "style": _make_line_style(pen_color, pen_width, dashed=dashed),
+            "text": link["label"],
+        })
+
+    # ── Collect top-level annotations ────────────────
+    top_level: List[Dict[str, Any]] = []
+    if title_ann:
+        top_level.append(title_ann)
+
+    # Add entities/clusters not consumed as group children
+    all_ids = list(cluster_info.keys()) + list(entity_info.keys())
+    for ent_id in all_ids:
+        if ent_id in grouped_ids:
+            continue
+        ann = id_to_ann.get(ent_id)
+        if ann:
+            top_level.append(ann)
+
+    top_level.extend(line_anns)
+
+    # Sort by Y coordinate (title stays first)
+    if title_ann and len(top_level) > 1:
+        rest = top_level[1:]
+        rest.sort(key=_child_y)
+        top_level = [title_ann] + rest
+    else:
+        top_level.sort(key=_child_y)
+
+    _normalize_annotations(top_level)
+    return {
+        "version": "draft-1",
+        "image": {"width": canvas_w, "height": canvas_h},
+        "annotations": top_level,
+    }
+
+
+# ───────────────────────────────────────────────
 # Auto-layout
 # ───────────────────────────────────────────────
 
@@ -1837,6 +2381,8 @@ def parse_puml_to_annotations(
             return _parse_activity_diagram_svg(tree)
         if tree.getroot().get("data-diagram-type") == "SEQUENCE":
             return _parse_sequence_diagram_svg(tree)
+        if tree.getroot().get("data-diagram-type") == "DESCRIPTION":
+            return _parse_description_diagram_svg(tree)
 
     elements = _extract_elements(puml_text)
     known_aliases = {e["alias"] for e in elements}
