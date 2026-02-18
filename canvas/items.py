@@ -3646,6 +3646,1132 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         return rec
 
 
+class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
+    """Arbitrary curve item with SVG path-like node editing.
+
+    Nodes are stored as dicts with 'cmd' and relative coordinates (0.0-1.0)
+    within the bounding box. The curve is stroke-only (no fill) and supports
+    arrowheads. Double-click to enter node-edit mode where individual nodes
+    and control points can be dragged.
+    """
+
+    ARROW_NONE = "none"
+    ARROW_START = "start"
+    ARROW_END = "end"
+    ARROW_BOTH = "both"
+
+    # Valid SVG path commands
+    _VALID_CMDS = {"M", "L", "H", "V", "C", "S", "Q", "T", "A", "Z"}
+
+    def __init__(self, x: float, y: float, w: float, h: float,
+                 nodes: list, ann_id: str, on_change=None):
+        QGraphicsPathItem.__init__(self)
+        MetaMixin.__init__(self)
+        LinkedMixin.__init__(self, ann_id, on_change)
+
+        self.meta.kind = "curve"
+        self._width = max(w, 1.0)
+        self._height = max(h, 1.0)
+
+        # Deep copy nodes and validate
+        import copy
+        self._nodes = [dict(n) for n in nodes] if nodes else [{"cmd": "M", "x": 0.0, "y": 0.0}]
+        if self._nodes[0].get("cmd") != "M":
+            self._nodes.insert(0, {"cmd": "M", "x": 0.0, "y": 0.0})
+
+        self.setPos(QPointF(x, y))
+        self.setData(ANN_ID_KEY, ann_id)
+
+        self.setAcceptHoverEvents(True)
+        self.setFlags(
+            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+            | QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+            | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
+        )
+
+        # Bounding-box resize state
+        self._active_handle: Optional[str] = None
+        self._resizing = False
+        self._press_scene: Optional[QPointF] = None
+        self._start_pos: Optional[QPointF] = None
+        self._start_size: Optional[Tuple[float, float]] = None
+
+        # Node editing state
+        self._node_editing = False
+        self._active_node: Optional[int] = None
+        self._active_handle_type: Optional[str] = None  # "anchor"/"c1"/"c2"/"cx"
+        self._node_dragging = False
+
+        # Arrow support
+        self.arrow_mode = self.ARROW_NONE
+        self.arrow_size = 12.0
+
+        # Style
+        self.pen_color = QColor(Qt.GlobalColor.darkMagenta)
+        self.pen_width = 2
+        self.brush_color = QColor(0, 0, 0, 0)
+        self.text_color = QColor(self.pen_color)
+        self.line_dash = "solid"
+        cached = _CachedCanvasSettings.get()
+        self.dash_pattern_length = cached.default_dash_length
+        self.dash_solid_percent = cached.default_dash_solid_percent
+        self._apply_pen_brush()
+
+        # Embedded text for C4 properties
+        self._label_item = QGraphicsTextItem(self)
+        self._label_item.setDefaultTextColor(self.text_color)
+        self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+
+        self._update_path()
+        self._update_label_position()
+
+    # ---- Path / geometry ----
+
+    def _update_path(self):
+        """Rebuild QPainterPath from _nodes and current dimensions."""
+        path = QPainterPath()
+        if not self._nodes:
+            self.setPath(path)
+            return
+
+        w, h = self._width, self._height
+        prev_x, prev_y = 0.0, 0.0  # track last endpoint for H/V/S/T
+
+        for i, node in enumerate(self._nodes):
+            cmd = node.get("cmd", "L")
+            nx = node.get("x", prev_x)
+            ny = node.get("y", prev_y)
+
+            if cmd == "M":
+                path.moveTo(nx * w, ny * h)
+                prev_x, prev_y = nx, ny
+            elif cmd == "L":
+                path.lineTo(nx * w, ny * h)
+                prev_x, prev_y = nx, ny
+            elif cmd == "H":
+                path.lineTo(nx * w, prev_y * h)
+                prev_x = nx
+            elif cmd == "V":
+                path.lineTo(prev_x * w, ny * h)
+                prev_y = ny
+            elif cmd == "C":
+                c1x = node.get("c1x", prev_x)
+                c1y = node.get("c1y", prev_y)
+                c2x = node.get("c2x", nx)
+                c2y = node.get("c2y", ny)
+                path.cubicTo(c1x * w, c1y * h, c2x * w, c2y * h, nx * w, ny * h)
+                prev_x, prev_y = nx, ny
+            elif cmd == "S":
+                c2x = node.get("c2x", nx)
+                c2y = node.get("c2y", ny)
+                c1x, c1y = self._mirror_control_point(i, "cubic")
+                path.cubicTo(c1x * w, c1y * h, c2x * w, c2y * h, nx * w, ny * h)
+                prev_x, prev_y = nx, ny
+            elif cmd == "Q":
+                cx = node.get("cx", (prev_x + nx) / 2)
+                cy = node.get("cy", (prev_y + ny) / 2)
+                path.quadTo(cx * w, cy * h, nx * w, ny * h)
+                prev_x, prev_y = nx, ny
+            elif cmd == "T":
+                cx, cy = self._mirror_control_point(i, "quadratic")
+                path.quadTo(cx * w, cy * h, nx * w, ny * h)
+                prev_x, prev_y = nx, ny
+            elif cmd == "A":
+                # Convert arc to cubic beziers
+                rx_a = node.get("rx", 0.1)
+                ry_a = node.get("ry", 0.1)
+                rotation = node.get("rotation", 0)
+                large_arc = node.get("large_arc", 0)
+                sweep = node.get("sweep", 1)
+                cubics = self._arc_to_cubics(
+                    prev_x, prev_y, rx_a, ry_a, rotation, large_arc, sweep, nx, ny
+                )
+                for c in cubics:
+                    path.cubicTo(c[0] * w, c[1] * h, c[2] * w, c[3] * h, c[4] * w, c[5] * h)
+                prev_x, prev_y = nx, ny
+            elif cmd == "Z":
+                path.closeSubpath()
+                # prev_x, prev_y stay at the last move-to (Qt handles this)
+
+        self.setPath(path)
+
+    def _mirror_control_point(self, node_idx: int, kind: str) -> Tuple[float, float]:
+        """Mirror a control point from the previous C/S or Q/T node.
+
+        Args:
+            node_idx: Index of the current S/T node
+            kind: "cubic" (for S) or "quadratic" (for T)
+
+        Returns:
+            (cx, cy) mirrored control point in relative coords
+        """
+        if node_idx < 1:
+            return (0.0, 0.0)
+
+        prev = self._nodes[node_idx - 1]
+        prev_cmd = prev.get("cmd", "L")
+        prev_x = prev.get("x", 0.0)
+        prev_y = prev.get("y", 0.0)
+
+        if kind == "cubic" and prev_cmd in ("C", "S"):
+            # Mirror the last control point (c2) across the endpoint
+            if prev_cmd == "C":
+                c2x = prev.get("c2x", prev_x)
+                c2y = prev.get("c2y", prev_y)
+            else:  # S
+                c2x = prev.get("c2x", prev_x)
+                c2y = prev.get("c2y", prev_y)
+            return (2 * prev_x - c2x, 2 * prev_y - c2y)
+
+        if kind == "quadratic" and prev_cmd in ("Q", "T"):
+            if prev_cmd == "Q":
+                cx = prev.get("cx", prev_x)
+                cy = prev.get("cy", prev_y)
+            else:  # T — recursively mirrored, just use endpoint
+                cx = prev_x
+                cy = prev_y
+            return (2 * prev_x - cx, 2 * prev_y - cy)
+
+        # No previous matching command — control point coincides with prev endpoint
+        return (prev_x, prev_y)
+
+    @staticmethod
+    def _arc_to_cubics(x1, y1, rx, ry, rotation, large_arc, sweep, x2, y2):
+        """Convert SVG arc parameters to cubic bezier segments.
+
+        All coordinates are in relative (0-1) space.
+
+        Returns:
+            List of tuples: [(c1x, c1y, c2x, c2y, ex, ey), ...]
+        """
+        # Handle degenerate cases
+        if abs(rx) < 1e-10 or abs(ry) < 1e-10:
+            return [(x1, y1, x2, y2, x2, y2)]
+        if abs(x2 - x1) < 1e-10 and abs(y2 - y1) < 1e-10:
+            return []
+
+        rx = abs(rx)
+        ry = abs(ry)
+        phi = math.radians(rotation)
+        cos_phi = math.cos(phi)
+        sin_phi = math.sin(phi)
+
+        # Step 1: Compute (x1', y1')
+        dx = (x1 - x2) / 2
+        dy = (y1 - y2) / 2
+        x1p = cos_phi * dx + sin_phi * dy
+        y1p = -sin_phi * dx + cos_phi * dy
+
+        # Step 2: Correct radii
+        lam = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry)
+        if lam > 1:
+            lam_sqrt = math.sqrt(lam)
+            rx *= lam_sqrt
+            ry *= lam_sqrt
+
+        # Step 3: Compute center point
+        num = max(0, rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p)
+        den = rx * rx * y1p * y1p + ry * ry * x1p * x1p
+        sq = math.sqrt(num / den) if den > 1e-20 else 0
+        if large_arc == sweep:
+            sq = -sq
+        cxp = sq * rx * y1p / ry
+        cyp = -sq * ry * x1p / rx
+
+        # Step 4: Compute center (cx, cy)
+        cx = cos_phi * cxp - sin_phi * cyp + (x1 + x2) / 2
+        cy = sin_phi * cxp + cos_phi * cyp + (y1 + y2) / 2
+
+        # Step 5: Compute angles
+        def angle(ux, uy, vx, vy):
+            n = math.sqrt(ux * ux + uy * uy) * math.sqrt(vx * vx + vy * vy)
+            if n < 1e-20:
+                return 0
+            c = max(-1, min(1, (ux * vx + uy * vy) / n))
+            a = math.acos(c)
+            if ux * vy - uy * vx < 0:
+                a = -a
+            return a
+
+        theta1 = angle(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry)
+        dtheta = angle(
+            (x1p - cxp) / rx, (y1p - cyp) / ry,
+            (-x1p - cxp) / rx, (-y1p - cyp) / ry
+        )
+
+        if sweep == 0 and dtheta > 0:
+            dtheta -= 2 * math.pi
+        elif sweep == 1 and dtheta < 0:
+            dtheta += 2 * math.pi
+
+        # Step 6: Split into segments of at most pi/2
+        n_segs = max(1, int(math.ceil(abs(dtheta) / (math.pi / 2))))
+        d_per_seg = dtheta / n_segs
+        alpha = 4.0 / 3.0 * math.tan(d_per_seg / 4)
+
+        cubics = []
+        theta = theta1
+        for _ in range(n_segs):
+            cos_t = math.cos(theta)
+            sin_t = math.sin(theta)
+            cos_t2 = math.cos(theta + d_per_seg)
+            sin_t2 = math.sin(theta + d_per_seg)
+
+            ep1x = rx * cos_t
+            ep1y = ry * sin_t
+            ep2x = rx * cos_t2
+            ep2y = ry * sin_t2
+
+            # Control points on the unit circle
+            c1x = ep1x - alpha * rx * sin_t
+            c1y = ep1y + alpha * ry * cos_t
+            c2x = ep2x + alpha * rx * sin_t2
+            c2y = ep2y - alpha * ry * cos_t2
+
+            # Transform back from arc space
+            def transform(ax, ay):
+                return (
+                    cos_phi * ax - sin_phi * ay + cx,
+                    sin_phi * ax + cos_phi * ay + cy,
+                )
+
+            tc1 = transform(c1x, c1y)
+            tc2 = transform(c2x, c2y)
+            te = transform(ep2x, ep2y)
+
+            cubics.append((tc1[0], tc1[1], tc2[0], tc2[1], te[0], te[1]))
+            theta += d_per_seg
+
+        return cubics
+
+    def _get_node_anchor(self, idx: int) -> Tuple[float, float]:
+        """Get the effective anchor (endpoint) of a node in relative coords."""
+        node = self._nodes[idx]
+        cmd = node.get("cmd", "L")
+        if cmd == "Z":
+            # Z goes back to the last M
+            for j in range(idx - 1, -1, -1):
+                if self._nodes[j].get("cmd") == "M":
+                    return (self._nodes[j].get("x", 0), self._nodes[j].get("y", 0))
+            return (0.0, 0.0)
+        x = node.get("x", 0.0)
+        y = node.get("y", 0.0)
+        # For H, y comes from previous; for V, x comes from previous
+        if cmd == "H" and idx > 0:
+            y = self._get_node_anchor(idx - 1)[1]
+        elif cmd == "V" and idx > 0:
+            x = self._get_node_anchor(idx - 1)[0]
+        return (x, y)
+
+    def _recalculate_bbox(self):
+        """Recalculate bounding box to tightly enclose all node coordinates."""
+        if not self._nodes:
+            return
+
+        p = self.pos()
+        all_coords = []
+
+        for i, node in enumerate(self._nodes):
+            ax, ay = self._get_node_anchor(i)
+            all_coords.append((p.x() + ax * self._width, p.y() + ay * self._height))
+
+            cmd = node.get("cmd", "L")
+            if cmd == "C":
+                c1x = node.get("c1x", ax)
+                c1y = node.get("c1y", ay)
+                c2x = node.get("c2x", ax)
+                c2y = node.get("c2y", ay)
+                all_coords.append((p.x() + c1x * self._width, p.y() + c1y * self._height))
+                all_coords.append((p.x() + c2x * self._width, p.y() + c2y * self._height))
+            elif cmd == "S":
+                c2x = node.get("c2x", ax)
+                c2y = node.get("c2y", ay)
+                all_coords.append((p.x() + c2x * self._width, p.y() + c2y * self._height))
+            elif cmd == "Q":
+                cx = node.get("cx", ax)
+                cy = node.get("cy", ay)
+                all_coords.append((p.x() + cx * self._width, p.y() + cy * self._height))
+
+        if not all_coords:
+            return
+
+        xs = [c[0] for c in all_coords]
+        ys = [c[1] for c in all_coords]
+        new_x = min(xs)
+        new_y = min(ys)
+        new_w = max(xs) - new_x
+        new_h = max(ys) - new_y
+
+        if new_w < 1.0:
+            new_w = 1.0
+        if new_h < 1.0:
+            new_h = 1.0
+
+        # Renormalize all node coordinates into new bbox
+        for node in self._nodes:
+            cmd = node.get("cmd", "L")
+            if cmd == "Z":
+                continue
+            for key in ("x", "y", "c1x", "c1y", "c2x", "c2y", "cx", "cy"):
+                if key not in node:
+                    continue
+                if key.endswith("x") or key == "x":
+                    old_abs = p.x() + node[key] * self._width
+                    node[key] = (old_abs - new_x) / new_w
+                else:
+                    old_abs = p.y() + node[key] * self._height
+                    node[key] = (old_abs - new_y) / new_h
+
+        self.prepareGeometryChange()
+        self.setPos(QPointF(new_x, new_y))
+        self._width = new_w
+        self._height = new_h
+        self._update_path()
+        self._update_label_position()
+
+    def _apply_pen_brush(self):
+        """Apply pen and brush (no fill for curves)."""
+        pen = QPen(self.pen_color, self.pen_width)
+        _apply_dash_style(pen, self.line_dash, self.dash_pattern_length, self.dash_solid_percent)
+        self.setPen(pen)
+        self.setBrush(QBrush(QColor(0, 0, 0, 0)))  # Transparent fill
+
+    def _update_label_position(self):
+        """Position label at center of bounding box."""
+        padding = 8
+        self._label_item.setTextWidth(max(10, self._width - 2 * padding))
+        text_height = self._label_item.boundingRect().height()
+        y_pos = (self._height - text_height) / 2
+        self._label_item.setPos(padding, max(padding, y_pos))
+
+    def _update_label_text(self):
+        """Update embedded label HTML from meta fields."""
+        lines = []
+        align_map = {"left": "left", "center": "center", "right": "right"}
+        spacing = getattr(self.meta, "text_spacing", 0.0)
+        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
+
+        if self.meta.label:
+            align = align_map.get(self.meta.label_align, "center")
+            size = self.meta.label_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
+        if self.meta.tech:
+            align = align_map.get(self.meta.tech_align, "center")
+            size = self.meta.tech_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
+        if self.meta.note:
+            align = align_map.get(self.meta.note_align, "center")
+            size = self.meta.note_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
+
+        self._label_item.setHtml("".join(lines) if lines else "")
+        self._label_item.setDefaultTextColor(self.text_color)
+        self._update_label_position()
+
+    def set_meta(self, meta: AnnotationMeta) -> None:
+        """Set annotation metadata and update label."""
+        self.meta = meta
+        self._update_label_text()
+
+    def set_arrow_mode(self, mode: str):
+        """Set arrow mode."""
+        if mode in (self.ARROW_NONE, self.ARROW_START, self.ARROW_END, self.ARROW_BOTH):
+            self.arrow_mode = mode
+            self.update()
+
+    def rect(self) -> QRectF:
+        """Return bounding rect as QRectF."""
+        return QRectF(0, 0, self._width, self._height)
+
+    def setRect(self, r: QRectF):
+        """Set bounding box dimensions (used by scene during resize)."""
+        self._width = r.width()
+        self._height = r.height()
+        self._update_path()
+        self._update_label_position()
+
+    # ---- Bounding-box handles ----
+
+    def _handle_points_scene(self) -> Dict[str, QPointF]:
+        p = self.pos()
+        cx = p.x() + self._width / 2
+        cy = p.y() + self._height / 2
+        return {
+            "tl": QPointF(p.x(), p.y()),
+            "tr": QPointF(p.x() + self._width, p.y()),
+            "bl": QPointF(p.x(), p.y() + self._height),
+            "br": QPointF(p.x() + self._width, p.y() + self._height),
+            "t":  QPointF(cx, p.y()),
+            "b":  QPointF(cx, p.y() + self._height),
+            "l":  QPointF(p.x(), cy),
+            "r":  QPointF(p.x() + self._width, cy),
+        }
+
+    def _handle_points_local(self) -> Dict[str, QPointF]:
+        cx = self._width / 2
+        cy = self._height / 2
+        return {
+            "tl": QPointF(0, 0),
+            "tr": QPointF(self._width, 0),
+            "bl": QPointF(0, self._height),
+            "br": QPointF(self._width, self._height),
+            "t":  QPointF(cx, 0),
+            "b":  QPointF(cx, self._height),
+            "l":  QPointF(0, cy),
+            "r":  QPointF(self._width, cy),
+        }
+
+    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
+        if not self._should_paint_handles():
+            return None
+        handles = self._handle_points_scene()
+        hit_dist = _get_hit_distance()
+        for k, hp in handles.items():
+            if QLineF(scene_pt, hp).length() <= hit_dist:
+                return k
+        return None
+
+    # ---- Node editing helpers ----
+
+    def _node_points_scene(self) -> list:
+        """Return list of (scene_point, node_index, handle_type) for all hit-testable points."""
+        p = self.pos()
+        w, h = self._width, self._height
+        result = []
+        for i, node in enumerate(self._nodes):
+            cmd = node.get("cmd", "L")
+            if cmd == "Z":
+                continue
+            ax, ay = self._get_node_anchor(i)
+            result.append((QPointF(p.x() + ax * w, p.y() + ay * h), i, "anchor"))
+            if cmd == "C":
+                c1x, c1y = node.get("c1x", ax), node.get("c1y", ay)
+                c2x, c2y = node.get("c2x", ax), node.get("c2y", ay)
+                result.append((QPointF(p.x() + c1x * w, p.y() + c1y * h), i, "c1"))
+                result.append((QPointF(p.x() + c2x * w, p.y() + c2y * h), i, "c2"))
+            elif cmd == "S":
+                c2x, c2y = node.get("c2x", ax), node.get("c2y", ay)
+                result.append((QPointF(p.x() + c2x * w, p.y() + c2y * h), i, "c2"))
+            elif cmd == "Q":
+                cx, cy = node.get("cx", ax), node.get("cy", ay)
+                result.append((QPointF(p.x() + cx * w, p.y() + cy * h), i, "cx"))
+        return result
+
+    def _hit_test_node(self, scene_pt: QPointF) -> Optional[Tuple[int, str]]:
+        """Hit-test all node points (control points first, then anchors).
+
+        Returns (node_index, handle_type) or None.
+        """
+        hit_dist = _get_hit_distance()
+        points = self._node_points_scene()
+        # Test control points first (they overlap anchors but are smaller)
+        for pt, idx, htype in points:
+            if htype != "anchor" and QLineF(scene_pt, pt).length() <= hit_dist:
+                return (idx, htype)
+        for pt, idx, htype in points:
+            if htype == "anchor" and QLineF(scene_pt, pt).length() <= hit_dist:
+                return (idx, htype)
+        return None
+
+    def _hit_test_edge(self, scene_pt: QPointF) -> Optional[int]:
+        """Hit-test curve segments for node insertion. Returns node index after which to insert."""
+        hit_dist = _get_hit_distance()
+        p = self.pos()
+        w, h = self._width, self._height
+
+        for i in range(1, len(self._nodes)):
+            node = self._nodes[i]
+            cmd = node.get("cmd", "L")
+            if cmd == "Z":
+                continue
+            ax, ay = self._get_node_anchor(i)
+            px_a, py_a = self._get_node_anchor(i - 1)
+
+            # Simple line-segment check for L/H/V
+            if cmd in ("L", "H", "V"):
+                a = QPointF(p.x() + px_a * w, p.y() + py_a * h)
+                b = QPointF(p.x() + ax * w, p.y() + ay * h)
+                line = QLineF(a, b)
+                length = line.length()
+                if length < 1e-6:
+                    continue
+                ldx = b.x() - a.x()
+                ldy = b.y() - a.y()
+                t = ((scene_pt.x() - a.x()) * ldx + (scene_pt.y() - a.y()) * ldy) / (length * length)
+                t = max(0.0, min(1.0, t))
+                proj = QPointF(a.x() + t * ldx, a.y() + t * ldy)
+                if QLineF(scene_pt, proj).length() <= hit_dist:
+                    return i - 1
+        return None
+
+    # ---- Mouse interaction ----
+
+    def hoverMoveEvent(self, event):
+        if self._node_editing:
+            hit = self._hit_test_node(event.scenePos())
+            if hit is not None:
+                self.setCursor(Qt.CursorShape.CrossCursor)
+            else:
+                self.setCursor(Qt.CursorShape.ArrowCursor)
+        else:
+            h = self._hit_test_handle(event.scenePos())
+            if h in ("tl", "br"):
+                self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+            elif h in ("tr", "bl"):
+                self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+            elif h in ("t", "b"):
+                self.setCursor(Qt.CursorShape.SizeVerCursor)
+            elif h in ("l", "r"):
+                self.setCursor(Qt.CursorShape.SizeHorCursor)
+            else:
+                self.setCursor(Qt.CursorShape.ArrowCursor)
+        super().hoverMoveEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._node_editing = not self._node_editing
+            self.prepareGeometryChange()
+            self.update()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.RightButton and self._node_editing:
+            scene_pt = event.scenePos()
+            hit = self._hit_test_node(scene_pt)
+            if hit is not None:
+                idx, htype = hit
+                if htype == "anchor":
+                    self._show_node_context_menu(event.screenPos(), idx)
+                    event.accept()
+                    return
+            # Right-click on edge: insert new L node
+            edge_idx = self._hit_test_edge(scene_pt)
+            if edge_idx is not None:
+                p = self.pos()
+                rx = (scene_pt.x() - p.x()) / self._width if self._width > 0 else 0.5
+                ry = (scene_pt.y() - p.y()) / self._height if self._height > 0 else 0.5
+                self.prepareGeometryChange()
+                self._nodes.insert(edge_idx + 1, {"cmd": "L", "x": rx, "y": ry})
+                self._update_path()
+                self._update_label_position()
+                self._notify_changed()
+                event.accept()
+                return
+
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self._node_editing:
+                hit = self._hit_test_node(event.scenePos())
+                if hit is not None:
+                    idx, htype = hit
+                    self._begin_resize_tracking()
+                    self._active_node = idx
+                    self._active_handle_type = htype
+                    self._node_dragging = True
+                    self._press_scene = event.scenePos()
+                    event.accept()
+                    return
+
+            # Bounding-box handle resize
+            h = self._hit_test_handle(event.scenePos())
+            if h:
+                self._begin_resize_tracking()
+                self._active_handle = h
+                self._resizing = True
+                self._press_scene = event.scenePos()
+                self._start_pos = QPointF(self.pos())
+                self._start_size = (self._width, self._height)
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        # Node dragging
+        if self._node_dragging and self._active_node is not None:
+            cur = event.scenePos()
+            p = self.pos()
+            rx = (cur.x() - p.x()) / self._width if self._width > 0 else 0.5
+            ry = (cur.y() - p.y()) / self._height if self._height > 0 else 0.5
+
+            node = self._nodes[self._active_node]
+            htype = self._active_handle_type
+
+            if htype == "anchor":
+                cmd = node.get("cmd", "L")
+                if cmd == "H":
+                    node["x"] = rx
+                elif cmd == "V":
+                    node["y"] = ry
+                else:
+                    node["x"] = rx
+                    node["y"] = ry
+            elif htype == "c1":
+                node["c1x"] = rx
+                node["c1y"] = ry
+            elif htype == "c2":
+                node["c2x"] = rx
+                node["c2y"] = ry
+            elif htype == "cx":
+                node["cx"] = rx
+                node["cy"] = ry
+
+            self.prepareGeometryChange()
+            self._update_path()
+            self._update_label_position()
+            self._notify_changed()
+            event.accept()
+            return
+
+        # Bounding-box handle resize
+        if self._resizing and self._active_handle and self._press_scene and self._start_pos and self._start_size:
+            cur = event.scenePos()
+            dx = cur.x() - self._press_scene.x()
+            dy = cur.y() - self._press_scene.y()
+
+            x0 = self._start_pos.x()
+            y0 = self._start_pos.y()
+            w0, h0 = self._start_size
+
+            left = x0
+            top = y0
+            right = x0 + w0
+            bottom = y0 + h0
+
+            if self._active_handle == "tl":
+                left += dx; top += dy
+            elif self._active_handle == "tr":
+                right += dx; top += dy
+            elif self._active_handle == "bl":
+                left += dx; bottom += dy
+            elif self._active_handle == "br":
+                right += dx; bottom += dy
+            elif self._active_handle == "t":
+                top += dy
+            elif self._active_handle == "b":
+                bottom += dy
+            elif self._active_handle == "l":
+                left += dx
+            elif self._active_handle == "r":
+                right += dx
+
+            min_size = _get_min_size()
+            if (right - left) < min_size:
+                if self._active_handle in ("tl", "bl", "l"):
+                    left = right - min_size
+                else:
+                    right = left + min_size
+            if (bottom - top) < min_size:
+                if self._active_handle in ("tl", "tr", "t"):
+                    top = bottom - min_size
+                else:
+                    bottom = top + min_size
+
+            self.setPos(QPointF(left, top))
+            self._width = right - left
+            self._height = bottom - top
+            self._update_path()
+            self._update_label_position()
+            self._notify_changed()
+            event.accept()
+            return
+
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._node_dragging:
+            self._end_resize_tracking()
+            self._node_dragging = False
+            self._active_node = None
+            self._active_handle_type = None
+            self._recalculate_bbox()
+            self._notify_changed()
+            event.accept()
+            return
+        if self._resizing:
+            self._end_resize_tracking()
+            self._resizing = False
+            self._active_handle = None
+            self._press_scene = None
+            self._start_pos = None
+            self._start_size = None
+            self._notify_changed()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    # ---- Node context menu ----
+
+    def _show_node_context_menu(self, screen_pos, node_idx: int):
+        """Show context menu for changing node type."""
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu()
+        node = self._nodes[node_idx]
+        current_cmd = node.get("cmd", "L")
+
+        if node_idx == 0:
+            # First node is always M
+            act = menu.addAction("Move To (M)")
+            act.setCheckable(True)
+            act.setChecked(True)
+            act.setEnabled(False)
+        else:
+            cmds = [
+                ("Line To (L)", "L"),
+                ("Horizontal (H)", "H"),
+                ("Vertical (V)", "V"),
+                ("Cubic Bezier (C)", "C"),
+                ("Smooth Cubic (S)", "S"),
+                ("Quadratic (Q)", "Q"),
+                ("Smooth Quad (T)", "T"),
+                ("Arc (A)", "A"),
+            ]
+            for label, cmd in cmds:
+                act = menu.addAction(label)
+                act.setCheckable(True)
+                act.setChecked(current_cmd == cmd)
+                act.triggered.connect(lambda checked, c=cmd: self._change_node_type(node_idx, c))
+
+            # Close path option for last node
+            if node_idx == len(self._nodes) - 1:
+                menu.addSeparator()
+                z_act = menu.addAction("Close Path (Z)")
+                z_act.setCheckable(True)
+                has_z = any(n.get("cmd") == "Z" for n in self._nodes)
+                z_act.setChecked(has_z)
+                z_act.triggered.connect(lambda checked: self._toggle_close_path())
+
+        menu.addSeparator()
+
+        # Delete node
+        if len(self._nodes) > 2:
+            del_act = menu.addAction("Delete Node")
+            del_act.triggered.connect(lambda: self._delete_node(node_idx))
+
+        # Insert node after
+        ins_act = menu.addAction("Insert Node After")
+        ins_act.triggered.connect(lambda: self._insert_node_after(node_idx))
+
+        menu.exec(screen_pos)
+
+    def _change_node_type(self, idx: int, new_cmd: str):
+        """Change a node's command type, auto-generating control points."""
+        node = self._nodes[idx]
+        old_cmd = node.get("cmd", "L")
+        if old_cmd == new_cmd:
+            return
+
+        ax, ay = self._get_node_anchor(idx)
+        px, py = self._get_node_anchor(idx - 1) if idx > 0 else (ax, ay)
+
+        # Remove old control point keys
+        for key in ("c1x", "c1y", "c2x", "c2y", "cx", "cy", "rx", "ry", "rotation", "large_arc", "sweep"):
+            node.pop(key, None)
+
+        node["cmd"] = new_cmd
+
+        # Ensure x, y are set for commands that need them
+        if new_cmd not in ("Z",):
+            if "x" not in node:
+                node["x"] = ax
+            if "y" not in node:
+                node["y"] = ay
+
+        # Auto-generate control points
+        if new_cmd == "C":
+            node["c1x"] = px + (ax - px) / 3
+            node["c1y"] = py + (ay - py) / 3
+            node["c2x"] = px + 2 * (ax - px) / 3
+            node["c2y"] = py + 2 * (ay - py) / 3
+        elif new_cmd == "S":
+            node["c2x"] = px + 2 * (ax - px) / 3
+            node["c2y"] = py + 2 * (ay - py) / 3
+        elif new_cmd == "Q":
+            node["cx"] = (px + ax) / 2
+            node["cy"] = (py + ay) / 2
+        elif new_cmd == "A":
+            chord = math.sqrt((ax - px) ** 2 + (ay - py) ** 2)
+            r = max(chord / 2, 0.05)
+            node["rx"] = r
+            node["ry"] = r
+            node["rotation"] = 0
+            node["large_arc"] = 0
+            node["sweep"] = 1
+        elif new_cmd == "H":
+            node.pop("y", None)
+        elif new_cmd == "V":
+            node.pop("x", None)
+
+        self.prepareGeometryChange()
+        self._update_path()
+        self._update_label_position()
+        self._notify_changed()
+
+    def _toggle_close_path(self):
+        """Toggle Z (close path) at end of nodes."""
+        if self._nodes and self._nodes[-1].get("cmd") == "Z":
+            self._nodes.pop()
+        else:
+            self._nodes.append({"cmd": "Z"})
+        self.prepareGeometryChange()
+        self._update_path()
+        self._notify_changed()
+
+    def _delete_node(self, idx: int):
+        """Delete a node (minimum 2 nodes)."""
+        if len(self._nodes) <= 2:
+            return
+        self.prepareGeometryChange()
+        del self._nodes[idx]
+        # Ensure first node is M
+        if self._nodes and self._nodes[0].get("cmd") != "M":
+            self._nodes[0]["cmd"] = "M"
+        self._recalculate_bbox()
+        self._notify_changed()
+
+    def _insert_node_after(self, idx: int):
+        """Insert a new L node after the given index, at midpoint to next anchor."""
+        ax, ay = self._get_node_anchor(idx)
+        if idx + 1 < len(self._nodes):
+            nx, ny = self._get_node_anchor(idx + 1)
+        else:
+            nx, ny = ax + 0.1, ay
+        mx, my = (ax + nx) / 2, (ay + ny) / 2
+        self.prepareGeometryChange()
+        self._nodes.insert(idx + 1, {"cmd": "L", "x": mx, "y": my})
+        self._update_path()
+        self._update_label_position()
+        self._notify_changed()
+
+    # ---- Shape / bounds / paint ----
+
+    def shape(self) -> QPainterPath:
+        """Return shape for hit-testing with fat stroke."""
+        stroker = QPainterPath()
+        from PyQt6.QtGui import QPainterPathStroker
+        s = QPainterPathStroker()
+        s.setWidth(max(20, self.pen_width + 10))
+        stroker = s.createStroke(self.path())
+        if self._should_paint_handles() and not self._node_editing:
+            return shape_with_handles(stroker, self._handle_points_local())
+        if self._should_paint_handles() and self._node_editing:
+            hit_r = _get_handle_size() / 2 + 1
+            for pt, _, _ in self._node_points_scene():
+                local_pt = self.mapFromScene(pt)
+                stroker.addEllipse(local_pt, hit_r, hit_r)
+        return stroker
+
+    def boundingRect(self) -> QRectF:
+        r = super().boundingRect()
+        margin = _get_handle_size() / 2 + 1 + self.pen_width
+        return r.adjusted(-margin, -margin, margin, margin)
+
+    def paint(self, painter: QPainter, option, widget=None):
+        my_option = QStyleOptionGraphicsItem(option)
+        my_option.state &= ~QStyle.StateFlag.State_Selected
+        super().paint(painter, my_option, widget)
+
+        # Draw arrowheads
+        if self.arrow_mode != self.ARROW_NONE:
+            arrow_min_mult = _CachedCanvasSettings.get().arrow_min_multiplier
+            effective_arrow_size = max(self.arrow_size, self.pen_width * arrow_min_mult)
+            painter.setPen(QPen(self.pen_color, self.pen_width))
+            painter.setBrush(QBrush(self.pen_color))
+
+            path = self.path()
+            if path.elementCount() >= 2:
+                if self.arrow_mode in (self.ARROW_END, self.ARROW_BOTH):
+                    # Arrow at end: last two distinct points
+                    from_pt, to_pt = self._get_path_end_segment(path, from_end=True)
+                    if from_pt and to_pt:
+                        self._draw_arrowhead(painter, from_pt, to_pt, effective_arrow_size)
+
+                if self.arrow_mode in (self.ARROW_START, self.ARROW_BOTH):
+                    # Arrow at start: first two distinct points
+                    from_pt, to_pt = self._get_path_end_segment(path, from_end=False)
+                    if from_pt and to_pt:
+                        self._draw_arrowhead(painter, from_pt, to_pt, effective_arrow_size)
+
+        if not self._should_paint_handles():
+            return
+
+        if self._node_editing:
+            self._paint_node_handles(painter)
+        else:
+            # Selection outline and bbox handles
+            sel_pen = QPen(_get_selection_color(), 1, Qt.PenStyle.DashLine)
+            painter.setPen(sel_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(self.path())
+            draw_handles(painter, self._handle_points_local())
+
+    def _paint_node_handles(self, painter: QPainter):
+        """Paint node editing handles: green circles for anchors, blue diamonds for controls."""
+        handle_size = _get_handle_size()
+        half = handle_size / 2
+        w, h = self._width, self._height
+
+        for i, node in enumerate(self._nodes):
+            cmd = node.get("cmd", "L")
+            if cmd == "Z":
+                continue
+
+            ax, ay = self._get_node_anchor(i)
+            anchor_local = QPointF(ax * w, ay * h)
+
+            # Draw control point lines and handles first
+            if cmd == "C":
+                c1 = QPointF(node.get("c1x", ax) * w, node.get("c1y", ay) * h)
+                c2 = QPointF(node.get("c2x", ax) * w, node.get("c2y", ay) * h)
+                # Dashed lines from controls to anchor
+                ctrl_pen = QPen(QColor(150, 150, 150), 1, Qt.PenStyle.DashLine)
+                painter.setPen(ctrl_pen)
+                if i > 0:
+                    pax, pay = self._get_node_anchor(i - 1)
+                    painter.drawLine(QPointF(pax * w, pay * h), c1)
+                painter.drawLine(c2, anchor_local)
+                # Blue diamond for c1
+                self._draw_diamond(painter, c1, half, i, "c1")
+                # Blue diamond for c2
+                self._draw_diamond(painter, c2, half, i, "c2")
+            elif cmd == "S":
+                c2 = QPointF(node.get("c2x", ax) * w, node.get("c2y", ay) * h)
+                ctrl_pen = QPen(QColor(150, 150, 150), 1, Qt.PenStyle.DashLine)
+                painter.setPen(ctrl_pen)
+                painter.drawLine(c2, anchor_local)
+                self._draw_diamond(painter, c2, half, i, "c2")
+            elif cmd == "Q":
+                cp = QPointF(node.get("cx", ax) * w, node.get("cy", ay) * h)
+                ctrl_pen = QPen(QColor(150, 150, 150), 1, Qt.PenStyle.DashLine)
+                painter.setPen(ctrl_pen)
+                if i > 0:
+                    pax, pay = self._get_node_anchor(i - 1)
+                    painter.drawLine(QPointF(pax * w, pay * h), cp)
+                painter.drawLine(cp, anchor_local)
+                self._draw_diamond(painter, cp, half, i, "cx")
+
+            # Draw anchor circle
+            is_active = (i == self._active_node and self._active_handle_type == "anchor")
+            if is_active:
+                painter.setPen(QPen(QColor(204, 102, 0), 1))
+                painter.setBrush(QBrush(QColor(255, 165, 0)))
+            else:
+                painter.setPen(QPen(QColor(0, 128, 0), 1))
+                painter.setBrush(QBrush(QColor(0, 200, 0)))
+            painter.drawEllipse(QRectF(anchor_local.x() - half, anchor_local.y() - half,
+                                       handle_size, handle_size))
+
+    def _draw_diamond(self, painter: QPainter, center: QPointF, half: float,
+                      node_idx: int, handle_type: str):
+        """Draw a diamond-shaped control point handle."""
+        is_active = (node_idx == self._active_node and self._active_handle_type == handle_type)
+        if is_active:
+            painter.setPen(QPen(QColor(204, 102, 0), 1))
+            painter.setBrush(QBrush(QColor(255, 165, 0)))
+        else:
+            painter.setPen(QPen(QColor(0, 70, 180), 1))
+            painter.setBrush(QBrush(QColor(80, 140, 255)))
+        diamond = QPolygonF([
+            QPointF(center.x(), center.y() - half),
+            QPointF(center.x() + half, center.y()),
+            QPointF(center.x(), center.y() + half),
+            QPointF(center.x() - half, center.y()),
+        ])
+        painter.drawPolygon(diamond)
+
+    def _draw_arrowhead(self, painter: QPainter, from_pt: QPointF, to_pt: QPointF, size: float):
+        """Draw a filled arrowhead triangle."""
+        dx = to_pt.x() - from_pt.x()
+        dy = to_pt.y() - from_pt.y()
+        length = math.sqrt(dx * dx + dy * dy)
+        if length < 1e-6:
+            return
+        ux, uy = dx / length, dy / length
+        px, py = -uy, ux
+        tip = to_pt
+        left = QPointF(to_pt.x() - ux * size + px * size * 0.4,
+                       to_pt.y() - uy * size + py * size * 0.4)
+        right = QPointF(to_pt.x() - ux * size - px * size * 0.4,
+                        to_pt.y() - uy * size - py * size * 0.4)
+        arrow = QPolygonF([tip, left, right])
+        painter.drawPolygon(arrow)
+
+    @staticmethod
+    def _get_path_end_segment(path: QPainterPath, from_end: bool):
+        """Get the last (or first) two distinct points of a QPainterPath for arrowhead direction."""
+        n = path.elementCount()
+        if n < 2:
+            return None, None
+
+        if from_end:
+            to_pt = QPointF(path.elementAt(n - 1).x, path.elementAt(n - 1).y)
+            for i in range(n - 2, -1, -1):
+                e = path.elementAt(i)
+                pt = QPointF(e.x, e.y)
+                if QLineF(pt, to_pt).length() > 1e-3:
+                    return pt, to_pt
+            return None, None
+        else:
+            to_pt = QPointF(path.elementAt(0).x, path.elementAt(0).y)
+            for i in range(1, n):
+                e = path.elementAt(i)
+                pt = QPointF(e.x, e.y)
+                if QLineF(pt, to_pt).length() > 1e-3:
+                    return pt, to_pt
+            return None, None
+
+    def itemChange(self, change, value):
+        out = super().itemChange(change, value)
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            if not self._resizing and not self._node_dragging:
+                self._notify_changed()
+        elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+            if not value:
+                self._node_editing = False
+            self.prepareGeometryChange()
+        return out
+
+    def to_record(self) -> Dict[str, Any]:
+        """Serialize curve to JSON record."""
+        p = self.pos()
+        # Build clean node list with rounded values
+        clean_nodes = []
+        for node in self._nodes:
+            clean = {"cmd": node["cmd"]}
+            for key in ("x", "y", "c1x", "c1y", "c2x", "c2y", "cx", "cy"):
+                if key in node:
+                    clean[key] = round(node[key], 4)
+            for key in ("rx", "ry", "rotation"):
+                if key in node:
+                    clean[key] = round(node[key], 4)
+            for key in ("large_arc", "sweep"):
+                if key in node:
+                    clean[key] = int(node[key])
+            clean_nodes.append(clean)
+
+        style = self._style_dict()["style"]
+        style["arrow"] = self.arrow_mode
+        style["arrow_size"] = round(self.arrow_size, 1)
+
+        rec = {
+            "id": self.ann_id,
+            "kind": "curve",
+            "geom": {
+                "x": round1(p.x()),
+                "y": round1(p.y()),
+                "w": round1(self._width),
+                "h": round1(self._height),
+                "nodes": clean_nodes,
+            },
+            **self._meta_dict(self.meta),
+            "style": style,
+        }
+        z = self.zValue()
+        if z != 0:
+            rec["z"] = int(z)
+        return rec
+
+
 class MetaGroupItem(QGraphicsItemGroup, MetaMixin, LinkedMixin):
     """Group item that contains multiple annotation items as a single unit."""
 

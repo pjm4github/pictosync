@@ -32,6 +32,7 @@ from canvas.items import (
     MetaCylinderItem,
     MetaBlockArrowItem,
     MetaPolygonItem,
+    MetaCurveItem,
     MetaGroupItem,
 )
 
@@ -716,6 +717,8 @@ class PropertyPanel(QWidget):
             self._setup_blockarrow_controls(item, pen_color)
         elif kind == "polygon":
             self._setup_polygon_controls(item, pen_color)
+        elif kind == "curve":
+            self._setup_curve_controls(item, pen_color)
         elif kind == "group":
             self._setup_group_controls(item, pen_color)
         else:
@@ -1114,7 +1117,7 @@ class PropertyPanel(QWidget):
     def _on_arrow_changed(self, index: int):
         """Handle arrow mode change."""
         item = self._current_item
-        if item is None or not isinstance(item, MetaLineItem):
+        if item is None or not isinstance(item, (MetaLineItem, MetaCurveItem)):
             return
         arrow_modes = ["none", "start", "end", "both"]
         if 0 <= index < len(arrow_modes):
@@ -1132,7 +1135,7 @@ class PropertyPanel(QWidget):
     def _on_arrow_size_changed(self, value: int):
         """Handle arrow size change."""
         item = self._current_item
-        if item is None or not isinstance(item, MetaLineItem):
+        if item is None or not isinstance(item, (MetaLineItem, MetaCurveItem)):
             return
         old_val = item.arrow_size
         item.arrow_size = float(value)
@@ -1304,6 +1307,28 @@ class PropertyPanel(QWidget):
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
         self._setup_line_style_controls(item)
         self._setup_text_layout_controls(item)
+
+    def _setup_curve_controls(self, item, pen_color):
+        """Configure controls for curve items (pen, dash, arrow - no fill, no adjust)."""
+        self._set_text_rows_visible(True, True, True)
+        self._set_color_rows_visible(True, False, True)
+        self._set_extra_rows_visible(False, True, True, True, True, text_box_width=False, text_layout=False)
+        self._set_preview(self.pen_color_preview, pen_color)
+        self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
+        self._setup_line_style_controls(item)
+
+        # Arrow mode
+        arrow_mode = getattr(item, "arrow_mode", "none")
+        arrow_map = {"none": 0, "start": 1, "end": 2, "both": 3}
+        self.arrow_combo.blockSignals(True)
+        self.arrow_combo.setCurrentIndex(arrow_map.get(arrow_mode, 0))
+        self.arrow_combo.blockSignals(False)
+
+        # Arrow size
+        arrow_size = getattr(item, "arrow_size", 12.0)
+        self.arrow_size_spin.blockSignals(True)
+        self.arrow_size_spin.setValue(int(arrow_size))
+        self.arrow_size_spin.blockSignals(False)
 
     def _setup_group_controls(self, item, pen_color):
         """Configure controls for group items (label only)."""

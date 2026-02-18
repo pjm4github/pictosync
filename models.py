@@ -110,6 +110,7 @@ class Mode:
     CYLINDER = "cylinder"
     BLOCKARROW = "blockarrow"
     POLYGON = "polygon"
+    CURVE = "curve"
 
 
 # ----------------------------

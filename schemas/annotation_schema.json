@@ -72,7 +72,7 @@
         },
         "kind": {
           "type": "string",
-          "enum": ["rect", "roundedrect", "ellipse", "line", "text", "hexagon", "cylinder", "blockarrow", "group"],
+          "enum": ["rect", "roundedrect", "ellipse", "line", "text", "hexagon", "cylinder", "blockarrow", "polygon", "curve", "group"],
           "description": "The type of annotation item"
         },
         "geom": {
@@ -181,6 +181,17 @@
         },
         {
           "if": {
+            "properties": { "kind": { "const": "curve" } }
+          },
+          "then": {
+            "properties": {
+              "geom": { "$ref": "#/$defs/curveGeometry" },
+              "style": { "$ref": "#/$defs/lineStyleDefinition" }
+            }
+          }
+        },
+        {
+          "if": {
             "properties": { "kind": { "const": "group" } }
           },
           "then": {
@@ -205,7 +216,8 @@
         { "$ref": "#/$defs/pointGeometry" },
         { "$ref": "#/$defs/hexagonGeometry" },
         { "$ref": "#/$defs/cylinderGeometry" },
-        { "$ref": "#/$defs/blockArrowGeometry" }
+        { "$ref": "#/$defs/blockArrowGeometry" },
+        { "$ref": "#/$defs/curveGeometry" }
       ]
     },
     "rectGeometry": {
@@ -422,6 +434,48 @@
         }
       },
       "additionalProperties": false
+    },
+    "curveNode": {
+      "type": "object",
+      "description": "A single node in a curve path",
+      "required": ["cmd"],
+      "properties": {
+        "cmd": {
+          "type": "string",
+          "enum": ["M", "L", "H", "V", "C", "S", "Q", "T", "A", "Z"],
+          "description": "SVG path command"
+        },
+        "x": { "type": "number", "description": "Endpoint X (0-1 relative)" },
+        "y": { "type": "number", "description": "Endpoint Y (0-1 relative)" },
+        "c1x": { "type": "number", "description": "First control point X (cubic)" },
+        "c1y": { "type": "number", "description": "First control point Y (cubic)" },
+        "c2x": { "type": "number", "description": "Second control point X (cubic)" },
+        "c2y": { "type": "number", "description": "Second control point Y (cubic)" },
+        "cx": { "type": "number", "description": "Control point X (quadratic)" },
+        "cy": { "type": "number", "description": "Control point Y (quadratic)" },
+        "rx": { "type": "number", "description": "Arc radius X" },
+        "ry": { "type": "number", "description": "Arc radius Y" },
+        "rotation": { "type": "number", "description": "Arc rotation in degrees" },
+        "large_arc": { "type": "integer", "enum": [0, 1], "description": "Large arc flag" },
+        "sweep": { "type": "integer", "enum": [0, 1], "description": "Sweep direction flag" }
+      }
+    },
+    "curveGeometry": {
+      "type": "object",
+      "description": "Curve geometry with bounding box and path nodes",
+      "required": ["x", "y", "w", "h", "nodes"],
+      "properties": {
+        "x": { "type": "number", "description": "Bounding box X" },
+        "y": { "type": "number", "description": "Bounding box Y" },
+        "w": { "type": "number", "minimum": 0, "description": "Bounding box width" },
+        "h": { "type": "number", "minimum": 0, "description": "Bounding box height" },
+        "nodes": {
+          "type": "array",
+          "description": "Path nodes with SVG-like commands",
+          "items": { "$ref": "#/$defs/curveNode" },
+          "minItems": 2
+        }
+      }
     },
     "annotationMeta": {
       "type": "object",

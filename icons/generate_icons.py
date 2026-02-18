@@ -190,6 +190,12 @@ ICONS = {
     "polygon": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
   <polygon points="3,8 9,3 20,5 21,14 15,12 18,20 7,19 5,13" stroke="{stroke}" stroke-width="2" fill="{fill}" stroke-linejoin="round"/>
 </svg>''',
+
+    "curve": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <path d="M3 18 C7 4 17 20 21 6" stroke="{stroke}" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <circle cx="3" cy="18" r="2" fill="{accent}" stroke="{stroke}" stroke-width="1"/>
+  <circle cx="21" cy="6" r="2" fill="{accent}" stroke="{stroke}" stroke-width="1"/>
+</svg>''',
 }
 
 

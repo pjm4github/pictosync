@@ -23,6 +23,7 @@ from canvas.items import (
     MetaCylinderItem,
     MetaBlockArrowItem,
     MetaPolygonItem,
+    MetaCurveItem,
     MetaGroupItem,
 )
 from settings import get_settings
@@ -69,6 +70,9 @@ class AnnotatorScene(QGraphicsScene):
         # Polygon multi-click drawing state
         self._polygon_points: List[QPointF] = []
         self._polygon_preview: Optional[QGraphicsItem] = None
+        # Curve multi-click drawing state
+        self._curve_points: List[QPointF] = []
+        self._curve_preview: Optional[QGraphicsItem] = None
 
     @property
     def is_interacting(self) -> bool:
@@ -156,6 +160,11 @@ class AnnotatorScene(QGraphicsScene):
                 self._cancel_polygon()
                 event.accept()
                 return
+            # Cancel curve drawing on Escape
+            if self.mode == Mode.CURVE and self._curve_points:
+                self._cancel_curve()
+                event.accept()
+                return
             if self._on_escape_key:
                 self._on_escape_key()
                 event.accept()
@@ -185,6 +194,15 @@ class AnnotatorScene(QGraphicsScene):
                 event.accept()
                 return
 
+            # Curve finish/cancel on right-click
+            if self.mode == Mode.CURVE and self._curve_points:
+                if len(self._curve_points) >= 2:
+                    self._finish_curve()
+                else:
+                    self._cancel_curve()
+                event.accept()
+                return
+
             item = self.itemAt(event.scenePos(), self.views()[0].transform() if self.views() else None)
             # Walk up to top-level selectable item (may be a group)
             while item and item.parentItem() and isinstance(item.parentItem(), MetaGroupItem):
@@ -193,6 +211,10 @@ class AnnotatorScene(QGraphicsScene):
             if item and self._is_annotation_item(item) and item.isSelected():
                 # Let polygon handle right-click in vertex editing mode
                 if isinstance(item, MetaPolygonItem) and item._vertex_editing:
+                    super().mousePressEvent(event)
+                    return
+                # Let curve handle right-click in node editing mode
+                if isinstance(item, MetaCurveItem) and item._node_editing:
                     super().mousePressEvent(event)
                     return
                 self._show_context_menu(event.screenPos(), item)
@@ -210,6 +232,13 @@ class AnnotatorScene(QGraphicsScene):
             if self.mode == Mode.POLYGON:
                 self._polygon_points.append(sp)
                 self._update_polygon_preview(sp)
+                event.accept()
+                return
+
+            # Curve multi-click mode
+            if self.mode == Mode.CURVE:
+                self._curve_points.append(sp)
+                self._update_curve_preview(sp)
                 event.accept()
                 return
 
@@ -290,6 +319,12 @@ class AnnotatorScene(QGraphicsScene):
             event.accept()
             return
 
+        # Curve preview: dashed line from last point to cursor
+        if self.mode == Mode.CURVE and self._curve_points:
+            self._update_curve_preview(event.scenePos())
+            event.accept()
+            return
+
         if self._drag_start is not None and self._temp_item is not None:
             cur = event.scenePos()
             sx, sy = self._drag_start.x(), self._drag_start.y()
@@ -346,7 +381,7 @@ class AnnotatorScene(QGraphicsScene):
 
     def _is_annotation_item(self, item: QGraphicsItem) -> bool:
         """Check if an item is one of our annotation items."""
-        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaLineItem, MetaTextItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaPolygonItem, MetaGroupItem))
+        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaLineItem, MetaTextItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaPolygonItem, MetaCurveItem, MetaGroupItem))
 
     def _get_annotation_items(self) -> List[QGraphicsItem]:
         """Get all annotation items in the scene (excluding background, etc.)."""
@@ -430,6 +465,79 @@ class AnnotatorScene(QGraphicsScene):
             self.removeItem(self._polygon_preview)
             self._polygon_preview = None
         self._polygon_points.clear()
+
+    # ---- Curve drawing helpers ----
+
+    def _update_curve_preview(self, cursor_pos: QPointF):
+        """Update the curve preview path showing placed points and cursor position."""
+        if not self._curve_points:
+            return
+
+        path = QPainterPath()
+        path.moveTo(self._curve_points[0])
+        for pt in self._curve_points[1:]:
+            path.lineTo(pt)
+        # Dashed line from last point to cursor
+        path.lineTo(cursor_pos)
+
+        if self._curve_preview is None:
+            self._curve_preview = QGraphicsPathItem()
+            pen = QPen(QColor(160, 80, 220, 180), 1.5, Qt.PenStyle.DashLine)
+            self._curve_preview.setPen(pen)
+            self._curve_preview.setZValue(999999)
+            self.addItem(self._curve_preview)
+
+        self._curve_preview.setPath(path)
+
+    def _finish_curve(self):
+        """Create a MetaCurveItem from collected curve points."""
+        points = self._curve_points
+
+        # Compute bounding box
+        xs = [p.x() for p in points]
+        ys = [p.y() for p in points]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        w = max_x - min_x
+        h = max_y - min_y
+
+        if w < 5:
+            w = 5
+        if h < 5:
+            h = 5
+
+        # Convert to nodes: first is M, rest are L
+        nodes = []
+        for i, p in enumerate(points):
+            rx = (p.x() - min_x) / w if w > 0 else 0.0
+            ry = (p.y() - min_y) / h if h > 0 else 0.0
+            if i == 0:
+                nodes.append({"cmd": "M", "x": rx, "y": ry})
+            else:
+                nodes.append({"cmd": "L", "x": rx, "y": ry})
+
+        ann_id = self._make_id() if self._make_id else "local"
+        next_z = self._get_next_z_index()
+
+        item = MetaCurveItem(min_x, min_y, w, h, nodes, ann_id, self._on_item_changed)
+        self.addItem(item)
+        item.setZValue(next_z)
+
+        if self._on_new_item:
+            self._on_new_item(item)
+
+        self._cleanup_curve_preview()
+
+    def _cancel_curve(self):
+        """Cancel the current curve drawing operation."""
+        self._cleanup_curve_preview()
+
+    def _cleanup_curve_preview(self):
+        """Remove the curve preview and reset state."""
+        if self._curve_preview is not None:
+            self.removeItem(self._curve_preview)
+            self._curve_preview = None
+        self._curve_points.clear()
 
     def _show_context_menu(self, screen_pos, item: QGraphicsItem):
         """Show context menu for the selected item."""

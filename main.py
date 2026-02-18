@@ -106,6 +106,7 @@ from canvas import (
     MetaCylinderItem,
     MetaBlockArrowItem,
     MetaPolygonItem,
+    MetaCurveItem,
     MetaGroupItem,
 )
 from editor import DraftDock
@@ -455,7 +456,9 @@ class MainWindow(QMainWindow):
                                               "Draw a block arrow")
         self.act_polygon = add_mode_action("Polygon", Mode.POLYGON, "P", "polygon",
                                            "Draw a polygon (click vertices, right-click to close)")
-        self.mode_actions = [self.act_select, self.act_rect, self.act_rrect, self.act_ellipse, self.act_line, self.act_text, self.act_hexagon, self.act_cylinder, self.act_blockarrow, self.act_polygon]
+        self.act_curve = add_mode_action("Curve", Mode.CURVE, "V", "curve",
+                                         "Draw a curve path (click nodes, right-click to finish)")
+        self.mode_actions = [self.act_select, self.act_rect, self.act_rrect, self.act_ellipse, self.act_line, self.act_text, self.act_hexagon, self.act_cylinder, self.act_blockarrow, self.act_polygon, self.act_curve]
         self.act_select.setChecked(True)
 
         tb.addSeparator()
@@ -693,6 +696,7 @@ class MainWindow(QMainWindow):
             Mode.CYLINDER: self.act_cylinder,
             Mode.BLOCKARROW: self.act_blockarrow,
             Mode.POLYGON: self.act_polygon,
+            Mode.CURVE: self.act_curve,
         }
         for a in self.mode_actions:
             a.setChecked(False)
@@ -2152,6 +2156,20 @@ class MainWindow(QMainWindow):
                                  points, ann_id, on_change)
             it.set_meta(meta)
             it.meta.kind = "polygon"
+            it.apply_style_from_record(rec)
+            it._apply_pen_brush()
+            it._update_label_text()
+            self.scene.addItem(it)
+            if z_index:
+                it.setZValue(z_index)
+
+        elif kind == "curve":
+            g = rec.get("geom", {})
+            nodes = g.get("nodes", [{"cmd": "M", "x": 0.0, "y": 0.0}, {"cmd": "L", "x": 1.0, "y": 1.0}])
+            it = MetaCurveItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]),
+                               nodes, ann_id, on_change)
+            it.set_meta(meta)
+            it.meta.kind = "curve"
             it.apply_style_from_record(rec)
             it._apply_pen_brush()
             it._update_label_text()

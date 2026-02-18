@@ -556,6 +556,51 @@ def _add_polygon(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
     _add_text_to_shape(shape, meta, style.get("text", {}))
 
 
+def _add_curve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
+    """Add a curve (freeform path) shape to the slide.
+
+    Approximates the curve by sampling node anchors as line segments.
+    Bezier curves are approximated as straight lines between anchor points.
+    """
+    geom = record.get("geom", {})
+    x = geom.get("x", 0) * scale_x
+    y = geom.get("y", 0) * scale_y
+    w = geom.get("w", 100) * scale_x
+    h = geom.get("h", 100) * scale_y
+
+    nodes = geom.get("nodes", [])
+    if not nodes or len(nodes) < 2:
+        return
+
+    # Build freeform from node anchors (line approximation)
+    first_node = nodes[0]
+    fx = first_node.get("x", 0)
+    fy = first_node.get("y", 0)
+    start_x = px_to_emu(x + fx * w)
+    start_y = px_to_emu(y + fy * h)
+    builder = slide.shapes.build_freeform(start_x, start_y)
+
+    vertices = []
+    for node in nodes[1:]:
+        cmd = node.get("cmd", "L")
+        if cmd == "Z":
+            continue
+        nx = node.get("x", fx)
+        ny = node.get("y", fy)
+        vertices.append((px_to_emu(x + nx * w), px_to_emu(y + ny * h)))
+        fx, fy = nx, ny
+
+    if vertices:
+        builder.add_line_segments(vertices, close=False)
+
+    shape = builder.convert_to_shape()
+
+    style = record.get("style", {})
+    _apply_line_style(shape.line, style)
+    # No fill for curves
+    shape.fill.background()
+
+
 def export_to_pptx(
     annotations: List[Dict[str, Any]],
     output_path: str,
@@ -646,5 +691,7 @@ def export_to_pptx(
             _add_blockarrow(slide, record, scale_x, scale_y)
         elif kind == "polygon":
             _add_polygon(slide, record, scale_x, scale_y)
+        elif kind == "curve":
+            _add_curve(slide, record, scale_x, scale_y)
 
     prs.save(output_path)
