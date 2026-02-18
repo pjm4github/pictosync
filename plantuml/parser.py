@@ -450,6 +450,141 @@ def _path_points(d: str) -> List[List[float]]:
     ]
 
 
+_SVG_PATH_CMD_LETTERS = set("MmCcLlQqAaZzSsTtHhVv")
+
+
+def _parse_path_to_curve_nodes(
+    d: str,
+) -> Tuple[List[Dict[str, Any]], Tuple[float, float, float, float]]:
+    """Parse an SVG path ``d`` attribute into normalised curve node dicts.
+
+    Handles M, C, L, Q, A, and Z commands (uppercase / absolute only —
+    PlantUML always emits absolute coordinates).  All anchor and control-
+    point coordinates are normalised to 0–1 relative to the path bounding
+    box.
+
+    Args:
+        d: The SVG path ``d`` attribute string.
+
+    Returns:
+        ``(nodes, (x, y, w, h))`` where *nodes* is a list of node dicts
+        (with ``cmd``, ``x``, ``y``, and command-specific keys) and
+        the tuple gives the absolute bounding box in SVG pixels.
+        Returns ``([], (0, 0, 0, 0))`` on degenerate input.
+    """
+    tokens = re.findall(r"[MmCcLlQqAaZzSsTtHhVv]|[-+]?\d*\.?\d+", d)
+
+    nodes: List[Dict[str, Any]] = []
+    all_points: List[Tuple[float, float]] = []
+    i = 0
+
+    def _is_cmd(idx: int) -> bool:
+        return idx < len(tokens) and tokens[idx] in _SVG_PATH_CMD_LETTERS
+
+    def _f() -> float:
+        nonlocal i
+        val = float(tokens[i])
+        i += 1
+        return val
+
+    while i < len(tokens):
+        if not _is_cmd(i):
+            i += 1
+            continue
+
+        cmd = tokens[i]
+        i += 1
+        upper = cmd.upper()
+
+        if upper == "Z":
+            nodes.append({"cmd": "Z", "x": 0.0, "y": 0.0})
+            continue
+
+        if upper == "M":
+            first = True
+            while i + 1 < len(tokens) and not _is_cmd(i):
+                x, y = _f(), _f()
+                nodes.append({"cmd": "M" if first else "L", "x": x, "y": y})
+                first = False
+                all_points.append((x, y))
+
+        elif upper == "C":
+            while i + 5 < len(tokens) and not _is_cmd(i):
+                c1x, c1y = _f(), _f()
+                c2x, c2y = _f(), _f()
+                x, y = _f(), _f()
+                nodes.append({
+                    "cmd": "C", "x": x, "y": y,
+                    "c1x": c1x, "c1y": c1y,
+                    "c2x": c2x, "c2y": c2y,
+                })
+                all_points.extend([(c1x, c1y), (c2x, c2y), (x, y)])
+
+        elif upper == "L":
+            while i + 1 < len(tokens) and not _is_cmd(i):
+                x, y = _f(), _f()
+                nodes.append({"cmd": "L", "x": x, "y": y})
+                all_points.append((x, y))
+
+        elif upper == "Q":
+            while i + 3 < len(tokens) and not _is_cmd(i):
+                cx, cy = _f(), _f()
+                x, y = _f(), _f()
+                nodes.append({
+                    "cmd": "Q", "x": x, "y": y,
+                    "cx": cx, "cy": cy,
+                })
+                all_points.extend([(cx, cy), (x, y)])
+
+        elif upper == "A":
+            while i + 6 < len(tokens) and not _is_cmd(i):
+                rx, ry = _f(), _f()
+                rotation = _f()
+                large_arc = int(_f())
+                sweep = int(_f())
+                x, y = _f(), _f()
+                nodes.append({
+                    "cmd": "A", "x": x, "y": y,
+                    "rx": rx, "ry": ry,
+                    "rotation": rotation,
+                    "large_arc": large_arc,
+                    "sweep": sweep,
+                })
+                all_points.append((x, y))
+
+    if not all_points or len(nodes) < 2:
+        return [], (0.0, 0.0, 0.0, 0.0)
+
+    xs = [p[0] for p in all_points]
+    ys = [p[1] for p in all_points]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    w = max_x - min_x
+    h = max_y - min_y
+
+    if w < 1e-6 or h < 1e-6:
+        return [], (0.0, 0.0, 0.0, 0.0)
+
+    # Normalise coordinates to 0–1 within the bounding box
+    for node in nodes:
+        if node["cmd"] == "Z":
+            continue
+        node["x"] = round((node["x"] - min_x) / w, 4)
+        node["y"] = round((node["y"] - min_y) / h, 4)
+        if "c1x" in node:
+            node["c1x"] = round((node["c1x"] - min_x) / w, 4)
+            node["c1y"] = round((node["c1y"] - min_y) / h, 4)
+        if "c2x" in node:
+            node["c2x"] = round((node["c2x"] - min_x) / w, 4)
+            node["c2y"] = round((node["c2y"] - min_y) / h, 4)
+        if "cx" in node:
+            node["cx"] = round((node["cx"] - min_x) / w, 4)
+            node["cy"] = round((node["cy"] - min_y) / h, 4)
+
+    bbox = (round(min_x, 2), round(min_y, 2), round(w, 2), round(h, 2))
+    return nodes, bbox
+
+
 def _parse_svg_positions(svg_path: str) -> Dict[str, Any]:
     """Parse a PlantUML-generated SVG to extract element positions and styles.
 
@@ -582,12 +717,16 @@ def _parse_svg_positions(svg_path: str) -> Dict[str, Any]:
 
         path_el = g.find(f"{{{ns}}}path")
         style = path_el.get("style", "") if path_el is not None else ""
+        d_attr = path_el.get("d", "") if path_el is not None else ""
+        polys = g.findall(f"{{{ns}}}polygon")
 
         svg_links.append({
             "src": src_alias,
             "dst": dst_alias,
             "label": label,
             "style": style,
+            "path_d": d_attr,
+            "has_arrowhead": len(polys) > 0,
         })
 
     return {
@@ -1790,12 +1929,18 @@ def _parse_description_diagram_svg(
             style_str = (
                 link_path.get("style", "") if link_path is not None else ""
             )
+            d_attr = (
+                link_path.get("d", "") if link_path is not None else ""
+            )
+            polys = g.findall(f"{{{ns}}}polygon")
 
             link_list.append({
                 "src_id": src_id,
                 "dst_id": dst_id,
                 "label": label,
                 "style": style_str,
+                "path_d": d_attr,
+                "has_arrowhead": len(polys) > 0,
             })
 
     if not cluster_info and not entity_info:
@@ -1951,9 +2096,52 @@ def _parse_description_diagram_svg(
         id_to_ann[parent_id] = group_ann
         grouped_ids.update(child_ids)
 
-    # ── Line annotations ─────────────────────────────
+    # ── Connector annotations (curve when path available, line fallback)
     line_anns: List[Dict[str, Any]] = []
     for link in link_list:
+        # Extract pen style common to both curve and line
+        pen_color = "#808080"
+        dashed = False
+        style_str = link["style"]
+        stroke_m = re.search(r'stroke:\s*(#[0-9A-Fa-f]{3,8})', style_str)
+        if stroke_m:
+            pen_color = stroke_m.group(1)
+        if "stroke-dasharray" in style_str:
+            dashed = True
+        width_m = re.search(
+            r'stroke-width:\s*(\d+(?:\.\d+)?)', style_str,
+        )
+        pen_width = int(float(width_m.group(1))) if width_m else 2
+
+        # Try emitting a curve from the SVG path geometry
+        d_attr = link.get("path_d", "")
+        has_curves = bool(re.search(r"[CcSsQqTt]", d_attr)) if d_attr else False
+
+        if has_curves:
+            curve_nodes, (bx, by, bw, bh) = _parse_path_to_curve_nodes(d_attr)
+            if curve_nodes and bw > 0 and bh > 0:
+                arrow = "end" if link.get("has_arrowhead") else "none"
+                ann_id = f"p{counter:06d}"
+                counter += 1
+                line_anns.append({
+                    "id": ann_id,
+                    "kind": "curve",
+                    "geom": {
+                        "x": bx, "y": by, "w": bw, "h": bh,
+                        "nodes": curve_nodes,
+                    },
+                    "meta": {
+                        "kind": "curve", "label": link["label"],
+                        "tech": "", "note": "",
+                    },
+                    "style": _make_line_style(
+                        pen_color, pen_width, dashed=dashed, arrow=arrow,
+                    ),
+                    "text": link["label"],
+                })
+                continue
+
+        # Fallback: center-to-center line
         src_geom = all_geom.get(link["src_id"])
         dst_geom = all_geom.get(link["dst_id"])
         if not src_geom or not dst_geom:
@@ -1963,20 +2151,6 @@ def _parse_description_diagram_svg(
         y1 = round(src_geom["y"] + src_geom["h"] / 2, 2)
         x2 = round(dst_geom["x"] + dst_geom["w"] / 2, 2)
         y2 = round(dst_geom["y"] + dst_geom["h"] / 2, 2)
-
-        pen_color = "#808080"
-        dashed = False
-        style_str = link["style"]
-        stroke_m = re.search(r'stroke:\s*(#[0-9A-Fa-f]{3,8})', style_str)
-        if stroke_m:
-            pen_color = stroke_m.group(1)
-        if "stroke-dasharray" in style_str:
-            dashed = True
-
-        width_m = re.search(
-            r'stroke-width:\s*(\d+(?:\.\d+)?)', style_str,
-        )
-        pen_width = int(float(width_m.group(1))) if width_m else 2
 
         ann_id = f"p{counter:06d}"
         counter += 1
@@ -2307,8 +2481,44 @@ def _build_annotations(
         if ann:
             annotations.append(ann)
 
-    # Build line annotations from connections
+    # Build connector annotations (curve when SVG path available, line fallback)
     for conn in connections:
+        label = conn.get("label", "")
+        dashed = conn.get("dashed", False)
+        color = conn.get("color")
+        pen_color = _normalize_color(color) if color else "#808080"
+
+        # Try emitting a curve from the SVG path geometry
+        d_attr = conn.get("path_d", "")
+        has_curves = bool(re.search(r"[CcSsQqTt]", d_attr)) if d_attr else False
+
+        if has_curves:
+            curve_nodes, (bx, by, bw, bh) = _parse_path_to_curve_nodes(d_attr)
+            if curve_nodes and bw > 0 and bh > 0:
+                arrow = "end" if conn.get("has_arrowhead") else "none"
+                ann_id = f"p{counter:06d}"
+                counter += 1
+                annotations.append({
+                    "id": ann_id,
+                    "kind": "curve",
+                    "geom": {
+                        "x": bx, "y": by, "w": bw, "h": bh,
+                        "nodes": curve_nodes,
+                    },
+                    "meta": {
+                        "kind": "curve",
+                        "label": label,
+                        "tech": "",
+                        "note": label,
+                    },
+                    "style": _make_line_style(
+                        pen_color, 2, dashed=dashed, arrow=arrow,
+                    ),
+                    "text": label,
+                })
+                continue
+
+        # Fallback: center-to-center line
         src_pos = positions.get(conn["src"])
         dst_pos = positions.get(conn["dst"])
         if not src_pos or not dst_pos:
@@ -2322,13 +2532,7 @@ def _build_annotations(
         x2 = round(dst_pos["x"] + dst_pos["w"] / 2, 2)
         y2 = round(dst_pos["y"] + dst_pos["h"] / 2, 2)
 
-        label = conn.get("label", "")
-        dashed = conn.get("dashed", False)
-        color = conn.get("color")
-
-        pen_color = _normalize_color(color) if color else "#808080"
-
-        ann: Dict[str, Any] = {
+        annotations.append({
             "id": ann_id,
             "kind": "line",
             "geom": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
@@ -2340,9 +2544,7 @@ def _build_annotations(
             },
             "style": _make_line_style(pen_color, 2, dashed=dashed),
             "text": label,
-        }
-
-        annotations.append(ann)
+        })
 
     return annotations
 
@@ -2419,6 +2621,8 @@ def parse_puml_to_annotations(
             svg_link = svg_link_map.get(key)
             if svg_link:
                 _apply_svg_link_style(conn, svg_link["style"])
+                conn["path_d"] = svg_link.get("path_d", "")
+                conn["has_arrowhead"] = svg_link.get("has_arrowhead", False)
 
         # Add SVG-only links not found by the text regex
         for key, svg_link in svg_link_map.items():
@@ -2429,6 +2633,8 @@ def parse_puml_to_annotations(
                     "label": svg_link.get("label", ""),
                     "dashed": False,
                     "color": None,
+                    "path_d": svg_link.get("path_d", ""),
+                    "has_arrowhead": svg_link.get("has_arrowhead", False),
                 }
                 _apply_svg_link_style(conn, svg_link["style"])
                 connections.append(conn)
