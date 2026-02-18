@@ -1,4 +1,4 @@
-@startuml Component - Step 2: API Layer
+@startuml Component - Step 2 API Layer
 !theme plain
 
 title <b>PokeAMI — API Layer</b>\n<i>FastAPI routers · Auth · OpenAPI 3.1</i>

@@ -1,4 +1,4 @@
-@startuml Architecture - Step 4: Core MDMS (VEE Pipeline)
+@startuml Architecture - Step 4 Core MDMS (VEE Pipeline)
 !theme plain
 
 title <b>Step 4: Core MDMS — VEE Pipeline</b>\n<i>Validation · Estimation · Editing → billing-quality data</i>

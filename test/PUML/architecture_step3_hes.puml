@@ -1,4 +1,4 @@
-@startuml Architecture - Step 3: Gridstream HES
+@startuml Architecture - Step 3 Gridstream HES
 !theme plain
 
 title <b>Step 3: Gridstream Head-End System (HES)</b>\n<i>Central data collection — raw meter readings</i>

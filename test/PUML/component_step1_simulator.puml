@@ -1,4 +1,4 @@
-@startuml Component - Step 1: Simulator Layer
+@startuml Component - Step 1 Simulator Layer
 !theme plain
 
 title <b>PokeAMI — Simulator Layer</b>\n<i>MeterPark → DataGenerator → Headend → MDM → Analytics → DeliveryManager</i>

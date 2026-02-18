@@ -1,4 +1,4 @@
-@startuml Architecture - Step 7: Client Integration
+@startuml Architecture - Step 7 Client Integration
 !theme plain
 
 title <b>Step 7: Integrating with Utility Systems</b>\n<i>Where consuming applications connect</i>

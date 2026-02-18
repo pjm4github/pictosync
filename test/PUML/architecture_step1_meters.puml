@@ -1,4 +1,4 @@
-@startuml Architecture - Step 1: Meter Fleet
+@startuml Architecture - Step 1 Meter Fleet
 !theme plain
 
 title <b>Step 1: Landis+Gyr Meter Fleet</b>\n<i>Field devices — the data source</i>

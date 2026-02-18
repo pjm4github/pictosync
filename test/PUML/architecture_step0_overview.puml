@@ -1,4 +1,4 @@
-@startuml Architecture - Step 0: Full Overview
+@startuml Architecture - Step 0 Full Overview
 !theme plain
 
 title <b>PokeAMI — Simulated AMI Architecture</b>\n<i>Full System Overview</i>

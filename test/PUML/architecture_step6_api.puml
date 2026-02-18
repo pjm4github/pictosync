@@ -1,4 +1,4 @@
-@startuml Architecture - Step 6: REST API Layer
+@startuml Architecture - Step 6 REST API Layer
 !theme plain
 
 title <b>Step 6: CIM-Compatible REST API</b>\n<i>OpenAPI 3.1 · IEC 61968-9 · X-API-Key Auth</i>

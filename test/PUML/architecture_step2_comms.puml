@@ -1,4 +1,4 @@
-@startuml Architecture - Step 2: Communication Network
+@startuml Architecture - Step 2 Communication Network
 !theme plain
 
 title <b>Step 2: Communication Pathways</b>\n<i>RF Mesh · PLC · Cellular LTE</i>

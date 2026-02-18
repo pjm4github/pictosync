@@ -892,6 +892,30 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Read Error", f"Could not read PUML file:\n{e}")
             return
 
+        # Check @startuml diagram name for illegal Windows filename chars.
+        # PlantUML uses this name as the output filename, so characters like
+        # : * ? " < > | will silently produce a 0-byte output on Windows.
+        _ILLEGAL_FNAME_CHARS = set('\\/:*?"<>|')
+        for line_num, line in enumerate(puml_text.splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.lower().startswith("@startuml"):
+                diagram_name = stripped[len("@startuml"):].strip()
+                bad_chars = sorted(set(ch for ch in diagram_name if ch in _ILLEGAL_FNAME_CHARS))
+                if bad_chars:
+                    chars_display = "  ".join(repr(c) for c in bad_chars)
+                    QMessageBox.warning(
+                        self,
+                        "Illegal Characters in Diagram Name",
+                        f"The @startuml diagram name contains characters that are "
+                        f"illegal in Windows filenames. PlantUML uses this name "
+                        f"for the output file, so rendering will fail.\n\n"
+                        f"Line {line_num}: {stripped}\n\n"
+                        f"Illegal characters: {chars_display}\n\n"
+                        f"Please remove these characters from the @startuml line.",
+                    )
+                    return
+                break  # Only need to check the first @startuml line
+
         # Try to render to PNG for background
         png_path = None
         try:
@@ -1271,8 +1295,11 @@ class MainWindow(QMainWindow):
 
     def export_pptx_dialog(self):
         """Export canvas to PowerPoint file."""
+        initial_dir = ""
+        if self.settings_manager.settings.pptx_export_to_source_dir and self.bg_path:
+            initial_dir = os.path.dirname(self.bg_path)
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export PowerPoint", "", "PowerPoint (*.pptx)"
+            self, "Export PowerPoint", initial_dir, "PowerPoint (*.pptx)"
         )
         if not path:
             return
