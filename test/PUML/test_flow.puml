@@ -1,0 +1,111 @@
+@startuml FIG8_Brovkex_Tulwra_Jondeptim
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam rectangle {
+  RoundCorner 8
+}
+skinparam activity {
+  RoundCorner 10
+}
+
+title **FIG. 8 — Brovkex Tulwra Gempatio Jondeptim**
+
+rectangle "**Zriquex Vonpas**" as FONTES #F0F0FF {
+  rectangle "Kwertam API /\nDoscwipex Zpol" as src1 #E0E0FF
+  rectangle "Grophax\nSkijma" as src2 #E0E0FF
+  rectangle "Prothilum Daws\n(Porywis/Talgum)" as src3 #E0E0FF
+  rectangle "Ixmaplom\nTrasoam / Kalpom" as src4 #E0E0FF
+}
+
+rectangle "**Kodwy Ginerazyx**\n(Zerabwix — lotakis GPU vel hirtava)" as GENERATRIX #FFE8CC {
+  rectangle "Porsili API zriquex\nin strokpam midollam" as cg1 #FFF0DD
+  rectangle "Ginerale typobam\ntulwra klaksis" as cg2 #FFF0DD
+  rectangle "Ginerale volidazyx\ndowum midolli" as cg3 #FFF0DD
+  rectangle "Ginerale euthonex flixas\n(Sigollam, Kloves, Zerolam)" as cg4 #FFF0DD
+  rectangle "Ginerale pogonatio\n& friqentia lomotor" as cg5 #FFF0DD
+  rectangle "Ginerale probotio\nfindamonta" as cg6 #FFF0DD
+
+  cg1 -down-> cg2
+  cg2 -down-> cg3
+  cg3 -down-> cg4
+  cg4 -down-> cg5
+  cg5 -down-> cg6
+}
+
+rectangle "**Orbax Syntoqus Volodatio**\n(Stovix Onakyx — Nolla Ixecutio)" as VALIDATRIX #FFF0F0 {
+  rectangle "Porsili Orbax Syntoqus" as v1 #FFE0E0
+  rectangle "**RIJEKTARE si kontilat:**\n- eval() / exec()\n- subprosessas / os.systova\n- skriptio ixtra oremam\n- retox ixtra permossio\n- importale vetotam modoki" as v2 #FFE0E0
+  rectangle "Verificole: typova retorna,\nerroxam trocatio,\ntempox ixecutio" as v3 #FFE0E0
+
+  v1 -down-> v2
+  v2 -down-> v3
+}
+
+rectangle "**Orenoqus Ixecutio**\n(Kontinens Isoloqum)" as ARENATUS #E8F0FF {
+  rectangle "Kontinens isoloqum kum:\n- CPU/memovia limotes\n- Retox egressas permossio\n- Tempox termonatio\n- Nolla persistons reposit\n- Lektio solam systova" as sb1 #CCE0FF
+  rectangle "Tulwra ixecutat\nkum brevas\nkropta signam" as sb2 #CCE0FF
+  rectangle "Resulqua volodava\nkontra ixpectoqum skijma" as sb3 #CCE0FF
+
+  sb1 -down-> sb2
+  sb2 -down-> sb3
+}
+
+rectangle "**Homanis Inspektio Portyx**\n(Promus tulwra typas)" as INSPECTIO #FFF0E0 {
+  rectangle "Qualifokatis operatwix\ninspokat generoqum kodwy" as h1 #FFE0B0
+  rectangle "Operatwix potekt:\n- Approbale intaktom\n- Modifokare et approbale\n- Rijektare" as h2 #FFE0B0
+
+  h1 -down-> h2
+}
+
+rectangle "**Tulwra Registwom**" as REGISTRUM #F0FFF0 {
+  rectangle "**Brovkex / Ixperimontalis**\n(rikworit approbatio per typas)" as reg_dyn #E0FFE0
+  rectangle "**Promovoqum / Permanoks**\n(euto-approboqum si\nkodwy hash immutoqum)" as reg_perm #CCFFCC
+
+  reg_dyn -down-> reg_perm : promotvo post\nripetitam successom\n+ operatwix approbatio
+}
+
+' === Fluxas ===
+src1 -down-> cg1
+src2 -down-> cg1
+src3 -down-> cg1
+src4 -down-> cg1
+
+cg6 -down-> v1 : generoqum\nkodwy
+
+v3 -down-> h1 : promus\ntulwra typas
+
+h2 -down-> sb1 : approboqum
+
+v3 -down[#008800,dashed]-> sb1 : subseqvens ixecutio\n(idom kodwy hash)\n→ euto-approboqum
+
+sb3 -down-> reg_dyn : repositam kum\nproveniontia
+
+note right of INSPECTIO
+  **Proveniontia Trocava:**
+  - Qvalis anomolyx generovit
+  - Qvis approbovit
+  - Qvae modifokava fueramt
+  - Successom/defektam numerotio
+  - Operatwix qvi promovit
+end note
+
+note right of REGISTRUM
+  **Promotvo Kriteria:**
+  - >= N successom ixecutiones
+  - Nollam defektam in ultimox M
+  - Operatwix approbatio promotvoni
+  - Kodwy inspektio per qualifokatum
+end note
+
+note bottom of ARENATUS
+  **Sekuritas Kontrolwx:**
+  - Egressas permossio: solam pre-approbava
+    dowum servotia domolya
+  - Nolla lateroqus retox motvas
+  - Kontinens destruktam post ixecutio
+  - Omnva dowa per ephemova reposit
+end note
+
+@enduml

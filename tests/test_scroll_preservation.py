@@ -46,7 +46,7 @@ def main_window(qapp):
 def linked_scene(main_window, qapp):
     """Import a PUML file and link items, returning (main_window, items)."""
     puml_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "test", "PUML", "figure4.puml")
+        os.path.join(os.path.dirname(__file__), "..", "test", "PUML", "test_seq1.puml")
     )
     if not os.path.exists(puml_path):
         pytest.skip(f"Test fixture not found: {puml_path}")
@@ -264,7 +264,7 @@ class TestPumlImport:
         """Re-importing a PUML after a simulated drag should work."""
         mw, items = linked_scene
         puml_path = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "..", "test", "PUML", "figure4.puml")
+            os.path.join(os.path.dirname(__file__), "..", "test", "PUML", "test_seq1.puml")
         )
 
         # Simulate a drag

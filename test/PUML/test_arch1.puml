@@ -1,0 +1,90 @@
+@startuml FIG1_Vorax_Stratum
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam rectangle {
+  RoundCorner 8
+}
+skinparam package {
+  RoundCorner 6
+}
+skinparam arrow {
+  Color #555555
+  Thickness 1.5
+}
+
+title **FIG. 1 — Vorax Stratum: Quattor Zonae**
+
+package "ZONA ALPHA\n(Sensorica Fabrica)" as ZonaA #FFF0F0 {
+  rectangle "Nexus Telem" as nextel #FFCCCC
+  rectangle "Adaptri Signalum\n(Proto Binar)" as adaptri #FFCCCC
+  rectangle "Portae Campi\n/ Collectori" as portae #FFCCCC
+  rectangle "Eventus Tralha\n(Pub / Sub)" as eventral #FFCCCC
+  rectangle "Anulus Scriba\n(Tempor Series)" as anscrib #FFE0E0
+}
+
+package "ZONA BETA\n(Processus Planum)" as ZonaB #F0F8FF {
+  rectangle "Detektra Patroni\n(ClaL)" as detektra #CCE5FF
+  rectangle "Korrelyx\nMachina" as korrelyx #CCE5FF
+  rectangle "Vokalis Konsola\n(Sermo Textum)" as vokalis #CCE5FF
+  rectangle "Statum Tabulae\n(Durabilis Cache)" as statum #CCE5FF
+  rectangle "Sugtrix\nMach" as suggestrix #CCE5FF
+  rectangle "Volatix Spatium\n(Pidermi)" as volatix #E0F0FF
+  rectangle "Aditus Kontrolyx\nPorta" as aditux #CCE5FF
+}
+
+package "ZONA GAMMA\n(Datum Servitia)" as ZonaC #F0FFF0 {
+  rectangle "Inventorix DB\n(Acticron)" as inventorix #CCFFCC
+  rectangle "Manutentix Sys\n(Ordines Operum)" as manutentix #CCFFCC
+  rectangle "Kontaktus Liber\n(Ratio Info)" as kontaktus #CCFFCC
+  rectangle "Archivum Reposit\n(Historica)" as archivum #CCFFCC
+  rectangle "Topologix Mappa\n(Graphum Model)" as topologix #CCFFCC
+}
+
+package "ZONA DELTA\n(Administralis Stratum)" as ZonaD #FFF8F0 {
+  rectangle "Modulus Reposit\n(Versionata)" as modrepo #FFE8CC
+  rectangle "Authentix Provisor\n(Signum Emittor)" as authentix #FFE8CC
+  rectangle "Usagix Analytika\n(Tabulata)" as usagix #FFE8CC
+}
+
+' === Fluxus Datorum ===
+
+' ZonaA -> ZonaB (pons unicus)
+eventral -[#CC0000,bold]-> detektra : <color:#CC0000>**Pons Unidirex**\n<color:#CC0000>(Simplex Transitus)
+anscrib -[#CC0000]-> korrelyx : Crudus fluxus\n(lectio solum)
+
+' ZonaB interna
+detektra --> suggestrix : patronum\neventus
+detektra --> statum : quaesitio\npetitum
+suggestrix --> korrelyx : actio\npropositum
+vokalis --> korrelyx : imperata\noperatoris
+korrelyx --> volatix : volatilis datum\n(ephemera)
+korrelyx --> statum : signatum\nresultum
+aditux --> korrelyx : aditus\ndecretum
+aditux --> vokalis : validatio\noperatoris
+
+' ZonaB <-> ZonaC (authenticata, filtrata)
+korrelyx -[#008800]-> inventorix : <color:#008800>nexus\n<color:#008800>(brevis signum)
+korrelyx -[#008800]-> manutentix
+korrelyx -[#008800]-> kontaktus
+korrelyx -[#008800]-> archivum
+korrelyx -[#008800]-> topologix
+
+' ZonaB <-> ZonaD
+modrepo -[#CC6600]-> korrelyx : modulus\nfasciculi
+authentix -[#CC6600]-> aditux : identitas\nasserta
+korrelyx -[#CC6600]-> usagix : usagium\nmetrica
+
+legend right
+  |= Color |= Significatio |
+  | <#FFCCCC> | Zona Alpha (sensorica) |
+  | <#CCE5FF> | Zona Beta (processus) |
+  | <#CCFFCC> | Zona Gamma (datum) |
+  | <#FFE8CC> | Zona Delta (administralis) |
+  | <color:#CC0000>━━</color> | Unidirex (pons simplex) |
+  | <color:#008800>━━</color> | Authenticata + filtrata |
+  | <color:#CC6600>━━</color> | Canalis administralis |
+endlegend
+
+@enduml

@@ -45,7 +45,7 @@ def main_window(qapp):
 def linked_scene_with_groups(main_window, qapp):
     """Import a PUML file that has groups, returning (main_window, groups)."""
     puml_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "test", "PUML", "figure1.puml")
+        os.path.join(os.path.dirname(__file__), "..", "test", "PUML", "test_arch1.puml")
     )
     if not os.path.exists(puml_path):
         pytest.skip(f"Test fixture not found: {puml_path}")

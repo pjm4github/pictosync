@@ -1,0 +1,134 @@
+@startuml FIG4_Diagnostrix_Sessio_Sequentia
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam defaultFontName Arial
+skinparam defaultFontSize 10
+skinparam sequence {
+  ArrowColor #555555
+  LifeLineBorderColor #888888
+  ParticipantBackgroundColor #F0F4FF
+  ParticipantBorderColor #8888CC
+}
+
+title **FIG. 4 — Anomalyx Diagnostrix Sessio per Vocalis**
+
+participant "Processus\nTralha" as OT #FFDDDD
+participant "Anomalyx\nDetektra" as AD #CCE5FF
+participant "Signum\nTabulae" as TS #E0D0FF
+participant "Suggestrix\nMachina" as RE #FFE8CC
+participant "Politix\nMachina" as PE #E8F0FF
+participant "Peritus\nOperatorix" as SME #FFE0B0
+participant "Vocalis Intentum\nMachina" as VIE #F0FFE0
+participant "Fusionyx\nEphemera" as EFE #CCE5FF
+participant "Datum Servitia\n(Inventorix...)" as IT #CCFFCC
+participant "Modulus\nReposit" as SR #FFE8CC
+
+== Phasum 1: Anomalyx Activatio ==
+
+OT -> AD : continuus fluxus\ndatorum (Proto\nBinar, Eventral)
+activate AD
+AD -> AD : classificare anomalyx\n(typus, severitas,\ndigitus activi)
+AD -> TS : **praescrutum**(activum, ramus,\ntypus anomalyx)
+activate TS
+TS --> AD : priora signata\n+ catena diagnostica\n+ relevantica scorae
+deactivate TS
+AD -> PE : petitio qualificatus\noperatorix itinera
+activate PE
+PE -> PE : mappa anomalyx dominium\n→ requisita peritia\n→ disponibilis operatorix
+PE --> AD : qualificatus operatorix:\nPeritus (peritia=0.82)
+deactivate PE
+
+== Phasum 2: Operatorix Notificatio ==
+
+AD -> SME : **impulsum notificatio**\n- typus anomalyx\n- activum identitas\n- priora signum\n- tactum aperire vocalis
+deactivate AD
+SME -> PE : authenticare\n(duplex verificatio)
+activate PE
+PE --> SME : identitas confirmata,\nperitiae onerata
+deactivate PE
+
+== Phasum 3: Iterativa Suggestio ==
+
+SME -> VIE : (tactum mikros) **"ita"**
+activate VIE
+VIE -> VIE : parsere intentum:\nINITIARE_FUSIO
+VIE -> RE : petitio suggestiones\n(anomalyx contextus +\npriora signa)
+activate RE
+RE -> RE : sex-signalum scoratio:\nanomaly concordia, activum classis,\nsignum historia, catena patronum,\noperatorix petitio, prior catena
+RE --> VIE : ordinatae peritiae:\n1. harmonix-analysis (0.59)\n2. activum-salus (0.47)\n3. onus-profilum (0.41)
+deactivate RE
+VIE --> SME : "Suggestio:\nharmonix-analysis v2.1"
+deactivate VIE
+
+== Phasum 4: Primus Fusio Cyclus ==
+
+SME -> VIE : **"fundere"**
+activate VIE
+VIE -> VIE : parsere intentum:\nACCEPTARE_PERITIA
+VIE -> SR : trahere modulus fasciculum\n(harmonix-analysis v2.1)
+activate SR
+SR --> VIE : modulus fasciculum\n(signatum, validatum)
+deactivate SR
+VIE -> EFE : executare fusio\n(peritia + anomalyx contextus)
+activate EFE
+EFE -> EFE : creare cryptatum\nvolatix spatium
+EFE -> IT : hydrare nexus\n(brevia signa)
+activate IT
+IT --> EFE : datum servitia\n→ cryptatum volatix
+deactivate IT
+EFE -> EFE : fundere datorum\n→ resultum: tertius harmonix\nTHD 8.2%, fiducia 0.94
+EFE --> VIE : peritia resultum +\nnovus contextus
+deactivate EFE
+VIE --> SME : "Harmonix analysis:\ntertius harmonix THD 8.2%.\nSuggestio: activum-salus"
+deactivate VIE
+
+== Phasum 5: Secundus Fusio Cyclus (Iterativum) ==
+
+SME -> VIE : **"inspicere\nmanutentix historia"**
+activate VIE
+VIE -> VIE : parsere intentum:\nPETITIO_PERITIA\nparam="manutentix historia"
+VIE -> RE : re-ordinare cum novo\ncontextu (thermalis stress)
+activate RE
+RE --> VIE : activum-salus-inspectio\npromota ad summum
+deactivate RE
+VIE -> EFE : executare activum-salus\n(reutere spatium)
+activate EFE
+EFE -> IT : trahere manutentix registra
+activate IT
+IT --> EFE : ordines operum → volatix
+deactivate IT
+EFE -> EFE : fundere → salus_scora=41\n(declinans tendentia)
+EFE --> VIE : resultum + composita\nfiducia=0.91
+deactivate EFE
+VIE --> SME : "Salus scora 41,\ndeclinans. Composita\nfiducia 91%."
+deactivate VIE
+
+== Phasum 6: Operatorix Notum + Signum ==
+
+SME -> VIE : **"harmonix correlat\ncum industrialis onus\nin ramus duodecim"**
+activate VIE
+VIE -> VIE : parsere intentum: ADDERE_NOTUM
+VIE --> SME : "Notum additum."
+deactivate VIE
+
+SME -> VIE : **"signare"**
+activate VIE
+VIE -> VIE : parsere intentum: SIGNARE_RESULTUM
+VIE -> EFE : finalizare + delere
+activate EFE
+
+== Phasum 7: Deletio + Persistentia ==
+
+EFE -> EFE : **DELERE:**\n1. nullificare RAM paginas\n2. destruere AES clavem\n3. demontare volatix\n4. generare attestatio
+EFE -> TS : **persistere signatum resultum**\n(cognitio + signa + transcriptum\n+ attestatio + catena nexus)
+activate TS
+TS --> EFE : signum-3217 repositum
+deactivate TS
+EFE -> SR : reportare exitus metrica\n(peritia accuratio)
+EFE -> PE : renovare operatorix\nperitia scora (+0.02)
+EFE --> VIE : sessio completa
+deactivate EFE
+VIE --> SME : "Signatum ut signum-3217.\nDatum deletum.\nSessio completa."
+deactivate VIE
+
+@enduml
