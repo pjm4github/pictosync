@@ -11,7 +11,7 @@ mw = MainWindow(SettingsManager())
 mw.show()
 app.processEvents()
 
-mw._import_puml(os.path.abspath('test/PUML/test_seq1.puml'))
+mw._import_puml(os.path.abspath('test_data/PUML/test_seq1.puml'))
 mw.import_draft_and_link()
 app.processEvents()
 

@@ -1,147 +1,243 @@
-"""Diagnostic: move group g000012 FIRST, then ungroup, then drag p000013."""
-import sys, json, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from PyQt6.QtWidgets import QApplication, QGraphicsItem
+"""Test move-then-ungroup-then-drag on a flow/activity diagram (test_flow.puml).
+
+Requires a GUI environment (not headless).  Run with:
+    .venv/Scripts/python -m pytest tests/test_flow_ungroup.py -v
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+
+import pytest
 from PyQt6.QtCore import QPointF
+from PyQt6.QtWidgets import QApplication
 
-app = QApplication(sys.argv)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
 from settings import SettingsManager
-from main import MainWindow
-from canvas.items import MetaGroupItem
 
-mw = MainWindow(SettingsManager())
-mw.show()
-app.processEvents()
 
-puml_path = os.path.abspath('test/PUML/test_flow.puml')
-mw._import_puml(puml_path)
-mw.import_draft_and_link()
-app.processEvents()
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
 
-# Find and ungroup g000012
-groups = [i for i in mw.scene.items() if isinstance(i, MetaGroupItem)]
-target_group = [g for g in groups if g.ann_id == 'g000012'][0]
-children = list(target_group.member_items())
-p13 = [c for c in children if c.ann_id == 'p000013'][0]
+@pytest.fixture(scope="session")
+def qapp():
+    """Provide a single QApplication for the entire test session."""
+    app = QApplication.instance() or QApplication(sys.argv)
+    yield app
 
-print(f"=== STEP 1: Move group g000012 ===")
-print(f"  group pos before: ({target_group.pos().x()}, {target_group.pos().y()})")
-print(f"  p000013 pos before: ({p13.pos().x()}, {p13.pos().y()})")
-print(f"  p000013 scenePos: ({p13.scenePos().x()}, {p13.scenePos().y()})")
 
-# Select and move the group
-mw.scene.clearSelection()
-target_group.setSelected(True)
-app.processEvents()
+@pytest.fixture()
+def main_window(qapp):
+    """Create a fresh MainWindow for each test."""
+    from main import MainWindow
+    sm = SettingsManager()
+    mw = MainWindow(sm)
+    mw.show()
+    qapp.processEvents()
+    yield mw
+    mw.close()
 
-mw.scene._mouse_down_in_select = True
-old_group_pos = target_group.pos()
-target_group.setPos(old_group_pos.x() + 20, old_group_pos.y() + 20)
-app.processEvents()
-mw.scene._mouse_down_in_select = False
-mw.draft.unlock_scroll()
-app.processEvents()
 
-print(f"  group pos after move: ({target_group.pos().x()}, {target_group.pos().y()})")
-print(f"  p000013 pos after group move: ({p13.pos().x()}, {p13.pos().y()})")
-print(f"  p000013 scenePos after: ({p13.scenePos().x()}, {p13.scenePos().y()})")
+@pytest.fixture()
+def linked_flow(main_window, qapp):
+    """Import test_flow.puml and link items, returning (main_window, groups)."""
+    puml_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "test_data", "PUML", "test_flow.puml")
+    )
+    if not os.path.exists(puml_path):
+        pytest.skip(f"Test fixture not found: {puml_path}")
 
-# Check state
-idx_group = mw._id_to_index.get('g000012')
-print(f"  g000012 in index: {idx_group}")
-print(f"  annotations count: {len(mw._draft_data['annotations'])}")
+    main_window._import_puml(puml_path)
+    main_window.import_draft_and_link()
+    qapp.processEvents()
 
-print(f"\n=== STEP 2: Ungroup g000012 ===")
-target_group.setSelected(True)
-app.processEvents()
-mw._do_ungroup_item(target_group)
-app.processEvents()
+    from canvas.items import MetaGroupItem
+    groups = [i for i in main_window.scene.items() if isinstance(i, MetaGroupItem)]
+    assert len(groups) > 0, "No groups found after import"
+    return main_window, groups
 
-print(f"  p000013 pos after ungroup: ({p13.pos().x()}, {p13.pos().y()})")
-print(f"  p000013 parentItem: {type(p13.parentItem()).__name__ if p13.parentItem() else 'None'}")
-print(f"  p000013 on_change: {p13.on_change is not None}")
 
-idx = mw._id_to_index.get('p000013')
-print(f"  p000013 in index: {idx}")
-print(f"  annotations count: {len(mw._draft_data['annotations'])}")
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-if idx is not None:
-    ann = mw._draft_data['annotations'][idx]
-    print(f"  annotation id at idx: {ann.get('id')}")
-    print(f"  annotation geom: {ann.get('geom')}")
-else:
-    print(f"  p000013 NOT IN INDEX!")
-    # Search all annotations
-    for i, a in enumerate(mw._draft_data['annotations']):
-        if isinstance(a, dict) and a.get('id') == 'p000013':
-            print(f"  found p000013 at index {i}")
-            print(f"  but _id_to_index says: {mw._id_to_index.get('p000013')}")
+def _check_index_integrity(mw):
+    """Assert every _id_to_index entry points to the correct annotation."""
+    anns = mw._draft_data["annotations"]
+    for aid, idx in mw._id_to_index.items():
+        assert idx < len(anns), f"{aid}: idx={idx} out of bounds (len={len(anns)})"
+        assert anns[idx].get("id") == aid, (
+            f"{aid}: idx={idx} points to {anns[idx].get('id')}"
+        )
 
-# Check for duplicates
-all_ids = [a.get('id') for a in mw._draft_data['annotations'] if isinstance(a, dict)]
-dup_ids = [x for x in all_ids if all_ids.count(x) > 1]
-if dup_ids:
-    print(f"  DUPLICATE IDs: {set(dup_ids)}")
 
-print(f"\n=== STEP 3: Drag p000013 ===")
-mw.scene.clearSelection()
-p13.setSelected(True)
-app.processEvents()
-app.processEvents()
+def _check_no_duplicate_ids(mw):
+    """Assert no duplicate annotation IDs exist."""
+    all_ids = [
+        a.get("id") for a in mw._draft_data["annotations"]
+        if isinstance(a, dict)
+    ]
+    assert len(all_ids) == len(set(all_ids)), (
+        f"Duplicate IDs: {[x for x in all_ids if all_ids.count(x) > 1]}"
+    )
 
-mw.scene._mouse_down_in_select = True
-idx = mw._id_to_index.get('p000013')
-if idx is not None:
-    geom_before = dict(mw._draft_data['annotations'][idx].get('geom', {}))
-    print(f"  geom before drag: {geom_before}")
-else:
-    geom_before = None
-    print(f"  p000013 NOT IN INDEX - drag won't update JSON!")
 
-old_pos = p13.pos()
-for step in range(1, 6):
-    p13.setPos(old_pos.x() + step, old_pos.y() + step)
-    app.processEvents()
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 
-if idx is not None:
-    geom_after = mw._draft_data['annotations'][idx].get('geom', {})
-    print(f"  geom after drag: {geom_after}")
-    print(f"  changed: {geom_before != geom_after}")
-else:
-    # Check if it was added as a new item
-    idx_new = mw._id_to_index.get('p000013')
-    if idx_new is not None:
-        print(f"  p000013 appeared at index {idx_new} (was added as new)")
-        print(f"  geom: {mw._draft_data['annotations'][idx_new].get('geom', {})}")
-    else:
-        print(f"  p000013 STILL NOT IN INDEX after drag!")
+class TestFlowMoveUngroupDrag:
+    """Move a group, ungroup it, then drag a child — on a flow diagram."""
 
-# Verify editor text
-editor_text = mw.draft.get_json_text()
-data = json.loads(editor_text)
-ann = None
-for a in data['annotations']:
-    if a.get('id') == 'p000013':
-        ann = a
-        break
-print(f"  p000013 in editor JSON: {ann is not None}")
-if ann:
-    print(f"  editor geom: {ann.get('geom')}")
+    def test_move_group_updates_geom(self, linked_flow, qapp):
+        """Moving a group should update its geom in the JSON."""
+        mw, groups = linked_flow
+        group = groups[0]
+        group_id = group.ann_id
 
-# Full integrity check
-print(f"\n=== Index integrity ===")
-anns = mw._draft_data['annotations']
-mismatches = 0
-for aid, i in mw._id_to_index.items():
-    if i >= len(anns):
-        print(f"  {aid}: idx={i} OUT OF BOUNDS (len={len(anns)})")
-        mismatches += 1
-    elif anns[i].get('id') != aid:
-        print(f"  {aid}: idx={i} → id={anns[i].get('id')}")
-        mismatches += 1
-if mismatches == 0:
-    print(f"  All {len(mw._id_to_index)} entries OK")
+        idx = mw._id_to_index.get(group_id)
+        assert idx is not None, f"{group_id} not in _id_to_index"
 
-mw.scene._mouse_down_in_select = False
-mw.draft.unlock_scroll()
-app.quit()
+        mw.scene.clearSelection()
+        group.setSelected(True)
+        qapp.processEvents()
+
+        mw.scene._mouse_down_in_select = True
+        old_pos = group.pos()
+        group.setPos(old_pos.x() + 20, old_pos.y() + 20)
+        qapp.processEvents()
+        mw.scene._mouse_down_in_select = False
+        mw.draft.unlock_scroll()
+        qapp.processEvents()
+
+        _check_index_integrity(mw)
+
+    def test_move_then_ungroup_no_duplicates(self, linked_flow, qapp):
+        """Moving a group then ungrouping should not create duplicate IDs."""
+        mw, groups = linked_flow
+        group = groups[0]
+
+        # Step 1: Move the group
+        mw.scene.clearSelection()
+        group.setSelected(True)
+        qapp.processEvents()
+        mw.scene._mouse_down_in_select = True
+        old_pos = group.pos()
+        group.setPos(old_pos.x() + 20, old_pos.y() + 20)
+        qapp.processEvents()
+        mw.scene._mouse_down_in_select = False
+        mw.draft.unlock_scroll()
+        qapp.processEvents()
+
+        # Step 2: Ungroup
+        group.setSelected(True)
+        qapp.processEvents()
+        mw._do_ungroup_item(group)
+        qapp.processEvents()
+
+        _check_no_duplicate_ids(mw)
+        _check_index_integrity(mw)
+
+    def test_child_on_change_after_move_ungroup(self, linked_flow, qapp):
+        """Children should retain on_change and have no parent after ungroup."""
+        mw, groups = linked_flow
+        group = groups[0]
+        children = list(group.member_items())
+
+        # Move then ungroup
+        mw.scene.clearSelection()
+        group.setSelected(True)
+        qapp.processEvents()
+        mw.scene._mouse_down_in_select = True
+        old_pos = group.pos()
+        group.setPos(old_pos.x() + 20, old_pos.y() + 20)
+        qapp.processEvents()
+        mw.scene._mouse_down_in_select = False
+        mw.draft.unlock_scroll()
+        qapp.processEvents()
+
+        group.setSelected(True)
+        qapp.processEvents()
+        mw._do_ungroup_item(group)
+        qapp.processEvents()
+
+        for child in children:
+            assert child.on_change is not None, (
+                f"{child.ann_id}: on_change is None after ungroup"
+            )
+            assert child.parentItem() is None, (
+                f"{child.ann_id}: still has a parent after ungroup"
+            )
+
+    def test_drag_child_after_move_ungroup(self, linked_flow, qapp):
+        """Dragging an ungrouped child should update its geom in JSON."""
+        from canvas.items import MetaRectItem
+
+        mw, groups = linked_flow
+        group = groups[0]
+        children = list(group.member_items())
+
+        # Move then ungroup
+        mw.scene.clearSelection()
+        group.setSelected(True)
+        qapp.processEvents()
+        mw.scene._mouse_down_in_select = True
+        old_pos = group.pos()
+        group.setPos(old_pos.x() + 20, old_pos.y() + 20)
+        qapp.processEvents()
+        mw.scene._mouse_down_in_select = False
+        mw.draft.unlock_scroll()
+        qapp.processEvents()
+
+        group.setSelected(True)
+        qapp.processEvents()
+        mw._do_ungroup_item(group)
+        qapp.processEvents()
+
+        # Find a rect child to drag
+        rects = [c for c in children if isinstance(c, MetaRectItem)]
+        assert len(rects) > 0, "No rect children in group"
+
+        target = rects[0]
+        child_id = target.ann_id
+        idx = mw._id_to_index.get(child_id)
+        assert idx is not None, f"{child_id} not in _id_to_index"
+
+        geom_before = dict(mw._draft_data["annotations"][idx].get("geom", {}))
+
+        # Select and drag child
+        mw.scene.clearSelection()
+        target.setSelected(True)
+        qapp.processEvents()
+        mw.scene._mouse_down_in_select = True
+
+        old_pos = target.pos()
+        for step in range(1, 6):
+            target.setPos(old_pos.x() + step, old_pos.y() + step)
+            qapp.processEvents()
+
+        geom_after = mw._draft_data["annotations"][idx].get("geom", {})
+        assert geom_after != geom_before, (
+            f"Geom should have changed: {geom_before} -> {geom_after}"
+        )
+
+        # Editor JSON should agree
+        editor_data = json.loads(mw.draft.get_json_text())
+        editor_ann = next(
+            (a for a in editor_data["annotations"] if a.get("id") == child_id),
+            None,
+        )
+        assert editor_ann is not None, f"{child_id} missing from editor JSON"
+        assert editor_ann.get("geom") == geom_after, (
+            f"Editor geom mismatch: {editor_ann.get('geom')} vs {geom_after}"
+        )
+
+        # Clean up
+        mw.scene._mouse_down_in_select = False
+        mw.draft.unlock_scroll()
+
+        _check_no_duplicate_ids(mw)
+        _check_index_integrity(mw)

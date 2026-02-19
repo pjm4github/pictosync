@@ -30,8 +30,8 @@ nul
 .claude/
 
 # Test images (keep locally, don't track)
-test/PNG/software-system.png
-test/PNG/C4.png
+test_data/PNG/software-system.png
+test_data/PNG/C4.png
 
 # Alignment debug files
 debug_*.png
