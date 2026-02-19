@@ -21,52 +21,23 @@ Tools are organized into six categories:
 
 The core capabilities that define the round-trip workflow:
 
-<table>
-<tr>
-  <th>Tool</th><th>PUML Import</th><th>JSON IR</th><th>Canvas Edit</th><th>Bidi Sync</th><th>PPTX Export</th><th>PNG Overlay</th><th>AI Extract</th><th>Open Source</th>
-</tr>
-<tr>
-  <td><b>PictoSync</b></td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td>
-</tr>
-<tr>
-  <td>D2 Studio</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">Partial</td>
-</tr>
-<tr>
-  <td>dAIgram</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes (input)</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffc7ce">No</td>
-</tr>
-<tr>
-  <td>Eraser.io</td><td bgcolor="#ffeb9c">Converts</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffeb9c">Partial</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffc7ce">No</td>
-</tr>
-<tr>
-  <td>draw.io</td><td bgcolor="#ffc7ce">Removed 2025</td><td bgcolor="#ffc7ce">No (XML)</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">Add-in</td><td bgcolor="#ffeb9c">Image layer</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td>
-</tr>
-<tr>
-  <td>OxDraw</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">Code maps</td><td bgcolor="#c6efce">Yes</td>
-</tr>
-<tr>
-  <td>Excalidraw</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes (native)</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td>
-</tr>
-<tr>
-  <td>LikeC4</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffeb9c">With draw.io</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td>
-</tr>
-<tr>
-  <td>Structurizr</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">Partial</td>
-</tr>
-<tr>
-  <td>IcePanel</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td>
-</tr>
-<tr>
-  <td>Miro + PlantUML App</td><td bgcolor="#ffeb9c">Via app</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">Whiteboard</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">Images on board</td><td bgcolor="#ffeb9c">Miro Assist</td><td bgcolor="#ffc7ce">No</td>
-</tr>
-<tr>
-  <td>Lucidchart</td><td bgcolor="#ffeb9c">Minimal</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">Image only</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">AI text-to-diagram</td><td bgcolor="#ffc7ce">No</td>
-</tr>
-<tr>
-  <td>Visual Paradigm</td><td bgcolor="#ffeb9c">Via plugin</td><td bgcolor="#ffeb9c">Yes (export)</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffeb9c">Code eng. only</td><td bgcolor="#ffeb9c">Limited</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">AI builder</td><td bgcolor="#ffc7ce">No</td>
-</tr>
-</table>
+| Tool | PUML Import | JSON IR | Canvas Edit | Bidi Sync | PPTX Export | PNG Overlay | AI Extract | Open Source |
+|------|:-----------:|:-------:|:-----------:|:---------:|:-----------:|:-----------:|:----------:|:----------:|
+| **PictoSync** | 🟢 Yes | 🟢 Yes | 🟢 Yes | 🟢 Yes | 🟢 Yes | 🟢 Yes | 🟢 Yes | 🟢 Yes |
+| D2 Studio | 🔴 No | 🔴 No | 🟢 Yes | 🟢 Yes | 🟢 Yes | 🔴 No | 🔴 No | 🟡 Partial |
+| dAIgram | 🔴 No | 🟢 Yes | 🟢 Yes | 🔴 No | 🟢 Yes | 🟢 Yes (input) | 🟢 Yes | 🔴 No |
+| Eraser.io | 🟡 Converts | 🔴 No | 🟢 Yes | 🟡 Partial | 🔴 No | 🔴 No | 🟢 Yes | 🔴 No |
+| draw.io | 🔴 Removed 2025 | 🔴 No (XML) | 🟢 Yes | 🔴 No | 🟡 Add-in | 🟡 Image layer | 🔴 No | 🟢 Yes |
+| OxDraw | 🔴 No | 🔴 No | 🟢 Yes | 🟢 Yes | 🔴 No | 🔴 No | 🟡 Code maps | 🟢 Yes |
+| Excalidraw | 🔴 No | 🟢 Yes (native) | 🟢 Yes | 🔴 No | 🔴 No | 🔴 No | 🔴 No | 🟢 Yes |
+| LikeC4 | 🔴 No | 🔴 No | 🟢 Yes | 🟡 With draw.io | 🔴 No | 🔴 No | 🔴 No | 🟢 Yes |
+| Structurizr | 🔴 No | 🟢 Yes | 🔴 No | 🔴 No | 🔴 No | 🔴 No | 🔴 No | 🟡 Partial |
+| IcePanel | 🔴 No | 🟢 Yes | 🟢 Yes | 🔴 No | 🔴 No | 🔴 No | 🔴 No | 🔴 No |
+| Miro + PlantUML App | 🟡 Via app | 🔴 No | 🟡 Whiteboard | 🔴 No | 🔴 No | 🟡 Images on board | 🟡 Miro Assist | 🔴 No |
+| Lucidchart | 🟡 Minimal | 🔴 No | 🟢 Yes | 🔴 No | 🟡 Image only | 🔴 No | 🟡 AI text-to-diagram | 🔴 No |
+| Visual Paradigm | 🟡 Via plugin | 🟡 Yes (export) | 🟢 Yes | 🟡 Code eng. only | 🟡 Limited | 🔴 No | 🟡 AI builder | 🔴 No |
 
-**Key**: <span style="background:#c6efce;padding:2px 6px">Yes</span> = native support, <span style="background:#ffc7ce;padding:2px 6px">No</span> = not supported, <span style="background:#ffeb9c;padding:2px 6px">Partial</span> = limited or via add-on
+**Key**: 🟢 = native support, 🔴 = not supported, 🟡 = limited or via add-on
 
 ---
 
@@ -100,15 +71,14 @@ Tools built around the PlantUML text-to-diagram rendering engine.
 - Open source graphical editor for PlantUML with real-time rendering
 - Some interactivity but not full bidirectional canvas editing
 
-<table>
-<tr><th>Capability</th><th>PlantUML</th><th>Kroki</th><th>PlantText</th><th>Pladitor</th></tr>
-<tr><td>Import PlantUML</td><td bgcolor="#c6efce">Native</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td></tr>
-<tr><td>Visual canvas editing</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>Bidirectional sync</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>PPTX export</td><td bgcolor="#ffeb9c">No (add-in)</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>PNG annotation overlay</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>JSON intermediate format</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td></tr>
-</table>
+| Capability | PlantUML | Kroki | PlantText | Pladitor |
+|---|:---:|:---:|:---:|:---:|
+| Import PlantUML | 🟢 Native | 🟢 Yes | 🟢 Yes | 🟢 Yes |
+| Visual canvas editing | 🔴 No | 🔴 No | 🔴 No | 🔴 No |
+| Bidirectional sync | 🔴 No | 🔴 No | 🔴 No | 🔴 No |
+| PPTX export | 🟡 No (add-in) | 🔴 No | 🔴 No | 🔴 No |
+| PNG annotation overlay | 🔴 No | 🔴 No | 🔴 No | 🔴 No |
+| JSON intermediate format | 🔴 No | 🔴 No | 🔴 No | 🔴 No |
 
 **Gap**: The entire PlantUML ecosystem is one-way (text → image). No tool provides visual editing of rendered output or round-trip back to PUML source.
 
@@ -148,17 +118,16 @@ Text DSL tools that generate diagrams, some with visual editing.
 - DiagramGPT for AI generation from text prompts
 - Exports to PNG, SVG, PDF — **no PPTX export**
 
-<table>
-<tr><th>Capability</th><th>D2 Studio</th><th>Mermaid</th><th>OxDraw</th><th>Eraser.io</th></tr>
-<tr><td>Import PlantUML</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">Converts</td></tr>
-<tr><td>Visual canvas editing</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffeb9c">Limited</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td></tr>
-<tr><td>Bidirectional sync</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffeb9c">Partial</td></tr>
-<tr><td>PPTX export</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffeb9c">Add-in</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>PNG annotation overlay</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>JSON intermediate format</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>AI capabilities</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">Code maps</td><td bgcolor="#ffeb9c">DiagramGPT</td></tr>
-<tr><td>Open source</td><td bgcolor="#ffeb9c">Partial</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffc7ce">No</td></tr>
-</table>
+| Capability | D2 Studio | Mermaid | OxDraw | Eraser.io |
+|---|:---:|:---:|:---:|:---:|
+| Import PlantUML | 🔴 No | 🔴 No | 🔴 No | 🟡 Converts |
+| Visual canvas editing | 🟢 Yes | 🟡 Limited | 🟢 Yes | 🟢 Yes |
+| Bidirectional sync | 🟢 Yes | 🔴 No | 🟢 Yes | 🟡 Partial |
+| PPTX export | 🟢 Yes | 🟡 Add-in | 🔴 No | 🔴 No |
+| PNG annotation overlay | 🔴 No | 🔴 No | 🔴 No | 🔴 No |
+| JSON intermediate format | 🔴 No | 🔴 No | 🔴 No | 🔴 No |
+| AI capabilities | 🔴 No | 🔴 No | 🟡 Code maps | 🟡 DiagramGPT |
+| Open source | 🟡 Partial | 🟢 Yes | 🟢 Yes | 🔴 No |
 
 **Gap**: D2 Studio has the best bidi sync + PPTX story, but no PlantUML, no AI extraction, no PNG annotation. Eraser can import PlantUML but loses round-trip capability.
 
@@ -204,16 +173,15 @@ Canvas-first tools with varying levels of code import/export.
 - Exports to JSON for sharing/versioning, SVG, and PlantUML code
 - Supports round-trip code engineering (Java ↔ UML), but not round-trip PlantUML text ↔ visual canvas
 
-<table>
-<tr><th>Capability</th><th>draw.io</th><th>Lucidchart</th><th>Miro</th><th>Visio</th><th>Visual Paradigm</th></tr>
-<tr><td>Import PlantUML</td><td bgcolor="#ffc7ce">Removed 2025</td><td bgcolor="#ffeb9c">Minimal</td><td bgcolor="#ffeb9c">Via app</td><td bgcolor="#ffeb9c">One-way</td><td bgcolor="#ffeb9c">Via plugin</td></tr>
-<tr><td>Visual canvas editing</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td></tr>
-<tr><td>Bidirectional sync</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">Code eng. only</td></tr>
-<tr><td>PPTX export</td><td bgcolor="#ffeb9c">Add-in</td><td bgcolor="#ffeb9c">Image only</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffeb9c">Limited</td></tr>
-<tr><td>PNG annotation overlay</td><td bgcolor="#ffeb9c">Image layer</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">Board images</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>JSON intermediate format</td><td bgcolor="#ffc7ce">No (XML)</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">Yes (export)</td></tr>
-<tr><td>AI capabilities</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">AI text-to-diagram</td><td bgcolor="#ffeb9c">Miro Assist</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">AI builder</td></tr>
-</table>
+| Capability | draw.io | Lucidchart | Miro | Visio | Visual Paradigm |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Import PlantUML | 🔴 Removed 2025 | 🟡 Minimal | 🟡 Via app | 🟡 One-way | 🟡 Via plugin |
+| Visual canvas editing | 🟢 Yes | 🟢 Yes | 🟢 Yes | 🟢 Yes | 🟢 Yes |
+| Bidirectional sync | 🔴 No | 🔴 No | 🔴 No | 🔴 No | 🟡 Code eng. only |
+| PPTX export | 🟡 Add-in | 🟡 Image only | 🔴 No | 🟢 Yes | 🟡 Limited |
+| PNG annotation overlay | 🟡 Image layer | 🔴 No | 🟡 Board images | 🔴 No | 🔴 No |
+| JSON intermediate format | 🔴 No (XML) | 🔴 No | 🔴 No | 🔴 No | 🟡 Yes (export) |
+| AI capabilities | 🔴 No | 🟡 AI text-to-diagram | 🟡 Miro Assist | 🔴 No | 🟡 AI builder |
 
 **Gap**: draw.io is dropping PlantUML. Lucidchart's support is minimal. None provide true bidirectional sync between code and canvas. PPTX export is universally weak (image insertion, not native shapes).
 
@@ -256,16 +224,15 @@ Tools that use AI to extract or generate diagrams.
 - 6 core agents. Interactive canvas with zoom/pan/editing
 - Human-in-the-loop: refine results by asking AI to modify them
 
-<table>
-<tr><th>Capability</th><th>dAIgram</th><th>Livoa</th><th>DiagramGPT</th><th>Diagramming AI</th><th>DeepDiagram</th></tr>
-<tr><td>Import PlantUML</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>Visual canvas editing</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffeb9c">Via Eraser</td><td bgcolor="#ffeb9c">Via Excalidraw</td><td bgcolor="#c6efce">Yes</td></tr>
-<tr><td>Bidirectional sync</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">One-way</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>PPTX export</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffeb9c">Unknown</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>PNG/image input</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>JSON intermediate format</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffeb9c">Unknown</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>Open source</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td></tr>
-</table>
+| Capability | dAIgram | Livoa | DiagramGPT | Diagramming AI | DeepDiagram |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Import PlantUML | 🔴 No | 🔴 No | 🔴 No | 🟢 Yes | 🔴 No |
+| Visual canvas editing | 🟢 Yes | 🟢 Yes | 🟡 Via Eraser | 🟡 Via Excalidraw | 🟢 Yes |
+| Bidirectional sync | 🔴 No | 🔴 No | 🔴 No | 🟡 One-way | 🔴 No |
+| PPTX export | 🟢 Yes | 🟡 Unknown | 🔴 No | 🔴 No | 🔴 No |
+| PNG/image input | 🟢 Yes | 🟢 Yes | 🔴 No | 🔴 No | 🔴 No |
+| JSON intermediate format | 🟢 Yes | 🟡 Unknown | 🔴 No | 🔴 No | 🔴 No |
+| Open source | 🔴 No | 🔴 No | 🔴 No | 🔴 No | 🟢 Yes |
 
 **Gap**: dAIgram is the closest to PictoSync's AI workflow (image → JSON → canvas → PPTX), but lacks PlantUML import and bidirectional sync. No AI tool found supports the full PUML → JSON → Canvas round-trip.
 
@@ -304,16 +271,15 @@ Architecture-specific modeling tools, many designed around the C4 model.
 - Extends PlantUML with C4 model macros. Renders via PlantUML server
 - Inherits all PlantUML limitations (no visual editing, no PPTX export)
 
-<table>
-<tr><th>Capability</th><th>Structurizr</th><th>IcePanel</th><th>LikeC4</th><th>C4-PlantUML</th></tr>
-<tr><td>Import PlantUML</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Native</td></tr>
-<tr><td>Visual canvas editing</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>Bidirectional sync</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">With draw.io</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>PPTX export</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>PNG annotation overlay</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>JSON intermediate format</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffc7ce">No (DSL)</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>Open source</td><td bgcolor="#ffeb9c">Partial</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td></tr>
-</table>
+| Capability | Structurizr | IcePanel | LikeC4 | C4-PlantUML |
+|---|:---:|:---:|:---:|:---:|
+| Import PlantUML | 🔴 No | 🔴 No | 🔴 No | 🟢 Native |
+| Visual canvas editing | 🔴 No | 🟢 Yes | 🟢 Yes | 🔴 No |
+| Bidirectional sync | 🔴 No | 🔴 No | 🟡 With draw.io | 🔴 No |
+| PPTX export | 🔴 No | 🔴 No | 🔴 No | 🔴 No |
+| PNG annotation overlay | 🔴 No | 🔴 No | 🔴 No | 🔴 No |
+| JSON intermediate format | 🟢 Yes | 🟢 Yes | 🔴 No (DSL) | 🔴 No |
+| Open source | 🟡 Partial | 🔴 No | 🟢 Yes | 🟢 Yes |
 
 **Gap**: C4 tools focus on the modeling layer, not the presentation layer. None support PPTX export or PNG annotation. LikeC4's draw.io round-trip is the most interesting bidirectional story in this category.
 
@@ -349,16 +315,15 @@ Tools that use JSON as a native or intermediate representation.
 - Universal format converter between Mermaid, Draw.io, Excalidraw, PlantUML, and DOT (Graphviz)
 - Useful as a bridge library for format interoperability, not an end-user tool
 
-<table>
-<tr><th>Capability</th><th>Excalidraw</th><th>ToDiagram</th><th>JSON Crack</th><th>diagram-converter</th></tr>
-<tr><td>Import PlantUML</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">Yes (converts)</td></tr>
-<tr><td>Visual canvas editing</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffeb9c">View only</td><td bgcolor="#ffc7ce">N/A (library)</td></tr>
-<tr><td>Bidirectional sync</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffeb9c">Two-way data↔diagram</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">N/A</td></tr>
-<tr><td>PPTX export</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>PNG annotation overlay</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#ffc7ce">No</td></tr>
-<tr><td>JSON intermediate format</td><td bgcolor="#c6efce">Yes (native)</td><td bgcolor="#c6efce">Yes (input)</td><td bgcolor="#c6efce">Yes (input)</td><td bgcolor="#ffeb9c">Converts formats</td></tr>
-<tr><td>Open source</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffc7ce">No</td><td bgcolor="#c6efce">Yes</td><td bgcolor="#ffeb9c">Unknown</td></tr>
-</table>
+| Capability | Excalidraw | ToDiagram | JSON Crack | diagram-converter |
+|---|:---:|:---:|:---:|:---:|
+| Import PlantUML | 🔴 No | 🔴 No | 🔴 No | 🟡 Yes (converts) |
+| Visual canvas editing | 🟢 Yes | 🟢 Yes | 🟡 View only | 🔴 N/A (library) |
+| Bidirectional sync | 🔴 No | 🟡 Two-way data↔diagram | 🔴 No | 🔴 N/A |
+| PPTX export | 🔴 No | 🔴 No | 🔴 No | 🔴 No |
+| PNG annotation overlay | 🔴 No | 🔴 No | 🔴 No | 🔴 No |
+| JSON intermediate format | 🟢 Yes (native) | 🟢 Yes (input) | 🟢 Yes (input) | 🟡 Converts formats |
+| Open source | 🟢 Yes | 🔴 No | 🟢 Yes | 🟡 Unknown |
 
 **Gap**: Excalidraw's JSON-native format with PNG metadata embedding is technically elegant, but it lacks PlantUML import and PPTX export. No JSON-based tool found supports the full round-trip workflow.
 
