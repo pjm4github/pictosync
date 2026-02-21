@@ -196,6 +196,17 @@ ICONS = {
   <circle cx="3" cy="18" r="2" fill="{accent}" stroke="{stroke}" stroke-width="1"/>
   <circle cx="21" cy="6" r="2" fill="{accent}" stroke="{stroke}" stroke-width="1"/>
 </svg>''',
+
+    "focus_align": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <!-- Outer crosshair brackets -->
+  <path d="M2 8 L2 2 L8 2" stroke="{stroke}" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M16 2 L22 2 L22 8" stroke="{stroke}" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M22 16 L22 22 L16 22" stroke="{stroke}" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M8 22 L2 22 L2 16" stroke="{stroke}" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Center target -->
+  <circle cx="12" cy="12" r="4" stroke="{accent}" stroke-width="2" fill="none"/>
+  <circle cx="12" cy="12" r="1.5" fill="{accent}"/>
+</svg>''',
 }
 
 

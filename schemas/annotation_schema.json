@@ -607,9 +607,9 @@
         }
       }
     },
-    "brushStyle": {
+    "fillStyle": {
       "type": "object",
-      "description": "Brush/fill style",
+      "description": "Fill/background style",
       "properties": {
         "color": {
           "$ref": "#/$defs/colorHex"
@@ -639,8 +639,8 @@
         "pen": {
           "$ref": "#/$defs/penStyle"
         },
-        "brush": {
-          "$ref": "#/$defs/brushStyle"
+        "fill": {
+          "$ref": "#/$defs/fillStyle"
         },
         "text": {
           "$ref": "#/$defs/textStyle"
@@ -654,8 +654,8 @@
         "pen": {
           "$ref": "#/$defs/penStyle"
         },
-        "brush": {
-          "$ref": "#/$defs/brushStyle"
+        "fill": {
+          "$ref": "#/$defs/fillStyle"
         },
         "text": {
           "$ref": "#/$defs/textStyle"

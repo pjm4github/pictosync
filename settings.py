@@ -34,6 +34,9 @@ import tomli_w
 
 APP_NAME = "pictosync"
 
+# Console debug logging — toggle via settings dialog (future)
+DEBUG_LOG: bool = False
+
 # Global settings manager instance (singleton)
 _settings_manager: Optional["SettingsManager"] = None
 
@@ -341,6 +344,25 @@ class DefaultTextSettings:
 
 
 # =============================================================================
+# Gemini AI Settings
+# =============================================================================
+
+@dataclass
+class GeminiSettings:
+    """Gemini AI model settings.
+
+    Defaults:
+        models: ["gemini-2.5-flash-image", "gemini-3-pro-image-preview"]
+        default_model: "gemini-2.5-flash-image"
+    """
+    models: List[str] = field(default_factory=lambda: [
+        "gemini-2.5-flash-image",
+        "gemini-3-pro-image-preview",
+    ])
+    default_model: str = "gemini-2.5-flash-image"
+
+
+# =============================================================================
 # Main App Settings
 # =============================================================================
 
@@ -370,6 +392,7 @@ class AppSettings:
     canvas: CanvasSettings = field(default_factory=CanvasSettings)
     alignment: AlignmentSettings = field(default_factory=AlignmentSettings)
     defaults: DefaultTextSettings = field(default_factory=DefaultTextSettings)
+    gemini: GeminiSettings = field(default_factory=GeminiSettings)
 
 
 # =============================================================================
@@ -538,6 +561,18 @@ class SettingsManager:
             settings.defaults.text_box_width = t.get("text_box_width", settings.defaults.text_box_width)
             settings.defaults.text_box_height = t.get("text_box_height", settings.defaults.text_box_height)
 
+        # Gemini section
+        gemini = data.get("gemini", {})
+        if "models" in gemini:
+            settings.gemini.models = gemini["models"]
+        settings.gemini.default_model = gemini.get(
+            "default_model", settings.gemini.default_model
+        )
+        # Ensure default_model is in the list
+        if settings.gemini.default_model not in settings.gemini.models:
+            if settings.gemini.models:
+                settings.gemini.default_model = settings.gemini.models[0]
+
         return settings
 
     def save(self) -> None:
@@ -665,6 +700,10 @@ class SettingsManager:
                     "text_box_width": s.defaults.text_box_width,
                     "text_box_height": s.defaults.text_box_height,
                 },
+            },
+            "gemini": {
+                "models": s.gemini.models,
+                "default_model": s.gemini.default_model,
             },
         }
 

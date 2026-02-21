@@ -62,8 +62,8 @@ QToolBar {
     background-color: #333333;
     border: none;
     border-bottom: 1px solid #404040;
-    padding: 3px 6px;
-    spacing: 3px;
+    padding: 2px 3px;
+    spacing: 1px;
 }
 
 QToolBar::separator {
@@ -76,10 +76,10 @@ QToolBar QToolButton {
     background-color: #3c3c3c;
     color: #cccccc;
     border: 1px solid #505050;
-    border-radius: 4px;
-    padding: 4px 8px;
-    margin: 1px;
-    min-width: 35px;
+    border-radius: 3px;
+    padding: 2px 4px;
+    margin: 0px;
+    min-width: 24px;
 }
 
 QToolBar QToolButton:hover {
@@ -96,6 +96,12 @@ QToolBar QToolButton:checked {
     border: 2px solid #1177bb;
     color: #ffffff;
     font-weight: bold;
+}
+
+QToolBar QToolButton:disabled {
+    background-color: #2a2a2a;
+    color: #666666;
+    border: 1px solid #404040;
 }
 
 QToolBar QLabel {
@@ -547,8 +553,8 @@ QToolBar {
     background-color: #fafafa;
     border: none;
     border-bottom: 1px solid #dbdbdb;
-    padding: 5px 8px;
-    spacing: 4px;
+    padding: 2px 3px;
+    spacing: 1px;
 }
 
 QToolBar::separator {
@@ -561,10 +567,10 @@ QToolBar QToolButton {
     background-color: #ffffff;
     color: #363636;
     border: 1px solid #dbdbdb;
-    border-radius: 4px;
-    padding: 5px 10px;
-    margin: 1px;
-    min-width: 35px;
+    border-radius: 3px;
+    padding: 2px 4px;
+    margin: 0px;
+    min-width: 24px;
 }
 
 QToolBar QToolButton:hover {
@@ -582,6 +588,12 @@ QToolBar QToolButton:checked {
     border: 2px solid #00c4a7;
     color: #ffffff;
     font-weight: bold;
+}
+
+QToolBar QToolButton:disabled {
+    background-color: #f0f0f0;
+    color: #b0b0b0;
+    border: 1px solid #e0e0e0;
 }
 
 QToolBar QLabel {
@@ -1040,8 +1052,8 @@ QToolBar {
     background-color: #f5f5f5;
     border: none;
     border-bottom: 3px solid #000000;
-    padding: 5px 8px;
-    spacing: 5px;
+    padding: 2px 3px;
+    spacing: 1px;
 }
 
 QToolBar::separator {
@@ -1055,9 +1067,9 @@ QToolBar QToolButton {
     color: #000000;
     border: 2px solid #000000;
     border-radius: 0;
-    padding: 5px 10px;
-    margin: 1px;
-    min-width: 35px;
+    padding: 2px 4px;
+    margin: 0px;
+    min-width: 24px;
     font-weight: bold;
 }
 
@@ -1076,6 +1088,12 @@ QToolBar QToolButton:checked {
     border: 3px solid #000000;
     color: #ffffff;
     font-weight: bold;
+}
+
+QToolBar QToolButton:disabled {
+    background-color: #e8e8e8;
+    color: #aaaaaa;
+    border: 1px solid #cccccc;
 }
 
 QToolBar QLabel {
@@ -1553,8 +1571,8 @@ QMenu::separator {
 QToolBar {
     background-color: #e0e5ec;
     border: none;
-    padding: 7px 10px;
-    spacing: 7px;
+    padding: 2px 3px;
+    spacing: 1px;
 }
 
 QToolBar::separator {
@@ -1567,10 +1585,10 @@ QToolBar QToolButton {
     background-color: #e0e5ec;
     color: #4a5568;
     border: none;
-    border-radius: 8px;
-    padding: 7px 11px;
-    margin: 1px;
-    min-width: 35px;
+    border-radius: 6px;
+    padding: 2px 4px;
+    margin: 0px;
+    min-width: 24px;
 }
 
 QToolBar QToolButton:hover {
@@ -1586,6 +1604,12 @@ QToolBar QToolButton:checked {
     background-color: #d1d9e6;
     color: #6c5ce7;
     font-weight: bold;
+}
+
+QToolBar QToolButton:disabled {
+    background-color: #d5dbe3;
+    color: #a0aab4;
+    border: 1px solid #c8cfd6;
 }
 
 QToolBar QLabel {
@@ -2055,8 +2079,8 @@ QMenu::separator {
 QToolBar {
     background-color: #3f51b5;
     border: none;
-    padding: 5px 8px;
-    spacing: 5px;
+    padding: 2px 3px;
+    spacing: 1px;
 }
 
 QToolBar::separator {
@@ -2070,9 +2094,9 @@ QToolBar QToolButton {
     color: #ffffff;
     border: none;
     border-radius: 2px;
-    padding: 5px 11px;
-    margin: 1px;
-    min-width: 35px;
+    padding: 2px 4px;
+    margin: 0px;
+    min-width: 24px;
 }
 
 QToolBar QToolButton:hover {
@@ -2087,6 +2111,12 @@ QToolBar QToolButton:checked {
     background-color: #ff4081;
     color: #ffffff;
     font-weight: bold;
+}
+
+QToolBar QToolButton:disabled {
+    background-color: #37474f;
+    color: #78909c;
+    border: 1px solid #455a64;
 }
 
 QToolBar QLabel {
@@ -2539,8 +2569,8 @@ QToolBar {
     background-color: #ffffff;
     border: none;
     border-bottom: 1px solid #e2e8f0;
-    padding: 5px 8px;
-    spacing: 4px;
+    padding: 2px 3px;
+    spacing: 1px;
 }
 
 QToolBar::separator {
@@ -2553,10 +2583,10 @@ QToolBar QToolButton {
     background-color: #f8fafc;
     color: #475569;
     border: 1px solid #e2e8f0;
-    border-radius: 6px;
-    padding: 5px 10px;
-    margin: 1px;
-    min-width: 35px;
+    border-radius: 4px;
+    padding: 2px 4px;
+    margin: 0px;
+    min-width: 24px;
 }
 
 QToolBar QToolButton:hover {
@@ -2574,6 +2604,12 @@ QToolBar QToolButton:checked {
     border-color: #6366f1;
     color: #ffffff;
     font-weight: 600;
+}
+
+QToolBar QToolButton:disabled {
+    background-color: #f1f5f9;
+    color: #94a3b8;
+    border: 1px solid #e2e8f0;
 }
 
 QToolBar QLabel {
@@ -3036,8 +3072,8 @@ QToolBar {
     background-color: #f8f9fa;
     border: none;
     border-bottom: 1px solid #dee2e6;
-    padding: 5px 8px;
-    spacing: 4px;
+    padding: 2px 3px;
+    spacing: 1px;
 }
 
 QToolBar::separator {
@@ -3050,10 +3086,10 @@ QToolBar QToolButton {
     background-color: #ffffff;
     color: #212529;
     border: 1px solid #dee2e6;
-    border-radius: 4px;
-    padding: 5px 10px;
-    margin: 1px;
-    min-width: 35px;
+    border-radius: 3px;
+    padding: 2px 4px;
+    margin: 0px;
+    min-width: 24px;
 }
 
 QToolBar QToolButton:hover {
@@ -3070,6 +3106,12 @@ QToolBar QToolButton:checked {
     border-color: #0d6efd;
     color: #ffffff;
     font-weight: 600;
+}
+
+QToolBar QToolButton:disabled {
+    background-color: #f8f9fa;
+    color: #adb5bd;
+    border: 1px solid #dee2e6;
 }
 
 QToolBar QLabel {

@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QScrollArea,
     QFrame,
+    QListWidget,
 )
 from PyQt6.QtGui import QColor
 
@@ -182,6 +183,37 @@ class SettingsDialog(QDialog):
         workspace_layout.addRow("", self.pptx_source_dir_cb)
 
         layout.addWidget(workspace_group)
+
+        # Gemini AI group
+        gemini_group = QGroupBox("Gemini AI")
+        gemini_layout = QVBoxLayout(gemini_group)
+        gemini_layout.setContentsMargins(8, 8, 8, 8)
+        gemini_layout.setSpacing(4)
+
+        model_label = QLabel("Available Models:")
+        gemini_layout.addWidget(model_label)
+
+        self.gemini_model_list = QListWidget()
+        self.gemini_model_list.setMaximumHeight(120)
+        gemini_layout.addWidget(self.gemini_model_list)
+
+        model_btn_row = QHBoxLayout()
+        self.gemini_add_btn = QPushButton("Add...")
+        self.gemini_add_btn.clicked.connect(self._add_gemini_model)
+        model_btn_row.addWidget(self.gemini_add_btn)
+
+        self.gemini_remove_btn = QPushButton("Remove")
+        self.gemini_remove_btn.clicked.connect(self._remove_gemini_model)
+        model_btn_row.addWidget(self.gemini_remove_btn)
+        model_btn_row.addStretch()
+        gemini_layout.addLayout(model_btn_row)
+
+        default_row = QFormLayout()
+        self.gemini_default_combo = QComboBox()
+        default_row.addRow("Default Model:", self.gemini_default_combo)
+        gemini_layout.addLayout(default_row)
+
+        layout.addWidget(gemini_group)
         layout.addStretch()
 
         return widget
@@ -197,6 +229,38 @@ class SettingsDialog(QDialog):
         )
         if directory:
             self.workspace_dir_edit.setText(directory)
+
+    def _add_gemini_model(self):
+        """Prompt user for a new model name and add it."""
+        from PyQt6.QtWidgets import QInputDialog
+
+        name, ok = QInputDialog.getText(self, "Add Model", "Model name:")
+        if ok and name.strip():
+            name = name.strip()
+            existing = [
+                self.gemini_model_list.item(i).text()
+                for i in range(self.gemini_model_list.count())
+            ]
+            if name not in existing:
+                self.gemini_model_list.addItem(name)
+                self._sync_gemini_default_combo()
+
+    def _remove_gemini_model(self):
+        """Remove the selected model from the list."""
+        row = self.gemini_model_list.currentRow()
+        if row >= 0:
+            self.gemini_model_list.takeItem(row)
+            self._sync_gemini_default_combo()
+
+    def _sync_gemini_default_combo(self):
+        """Sync the default model combo box with the model list."""
+        current_default = self.gemini_default_combo.currentText()
+        self.gemini_default_combo.clear()
+        for i in range(self.gemini_model_list.count()):
+            self.gemini_default_combo.addItem(self.gemini_model_list.item(i).text())
+        idx = self.gemini_default_combo.findText(current_default)
+        if idx >= 0:
+            self.gemini_default_combo.setCurrentIndex(idx)
 
     # =========================================================================
     # Editor Tab
@@ -653,6 +717,9 @@ class SettingsDialog(QDialog):
             "default_line_spacing": s.defaults.line_spacing,
             "default_text_box_width": s.defaults.text_box_width,
             "default_text_box_height": s.defaults.text_box_height,
+            # Gemini
+            "gemini_models": list(s.gemini.models),
+            "gemini_default_model": s.gemini.default_model,
         }
 
     def _load_settings(self):
@@ -746,6 +813,13 @@ class SettingsDialog(QDialog):
         self.default_line_spacing.setValue(s.defaults.line_spacing)
         self.default_text_box_width.setValue(s.defaults.text_box_width)
         self.default_text_box_height.setValue(s.defaults.text_box_height)
+
+        # Gemini
+        self.gemini_model_list.clear()
+        self.gemini_model_list.addItems(s.gemini.models)
+        self.gemini_default_combo.clear()
+        self.gemini_default_combo.addItems(s.gemini.models)
+        self.gemini_default_combo.setCurrentText(s.gemini.default_model)
 
     def _save_settings(self):
         """Save UI widget values to settings."""
@@ -848,6 +922,16 @@ class SettingsDialog(QDialog):
         s.defaults.text_box_width = self.default_text_box_width.value()
         s.defaults.text_box_height = self.default_text_box_height.value()
 
+        # Gemini
+        s.gemini.models = [
+            self.gemini_model_list.item(i).text()
+            for i in range(self.gemini_model_list.count())
+        ]
+        default = self.gemini_default_combo.currentText()
+        s.gemini.default_model = default if default in s.gemini.models else (
+            s.gemini.models[0] if s.gemini.models else "gemini-2.5-flash-image"
+        )
+
         # Persist to file
         self.settings_manager.save()
 
@@ -921,6 +1005,10 @@ class SettingsDialog(QDialog):
         s.defaults.text_box_width = snapshot["default_text_box_width"]
         s.defaults.text_box_height = snapshot["default_text_box_height"]
 
+        # Gemini
+        s.gemini.models = snapshot["gemini_models"]
+        s.gemini.default_model = snapshot["gemini_default_model"]
+
     # =========================================================================
     # Button Handlers
     # =========================================================================
@@ -959,6 +1047,7 @@ class SettingsDialog(QDialog):
         s.canvas = defaults.canvas
         s.alignment = defaults.alignment
         s.defaults = defaults.defaults
+        s.gemini = defaults.gemini
 
         # Reload UI
         self._load_settings()

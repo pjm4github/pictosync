@@ -101,11 +101,9 @@ class MetaMixin:
             "color": qcolor_to_hex(self.pen_color),
             "width": int(self.pen_width),
             "dash": self.line_dash,
+            "dash_pattern_length": round(self.dash_pattern_length, 1),
+            "dash_solid_percent": round(self.dash_solid_percent, 1),
         }
-        # Include dash pattern settings when dash is "dashed"
-        if self.line_dash == "dashed":
-            pen_style["dash_pattern_length"] = round(self.dash_pattern_length, 1)
-            pen_style["dash_solid_percent"] = round(self.dash_solid_percent, 1)
 
         # Text style only contains visual properties (color, size)
         # Layout properties (valign, spacing) are stored in meta

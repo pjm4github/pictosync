@@ -170,8 +170,8 @@ def create_default_annotation(kind: str) -> Dict:
             "geom": {"x": 0, "y": 0, "w": 100, "h": 50},
             "meta": {"label": "", "tech": "", "note": ""},
             "style": {
-                "pen": {"color": "#FF0000", "width": 2},
-                "brush": {"color": "#00000000"},
+                "pen": {"color": "#FF0000", "width": 2, "dash": "solid", "dash_pattern_length": 30, "dash_solid_percent": 50},
+                "fill": {"color": "#00000000"},
                 "text": {"color": "#FFFF00", "size_pt": 12}
             }
         },
@@ -180,8 +180,8 @@ def create_default_annotation(kind: str) -> Dict:
             "geom": {"x": 0, "y": 0, "w": 100, "h": 50, "adjust1": 10},
             "meta": {"label": "", "tech": "", "note": ""},
             "style": {
-                "pen": {"color": "#FF0000", "width": 2},
-                "brush": {"color": "#00000000"},
+                "pen": {"color": "#FF0000", "width": 2, "dash": "solid", "dash_pattern_length": 30, "dash_solid_percent": 50},
+                "fill": {"color": "#00000000"},
                 "text": {"color": "#FFFF00", "size_pt": 12}
             }
         },
@@ -190,8 +190,8 @@ def create_default_annotation(kind: str) -> Dict:
             "geom": {"x": 0, "y": 0, "w": 100, "h": 100},
             "meta": {"label": "", "tech": "", "note": ""},
             "style": {
-                "pen": {"color": "#FF0000", "width": 2},
-                "brush": {"color": "#00000000"},
+                "pen": {"color": "#FF0000", "width": 2, "dash": "solid", "dash_pattern_length": 30, "dash_solid_percent": 50},
+                "fill": {"color": "#00000000"},
                 "text": {"color": "#FFFF00", "size_pt": 12}
             }
         },
@@ -200,8 +200,8 @@ def create_default_annotation(kind: str) -> Dict:
             "geom": {"x1": 0, "y1": 0, "x2": 100, "y2": 0},
             "meta": {"label": "", "tech": "", "note": ""},
             "style": {
-                "pen": {"color": "#FF0000", "width": 2},
-                "brush": {"color": "#00000000"},
+                "pen": {"color": "#FF0000", "width": 2, "dash": "solid", "dash_pattern_length": 30, "dash_solid_percent": 50},
+                "fill": {"color": "#00000000"},
                 "text": {"color": "#FFFF00", "size_pt": 12},
                 "arrow": "end"
             }
@@ -212,8 +212,8 @@ def create_default_annotation(kind: str) -> Dict:
             "text": "Text",
             "meta": {"label": "", "tech": "", "note": ""},
             "style": {
-                "pen": {"color": "#000000", "width": 1},
-                "brush": {"color": "#00000000"},
+                "pen": {"color": "#000000", "width": 1, "dash": "solid", "dash_pattern_length": 30, "dash_solid_percent": 50},
+                "fill": {"color": "#00000000"},
                 "text": {"color": "#000000", "size_pt": 12}
             }
         },
@@ -222,8 +222,8 @@ def create_default_annotation(kind: str) -> Dict:
             "geom": {"x": 0, "y": 0, "w": 100, "h": 80, "adjust1": 0.25},
             "meta": {"label": "", "tech": "", "note": ""},
             "style": {
-                "pen": {"color": "#008B8B", "width": 2},
-                "brush": {"color": "#00000000"},
+                "pen": {"color": "#008B8B", "width": 2, "dash": "solid", "dash_pattern_length": 30, "dash_solid_percent": 50},
+                "fill": {"color": "#00000000"},
                 "text": {"color": "#008B8B", "size_pt": 12}
             }
         },
@@ -232,8 +232,8 @@ def create_default_annotation(kind: str) -> Dict:
             "geom": {"x": 0, "y": 0, "w": 80, "h": 120, "adjust1": 0.15},
             "meta": {"label": "", "tech": "", "note": ""},
             "style": {
-                "pen": {"color": "#8B008B", "width": 2},
-                "brush": {"color": "#00000000"},
+                "pen": {"color": "#8B008B", "width": 2, "dash": "solid", "dash_pattern_length": 30, "dash_solid_percent": 50},
+                "fill": {"color": "#00000000"},
                 "text": {"color": "#8B008B", "size_pt": 12}
             }
         },
@@ -242,8 +242,8 @@ def create_default_annotation(kind: str) -> Dict:
             "geom": {"x": 0, "y": 0, "w": 150, "h": 60, "adjust2": 15, "adjust1": 0.5},
             "meta": {"label": "", "tech": "", "note": ""},
             "style": {
-                "pen": {"color": "#B8860B", "width": 2},
-                "brush": {"color": "#00000000"},
+                "pen": {"color": "#B8860B", "width": 2, "dash": "solid", "dash_pattern_length": 30, "dash_solid_percent": 50},
+                "fill": {"color": "#00000000"},
                 "text": {"color": "#B8860B", "size_pt": 12}
             }
         }
@@ -344,7 +344,7 @@ def normalize_annotation(annotation: Dict) -> Dict:
     default_style = default.get("style", {})
     ann_style = annotation.get("style", {})
     result["style"] = {}
-    for key in ["pen", "brush", "text"]:
+    for key in ["pen", "fill", "text"]:
         result["style"][key] = {**default_style.get(key, {}), **ann_style.get(key, {})}
 
     # Copy arrow for lines

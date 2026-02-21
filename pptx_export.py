@@ -121,7 +121,7 @@ def _apply_fill_style(fill, style: Dict[str, Any]):
         fill: The shape.fill object from python-pptx
         style: Style dict containing fill properties
     """
-    fill_style = style.get("fill") or style.get("brush") or {}
+    fill_style = style.get("fill") or {}
     fill_color = fill_style.get("color", "#00000000")
 
     # Check if fill is transparent
