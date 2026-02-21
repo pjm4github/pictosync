@@ -85,9 +85,11 @@ from PyQt6.QtWidgets import (
     QGraphicsView,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QSplitter,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -111,9 +113,10 @@ from canvas import (
 )
 from editor import DraftDock
 from properties import PropertyPanel
-from gemini import ExtractWorker
+from gemini import ExtractWorker, FocusedAlignWorker
 from styles import STYLES, DEFAULT_STYLE, CANVAS_TEXT_COLORS, LINE_NUMBER_COLORS
 from pptx_export import export_to_pptx
+import settings as _settings_mod
 from settings import SettingsManager, get_settings
 from debug_trace import trace, trace_exception, close_log
 
@@ -224,6 +227,7 @@ class MainWindow(QMainWindow):
         # Pre-initialize optional actions (may be set in _build_toolbar if HAS_ALIGNMENT)
         self.align_act: Optional[QAction] = None
         self.align_line_act: Optional[QAction] = None
+        self.focus_align_act: Optional[QAction] = None
 
         # Undo/Redo stack
         self.undo_stack = QUndoStack(self)
@@ -296,6 +300,10 @@ class MainWindow(QMainWindow):
         # Line alignment worker thread
         self._line_align_thread: Optional[QThread] = None
         self._line_align_worker: Optional[LineAlignmentWorker] = None
+
+        # Focus alignment (Gemini) worker thread
+        self._focus_align_thread: Optional[QThread] = None
+        self._focus_align_worker: Optional[FocusedAlignWorker] = None
 
     def _build_menus(self):
         """Build the application menu bar."""
@@ -507,19 +515,34 @@ class MainWindow(QMainWindow):
             self._icon_actions[self.align_line_act] = "align_line"
             tb.addAction(self.align_line_act)
 
+        # Focus Align using Gemini AI (no OpenCV needed)
+        self.focus_align_act = QAction("Focus Align (Gemini)", self)
+        self.focus_align_act.setEnabled(False)
+        self.focus_align_act.triggered.connect(self.focus_align_selected)
+        self.focus_align_act.setToolTip("Refine selected element using Gemini AI on cropped region")
+        self.focus_align_act.setStatusTip("Refine selected element using Gemini AI on cropped region")
+        self._icon_actions[self.focus_align_act] = "focus_align"
+        tb.addAction(self.focus_align_act)
+
         tb.addSeparator()
 
         # AI model selection
-        self.model_label = QLabel("Model: gemini-2.5-flash-image")
+        gemini_s = self.settings_manager.settings.gemini
+        self.model_name = gemini_s.default_model
+        self.model_label = QLabel(f"Model: {self.model_name}")
         tb.addWidget(self.model_label)
 
-        self.model_name = "gemini-2.5-flash-image"
-        cycle_act = QAction("Cycle Model", self)
-        cycle_act.triggered.connect(self.cycle_model)
-        cycle_act.setToolTip("Cycle through Gemini AI models")
-        cycle_act.setStatusTip("Cycle through Gemini AI models")
-        self._icon_actions[cycle_act] = "model"
-        tb.addAction(cycle_act)
+        self.model_menu = QMenu(self)
+        self._build_model_menu()
+
+        self.model_btn = QToolButton(self)
+        self.model_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.model_btn.setMenu(self.model_menu)
+        self.model_btn.setToolTip("Select the AI model")
+        self.model_btn.setStatusTip("Select the AI model")
+        model_act = tb.addWidget(self.model_btn)
+        # Track the underlying action for icon updates
+        self._icon_actions[self.model_btn] = "model"
 
         self.extract_act = QAction("Auto-Extract (Gemini)", self)
         self.extract_act.triggered.connect(self.auto_extract)
@@ -563,6 +586,16 @@ class MainWindow(QMainWindow):
         self._icon_actions[self.zoom_fit_act] = "zoom_fit"
         tb.addAction(self.zoom_fit_act)
 
+        # Gemini token counter (far right)
+        self._gemini_tokens = 0
+        spacer = QWidget()
+        from PyQt6.QtWidgets import QSizePolicy
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        tb.addWidget(spacer)
+        self.token_label = QLabel("Tokens: 0")
+        self.token_label.setToolTip("Total Gemini API tokens used this session")
+        tb.addWidget(self.token_label)
+
         # Connect menu actions to toolbar actions
         # Undo/Redo menu items trigger toolbar actions
         self._menu_undo_act.triggered.connect(self.undo_act.trigger)
@@ -588,12 +621,23 @@ class MainWindow(QMainWindow):
             lambda checked: self._update_focus_mode_icon(checked)
         )
 
-    def cycle_model(self):
-        """Cycle through available Gemini models."""
-        options = ["gemini-2.5-flash-image", "gemini-3-pro-image-preview"]
-        idx = options.index(self.model_name) if self.model_name in options else 0
-        self.model_name = options[(idx + 1) % len(options)]
+    def _build_model_menu(self):
+        """Rebuild the model dropdown menu from settings."""
+        self.model_menu.clear()
+        models = self.settings_manager.settings.gemini.models
+        for name in models:
+            act = self.model_menu.addAction(name)
+            act.setCheckable(True)
+            act.setChecked(name == self.model_name)
+            act.triggered.connect(lambda checked, n=name: self._on_model_selected(n))
+
+    def _on_model_selected(self, name: str):
+        """Handle model selection from the dropdown menu."""
+        self.model_name = name
         self.model_label.setText(f"Model: {self.model_name}")
+        # Update check marks
+        for act in self.model_menu.actions():
+            act.setChecked(act.text() == name)
 
     def _update_toolbar_icons(self, style: str):
         """Update toolbar icons for the given style."""
@@ -741,6 +785,9 @@ class MainWindow(QMainWindow):
         self._handling_selection = True
         try:
             self._do_selection_changed()
+        except RuntimeError:
+            # Scene C++ object already deleted during shutdown — ignore
+            pass
         finally:
             self._handling_selection = False
 
@@ -1097,6 +1144,13 @@ class MainWindow(QMainWindow):
 
     def delete_selected_items(self):
         """Delete selected items from the scene (with undo support)."""
+        # Check for debug overlay items first — delete them without undo
+        debug_selected = [it for it in self.scene.selectedItems()
+                          if it.data(0) == "_debug_overlay"]
+        if debug_selected:
+            self._remove_focus_align_debug_crop()
+            return
+
         items = [it for it in self.scene.selectedItems()
                  if it is not self.bg_item and hasattr(it, "meta")]
         if not items:
@@ -1247,6 +1301,13 @@ class MainWindow(QMainWindow):
             else:
                 self.statusBar().showMessage("Settings saved.")
 
+            # Sync model list and selection after settings change
+            gemini_s = self.settings_manager.settings.gemini
+            if self.model_name not in gemini_s.models:
+                self.model_name = gemini_s.default_model
+                self.model_label.setText(f"Model: {self.model_name}")
+            self._build_model_menu()
+
     def save_project_dialog(self):
         """Save project (overlay JSON + PNG) to workspace directory."""
         workspace = str(self.settings_manager.get_workspace_dir())
@@ -1378,6 +1439,7 @@ class MainWindow(QMainWindow):
             return
 
         self.extract_act.setEnabled(False)
+        self.extract_act.setToolTip("Running Gemini AI auto-extraction")
         self.statusBar().showMessage(f"Sending image to model: {self.model_name} ...")
         self._set_draft_text_programmatically("", enable_import=False, status="Calling model...", focus_id=None)
 
@@ -1389,17 +1451,24 @@ class MainWindow(QMainWindow):
         self._worker.raw_text.connect(self.on_ai_raw_text)
         self._worker.finished.connect(self.on_ai_finished)
         self._worker.failed.connect(self.on_ai_failed)
+        self._worker.tokens_used.connect(self._on_tokens_used)
 
         self._worker.finished.connect(self._thread.quit)
         self._worker.failed.connect(self._thread.quit)
 
         def _reenable():
             self.extract_act.setEnabled(True)
+            self.extract_act.setToolTip("Auto-extract elements using Gemini AI")
 
         self._thread.finished.connect(_reenable)
         self._thread.finished.connect(self._thread.deleteLater)
 
         self._thread.start()
+
+    def _on_tokens_used(self, count: int):
+        """Accumulate Gemini API token usage and update the toolbar label."""
+        self._gemini_tokens += count
+        self.token_label.setText(f"Tokens: {self._gemini_tokens:,}")
 
     def on_ai_raw_text(self, text: str):
         """Handle raw AI response text."""
@@ -1478,7 +1547,7 @@ class MainWindow(QMainWindow):
 
                     rec2.setdefault("style", {
                         "pen": {"color": "#FF0000", "width": 2},
-                        "brush": {"color": "#00000000"},
+                        "fill": {"color": "#00000000"},
                         "text": {"color": "#FFFF00", "size_pt": 12},
                     })
                     if isinstance(rec2["style"], dict):
@@ -1556,7 +1625,7 @@ class MainWindow(QMainWindow):
                         changed = True
                     rec.setdefault("style", {
                         "pen": {"color": "#FF0000", "width": 2},
-                        "brush": {"color": "#00000000"},
+                        "fill": {"color": "#00000000"},
                         "text": {"color": "#FFFF00", "size_pt": 12},
                     })
                     if isinstance(rec["style"], dict):
@@ -2195,9 +2264,6 @@ class MainWindow(QMainWindow):
 
     def _update_align_button_state(self):
         """Update the align button enabled state based on current conditions."""
-        if not HAS_ALIGNMENT:
-            return
-
         # Check base conditions for all alignment operations
         base_conditions_met = (
             self.bg_path is not None and  # PNG file is loaded
@@ -2207,23 +2273,263 @@ class MainWindow(QMainWindow):
         items = self.scene.selectedItems()
         has_single_selection = len(items) == 1
 
-        # Update shape align button
-        if self.align_act is not None:
-            if base_conditions_met and has_single_selection and self._is_alignable_item(items[0]):
-                self.align_act.setEnabled(True)
-            else:
-                self.align_act.setEnabled(False)
+        # OpenCV-based alignment buttons
+        if HAS_ALIGNMENT:
+            # Update shape align button
+            if self.align_act is not None:
+                if base_conditions_met and has_single_selection and self._is_alignable_item(items[0]):
+                    self.align_act.setEnabled(True)
+                else:
+                    self.align_act.setEnabled(False)
 
-        # Update line align button
-        if self.align_line_act is not None:
-            if base_conditions_met and has_single_selection and isinstance(items[0], MetaLineItem):
-                self.align_line_act.setEnabled(True)
+            # Update line align button
+            if self.align_line_act is not None:
+                if base_conditions_met and has_single_selection and isinstance(items[0], MetaLineItem):
+                    self.align_line_act.setEnabled(True)
+                else:
+                    self.align_line_act.setEnabled(False)
+
+        # Focus align (Gemini) — no OpenCV needed
+        if self.focus_align_act is not None:
+            has_api_key = bool(os.environ.get("GOOGLE_API_KEY", "").strip())
+            if base_conditions_met and has_single_selection and has_api_key:
+                self.focus_align_act.setEnabled(hasattr(items[0], "to_record"))
             else:
-                self.align_line_act.setEnabled(False)
+                self.focus_align_act.setEnabled(False)
 
     def _is_alignable_item(self, item) -> bool:
         """Check if an item is alignable (rect, roundedrect, ellipse, hexagon, cylinder, blockarrow)."""
         return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaPolygonItem))
+
+    # ---- Focus Align (Gemini) methods ----
+
+    def focus_align_selected(self):
+        """Start focused alignment of the selected item using Gemini AI."""
+        api_key = os.environ.get("GOOGLE_API_KEY", "").strip()
+        if not api_key:
+            QMessageBox.warning(self, "Focus Align", "GOOGLE_API_KEY is not set.")
+            return
+
+        items = self.scene.selectedItems()
+        if len(items) != 1:
+            QMessageBox.warning(self, "Focus Align", "Please select exactly one item to align.")
+            return
+
+        item = items[0]
+        if not hasattr(item, "to_record"):
+            QMessageBox.warning(self, "Focus Align", "Selected item does not support alignment.")
+            return
+
+        if self.bg_path is None:
+            QMessageBox.warning(self, "Focus Align", "No PNG image loaded.")
+            return
+
+        record = item.to_record()
+
+        # Remove previous debug overlay
+        self._remove_focus_align_debug_crop()
+
+        # Disable button and update tooltip during alignment
+        self.focus_align_act.setEnabled(False)
+        self.focus_align_act.setToolTip("Running Gemini AI on selected element")
+        kind = record.get("kind", "unknown")
+        self.statusBar().showMessage(f"Focus aligning {kind} via Gemini AI...")
+
+        # Start worker thread
+        self._focus_align_thread = QThread()
+        self._focus_align_worker = FocusedAlignWorker(
+            self.bg_path, self.model_name, record
+        )
+        self._focus_align_worker.moveToThread(self._focus_align_thread)
+
+        self._focus_align_thread.started.connect(self._focus_align_worker.run)
+        self._focus_align_worker.progress.connect(self._on_focus_align_progress)
+        self._focus_align_worker.finished.connect(self.on_focus_align_finished)
+        self._focus_align_worker.failed.connect(self.on_focus_align_failed)
+        self._focus_align_worker.tokens_used.connect(self._on_tokens_used)
+
+        self._focus_align_worker.finished.connect(self._focus_align_thread.quit)
+        self._focus_align_worker.failed.connect(self._focus_align_thread.quit)
+
+        self._focus_align_thread.finished.connect(self._update_align_button_state)
+        self._focus_align_thread.finished.connect(self._focus_align_thread.deleteLater)
+
+        self._focus_align_thread.start()
+
+    def _on_focus_align_progress(self, iteration: int, message: str):
+        """Handle progress updates from the focus align worker."""
+        if _settings_mod.DEBUG_LOG:
+            print(f"Focus align: {message}")
+
+    def on_focus_align_finished(self, result: dict):
+        """Handle successful focus alignment completion.
+
+        Args:
+            result: Refined annotation dict with geometry and style.
+        """
+        items = self.scene.selectedItems()
+        if len(items) != 1:
+            self.statusBar().showMessage("Focus align complete but selection changed.")
+            return
+
+        item = items[0]
+        if not hasattr(item, "to_record"):
+            self.statusBar().showMessage("Focus align complete but item type changed.")
+            return
+
+        from PyQt6.QtCore import QPointF, QRectF, QLineF
+
+        geom = result.get("geom", {})
+
+        if _settings_mod.DEBUG_LOG:
+            old_record = item.to_record()
+            print(f"\n--- Focus Align: applying result to {type(item).__name__} ---")
+            print(f"  OLD geom: {old_record.get('geom')}")
+            print(f"  NEW geom: {geom}")
+            print(f"  NEW style: {result.get('style')}")
+            print(f"---\n")
+
+        # Apply geometry based on item type
+        if isinstance(item, MetaLineItem):
+            x1 = float(geom.get("x1", 0))
+            y1 = float(geom.get("y1", 0))
+            x2 = float(geom.get("x2", 0))
+            y2 = float(geom.get("y2", 0))
+            item.setPos(QPointF(x1, y1))
+            item.setLine(QLineF(0, 0, x2 - x1, y2 - y1))
+        elif isinstance(item, MetaTextItem):
+            item.setPos(QPointF(float(geom.get("x", 0)), float(geom.get("y", 0))))
+        elif isinstance(item, (MetaRoundedRectItem, MetaHexagonItem, MetaCylinderItem,
+                               MetaBlockArrowItem, MetaPolygonItem, MetaCurveItem)):
+            item.setPos(QPointF(float(geom.get("x", 0)), float(geom.get("y", 0))))
+            new_w = float(geom.get("w", item._width))
+            new_h = float(geom.get("h", item._height))
+            item._width = new_w
+            item._height = new_h
+            # Apply adjust params if present
+            if "adjust1" in geom and hasattr(item, "_adjust1"):
+                item._adjust1 = float(geom["adjust1"])
+            if "adjust2" in geom and hasattr(item, "_adjust2"):
+                item._adjust2 = float(geom["adjust2"])
+            item._update_path()
+            item._update_label_position()
+        elif isinstance(item, (MetaRectItem, MetaEllipseItem)):
+            item.setPos(QPointF(float(geom.get("x", 0)), float(geom.get("y", 0))))
+            new_w = float(geom.get("w", item.rect().width()))
+            new_h = float(geom.get("h", item.rect().height()))
+            item.setRect(QRectF(0, 0, new_w, new_h))
+
+        # Apply style via mixin (handles pen, fill, text, arrow, dash)
+        item.apply_style_from_record(result)
+
+        # Refresh visuals
+        if hasattr(item, "_apply_pen_brush"):
+            item._apply_pen_brush()
+        elif hasattr(item, "_apply_pen"):
+            item._apply_pen()
+        if hasattr(item, "_update_label_text"):
+            item._update_label_text()
+
+        # Sync JSON and refresh property panel
+        item._notify_changed()
+        self.props.set_item(item)
+
+        # Debug overlay: show the cropped ROI on the canvas,
+        # then raise the fitted item above it so the user can compare.
+        crop_info = result.get("_crop")
+        if crop_info:
+            self._show_focus_align_debug_crop(crop_info, item)
+
+        self.focus_align_act.setToolTip("Refine selected element using Gemini AI on cropped region")
+        self.statusBar().showMessage("Focus align complete — element refined via Gemini AI.")
+
+    def on_focus_align_failed(self, error: str):
+        """Handle focus alignment failure.
+
+        Args:
+            error: Error message string.
+        """
+        self.focus_align_act.setToolTip("Refine selected element using Gemini AI on cropped region")
+        QMessageBox.critical(self, "Focus align failed", error)
+        self.statusBar().showMessage("Focus align failed.")
+
+    def _show_focus_align_debug_crop(self, crop_info: dict, item=None):
+        """Show a debug overlay of the cropped ROI on the canvas.
+
+        Places the cropped PNG on top of the scene at the crop location
+        with a black border, then raises the fitted item above the overlay
+        so the user can visually compare the fit.
+
+        Args:
+            crop_info: Dict with x, y, w, h, png_path from the worker.
+            item: The fitted canvas item to raise above the overlay.
+        """
+        # Remove previous debug overlay if present
+        self._remove_focus_align_debug_crop()
+
+        cx = crop_info["x"]
+        cy = crop_info["y"]
+        cw = crop_info["w"]
+        ch = crop_info["h"]
+        png_path = crop_info["png_path"]
+
+        # Load and crop the image
+        full_pm = QPixmap(png_path)
+        if full_pm.isNull():
+            return
+        cropped_pm = full_pm.copy(cx, cy, cw, ch)
+
+        # Create a pixmap item and position it at the crop location
+        crop_item = QGraphicsPixmapItem(cropped_pm)
+        crop_item.setPos(cx, cy)
+        crop_item.setZValue(9000)  # On top of everything
+        crop_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+        crop_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
+        crop_item.setData(0, "_debug_overlay")  # Tag for identification
+        self.scene.addItem(crop_item)
+
+        # Add a black border rectangle around the crop
+        from PyQt6.QtWidgets import QGraphicsRectItem
+        border_item = QGraphicsRectItem(0, 0, cw, ch)
+        border_item.setPos(cx, cy)
+        border_item.setZValue(9001)
+        border_item.setPen(QPen(QColor(0, 0, 0), 3))
+        border_item.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+        border_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+        border_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
+        border_item.setData(0, "_debug_overlay")  # Tag for identification
+        self.scene.addItem(border_item)
+
+        # Store references for cleanup
+        self._debug_crop_item = border_item
+        self._debug_crop_pixmap = crop_item
+
+        # Raise the fitted item above the overlay so the user can see how
+        # well the shape matches the underlying PNG crop.
+        self._debug_raised_item = None
+        self._debug_raised_original_z = None
+        if item is not None:
+            self._debug_raised_original_z = item.zValue()
+            self._debug_raised_item = item
+            item.setZValue(9002)
+
+    def _remove_focus_align_debug_crop(self):
+        """Remove the debug crop overlay and restore the item's z-value."""
+        # Restore the raised item's original z-value
+        if hasattr(self, "_debug_raised_item") and self._debug_raised_item is not None:
+            if self._debug_raised_original_z is not None:
+                self._debug_raised_item.setZValue(self._debug_raised_original_z)
+            self._debug_raised_item = None
+            self._debug_raised_original_z = None
+
+        if hasattr(self, "_debug_crop_item") and self._debug_crop_item is not None:
+            self.scene.removeItem(self._debug_crop_item)
+            self._debug_crop_item = None
+        if hasattr(self, "_debug_crop_pixmap") and self._debug_crop_pixmap is not None:
+            self.scene.removeItem(self._debug_crop_pixmap)
+            self._debug_crop_pixmap = None
+
+    # ---- OpenCV Alignment methods ----
 
     def align_selected_to_png(self):
         """Start alignment of the selected item to match the PNG visual."""
@@ -2303,7 +2609,8 @@ class MainWindow(QMainWindow):
 
     def on_align_progress(self, iteration: int, message: str):
         """Handle progress updates from alignment worker."""
-        self.statusBar().showMessage(f"Alignment: {message} (iter {iteration})")
+        if _settings_mod.DEBUG_LOG:
+            print(f"Alignment: {message} (iter {iteration})")
 
     def on_align_finished(self, result: dict):
         """Handle successful alignment completion."""
@@ -2472,7 +2779,8 @@ class MainWindow(QMainWindow):
 
     def on_line_align_progress(self, iteration: int, message: str):
         """Handle progress updates from line alignment worker."""
-        self.statusBar().showMessage(f"Line alignment: {message} (iter {iteration})")
+        if _settings_mod.DEBUG_LOG:
+            print(f"Line alignment: {message} (iter {iteration})")
 
     def on_line_align_finished(self, result: dict):
         """Handle successful line alignment completion."""
