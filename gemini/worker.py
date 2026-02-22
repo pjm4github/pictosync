@@ -291,10 +291,30 @@ def validate_and_fix_annotations(data: Dict) -> Tuple[Dict, List[str]]:
                 warnings.append(f"Annotation {i}: invalid dimensions, skipping")
                 continue
 
-        # Ensure text items have text field
-        if kind == "text" and "text" not in ann:
-            ann["text"] = ann.get("meta", {}).get("note", "") or ann.get("meta", {}).get("label", "") or "Text"
-            warnings.append(f"Annotation {i}: added missing text field")
+        # Migrate legacy "text" field — lines use meta.label, others use meta.note
+        if "text" in ann:
+            legacy_text = ann.pop("text")
+            meta = ann.setdefault("meta", {})
+            if kind == "line":
+                if not meta.get("label") and legacy_text:
+                    meta["label"] = legacy_text
+                    warnings.append(f"Annotation {i}: migrated text to meta.label")
+            else:
+                if not meta.get("note") and legacy_text:
+                    meta["note"] = legacy_text
+                    warnings.append(f"Annotation {i}: migrated text to meta.note")
+        # Ensure text items have meta.note
+        if kind == "text":
+            meta = ann.setdefault("meta", {})
+            if not meta.get("note"):
+                meta["note"] = meta.get("label", "") or "Text"
+                warnings.append(f"Annotation {i}: added missing meta.note")
+
+        # Fill in all missing schema fields with defaults
+        try:
+            ann = normalize_annotation(ann)
+        except Exception:
+            pass  # Keep as-is if normalization fails
 
         fixed_annotations.append(ann)
 
@@ -472,7 +492,7 @@ FOR LINES/ARROWS (connections, relationships):
   "kind": "line",
   "geom": {{ "x1": <start x>, "y1": <start y>, "x2": <end x>, "y2": <end y> }},
   "text": "<text label on or near the line>",
-  "meta": {{ "label": "", "tech": "<protocol if shown: HTTP, gRPC, etc.>", "note": "<text label on or near the line - same as text field>" }},
+  "meta": {{ "label": "<text label on or near the line - same as text field>", "tech": "<protocol if shown: HTTP, gRPC, etc.>", "note": "" }},
   "style": {{
     "pen": {{"color":"#RRGGBB","width":2,"dash":"solid|dashed","dash_pattern_length":30,"dash_solid_percent":50}},
     "arrow": "none|start|end|both",
@@ -534,7 +554,7 @@ DETECTION GUIDELINES:
 
 LINE LABEL ASSOCIATION (IMPORTANT):
 - Text that overlays, crosses, or is positioned near a line/arrow belongs TO that line
-- Include such text in BOTH the line's "text" field AND meta.note field
+- Include such text in BOTH the line's "text" field AND meta.label field
 - Common line labels: relationship names, protocols (HTTP, gRPC), actions (reads, writes, calls)
 - Do NOT create separate "text" items for labels that belong to lines
 - Only create standalone "text" items for text that is NOT associated with any shape or line
@@ -789,7 +809,7 @@ class FocusedAlignWorker(QObject):
         meta = self.record.get("meta", {})
         style = self.record.get("style", {})
         geom = self.record.get("geom", {})
-        text_content = self.record.get("text", "")
+        text_content = meta.get("note", "") or self.record.get("text", "")
 
         # ---- Extract known properties from the record ----
         pen = style.get("pen", {}) or {}
@@ -1024,7 +1044,7 @@ Rules:
         kind = self.record.get("kind", "rect")
         meta = self.record.get("meta", {})
         style = self.record.get("style", {})
-        text_content = self.record.get("text", "")
+        text_content = meta.get("note", "") or self.record.get("text", "")
 
         pen = style.get("pen", {}) or {}
         fill = style.get("fill", {}) or {}

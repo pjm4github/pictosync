@@ -91,9 +91,10 @@
         "style": {
           "$ref": "#/$defs/styleDefinition"
         },
-        "text": {
-          "type": "string",
-          "description": "Text content: for text items this is the displayed text; for lines this is the relationship label overlaying the line"
+        "z": {
+          "type": "integer",
+          "default": 1000,
+          "description": "Z-index for stacking order (0 = default, omitted when 0)"
         }
       },
       "allOf": [
@@ -144,9 +145,26 @@
           },
           "then": {
             "properties": {
-              "geom": { "$ref": "#/$defs/pointGeometry" }
-            },
-            "required": ["text"]
+              "geom": { "$ref": "#/$defs/pointGeometry" },
+              "meta": {
+                "type": "object",
+                "properties": {
+                  "note": { "type": "string", "default": "Text" }
+                }
+              },
+              "style": {
+                "type": "object",
+                "properties": {
+                  "pen": { "type": "object", "properties": {
+                    "color": { "type": "string", "default": "#000000" },
+                    "width": { "type": "number", "default": 1 }
+                  }},
+                  "text": { "type": "object", "properties": {
+                    "color": { "type": "string", "default": "#000000" }
+                  }}
+                }
+              }
+            }
           }
         },
         {
@@ -155,7 +173,18 @@
           },
           "then": {
             "properties": {
-              "geom": { "$ref": "#/$defs/hexagonGeometry" }
+              "geom": { "$ref": "#/$defs/hexagonGeometry" },
+              "style": {
+                "type": "object",
+                "properties": {
+                  "pen": { "type": "object", "properties": {
+                    "color": { "type": "string", "default": "#008B8B" }
+                  }},
+                  "text": { "type": "object", "properties": {
+                    "color": { "type": "string", "default": "#008B8B" }
+                  }}
+                }
+              }
             }
           }
         },
@@ -165,7 +194,18 @@
           },
           "then": {
             "properties": {
-              "geom": { "$ref": "#/$defs/cylinderGeometry" }
+              "geom": { "$ref": "#/$defs/cylinderGeometry" },
+              "style": {
+                "type": "object",
+                "properties": {
+                  "pen": { "type": "object", "properties": {
+                    "color": { "type": "string", "default": "#8B008B" }
+                  }},
+                  "text": { "type": "object", "properties": {
+                    "color": { "type": "string", "default": "#8B008B" }
+                  }}
+                }
+              }
             }
           }
         },
@@ -175,7 +215,18 @@
           },
           "then": {
             "properties": {
-              "geom": { "$ref": "#/$defs/blockArrowGeometry" }
+              "geom": { "$ref": "#/$defs/blockArrowGeometry" },
+              "style": {
+                "type": "object",
+                "properties": {
+                  "pen": { "type": "object", "properties": {
+                    "color": { "type": "string", "default": "#B8860B" }
+                  }},
+                  "text": { "type": "object", "properties": {
+                    "color": { "type": "string", "default": "#B8860B" }
+                  }}
+                }
+              }
             }
           }
         },
@@ -577,7 +628,8 @@
       "description": "Pen/stroke style",
       "properties": {
         "color": {
-          "$ref": "#/$defs/colorHex"
+          "$ref": "#/$defs/colorHex",
+          "default": "#FF0000"
         },
         "width": {
           "type": "number",
@@ -612,7 +664,8 @@
       "description": "Fill/background style",
       "properties": {
         "color": {
-          "$ref": "#/$defs/colorHex"
+          "$ref": "#/$defs/colorHex",
+          "default": "#00000000"
         }
       }
     },
@@ -621,7 +674,8 @@
       "description": "Text style",
       "properties": {
         "color": {
-          "$ref": "#/$defs/colorHex"
+          "$ref": "#/$defs/colorHex",
+          "default": "#FFFF00"
         },
         "size_pt": {
           "type": "number",

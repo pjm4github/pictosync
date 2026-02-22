@@ -208,102 +208,181 @@ def get_schema_for_kind(kind: str) -> Optional[Dict]:
     return None
 
 
-def create_default_annotation(kind: str) -> Dict:
+# -------------------------------------------------------------------------
+# Schema -> expected template utilities
+# -------------------------------------------------------------------------
+
+def _resolve_ref(ref: str, defs: Dict[str, Any]) -> Dict[str, Any]:
+    """Resolve ``$ref`` like ``#/$defs/penStyle`` to its definition."""
+    parts = ref.split("/")
+    if len(parts) == 3 and parts[0] == "#" and parts[1] == "$defs":
+        return defs.get(parts[2], {})
+    return {}
+
+
+def _zero_for_type(prop_def: Dict[str, Any]) -> Any:
+    """Return a sensible zero/empty value for a JSON-Schema type."""
+    t = prop_def.get("type")
+    if t == "string":
+        return ""
+    if t in ("number", "integer"):
+        return 0
+    if t == "boolean":
+        return False
+    if t == "array":
+        return []
+    if t == "object":
+        return {}
+    return ""
+
+
+def _extract_defaults(schema_def: Dict[str, Any], defs: Dict[str, Any]) -> Dict[str, Any]:
+    """Walk a schema definition and build a dict of {prop_name: default_value}.
+
+    - If a property has both ``$ref`` and an inline ``"default"`` (sibling
+      keywords, valid in JSON Schema 2020-12), the inline default wins.
+    - If a property is a ``$ref`` to an object definition, recurse.
+    - If a property is a ``$ref`` to a scalar (e.g. ``colorHex``), check
+      the resolved definition for a ``"default"``, else use a type-appropriate
+      zero.
+    - Otherwise use :func:`_zero_for_type`.
     """
-    Create a default annotation of the specified kind with required fields.
+    result: Dict[str, Any] = {}
+    for prop_name, prop_def in schema_def.get("properties", {}).items():
+        if "$ref" in prop_def:
+            resolved = _resolve_ref(prop_def["$ref"], defs)
+            if resolved.get("type") == "object":
+                result[prop_name] = _extract_defaults(resolved, defs)
+            elif "default" in prop_def:
+                result[prop_name] = prop_def["default"]
+            elif "default" in resolved:
+                result[prop_name] = resolved["default"]
+            else:
+                result[prop_name] = _zero_for_type(resolved)
+        elif "default" in prop_def:
+            result[prop_name] = prop_def["default"]
+        elif prop_def.get("type") == "object":
+            result[prop_name] = _extract_defaults(prop_def, defs)
+        else:
+            result[prop_name] = _zero_for_type(prop_def)
+    return result
+
+
+def _parse_kind_overrides(item_def: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Parse the ``allOf``/``if``/``then`` blocks from ``annotationItem``.
+
+    Returns a dict mapping each kind to its ``then`` clause.
+    """
+    overrides: Dict[str, Dict[str, Any]] = {}
+    for rule in item_def.get("allOf", []):
+        if_clause = rule.get("if", {})
+        then_clause = rule.get("then", {})
+        kind_props = if_clause.get("properties", {}).get("kind", {})
+        kind_val = kind_props.get("const")
+        if kind_val and then_clause:
+            overrides[kind_val] = then_clause
+    return overrides
+
+
+def _deep_merge(base: dict, override: dict) -> None:
+    """Recursively merge *override* into *base* in-place."""
+    for key, value in override.items():
+        if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+            _deep_merge(base[key], value)
+        else:
+            base[key] = value
+
+
+def build_expected_from_schema(kind: str) -> Dict[str, Any]:
+    """Build a complete expected annotation template from the JSON schema.
+
+    Reads ``annotationItem`` and its ``allOf``/``if``/``then`` blocks to
+    resolve the correct geometry, meta, and style for the given *kind*.
+    Kind-specific inline overrides in ``then`` clauses are deep-merged
+    onto the base defaults.
 
     Args:
-        kind: One of 'rect', 'roundedrect', 'ellipse', 'line', 'text'
+        kind: The annotation kind (``rect``, ``line``, etc.).
 
     Returns:
-        A dictionary with default values for the annotation
+        A dict with all schema-declared fields populated with defaults.
     """
-    defaults = {
-        "rect": {
-            "kind": "rect",
-            "geom": {"x": 0, "y": 0, "w": 100, "h": 50},
-            "meta": {"label": "", "tech": "", "note": ""},
-            "style": {
-                "pen": {"color": "#FF0000", "width": 2, "dash": "solid", "dash_pattern_length": 30, "dash_solid_percent": 50},
-                "fill": {"color": "#00000000"},
-                "text": {"color": "#FFFF00", "size_pt": 12}
-            }
-        },
-        "roundedrect": {
-            "kind": "roundedrect",
-            "geom": {"x": 0, "y": 0, "w": 100, "h": 50, "adjust1": 10},
-            "meta": {"label": "", "tech": "", "note": ""},
-            "style": {
-                "pen": {"color": "#FF0000", "width": 2, "dash": "solid", "dash_pattern_length": 30, "dash_solid_percent": 50},
-                "fill": {"color": "#00000000"},
-                "text": {"color": "#FFFF00", "size_pt": 12}
-            }
-        },
-        "ellipse": {
-            "kind": "ellipse",
-            "geom": {"x": 0, "y": 0, "w": 100, "h": 100},
-            "meta": {"label": "", "tech": "", "note": ""},
-            "style": {
-                "pen": {"color": "#FF0000", "width": 2, "dash": "solid", "dash_pattern_length": 30, "dash_solid_percent": 50},
-                "fill": {"color": "#00000000"},
-                "text": {"color": "#FFFF00", "size_pt": 12}
-            }
-        },
-        "line": {
-            "kind": "line",
-            "geom": {"x1": 0, "y1": 0, "x2": 100, "y2": 0},
-            "meta": {"label": "", "tech": "", "note": ""},
-            "style": {
-                "pen": {"color": "#FF0000", "width": 2, "dash": "solid", "dash_pattern_length": 30, "dash_solid_percent": 50},
-                "fill": {"color": "#00000000"},
-                "text": {"color": "#FFFF00", "size_pt": 12},
-                "arrow": "end"
-            }
-        },
-        "text": {
-            "kind": "text",
-            "geom": {"x": 0, "y": 0},
-            "text": "Text",
-            "meta": {"label": "", "tech": "", "note": ""},
-            "style": {
-                "pen": {"color": "#000000", "width": 1, "dash": "solid", "dash_pattern_length": 30, "dash_solid_percent": 50},
-                "fill": {"color": "#00000000"},
-                "text": {"color": "#000000", "size_pt": 12}
-            }
-        },
-        "hexagon": {
-            "kind": "hexagon",
-            "geom": {"x": 0, "y": 0, "w": 100, "h": 80, "adjust1": 0.25},
-            "meta": {"label": "", "tech": "", "note": ""},
-            "style": {
-                "pen": {"color": "#008B8B", "width": 2, "dash": "solid", "dash_pattern_length": 30, "dash_solid_percent": 50},
-                "fill": {"color": "#00000000"},
-                "text": {"color": "#008B8B", "size_pt": 12}
-            }
-        },
-        "cylinder": {
-            "kind": "cylinder",
-            "geom": {"x": 0, "y": 0, "w": 80, "h": 120, "adjust1": 0.15},
-            "meta": {"label": "", "tech": "", "note": ""},
-            "style": {
-                "pen": {"color": "#8B008B", "width": 2, "dash": "solid", "dash_pattern_length": 30, "dash_solid_percent": 50},
-                "fill": {"color": "#00000000"},
-                "text": {"color": "#8B008B", "size_pt": 12}
-            }
-        },
-        "blockarrow": {
-            "kind": "blockarrow",
-            "geom": {"x": 0, "y": 0, "w": 150, "h": 60, "adjust2": 15, "adjust1": 0.5},
-            "meta": {"label": "", "tech": "", "note": ""},
-            "style": {
-                "pen": {"color": "#B8860B", "width": 2, "dash": "solid", "dash_pattern_length": 30, "dash_solid_percent": 50},
-                "fill": {"color": "#00000000"},
-                "text": {"color": "#B8860B", "size_pt": 12}
-            }
-        }
-    }
+    schema = get_annotation_schema()
+    defs = schema.get("$defs", {})
+    item_def = defs.get("annotationItem", {})
+    overrides = _parse_kind_overrides(item_def)
 
-    return defaults.get(kind, defaults["rect"]).copy()
+    expected: Dict[str, Any] = {"kind": kind}
+
+    # Get the then-clause for this kind (geometry $ref, style $ref, required)
+    then_clause = overrides.get(kind, {})
+    then_props = then_clause.get("properties", {})
+
+    # Geometry — use kind-specific $ref from then-clause, fall back to base
+    geom_schema = then_props.get("geom", item_def.get("properties", {}).get("geom", {}))
+    if "$ref" in geom_schema:
+        resolved = _resolve_ref(geom_schema["$ref"], defs)
+        expected["geom"] = _extract_defaults(resolved, defs)
+
+    # Meta — base from annotationMeta
+    meta_ref = item_def.get("properties", {}).get("meta", {})
+    if "$ref" in meta_ref:
+        resolved = _resolve_ref(meta_ref["$ref"], defs)
+        expected["meta"] = _extract_defaults(resolved, defs)
+
+    # Merge kind-specific meta overrides from then clause
+    then_meta = then_props.get("meta", {})
+    if then_meta.get("type") == "object" and "properties" in then_meta:
+        meta_overrides = _extract_defaults(then_meta, defs)
+        _deep_merge(expected.get("meta", {}), meta_overrides)
+
+    # Style — always start with base styleDefinition
+    base_style_ref = item_def.get("properties", {}).get("style", {})
+    if "$ref" in base_style_ref:
+        resolved = _resolve_ref(base_style_ref["$ref"], defs)
+        expected["style"] = _extract_defaults(resolved, defs)
+
+    # Then-clause style: $ref replaces base (e.g. lineStyleDefinition),
+    # inline object deep-merges overrides onto base
+    then_style = then_props.get("style", {})
+    if "$ref" in then_style:
+        resolved = _resolve_ref(then_style["$ref"], defs)
+        expected["style"] = _extract_defaults(resolved, defs)
+    elif then_style.get("type") == "object" and "properties" in then_style:
+        style_overrides = _extract_defaults(then_style, defs)
+        _deep_merge(expected.get("style", {}), style_overrides)
+
+    # Remaining top-level annotationItem properties (z, etc.)
+    _HANDLED = {"id", "kind", "geom", "meta", "style", "children"}
+    for prop_name, prop_def in item_def.get("properties", {}).items():
+        if prop_name in expected or prop_name in _HANDLED:
+            continue
+        if "$ref" in prop_def:
+            resolved = _resolve_ref(prop_def["$ref"], defs)
+            if "default" in resolved:
+                expected[prop_name] = resolved["default"]
+            else:
+                expected[prop_name] = _zero_for_type(resolved)
+        elif "default" in prop_def:
+            expected[prop_name] = prop_def["default"]
+        elif prop_def.get("type") in ("string",):
+            expected[prop_name] = ""
+        elif prop_def.get("type") in ("number", "integer"):
+            expected[prop_name] = 0
+
+    return expected
+
+
+def create_default_annotation(kind: str) -> Dict:
+    """Create a default annotation derived from ``annotation_schema.json``.
+
+    Args:
+        kind: The annotation kind (``rect``, ``line``, ``text``, etc.).
+
+    Returns:
+        A dictionary with default values for the annotation.
+    """
+    return build_expected_from_schema(kind)
 
 
 # Valid item kinds
@@ -360,9 +439,6 @@ def quick_validate_annotation(annotation: Dict) -> Tuple[bool, str]:
         if not isinstance(geom[field], (int, float)):
             return False, f"Geometry field '{field}' must be a number"
 
-    if kind == "text" and "text" not in annotation:
-        return False, "Text items require a 'text' field"
-
     return True, ""
 
 
@@ -401,14 +477,26 @@ def normalize_annotation(annotation: Dict) -> Dict:
     for key in ["pen", "fill", "text"]:
         result["style"][key] = {**default_style.get(key, {}), **ann_style.get(key, {})}
 
-    # Copy arrow for lines
+    # Copy line-specific style fields
     if kind == "line":
         result["style"]["arrow"] = ann_style.get("arrow", default_style.get("arrow", "none"))
+        result["style"]["arrow_size"] = ann_style.get("arrow_size", default_style.get("arrow_size", 12))
 
-    # Copy text field
-    if "text" in annotation:
-        result["text"] = annotation["text"]
-    elif kind == "text":
-        result["text"] = default.get("text", "")
+    # Backward-compat: migrate legacy "text" field
+    # Lines use meta.label for text; other kinds use meta.note
+    legacy_text = annotation.get("text", "")
+    if legacy_text:
+        if kind == "line":
+            if not result["meta"].get("label"):
+                result["meta"]["label"] = legacy_text
+        else:
+            if not result["meta"].get("note"):
+                result["meta"]["note"] = legacy_text
+
+    # Merge remaining top-level fields (z, etc.) from defaults and annotation
+    _HANDLED = {"kind", "id", "geom", "meta", "style", "text"}
+    for key in default:
+        if key not in result and key not in _HANDLED:
+            result[key] = annotation.get(key, default[key])
 
     return result
