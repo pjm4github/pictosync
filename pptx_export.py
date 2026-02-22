@@ -379,7 +379,7 @@ def _add_text(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
     x = px_to_emu(geom.get("x", 0) * scale_x)
     y = px_to_emu(geom.get("y", 0) * scale_y)
 
-    text = record.get("text", "")
+    text = record.get("meta", {}).get("note", "") or record.get("text", "")
     style = record.get("style", {})
     text_style = style.get("text", {})
     font_size = text_style.get("size_pt", 12)

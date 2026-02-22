@@ -255,9 +255,9 @@ class DraftDock(QDockWidget):
             if suppress_signal:
                 self.text._suppress_cursor_signal = False
 
-    def jump_to_text_field_for_id(self, ann_id: str, suppress_signal: bool = True) -> bool:
+    def jump_to_note_field_for_id(self, ann_id: str, suppress_signal: bool = True) -> bool:
         """
-        Jump to the "text" field of the annotation with the given ID.
+        Jump to the "note" field inside "meta" for the annotation with the given ID.
         If suppress_signal is True, prevents emitting cursor_annotation_changed.
         """
         if not ann_id:
@@ -274,12 +274,18 @@ class DraftDock(QDockWidget):
             if id_pos < 0:
                 return False
 
-            text_key = "\"text\":"
-            text_pos = full.find(text_key, id_pos)
-            if text_pos < 0:
+            # Find "meta" after the id, then "note" inside meta
+            meta_key = "\"meta\":"
+            meta_pos = full.find(meta_key, id_pos)
+            if meta_pos < 0:
                 return self.scroll_to_id_top(ann_id, suppress_signal=False)
 
-            value_start = text_pos + len(text_key)
+            note_key = "\"note\":"
+            note_pos = full.find(note_key, meta_pos)
+            if note_pos < 0:
+                return self.scroll_to_id_top(ann_id, suppress_signal=False)
+
+            value_start = note_pos + len(note_key)
 
             doc = self.text.document()
             cursor = QTextCursor(doc)

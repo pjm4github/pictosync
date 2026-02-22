@@ -61,12 +61,8 @@
           "properties": {
             "label": { "type": "string", "description": "Primary label/name" },
             "tech": { "type": "string", "description": "Technology stack or type" },
-            "note": { "type": "string", "description": "Description or notes" }
+            "note": { "type": "string", "description": "Description or notes (C4 description goes here)" }
           }
-        },
-        "text": {
-          "type": "string",
-          "description": "C4 format: 'Label [Tech]\\nDescription'"
         }
       }
     },
@@ -94,12 +90,8 @@
           "properties": {
             "label": { "type": "string", "description": "Primary label/name" },
             "tech": { "type": "string", "description": "Technology stack or type" },
-            "note": { "type": "string", "description": "Description or notes" }
+            "note": { "type": "string", "description": "Description or notes (C4 description goes here)" }
           }
-        },
-        "text": {
-          "type": "string",
-          "description": "C4 format: 'Label [Tech]\\nDescription'"
         }
       }
     },
@@ -126,18 +118,14 @@
           "properties": {
             "label": { "type": "string", "description": "Primary label/name" },
             "tech": { "type": "string", "description": "Role or type" },
-            "note": { "type": "string", "description": "Description or notes" }
+            "note": { "type": "string", "description": "Description or notes (C4 description goes here)" }
           }
-        },
-        "text": {
-          "type": "string",
-          "description": "C4 format: 'Label [Tech]\\nDescription'"
         }
       }
     },
     "lineAnnotation": {
       "type": "object",
-      "description": "A line/arrow element (relationships, data flows, dependencies). IMPORTANT: Any text that overlays or labels this line should be included in the text field, NOT as a separate text annotation.",
+      "description": "A line/arrow element (relationships, data flows, dependencies). IMPORTANT: Any text that overlays or labels this line should be included in meta.note, NOT as a separate text annotation.",
       "required": ["kind", "geom"],
       "properties": {
         "kind": {
@@ -158,7 +146,7 @@
           "properties": {
             "label": { "type": "string", "description": "Leave empty for lines" },
             "tech": { "type": "string", "description": "Protocol or method shown on line (HTTP, gRPC, REST, etc.)" },
-            "note": { "type": "string", "description": "Text label on or near the line (same as text field)" }
+            "note": { "type": "string", "description": "Text label that overlays or is positioned near/on the line. DO NOT create separate text items for line labels" }
           }
         },
         "style": {
@@ -171,17 +159,13 @@
               "description": "Arrow direction"
             }
           }
-        },
-        "text": {
-          "type": "string",
-          "description": "Text label that overlays or is positioned near/on the line - copy this value to meta.note as well. DO NOT create separate text items for line labels"
         }
       }
     },
     "textAnnotation": {
       "type": "object",
-      "description": "A standalone text label NOT associated with any shape or line. Use ONLY for text that doesn't belong to a rectangle, ellipse, or line. Text on lines should be in the line's text field instead.",
-      "required": ["kind", "geom", "text"],
+      "description": "A standalone text label NOT associated with any shape or line. Use ONLY for text that doesn't belong to a rectangle, ellipse, or line. Text on lines should be in the line's meta.note instead.",
+      "required": ["kind", "geom"],
       "properties": {
         "kind": {
           "const": "text"
@@ -194,15 +178,11 @@
             "y": { "type": "number", "description": "Text anchor Y position" }
           }
         },
-        "text": {
-          "type": "string",
-          "description": "The text content"
-        },
         "meta": {
           "type": "object",
           "properties": {
             "label": { "type": "string", "description": "Category or role" },
-            "note": { "type": "string", "description": "Additional context" }
+            "note": { "type": "string", "description": "The displayed text content" }
           }
         }
       }
@@ -231,12 +211,8 @@
           "properties": {
             "label": { "type": "string", "description": "Primary label/name" },
             "tech": { "type": "string", "description": "Technology or type" },
-            "note": { "type": "string", "description": "Description or notes" }
+            "note": { "type": "string", "description": "Description or notes (C4 description goes here)" }
           }
-        },
-        "text": {
-          "type": "string",
-          "description": "C4 format: 'Label [Tech]\\nDescription'"
         }
       }
     },
@@ -264,12 +240,8 @@
           "properties": {
             "label": { "type": "string", "description": "Database or store name" },
             "tech": { "type": "string", "description": "Database technology (PostgreSQL, MongoDB, Redis, etc.)" },
-            "note": { "type": "string", "description": "Description or notes" }
+            "note": { "type": "string", "description": "Description or notes (C4 description goes here)" }
           }
-        },
-        "text": {
-          "type": "string",
-          "description": "C4 format: 'Label [Tech]\\nDescription'"
         }
       }
     },
@@ -298,12 +270,8 @@
           "properties": {
             "label": { "type": "string", "description": "Flow or action name" },
             "tech": { "type": "string", "description": "Protocol or method" },
-            "note": { "type": "string", "description": "Description or notes" }
+            "note": { "type": "string", "description": "Description or notes (C4 description goes here)" }
           }
-        },
-        "text": {
-          "type": "string",
-          "description": "C4 format: 'Label [Tech]\\nDescription'"
         }
       }
     }

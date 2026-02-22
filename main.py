@@ -861,7 +861,7 @@ class MainWindow(QMainWindow):
 
     def _scroll_to_text_field(self, ann_id: str):
         """Scroll the draft editor to show the text field for the given annotation ID."""
-        ok = self.draft.jump_to_text_field_for_id(ann_id)
+        ok = self.draft.jump_to_note_field_for_id(ann_id)
         if ok:
             self.draft.set_status(f"Focused text for id: {ann_id}")
 
@@ -1230,7 +1230,7 @@ class MainWindow(QMainWindow):
             ann_id = items[0].data(ANN_ID_KEY)
             if isinstance(ann_id, str) and ann_id:
                 if isinstance(items[0], MetaTextItem):
-                    self.draft.jump_to_text_field_for_id(ann_id)
+                    self.draft.jump_to_note_field_for_id(ann_id)
                 else:
                     self._scroll_draft_to_id_top(ann_id)
 
@@ -1776,7 +1776,7 @@ class MainWindow(QMainWindow):
         self._push_draft_data_to_editor(status="Added item from scene; draft JSON updated.", focus_id=rec["id"])
 
         if isinstance(item, MetaTextItem):
-            self.draft.jump_to_text_field_for_id(rec["id"])
+            self.draft.jump_to_note_field_for_id(rec["id"])
         else:
             self._scroll_draft_to_id_top(rec["id"])
 
@@ -1819,6 +1819,7 @@ class MainWindow(QMainWindow):
         if isinstance(anns[idx], dict):
             preserved = dict(anns[idx])
             preserved.update(rec)
+            preserved.pop("text", None)  # purge legacy top-level "text" key
             anns[idx] = preserved
         else:
             anns[idx] = rec
@@ -1845,7 +1846,7 @@ class MainWindow(QMainWindow):
 
         if not interacting:
             if isinstance(item, MetaTextItem):
-                self.draft.jump_to_text_field_for_id(ann_id)
+                self.draft.jump_to_note_field_for_id(ann_id)
             else:
                 self._scroll_draft_to_id_top(ann_id)
 
@@ -2106,14 +2107,20 @@ class MainWindow(QMainWindow):
         if meta.tech:
             meta.tech = meta.tech.strip().strip("[]").strip()
 
-        # Parse C4-style text if meta fields are empty and text field exists
-        text_content = rec.get("text", "")
-        if text_content and not meta.label and not meta.tech and not meta.note:
+        # Backward-compat: migrate legacy "text" field to meta.note
+        legacy_text = rec.get("text", "")
+        if legacy_text and not meta.note:
+            meta.note = str(legacy_text)
+
+        # Parse C4-style text if meta fields are empty and note field exists
+        text_content = meta.note or ""
+        if text_content and not meta.label and not meta.tech:
             label, tech, note = parse_c4_text(str(text_content))
-            meta.label = label
-            # Strip brackets from parsed tech as well
-            meta.tech = tech.strip().strip("[]").strip() if tech else ""
-            meta.note = note
+            if label or tech:
+                meta.label = label
+                # Strip brackets from parsed tech as well
+                meta.tech = tech.strip().strip("[]").strip() if tech else ""
+                meta.note = note
 
         # Get z-index from record (will be applied after item is created)
         z_index = rec.get("z", 0)
@@ -2195,7 +2202,7 @@ class MainWindow(QMainWindow):
 
         elif kind == "text":
             g = rec.get("geom", {})
-            text = rec.get("text", "")
+            text = meta.note or rec.get("text", "")
             it = MetaTextItem(float(g["x"]), float(g["y"]), str(text), ann_id, on_change)
             it.set_meta(meta)
             it.meta.kind = "text"

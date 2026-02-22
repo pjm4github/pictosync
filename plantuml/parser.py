@@ -916,14 +916,14 @@ def _parse_activity_diagram_svg(
             "kind": "text",
             "geom": dict(title_pos),
             "meta": {
-                "kind": "text", "label": title_text, "tech": "", "note": "",
+                "kind": "text", "label": title_text, "tech": "",
+                "note": title_text,
             },
             "style": {
                 "pen": {"color": "#555555", "width": 2, "dash": "solid"},
                 "fill": {"color": "#00000000"},
                 "text": {"color": "#000000", "size_pt": 12.0},
             },
-            "text": title_text,
         }
 
     # Activities (rounded rects)
@@ -944,7 +944,8 @@ def _parse_activity_diagram_svg(
             "kind": "roundedrect",
             "geom": {"x": x, "y": y, "w": w, "h": h},
             "meta": {
-                "kind": "roundedrect", "label": label, "tech": "", "note": "",
+                "kind": "roundedrect", "label": label, "tech": "",
+                "note": label,
             },
             "style": {
                 "pen": {
@@ -953,7 +954,6 @@ def _parse_activity_diagram_svg(
                 "fill": {"color": fill},
                 "text": {"color": "#000000", "size_pt": 11.0},
             },
-            "text": label,
         }
 
     # ── Build partition data ───────────────────────────────
@@ -975,7 +975,8 @@ def _parse_activity_diagram_svg(
                 "kind": "rect",
                 "geom": {"x": x, "y": y, "w": w, "h": h},
                 "meta": {
-                    "kind": "rect", "label": title, "tech": "", "note": "",
+                    "kind": "rect", "label": title, "tech": "",
+                    "note": title,
                 },
                 "style": {
                     "pen": {
@@ -985,7 +986,6 @@ def _parse_activity_diagram_svg(
                     "fill": {"color": fill},
                     "text": {"color": "#000000", "size_pt": 11.0},
                 },
-                "text": title,
             },
             "x": x, "y": y, "w": w, "h": h,
             "area": w * h,
@@ -1059,10 +1059,9 @@ def _parse_activity_diagram_svg(
                     "kind": "group",
                     "label": pd["ann"]["meta"]["label"],
                     "tech": "",
-                    "note": "",
+                    "note": pd["ann"]["meta"].get("note", ""),
                 },
                 "style": pd["ann"]["style"],
-                "text": pd["ann"].get("text", ""),
             }
 
     # ── Ellipse annotations (start/end nodes) ─────────────
@@ -1103,7 +1102,8 @@ def _parse_activity_diagram_svg(
                 "w": round(max_rx * 2, 2), "h": round(max_ry * 2, 2),
             },
             "meta": {
-                "kind": "ellipse", "label": label, "tech": "", "note": "",
+                "kind": "ellipse", "label": label, "tech": "",
+                "note": label,
             },
             "style": {
                 "pen": {
@@ -1112,7 +1112,6 @@ def _parse_activity_diagram_svg(
                 "fill": {"color": _safe_fill(fill)},
                 "text": {"color": "#000000", "size_pt": 11.0},
             },
-            "text": label,
         })
 
     # ── Line annotations (flow connectors) ─────────────────
@@ -1136,7 +1135,6 @@ def _parse_activity_diagram_svg(
             "geom": {"x1": round(x1, 2), "y1": round(y1_val, 2), "x2": round(x2, 2), "y2": round(y2_val, 2)},
             "meta": {"kind": "line", "label": "", "tech": "", "note": ""},
             "style": _make_line_style(stroke_color, stroke_width),
-            "text": "",
         })
 
     # ── Collect top-level annotations ──────────────────────
@@ -1309,14 +1307,14 @@ def _parse_sequence_diagram_svg(
                 "w": round(tl, 2), "h": round(fs * 1.5, 2),
             },
             "meta": {
-                "kind": "text", "label": title_text, "tech": "", "note": "",
+                "kind": "text", "label": title_text, "tech": "",
+                "note": title_text,
             },
             "style": {
                 "pen": {"color": "#555555", "width": 2, "dash": "solid"},
                 "fill": {"color": "#00000000"},
                 "text": {"color": "#000000", "size_pt": 12.0},
             },
-            "text": title_text,
         })
 
     # 2. Participant heads (rounded rects at top)
@@ -1341,7 +1339,8 @@ def _parse_sequence_diagram_svg(
             "kind": "roundedrect",
             "geom": {"x": x, "y": y, "w": w, "h": h},
             "meta": {
-                "kind": "roundedrect", "label": label, "tech": "", "note": "",
+                "kind": "roundedrect", "label": label, "tech": "",
+                "note": label,
             },
             "style": {
                 "pen": {
@@ -1350,7 +1349,6 @@ def _parse_sequence_diagram_svg(
                 "fill": {"color": fill},
                 "text": {"color": "#000000", "size_pt": 10.0},
             },
-            "text": label,
         })
 
     # 3. Participant tails (rounded rects at bottom)
@@ -1375,7 +1373,8 @@ def _parse_sequence_diagram_svg(
             "kind": "roundedrect",
             "geom": {"x": x, "y": y, "w": w, "h": h},
             "meta": {
-                "kind": "roundedrect", "label": label, "tech": "", "note": "",
+                "kind": "roundedrect", "label": label, "tech": "",
+                "note": label,
             },
             "style": {
                 "pen": {
@@ -1384,7 +1383,6 @@ def _parse_sequence_diagram_svg(
                 "fill": {"color": fill},
                 "text": {"color": "#000000", "size_pt": 10.0},
             },
-            "text": label,
         })
 
     # 4. Lifelines (dashed vertical lines)
@@ -1412,7 +1410,6 @@ def _parse_sequence_diagram_svg(
             "style": _make_line_style(
                 stroke_color, stroke_width, dashed=True, arrow="none",
             ),
-            "text": "",
         })
 
     # 5. Activation boxes (narrow rects on lifelines)
@@ -1442,7 +1439,6 @@ def _parse_sequence_diagram_svg(
                 "fill": {"color": fill},
                 "text": {"color": "#000000", "size_pt": 10.0},
             },
-            "text": "",
         })
 
     # 6. Messages (normal, return, self-loop)
@@ -1483,10 +1479,10 @@ def _parse_sequence_diagram_svg(
                     "x2": round(max(all_x), 2), "y2": round(max(all_y), 2),
                 },
                 "meta": {
-                    "kind": "line", "label": label, "tech": "", "note": "",
+                    "kind": "line", "label": label, "tech": "",
+                    "note": label,
                 },
                 "style": _make_line_style(stroke_color, stroke_width),
-                "text": label,
             })
         else:
             # Normal or return message (single line + polygon arrowhead)
@@ -1525,12 +1521,12 @@ def _parse_sequence_diagram_svg(
                 "kind": "line",
                 "geom": {"x1": round(lx1, 2), "y1": round(ly1, 2), "x2": round(lx2, 2), "y2": round(ly2, 2)},
                 "meta": {
-                    "kind": "line", "label": label, "tech": "", "note": "",
+                    "kind": "line", "label": label, "tech": "",
+                    "note": label,
                 },
                 "style": _make_line_style(
                     stroke_color, stroke_width, dashed=is_dashed,
                 ),
-                "text": label,
             })
 
     # 7. Phase separators (bold text labels with bordered rects)
@@ -1574,14 +1570,14 @@ def _parse_sequence_diagram_svg(
             "kind": "text",
             "geom": geom,
             "meta": {
-                "kind": "text", "label": phase_label, "tech": "", "note": "",
+                "kind": "text", "label": phase_label, "tech": "",
+                "note": phase_label,
             },
             "style": {
                 "pen": {"color": "#000000", "width": 1, "dash": "solid"},
                 "fill": {"color": "#FFFFFF"},
                 "text": {"color": "#000000", "size_pt": 10.0},
             },
-            "text": phase_label,
         })
 
     # 8. Phase separator lines (horizontal rules spanning diagram width)
@@ -1628,7 +1624,6 @@ def _parse_sequence_diagram_svg(
             "style": _make_line_style(
                 stroke_color, stroke_width, arrow="none",
             ),
-            "text": "",
         })
 
     _normalize_annotations(annotations)
@@ -1993,14 +1988,13 @@ def _parse_description_diagram_svg(
             "geom": dict(title_info["geom"]),
             "meta": {
                 "kind": "text", "label": title_info["text"],
-                "tech": "", "note": "",
+                "tech": "", "note": title_info["text"],
             },
             "style": {
                 "pen": {"color": "#555555", "width": 2, "dash": "solid"},
                 "fill": {"color": "#00000000"},
                 "text": {"color": "#000000", "size_pt": 12.0},
             },
-            "text": title_info["text"],
         }
 
     # Entities
@@ -2020,7 +2014,7 @@ def _parse_description_diagram_svg(
                 "kind": data["kind"],
                 "label": data["label"],
                 "tech": data["tech"],
-                "note": data["note"],
+                "note": data["note"] or text,
             },
             "style": {
                 "pen": {
@@ -2031,7 +2025,6 @@ def _parse_description_diagram_svg(
                 "fill": {"color": _safe_fill(data["fill"])},
                 "text": {"color": "#000000", "size_pt": 11.0},
             },
-            "text": text,
         }
         id_to_ann[ent_id] = ann
 
@@ -2053,7 +2046,7 @@ def _parse_description_diagram_svg(
                 "kind": data["kind"],
                 "label": data["label"],
                 "tech": data["tech"],
-                "note": data["note"],
+                "note": data["note"] or text,
             },
             "style": {
                 "pen": {
@@ -2064,7 +2057,6 @@ def _parse_description_diagram_svg(
                 "fill": {"color": _safe_fill(data["fill"])},
                 "text": {"color": "#000000", "size_pt": 11.0},
             },
-            "text": text,
         }
         id_to_ann[ent_id] = ann
 
@@ -2110,7 +2102,6 @@ def _parse_description_diagram_svg(
                 "note": parent_ann["meta"].get("note", ""),
             },
             "style": parent_ann["style"],
-            "text": parent_ann.get("text", ""),
         }
         id_to_ann[parent_id] = group_ann
         grouped_ids.update(child_ids)
@@ -2151,12 +2142,11 @@ def _parse_description_diagram_svg(
                     },
                     "meta": {
                         "kind": "curve", "label": link["label"],
-                        "tech": "", "note": "",
+                        "tech": "", "note": link["label"],
                     },
                     "style": _make_line_style(
                         pen_color, pen_width, dashed=dashed, arrow=arrow,
                     ),
-                    "text": link["label"],
                 })
                 continue
 
@@ -2179,10 +2169,9 @@ def _parse_description_diagram_svg(
             "geom": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
             "meta": {
                 "kind": "line", "label": link["label"],
-                "tech": "", "note": "",
+                "tech": "", "note": link["label"],
             },
             "style": _make_line_style(pen_color, pen_width, dashed=dashed),
-            "text": link["label"],
         })
 
     # ── Collect top-level annotations ────────────────
@@ -2368,9 +2357,8 @@ def _build_element_annotation(
     ann: Dict[str, Any] = {
         "id": ann_id,
         "kind": kind,
-        "meta": {"kind": kind, "label": label, "tech": tech, "note": note},
+        "meta": {"kind": kind, "label": label, "tech": tech, "note": note or text},
         "style": style,
-        "text": text,
     }
 
     if kind == "cylinder":
@@ -2483,7 +2471,6 @@ def _build_annotations(
                     "note": parent_ann["meta"].get("note", ""),
                 },
                 "style": parent_ann["style"],
-                "text": parent_ann.get("text", ""),
             }
 
             # Replace parent entry with the group
@@ -2533,7 +2520,6 @@ def _build_annotations(
                     "style": _make_line_style(
                         pen_color, 2, dashed=dashed, arrow=arrow,
                     ),
-                    "text": label,
                 })
                 continue
 
@@ -2562,7 +2548,6 @@ def _build_annotations(
                 "note": label,
             },
             "style": _make_line_style(pen_color, 2, dashed=dashed),
-            "text": label,
         })
 
     return annotations

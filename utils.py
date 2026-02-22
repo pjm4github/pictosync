@@ -192,7 +192,7 @@ def hex_to_qcolor(s: str, fallback: QColor) -> QColor:
 
 
 # Canonical key order for annotation records
-ANNOTATION_KEY_ORDER = ["id", "kind", "children", "geom", "meta", "style", "text"]
+ANNOTATION_KEY_ORDER = ["id", "kind", "children", "geom", "meta", "style", "z"]
 
 
 def sort_annotation_keys(rec: dict) -> dict:

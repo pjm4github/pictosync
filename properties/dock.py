@@ -946,20 +946,27 @@ class PropertyPanel(QWidget):
         if item is None or not hasattr(item, "meta"):
             return
         old_color = QColor(getattr(item, "brush_color", QColor(0, 0, 0, 0)))
-        c = self._pick_color(old_color, "Pick Fill (Brush) Color")
+        # Present dialog with opaque initial if fill is fully transparent,
+        # so clicking a standard/map color gives a visible result. The
+        # native Windows dialog preserves alpha from the initial color when
+        # only RGB is changed (e.g. clicking a palette swatch).
+        dialog_initial = QColor(old_color)
+        if dialog_initial.alpha() == 0:
+            dialog_initial.setAlpha(255)
+        c = self._pick_color(dialog_initial, "Pick Fill (Brush) Color")
         if c is None:
             return
         setattr(item, "brush_color", c)
-        if isinstance(item, (MetaRectItem, MetaEllipseItem, MetaRoundedRectItem)):
-            item.setBrush(QBrush(c))
+        if hasattr(item, "_apply_pen_brush"):
+            item._apply_pen_brush()
         self._set_preview(self.fill_color_preview, c)
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
 
         if self.undo_stack:
             def apply():
-                if isinstance(item, (MetaRectItem, MetaEllipseItem, MetaRoundedRectItem)):
-                    item.setBrush(QBrush(item.brush_color))
+                if hasattr(item, "_apply_pen_brush"):
+                    item._apply_pen_brush()
                 self._set_preview(self.fill_color_preview, item.brush_color)
             cmd = ChangeStyleCommand(item, "brush_color", old_color, c, apply)
             self.undo_stack.push(cmd)

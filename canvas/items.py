@@ -1890,6 +1890,8 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
             pass
 
         p = self.pos()
+        # Sync displayed text content into meta.note before serializing
+        self.meta.note = self.toPlainText()
         rec = {
             "id": self.ann_id,
             "kind": "text",
@@ -1897,7 +1899,6 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
                 "x": round1(p.x()),
                 "y": round1(p.y()),
             },
-            "text": self.toPlainText(),
             **self._meta_dict(self.meta),
             **self._style_dict(),
         }
