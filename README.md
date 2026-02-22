@@ -85,6 +85,8 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 - **Line Numbers**: Theme-aware line number gutter with selection highlighting
 - **Code Folding**: Collapse/expand JSON objects and arrays
 - **Focus Mode**: Toggle to show only the selected annotation (lamp icon)
+- **Schema Check**: Toggle checkbox compares the focused annotation against `annotation_schema.json` — missing fields appear as gray ghost text, extra fields are highlighted in red; value-only validation (pattern, range, enum, type) blocks rebuilds while structural differences (extra/missing fields) are allowed
+- **Accept Ghost Fields**: Right-click a gray ghost field to "Accept" it — the field becomes permanent and survives toggling schema check off
 - **Smart Scrolling**: Clicking canvas items scrolls editor to the annotation's opening brace on mouse release
 - **Gutter Highlight Bar**: Colored bar in gutter marks the full scope of the selected annotation
 - **Consistent Precision**: Geometry values use 2 decimal places, style values use 1 decimal place
@@ -189,6 +191,7 @@ python -m pytest tests/test_scroll_preservation.py -v
 - **Z-Order**: Right-click a selected shape for "Bring to Front" / "Send to Back"
 - **Curve Editing**: Double-click a curve to enter node editing mode; right-click a node to change its type (Line, Cubic, Quadratic, Arc)
 - **Focus Mode**: Click the lamp icon to collapse all annotations except the selected one
+- **Schema Check**: Enable the Schema checkbox to see missing/extra fields; right-click gray ghost fields to accept them
 - **Hide PNG**: Toggle background visibility when annotations obscure the image
 - **Themes**: Access Settings to switch between 7 visual themes
 - **Text Formatting**: Use the property panel to adjust vertical alignment and spacing
@@ -211,8 +214,9 @@ pictosync/
 │   ├── scene.py         # AnnotatorScene (drawing, context menu, z-order)
 │   └── view.py          # AnnotatorView (zoom, pan, drag-drop, rubber band selection)
 ├── editor/              # JSON editor
-│   ├── code_editor.py   # JsonCodeEditor with folding and focus mode
-│   ├── draft_dock.py    # DraftDock widget with scroll-to-id and scroll lock
+│   ├── code_editor.py   # JsonCodeEditor with folding, focus mode, and ghost field context menu
+│   ├── draft_dock.py    # DraftDock widget with scroll-to-id, scroll lock, and schema check overlays
+│   ├── schema_checker.py # Schema diff engine: expected template, field diff, char-range finder
 │   └── highlighter.py   # JSON syntax highlighting
 ├── properties/          # Property panel
 │   ├── dock.py          # PropertyPanel controller (schema-driven adjust controls)
