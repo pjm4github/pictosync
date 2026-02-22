@@ -81,6 +81,60 @@ def validate_document(data: Dict, use_gemini_schema: bool = False) -> Tuple[bool
         return False, [f"Validation error: {str(e)}"]
 
 
+_VALUE_VALIDATORS = frozenset({
+    "pattern", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+    "enum", "type", "const", "minLength", "maxLength", "multipleOf",
+    "minItems", "maxItems", "format",
+})
+
+
+def validate_annotation_values(annotation: Dict) -> Tuple[bool, List[str]]:
+    """Validate only value constraints (pattern, range, enum, type).
+
+    Skips structural constraints (additionalProperties, required, oneOf)
+    so extra/missing fields don't block scene rebuilds.
+
+    Args:
+        annotation: A single annotation dictionary.
+
+    Returns:
+        Tuple of (is_valid, list_of_error_messages).
+    """
+    if not HAS_JSONSCHEMA:
+        return True, []
+
+    schema = get_annotation_schema()
+    item_schema = schema.get("$defs", {}).get("annotationItem", {})
+
+    if not item_schema:
+        return False, ["Could not find annotationItem schema definition"]
+
+    full_schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": schema.get("$defs", {}),
+        **item_schema
+    }
+
+    try:
+        validator = Draft202012Validator(full_schema)
+        errors = [
+            e for e in validator.iter_errors(annotation)
+            if e.validator in _VALUE_VALIDATORS
+        ]
+
+        if not errors:
+            return True, []
+
+        error_messages = []
+        for error in errors:
+            path = " -> ".join(str(p) for p in error.absolute_path) if error.absolute_path else "root"
+            error_messages.append(f"{path}: {error.message}")
+
+        return False, error_messages
+    except Exception as e:
+        return False, [f"Validation error: {str(e)}"]
+
+
 def validate_annotation(annotation: Dict) -> Tuple[bool, List[str]]:
     """
     Validate a single annotation item against the schema.

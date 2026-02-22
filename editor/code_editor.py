@@ -7,10 +7,10 @@ Enhanced JSON code editor with line numbers, code folding, and annotation tracki
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import Qt, QSize, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPainter, QPen, QTextCursor
+from PyQt6.QtGui import QAction, QColor, QFont, QPainter, QPen, QTextCursor
 from PyQt6.QtWidgets import QPlainTextEdit, QWidget
 
 from settings import get_settings
@@ -136,6 +136,9 @@ class JsonCodeEditor(QPlainTextEdit):
     # Emits the annotation ID (e.g., "a000001") or empty string if not in an annotation
     cursor_annotation_changed = pyqtSignal(str)
 
+    # Signal emitted when user accepts a ghost (schema-default) field via context menu
+    accept_ghost_field = pyqtSignal(str)
+
     # Default line number colors (Foundation Dark theme)
     DEFAULT_LINE_COLORS = {
         "background": "#1a1a1a",
@@ -170,6 +173,10 @@ class JsonCodeEditor(QPlainTextEdit):
 
         # Flag to prevent circular updates
         self._suppress_cursor_signal = False
+
+        # Callback to check whether a cursor position is inside a ghost field.
+        # Set by DraftDock; signature: (int) -> str | None  (returns dot-path)
+        self._ghost_field_checker: Optional[Callable[[int], Optional[str]]] = None
 
         # Re-entrancy guard for _update_margins (prevents infinite loop:
         # _update_margins -> setViewportMargins -> updateRequest ->
@@ -824,6 +831,26 @@ class JsonCodeEditor(QPlainTextEdit):
         """Return the current annotation ID the cursor is in."""
         return self._current_annotation_id
 
+    def contextMenuEvent(self, event):
+        """Show context menu, prepending 'Accept field' for ghost fields."""
+        menu = self.createStandardContextMenu()
+
+        ghost_path: Optional[str] = None
+        if self._ghost_field_checker is not None:
+            cursor = self.cursorForPosition(event.pos())
+            ghost_path = self._ghost_field_checker(cursor.position())
+
+        if ghost_path:
+            # Prepend "Accept field" action before all other actions
+            accept_action = QAction(f"Accept field \u2018{ghost_path}\u2019", menu)
+            path_copy = ghost_path  # capture for lambda
+            accept_action.triggered.connect(lambda: self.accept_ghost_field.emit(path_copy))
+            first = menu.actions()[0] if menu.actions() else None
+            menu.insertAction(first, accept_action)
+            menu.insertSeparator(first)
+
+        menu.exec(event.globalPos())
+
     def set_highlighted_annotation(self, ann_id: str):
         """
         Set the annotation to highlight in the line number area.
@@ -927,3 +954,75 @@ class JsonCodeEditor(QPlainTextEdit):
             return (start_block.blockNumber(), end_block.blockNumber())
 
         return (-1, -1)
+
+    def _find_annotation_char_range(self, ann_id: str) -> Tuple[int, int]:
+        """Find character offsets for an annotation's ``{ ... }`` block.
+
+        Nearly identical to :meth:`_find_annotation_line_range` but returns
+        ``(object_start, object_end)`` character positions instead of block
+        numbers.  Returns ``(-1, -1)`` if not found.
+
+        Args:
+            ann_id: The annotation ID to locate.
+
+        Returns:
+            ``(start_pos, end_pos)`` character offsets (inclusive on both ends).
+        """
+        text = self.toPlainText()
+        if not text.strip():
+            return (-1, -1)
+
+        id_pattern = rf'"id"\s*:\s*"{re.escape(ann_id)}"'
+        id_match = re.search(id_pattern, text)
+        if not id_match:
+            return (-1, -1)
+
+        id_pos = id_match.start()
+
+        # Scan backwards to find opening brace
+        brace_depth = 0
+        object_start = -1
+        in_string = False
+
+        for i in range(id_pos - 1, -1, -1):
+            ch = text[i]
+            if ch == '"' and (i == 0 or text[i - 1] != '\\'):
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == '}':
+                brace_depth += 1
+            elif ch == '{':
+                if brace_depth == 0:
+                    object_start = i
+                    break
+                brace_depth -= 1
+
+        if object_start < 0:
+            return (-1, -1)
+
+        # Scan forwards to find closing brace
+        brace_depth = 1
+        object_end = -1
+        in_string = False
+
+        for i in range(object_start + 1, len(text)):
+            ch = text[i]
+            if ch == '"' and text[i - 1] != '\\':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == '{':
+                brace_depth += 1
+            elif ch == '}':
+                brace_depth -= 1
+                if brace_depth == 0:
+                    object_end = i
+                    break
+
+        if object_end < 0:
+            return (-1, -1)
+
+        return (object_start, object_end)

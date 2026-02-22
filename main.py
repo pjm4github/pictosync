@@ -1583,6 +1583,8 @@ class MainWindow(QMainWindow):
         """Handle draft text changes."""
         if self._syncing_from_scene:
             return
+        if self.draft._schema_check_inserting:
+            return
 
         if self._link_enabled:
             self._json_edit_timer.start()
@@ -1635,6 +1637,22 @@ class MainWindow(QMainWindow):
 
             trace("Rebuilding ID index...", "SYNC")
             self._rebuild_id_index()
+
+            # Validate annotation values before rebuilding scene
+            # Uses value-only validation so extra/missing fields don't
+            # block rebuilds (they are shown via schema-check overlays).
+            from schemas import validate_annotation_values
+            validation_errors = []
+            for rec in anns:
+                if not isinstance(rec, dict):
+                    continue
+                valid, errors = validate_annotation_values(rec)
+                if not valid:
+                    validation_errors.extend(errors)
+            if validation_errors:
+                self.draft.set_status(f"\u23f3 {validation_errors[0]}")
+                return
+
             trace("Rebuilding scene from draft...", "SYNC")
             self._rebuild_scene_from_draft()
             trace("Scene rebuild complete", "SYNC")
@@ -1643,6 +1661,10 @@ class MainWindow(QMainWindow):
                 self._push_draft_data_to_editor(status="Added missing ids; scene updated.", focus_id=None)
             else:
                 self.draft.set_status("Scene updated from JSON.")
+
+            # Refresh schema overlays (positions may have shifted after rebuild)
+            if self.draft.is_schema_check_enabled():
+                self.draft.update_schema_overlays()
         except Exception as e:
             self.draft.set_status(f"JSON parse error: {e}")
 
@@ -1701,7 +1723,8 @@ class MainWindow(QMainWindow):
         # This must happen after _syncing_from_json is False so the handlers don't bail out.
         if restored_id:
             self.draft.set_highlighted_annotation(restored_id)
-            self._scroll_draft_to_id_top(restored_id)
+            if not self.draft.text.hasFocus():
+                self._scroll_draft_to_id_top(restored_id)
 
     def _on_new_scene_item(self, item: QGraphicsItem):
         """Handle new item added to scene."""
@@ -2042,6 +2065,10 @@ class MainWindow(QMainWindow):
 
         if focus_id:
             self._scroll_draft_to_id_top(focus_id)
+
+        # Re-apply schema check after text replacement
+        if self.draft.is_schema_check_enabled():
+            self.draft.refresh_schema_check()
 
     def _rebuild_id_index(self):
         """Rebuild the annotation ID index."""
