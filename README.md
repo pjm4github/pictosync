@@ -4,7 +4,7 @@
 
 # PictoSync
 
-**v1.5** | PNG Image Canvas Tool for Object Synchronization
+**v1.6** | PNG Image Canvas Tool for Object Synchronization
 
 Diagram annotation tool with AI-powered extraction and bidirectional sync.
 
@@ -70,6 +70,9 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 
 ### AI Integration
 - **AI Extraction**: Automatic diagram element detection using Google Gemini models
+- **Model Selection**: Configurable model list and default model in settings; dropdown menu in toolbar to switch models
+- **Focus Align**: Refine a selected element via Gemini AI on a cropped region around it
+- **Token Counter**: Live Gemini token usage counter displayed on the toolbar
 - **Smart Defaults**: Extracted elements automatically get formatting defaults
 - **Markdown Handling**: Automatically strips markdown fences from AI responses
 
@@ -85,8 +88,9 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 - **Line Numbers**: Theme-aware line number gutter with selection highlighting
 - **Code Folding**: Collapse/expand JSON objects and arrays
 - **Focus Mode**: Toggle to show only the selected annotation (lamp icon)
-- **Schema Check**: Toggle checkbox compares the focused annotation against `annotation_schema.json` — missing fields appear as gray ghost text, extra fields are highlighted in red; value-only validation (pattern, range, enum, type) blocks rebuilds while structural differences (extra/missing fields) are allowed
+- **Schema Check**: Toggle checkbox compares the focused annotation against `annotation_schema.json` — missing fields appear as gray ghost text, extra fields are highlighted in red; value-only validation (pattern, range, enum, type) blocks rebuilds while structural differences (extra/missing fields) are allowed; overlays refresh automatically after scene rebuilds
 - **Accept Ghost Fields**: Right-click a gray ghost field to "Accept" it — the field becomes permanent and survives toggling schema check off
+- **Schema-Driven Defaults**: All default annotation values (meta, style, per-kind overrides) are derived from the JSON schema — no hardcoded Python dicts
 - **Smart Scrolling**: Clicking canvas items scrolls editor to the annotation's opening brace on mouse release
 - **Gutter Highlight Bar**: Colored bar in gutter marks the full scope of the selected annotation
 - **Consistent Precision**: Geometry values use 2 decimal places, style values use 1 decimal place
@@ -153,6 +157,7 @@ python -m pytest tests/test_scroll_preservation.py -v
 
 | Test Module | What It Covers |
 |-------------|---------------|
+| `test_item_kinds.py` | All 10 item kinds end-to-end (130 tests): creation/JSON field correctness, property panel meta editing (label, tech, note), pen color changes, and no duplicate IDs |
 | `test_adjust_roundtrip.py` | Schema-driven adjust control labels, suffixes, ranges; adjust value round-trips through panel/JSON/canvas; no duplicate IDs after adjust changes |
 | `test_scroll_preservation.py` | Editor scroll stays frozen during canvas drag; JSON geometry values update live during drag; PUML import produces correct annotations with full meta fields; re-import works after drag |
 | `test_ungroup_drag.py` | Ungroup preserves index integrity; no duplicate IDs after ungroup; children retain `on_change` callbacks; geometry updates during drag after ungroup; move-then-ungroup-then-drag scenario |
@@ -206,7 +211,8 @@ pictosync/
 ├── models.py            # Data models, AnnotationMeta, DrawMode, normalize_meta()
 ├── styles.py            # Theme stylesheets, dash patterns, color configs
 ├── utils.py             # JSON parsing, coordinate scaling, markdown handling
-├── settings.py          # Application settings (workspace, export options)
+├── settings.py          # Application settings (workspace, export, Gemini models)
+├── settings_dialog.py   # Settings dialog UI (general, themes, Gemini model list)
 ├── undo_commands.py     # Undo/redo commands for all canvas operations
 ├── canvas/              # Graphics layer
 │   ├── items.py         # Annotation items (Rect, Ellipse, Hexagon, Cylinder, BlockArrow, Polygon, Curve, Line, Text, Group)
@@ -222,7 +228,8 @@ pictosync/
 │   ├── dock.py          # PropertyPanel controller (schema-driven adjust controls)
 │   ├── properties_panel.ui   # Qt Designer UI file
 │   └── properties_ui.py      # Auto-generated from .ui file
-├── schemas/             # JSON schemas
+├── schemas/             # JSON schemas and schema utilities
+│   ├── __init__.py      # Schema-driven defaults, value-only validation, template builder
 │   └── annotation_schema.json  # Annotation format specification (including curve, group)
 ├── plantuml/            # PlantUML import
 │   ├── renderer.py      # PlantUML to PNG/SVG rendering
@@ -237,6 +244,7 @@ pictosync/
 │   ├── generate_icons.py    # Icon generation script
 │   └── [Theme folders]      # Icons for each theme
 ├── tests/               # Automated test suite (pytest)
+│   ├── test_item_kinds.py           # All 10 item kinds end-to-end (130 tests)
 │   ├── test_adjust_roundtrip.py     # Adjust control schema validation
 │   ├── test_scroll_preservation.py  # Scroll lock & live update tests
 │   ├── test_ungroup_drag.py         # Ungroup + drag correctness
@@ -252,13 +260,29 @@ Annotations follow a JSON schema with support for:
 - **Geometry**: rect, roundedrect, ellipse, hexagon, cylinder, blockarrow, polygon, curve, line, text, group
 - **Curve Geometry**: Bounding box (`x, y, w, h`) plus `nodes` array with SVG path commands (`M`, `L`, `C`, `Q`, `A`, `Z`) and normalized 0–1 control point coordinates
 - **Group**: Recursive `children` array containing nested annotations
-- **Meta**: label, tech, note with alignment and sizing; `ui_label` and `ui_suffix` for schema-driven property controls
-- **Style**: pen (color, width, dash), brush (fill), text (color, size), arrow (none, start, end, both)
+- **Meta**: label, tech, note with alignment and sizing; `ui_label` and `ui_suffix` for schema-driven property controls; all text content lives in `meta.note` (no legacy top-level `text` field)
+- **Style**: pen (color, width, dash, dash_pattern_length, dash_solid_percent), fill (color with alpha), text (color, size), arrow (none, start, end, both)
 - **Text Layout**: vertical alignment, spacing, bounding box dimensions
 
 See `schemas/annotation_schema.json` for the full specification.
 
 ## Version History
+
+### v1.6 (2026-02-22)
+- Gemini model selection: configurable model list and default in settings, dropdown menu in toolbar
+- Focus Align tool: refine a selected element via Gemini AI on a cropped region
+- Gemini token counter displayed on the toolbar
+- Schema-driven defaults: all annotation defaults derived from `annotation_schema.json` (no hardcoded Python dicts)
+- Removed legacy top-level `text` field — all text content canonicalized to `meta.note`
+- Value-only schema validation: pattern/range/enum/type checks block rebuilds; structural differences are allowed
+- Accept Ghost Fields: right-click gray ghost fields to make them permanent
+- Schema overlays refresh automatically after scene rebuilds
+- Pen dash properties (`dash`, `dash_pattern_length`, `dash_solid_percent`) always serialized in records and Gemini prompts
+- Standardized `style.fill` across schema, prompts, canvas, and export
+- Compact toolbar padding/spacing with disabled button styles across all themes
+- Fix shutdown crash when scene C++ object is deleted before selection signal
+- Fix fill color picker to show opaque initial color when current fill is fully transparent
+- Comprehensive item-kind test suite (`test_item_kinds.py`): 130 tests covering all 10 kinds end-to-end
 
 ### v1.5 (2026-02-18)
 - Curve drawing tool with SVG path-like node editing (cubic bezier, quadratic bezier, arc, line segments)
