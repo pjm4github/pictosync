@@ -18,8 +18,10 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 **For a comparison to other tools and their features see this file:  [Round Tripping PNG Tools](png_json_comparison.md)**
 
 ### Drawing & Annotation
-- **Manual Drawing Tools**: Rectangle, rounded rectangle, ellipse, hexagon, cylinder, block arrow, polygon, curve, line, and text annotations
+- **Manual Drawing Tools**: Rectangle, rounded rectangle, ellipse, hexagon, cylinder, block arrow, isometric cube, polygon, curve, orthogonal curve, line, and text annotations
+- **Isometric Cube**: Container shape with configurable extrusion depth and angle (0–360°); drag control handles to adjust depth and direction interactively
 - **Curve Tool**: Click-click placement of SVG path-like curves with node editing; supports cubic bezier (`C`), quadratic bezier (`Q`), arc (`A`), and line (`L`) segments; right-click nodes to change type; arrowhead support (none, start, end, both)
+- **Orthogonal Curve**: Curve variant restricted to horizontal/vertical segments (M/H/V nodes) with optional corner bend radius; Ctrl+click to extend; arrowhead support
 - **Polygon Tool**: Multi-click vertex placement with right-click to close; double-click to enter vertex editing mode with draggable control knobs; right-click vertices to delete, right-click edges to add vertices
 - **Text Labels**: All shapes support label, tech, and note text with customizable formatting
 - **Text Alignment**: Vertical alignment (top/middle/bottom) and line spacing controls
@@ -59,10 +61,13 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 
 ### PowerPoint Export
 - **Slide Export**: Export annotations as native PowerPoint shapes via File > Export PPTX
-- **Shape Support**: Rectangles, rounded rectangles, ellipses, hexagons, cylinders, block arrows, polygons, curves, lines, and text
+- **Shape Support**: Rectangles, rounded rectangles, ellipses, hexagons, cylinders, block arrows, isometric cubes, polygons, curves, orthogonal curves, lines, and text
 - **Native Bezier Curves**: Curves export as OOXML `a:cubicBezTo` and `a:quadBezTo` elements preserving control points
+- **Isometric Cube**: Exported as PowerPoint CUBE auto-shape with depth adjustment and flipH/flipV for angle mapping
+- **Orthogonal Curve**: Exported as freeform polyline from M/H/V nodes with arrowhead support
 - **Curve Labels**: Label/tech/note text placed at the parametric midpoint (t=0.5) of the actual curve path
-- **Arrowheads**: Line and curve arrowheads exported via `tailEnd`/`headEnd` attributes
+- **Arrowheads**: Line, curve, and orthogonal curve arrowheads exported via `tailEnd`/`headEnd` attributes
+- **Semi-Transparent Fills**: Fill colors with alpha transparency export with PPTX transparency (not discarded)
 - **Fill & Text Colors**: Fill colors, border colors, text colors, font sizes, and alignment
 - **Polygon Freeforms**: Polygon shapes exported as PowerPoint freeform shapes
 - **Group Flattening**: Groups recursively flattened for export
@@ -157,7 +162,7 @@ python -m pytest tests/test_scroll_preservation.py -v
 
 | Test Module | What It Covers |
 |-------------|---------------|
-| `test_item_kinds.py` | All 10 item kinds end-to-end (130 tests): creation/JSON field correctness, property panel meta editing (label, tech, note), pen color changes, and no duplicate IDs |
+| `test_item_kinds.py` | All 12 item kinds end-to-end: creation/JSON field correctness, property panel meta editing (label, tech, note), pen color changes, and no duplicate IDs |
 | `test_adjust_roundtrip.py` | Schema-driven adjust control labels, suffixes, ranges; adjust value round-trips through panel/JSON/canvas; no duplicate IDs after adjust changes |
 | `test_scroll_preservation.py` | Editor scroll stays frozen during canvas drag; JSON geometry values update live during drag; PUML import produces correct annotations with full meta fields; re-import works after drag |
 | `test_ungroup_drag.py` | Ungroup preserves index integrity; no duplicate IDs after ungroup; children retain `on_change` callbacks; geometry updates during drag after ungroup; move-then-ungroup-then-drag scenario |
@@ -165,7 +170,7 @@ python -m pytest tests/test_scroll_preservation.py -v
 
 ### Basic Workflow
 1. **Load an image**: Drag and drop a PNG/PUML file or use File > Open
-2. **Draw annotations**: Select a tool (R=Rect, U=RoundedRect, E=Ellipse, L=Line, V=Curve, T=Text, H=Hexagon, Y=Cylinder, A=Block Arrow, P=Polygon, S=Select)
+2. **Draw annotations**: Select a tool (R=Rect, U=RoundedRect, E=Ellipse, L=Line, V=Curve, T=Text, H=Hexagon, Y=Cylinder, A=Block Arrow, I=Iso Cube, P=Polygon, S=Select)
 3. **AI extraction**: Click "Auto-Extract (Gemini)" to detect diagram elements
 4. **Edit JSON**: Modify annotations in the Draft JSON panel
 5. **Link**: Click "Import & Link" to enable bidirectional JSON ↔ Canvas sync
@@ -185,6 +190,7 @@ python -m pytest tests/test_scroll_preservation.py -v
 | H | Hexagon tool |
 | Y | Cylinder tool |
 | A | Block arrow tool |
+| I | Iso Cube tool |
 | P | Polygon tool |
 | Ctrl+Z | Undo |
 | Ctrl+Y | Redo |
@@ -194,7 +200,9 @@ python -m pytest tests/test_scroll_preservation.py -v
 
 ### Tips
 - **Z-Order**: Right-click a selected shape for "Bring to Front" / "Send to Back"
+- **Iso Cube**: Drag the depth handle to change extrusion depth; drag the angle handle to rotate the extrusion direction
 - **Curve Editing**: Double-click a curve to enter node editing mode; right-click a node to change its type (Line, Cubic, Quadratic, Arc)
+- **Orthogonal Curve**: Select "Ortho" from the curve dropdown; Ctrl+click to extend with new H/V segments
 - **Focus Mode**: Click the lamp icon to collapse all annotations except the selected one
 - **Schema Check**: Enable the Schema checkbox to see missing/extra fields; right-click gray ghost fields to accept them
 - **Hide PNG**: Toggle background visibility when annotations obscure the image
@@ -215,7 +223,7 @@ pictosync/
 ├── settings_dialog.py   # Settings dialog UI (general, themes, Gemini model list)
 ├── undo_commands.py     # Undo/redo commands for all canvas operations
 ├── canvas/              # Graphics layer
-│   ├── items.py         # Annotation items (Rect, Ellipse, Hexagon, Cylinder, BlockArrow, Polygon, Curve, Line, Text, Group)
+│   ├── items.py         # Annotation items (Rect, Ellipse, Hexagon, Cylinder, BlockArrow, IsoCube, Polygon, Curve, OrthoCurve, Line, Text, Group)
 │   ├── mixins.py        # LinkedMixin, MetaMixin for shared behavior
 │   ├── scene.py         # AnnotatorScene (drawing, context menu, z-order)
 │   └── view.py          # AnnotatorView (zoom, pan, drag-drop, rubber band selection)
@@ -236,7 +244,7 @@ pictosync/
 │   └── parser.py        # PUML text parsing, SVG position/path extraction, description diagram parser
 ├── gemini/              # AI integration
 │   └── worker.py        # Threaded Gemini API worker
-├── pptx_export.py       # PowerPoint slide export (native bezier curves, arrowheads, labels)
+├── pptx_export.py       # PowerPoint slide export (all 12 kinds, native bezier curves, arrowheads, labels)
 ├── alignment/           # OpenCV alignment
 │   ├── optimizer.py     # Shape and line alignment algorithms
 │   └── worker.py        # Threaded alignment workers
@@ -244,7 +252,7 @@ pictosync/
 │   ├── generate_icons.py    # Icon generation script
 │   └── [Theme folders]      # Icons for each theme
 ├── tests/               # Automated test suite (pytest)
-│   ├── test_item_kinds.py           # All 10 item kinds end-to-end (130 tests)
+│   ├── test_item_kinds.py           # All 12 item kinds end-to-end
 │   ├── test_adjust_roundtrip.py     # Adjust control schema validation
 │   ├── test_scroll_preservation.py  # Scroll lock & live update tests
 │   ├── test_ungroup_drag.py         # Ungroup + drag correctness
@@ -257,7 +265,7 @@ pictosync/
 ## Schema
 
 Annotations follow a JSON schema with support for:
-- **Geometry**: rect, roundedrect, ellipse, hexagon, cylinder, blockarrow, polygon, curve, line, text, group
+- **Geometry**: rect, roundedrect, ellipse, hexagon, cylinder, blockarrow, isocube, polygon, curve, orthocurve, line, text, group
 - **Curve Geometry**: Bounding box (`x, y, w, h`) plus `nodes` array with SVG path commands (`M`, `L`, `C`, `Q`, `A`, `Z`) and normalized 0–1 control point coordinates
 - **Group**: Recursive `children` array containing nested annotations
 - **Meta**: label, tech, note with alignment and sizing; `ui_label` and `ui_suffix` for schema-driven property controls; all text content lives in `meta.note` (no legacy top-level `text` field)
@@ -282,7 +290,11 @@ See `schemas/annotation_schema.json` for the full specification.
 - Compact toolbar padding/spacing with disabled button styles across all themes
 - Fix shutdown crash when scene C++ object is deleted before selection signal
 - Fix fill color picker to show opaque initial color when current fill is fully transparent
-- Comprehensive item-kind test suite (`test_item_kinds.py`): 130 tests covering all 10 kinds end-to-end
+- Isometric Cube drawing tool: configurable depth and extrusion angle with interactive control handles
+- Orthogonal Curve tool: H/V-only curve variant with corner bend radius and Ctrl+click extend
+- PowerPoint export for isometric cube (CUBE auto-shape with flip mapping) and orthogonal curve (freeform polyline)
+- Semi-transparent fill colors now export with PPTX transparency instead of being discarded
+- Comprehensive item-kind test suite (`test_item_kinds.py`): 207 tests covering all 12 kinds end-to-end
 
 ### v1.5 (2026-02-18)
 - Curve drawing tool with SVG path-like node editing (cubic bezier, quadratic bezier, arc, line segments)

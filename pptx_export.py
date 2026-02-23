@@ -57,6 +57,30 @@ def hex_to_rgb(hex_color: str) -> Optional[Tuple[int, int, int]]:
         return None
 
 
+def get_alpha(hex_color: str) -> int:
+    """
+    Return the alpha byte (0–255) from a hex color string.
+
+    Args:
+        hex_color: Color in format "#RRGGBB" or "#RRGGBBAA"
+
+    Returns:
+        Alpha value 0–255 (255 = fully opaque, default when no alpha present)
+    """
+    if not hex_color or not hex_color.startswith("#"):
+        return 255
+
+    raw = hex_color.lstrip("#")
+
+    if len(raw) == 8:
+        try:
+            return int(raw[6:8], 16)
+        except ValueError:
+            return 255
+
+    return 255
+
+
 def has_alpha_transparency(hex_color: str) -> bool:
     """
     Check if a hex color has alpha transparency (not fully opaque).
@@ -67,16 +91,7 @@ def has_alpha_transparency(hex_color: str) -> bool:
     Returns:
         True if the color has transparency (alpha < FF)
     """
-    if not hex_color or not hex_color.startswith("#"):
-        return False
-
-    hex_color = hex_color.lstrip("#")
-
-    if len(hex_color) == 8:
-        alpha = hex_color[6:8].upper()
-        return alpha != "FF"
-
-    return False
+    return get_alpha(hex_color) < 255
 
 
 def px_to_emu(pixels: float) -> int:
@@ -117,23 +132,47 @@ def _apply_fill_style(fill, style: Dict[str, Any]):
     """
     Apply fill styling to a shape.
 
+    Handles three cases:
+      - Fully transparent (alpha == 0): no fill
+      - Semi-transparent (0 < alpha < 255): solid fill with PPTX transparency
+      - Fully opaque (alpha == 255 or no alpha): solid fill
+
     Args:
         fill: The shape.fill object from python-pptx
         style: Style dict containing fill properties
     """
+    from pptx.oxml.ns import qn
+    from lxml import etree
+
     fill_style = style.get("fill") or {}
     fill_color = fill_style.get("color", "#00000000")
 
-    # Check if fill is transparent
-    if has_alpha_transparency(fill_color):
-        fill.background()  # No fill
-    else:
-        rgb = hex_to_rgb(fill_color)
-        if rgb:
-            fill.solid()
-            fill.fore_color.rgb = RGBColor(*rgb)
-        else:
-            fill.background()
+    alpha = get_alpha(fill_color)
+
+    if alpha == 0:
+        fill.background()  # Fully transparent — no fill
+        return
+
+    rgb = hex_to_rgb(fill_color)
+    if not rgb:
+        fill.background()
+        return
+
+    fill.solid()
+    fill.fore_color.rgb = RGBColor(*rgb)
+
+    # Apply transparency for semi-transparent fills
+    if alpha < 255:
+        # PPTX transparency is expressed as alpha in 1/1000 % (0 = opaque, 100000 = invisible)
+        pptx_alpha = int(round(alpha / 255 * 100000))
+        # Set a:alpha on the srgbClr element
+        srgb_el = fill._fill.find(f'.//{qn("a:srgbClr")}')
+        if srgb_el is not None:
+            # Remove any existing alpha child
+            for old in srgb_el.findall(qn("a:alpha")):
+                srgb_el.remove(old)
+            alpha_el = etree.SubElement(srgb_el, qn("a:alpha"))
+            alpha_el.set("val", str(pptx_alpha))
 
 
 def _add_text_to_shape(shape, meta: Dict[str, Any], text_style: Dict[str, Any]):
@@ -777,6 +816,212 @@ def _add_curve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
             p.alignment = PP_ALIGN.CENTER
 
 
+def _add_isocube(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
+    """Add an isometric cube shape to the slide.
+
+    Maps to PowerPoint's CUBE auto-shape with flip attributes to approximate
+    the extrusion angle.  The depth adjustment is mapped from our pixel depth
+    to the PPTX proportional ratio (0.0–0.5).
+
+    Args:
+        slide: The PowerPoint slide
+        record: Annotation record dict
+        scale_x: Horizontal scale factor
+        scale_y: Vertical scale factor
+    """
+    import math
+    from lxml import etree
+
+    geom = record.get("geom", {})
+    x = px_to_emu(geom.get("x", 0) * scale_x)
+    y = px_to_emu(geom.get("y", 0) * scale_y)
+    w = px_to_emu(geom.get("w", 100) * scale_x)
+    h = px_to_emu(geom.get("h", 80) * scale_y)
+
+    shape = slide.shapes.add_shape(MSO_SHAPE.CUBE, x, y, w, h)
+
+    # ── Depth adjustment ──
+    adjust1 = geom.get("adjust1", 30)   # depth in pixels
+    adjust2 = geom.get("adjust2", 135)  # angle in degrees
+
+    # Compute effective depth (same clamp logic as canvas _effective_depth)
+    raw_w = geom.get("w", 100)
+    raw_h = geom.get("h", 80)
+    depth = adjust1
+    rad = math.radians(adjust2)
+    abs_sin = abs(math.sin(rad))
+    abs_cos = abs(math.cos(rad))
+    if abs_sin > 1e-9:
+        depth = min(depth, raw_w / abs_sin)
+    if abs_cos > 1e-9:
+        depth = min(depth, raw_h / abs_cos)
+    depth = max(0.0, depth)
+
+    max_dim = max(raw_w, raw_h)
+    depth_ratio = min(0.5, depth / max_dim) if max_dim > 0 else 0.25
+    try:
+        shape.adjustments[0] = depth_ratio
+    except (IndexError, AttributeError):
+        pass
+
+    # ── Map angle quadrant to flipH / flipV ──
+    # Our angle: 0°=up, CW. PPTX CUBE default extrusion is upper-right
+    # (front face lower-left), which corresponds to our 180–270° range.
+    angle = adjust2 % 360
+    xfrm = shape._element.spPr.xfrm
+    if angle < 90:         # NE outward → flipH + flipV
+        xfrm.set("flipH", "1")
+        xfrm.set("flipV", "1")
+    elif angle < 180:      # SE outward → flipH only
+        xfrm.set("flipH", "1")
+    elif angle < 270:      # SW outward → default (no flip)
+        pass
+    else:                  # NW outward → flipV only
+        xfrm.set("flipV", "1")
+
+    # ── Styles and text ──
+    style = record.get("style", {})
+    _apply_line_style(shape.line, style)
+    _apply_fill_style(shape.fill, style)
+
+    meta = record.get("meta", {})
+    _add_text_to_shape(shape, meta, style.get("text", {}))
+
+
+def _add_orthocurve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
+    """Add an orthogonal curve (M/H/V polyline) to the slide.
+
+    Resolves relative M/H/V/Z nodes to absolute pixel coordinates, then
+    builds a freeform polyline.  Corner bend radius (adjust1) is not
+    exported — PowerPoint freeforms don't support native corner rounding.
+
+    Args:
+        slide: The PowerPoint slide
+        record: Annotation record dict
+        scale_x: Horizontal scale factor
+        scale_y: Vertical scale factor
+    """
+    from lxml import etree
+    from pptx.oxml.ns import qn
+
+    geom = record.get("geom", {})
+    x = geom.get("x", 0) * scale_x
+    y = geom.get("y", 0) * scale_y
+    w = geom.get("w", 100) * scale_x
+    h = geom.get("h", 100) * scale_y
+
+    nodes = geom.get("nodes", [])
+    if not nodes or len(nodes) < 2:
+        return
+
+    # ── Resolve M/H/V to absolute relative-coordinates ──
+    points: List[Tuple[float, float]] = []
+    prev_x, prev_y = 0.0, 0.0
+    for node in nodes:
+        cmd = node.get("cmd", "M")
+        if cmd == "Z":
+            continue
+        if cmd == "M":
+            prev_x, prev_y = node.get("x", 0.0), node.get("y", 0.0)
+        elif cmd == "H":
+            prev_x = node.get("x", prev_x)
+        elif cmd == "V":
+            prev_y = node.get("y", prev_y)
+        points.append((prev_x, prev_y))
+
+    if len(points) < 2:
+        return
+
+    # Convert to absolute EMU positions
+    emu_points = [
+        (px_to_emu(x + px * w), px_to_emu(y + py * h))
+        for px, py in points
+    ]
+
+    # Build freeform polyline
+    start_x, start_y = emu_points[0]
+    builder = slide.shapes.build_freeform(start_x, start_y)
+    builder.add_line_segments(emu_points[1:], close=False)
+    shape = builder.convert_to_shape()
+
+    # ── Styles ──
+    style = record.get("style", {})
+    _apply_line_style(shape.line, style)
+    # No fill for open polylines
+    shape.fill.background()
+
+    # ── Arrowheads (same XML approach as _add_curve) ──
+    arrow_mode = style.get("arrow", "none")
+    if arrow_mode != "none":
+        sp = shape._element
+        spPr = sp.find(qn("a:spPr")) if sp.find(qn("a:spPr")) is not None else sp.spPr
+        ln = spPr.find(qn("a:ln"))
+        if ln is None:
+            ln = etree.SubElement(spPr, qn("a:ln"))
+        if arrow_mode in ("end", "both"):
+            tail_end = ln.find(qn("a:tailEnd"))
+            if tail_end is None:
+                tail_end = etree.SubElement(ln, qn("a:tailEnd"))
+            tail_end.set("type", "triangle")
+        if arrow_mode in ("start", "both"):
+            head_end = ln.find(qn("a:headEnd"))
+            if head_end is None:
+                head_end = etree.SubElement(ln, qn("a:headEnd"))
+            head_end.set("type", "triangle")
+
+    # ── Text label at polyline midpoint ──
+    meta = record.get("meta", {})
+    text_style = style.get("text", {})
+    text_color = text_style.get("color", "#000000")
+    rgb = hex_to_rgb(text_color)
+
+    text_lines: List[Tuple[str, float, bool]] = []  # (text, size_pt, bold)
+    if meta.get("label"):
+        text_lines.append((meta["label"], meta.get("label_size", 12), True))
+    if meta.get("tech"):
+        text_lines.append((f"[{meta['tech']}]", meta.get("tech_size", 10), False))
+    if meta.get("note"):
+        text_lines.append((meta["note"], meta.get("note_size", 10), False))
+
+    if text_lines:
+        max_size = max(sz for _, sz, _ in text_lines)
+        longest = max(text_lines, key=lambda t: len(t[0]))[0]
+        box_w = max(50, len(longest) * max_size * 0.6 + 20)
+        box_h = sum(sz * 1.5 for _, sz, _ in text_lines) + 10
+
+        # Midpoint of polyline (middle segment midpoint)
+        mid_idx = len(points) // 2
+        prev_idx = max(0, mid_idx - 1)
+        mid_rx = (points[prev_idx][0] + points[mid_idx][0]) / 2
+        mid_ry = (points[prev_idx][1] + points[mid_idx][1]) / 2
+        mid_x = (geom.get("x", 0) + mid_rx * geom.get("w", 0)) * scale_x
+        mid_y = (geom.get("y", 0) + mid_ry * geom.get("h", 0)) * scale_y
+
+        tx = px_to_emu(mid_x - box_w * scale_x / 2)
+        ty = px_to_emu(mid_y - box_h * scale_y / 2)
+        tw = px_to_emu(box_w * scale_x)
+        th = px_to_emu(box_h * scale_y)
+
+        tbox = slide.shapes.add_textbox(tx, ty, tw, th)
+        tf = tbox.text_frame
+        tf.word_wrap = True
+        first = True
+        for text, size, bold in text_lines:
+            if first:
+                p = tf.paragraphs[0]
+                first = False
+            else:
+                p = tf.add_paragraph()
+            p.clear()
+            run = p.add_run()
+            run.text = text
+            run.font.size = Pt(size)
+            run.font.bold = bold
+            if rgb:
+                run.font.color.rgb = RGBColor(*rgb)
+            p.alignment = PP_ALIGN.CENTER
+
+
 def export_to_pptx(
     annotations: List[Dict[str, Any]],
     output_path: str,
@@ -869,5 +1114,9 @@ def export_to_pptx(
             _add_polygon(slide, record, scale_x, scale_y)
         elif kind == "curve":
             _add_curve(slide, record, scale_x, scale_y)
+        elif kind == "isocube":
+            _add_isocube(slide, record, scale_x, scale_y)
+        elif kind == "orthocurve":
+            _add_orthocurve(slide, record, scale_x, scale_y)
 
     prs.save(output_path)
