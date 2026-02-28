@@ -1,0 +1,1126 @@
+{
+  "version": "draft-1",
+  "image": {
+    "width": 2036,
+    "height": 1800
+  },
+  "annotations": [
+    {
+      "id": "m000001",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 200.0,
+        "y": 308.0,
+        "w": 665.0,
+        "h": 113.0
+      },
+      "meta": {
+        "label": "Mobile App",
+        "tech": "Xamarin",
+        "note": "Provides a limited subset of the Internet Banking functionality to customers via their mobile device.",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "container",
+            "alias": "mobile",
+            "parent": "mob"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#3C7FC0",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#438DD5"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000002",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 1065.0,
+        "y": 391.0,
+        "w": 571.0,
+        "h": 113.0
+      },
+      "meta": {
+        "label": "Single Page Application",
+        "tech": "JavaScript and Angular",
+        "note": "Provides all of the Internet Banking functionality to customers via their web browser.",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "container",
+            "alias": "spa",
+            "parent": "browser"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#3C7FC0",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#438DD5"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000003",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 300.0,
+        "y": 946.0,
+        "w": 418.0,
+        "h": 113.0
+      },
+      "meta": {
+        "label": "API Application",
+        "tech": "Java and Spring MVC",
+        "note": "Provides Internet Banking functionality via a JSON/HTTPS API.",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "container",
+            "alias": "api",
+            "parent": "apache"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#3C7FC0",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#438DD5"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000004",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 968.0,
+        "y": 946.0,
+        "w": 512.0,
+        "h": 113.0
+      },
+      "meta": {
+        "label": "Web Application",
+        "tech": "Java and Spring MVC",
+        "note": "Delivers the static content and the Internet Banking single page application.",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "container",
+            "alias": "web",
+            "parent": "apache2"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#3C7FC0",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#438DD5"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000005",
+      "kind": "cylinder",
+      "geom": {
+        "x": 300.0,
+        "y": 1427.0,
+        "w": 593.0,
+        "h": 133.0
+      },
+      "meta": {
+        "label": "Database",
+        "tech": "Relational Database Schema",
+        "note": "Stores user registration information, hashed authentication credentials, access logs, etc.",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "container_db",
+            "alias": "db",
+            "parent": "oracle"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#3C7FC0",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#438DD5"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000006",
+      "kind": "cylinder",
+      "geom": {
+        "x": 1143.0,
+        "y": 1427.0,
+        "w": 593.0,
+        "h": 133.0
+      },
+      "meta": {
+        "label": "Database",
+        "tech": "Relational Database Schema",
+        "note": "Stores user registration information, hashed authentication credentials, access logs, etc.",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "container_db",
+            "alias": "db2",
+            "parent": "oracle2"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#3C7FC0",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#438DD5"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000007",
+      "kind": "rect",
+      "geom": {
+        "x": 150.0,
+        "y": 208.0,
+        "w": 765.0,
+        "h": 263.0
+      },
+      "meta": {
+        "label": "Customer's mobile device",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "boundary",
+            "alias": "mob",
+            "boundary_type": "node"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "none"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000008",
+      "kind": "rect",
+      "geom": {
+        "x": 1015.0,
+        "y": 291.0,
+        "w": 671.0,
+        "h": 263.0
+      },
+      "meta": {
+        "label": "Web Browser",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "boundary",
+            "alias": "browser",
+            "boundary_type": "node",
+            "parent": "comp"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "none"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000009",
+      "kind": "rect",
+      "geom": {
+        "x": 965.0,
+        "y": 208.0,
+        "w": 771.0,
+        "h": 396.0
+      },
+      "meta": {
+        "label": "Customer's computer",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "boundary",
+            "alias": "comp",
+            "boundary_type": "node"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "none"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000010",
+      "kind": "rect",
+      "geom": {
+        "x": 250.0,
+        "y": 846.0,
+        "w": 518.0,
+        "h": 263.0
+      },
+      "meta": {
+        "label": "Apache Tomcat",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "boundary",
+            "alias": "apache",
+            "boundary_type": "node",
+            "parent": "dn"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "none"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000011",
+      "kind": "rect",
+      "geom": {
+        "x": 200.0,
+        "y": 782.0,
+        "w": 618.0,
+        "h": 377.0
+      },
+      "meta": {
+        "label": "bigbank-api*** x8",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "boundary",
+            "alias": "dn",
+            "boundary_type": "node",
+            "parent": "plc"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "none"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000012",
+      "kind": "rect",
+      "geom": {
+        "x": 918.0,
+        "y": 846.0,
+        "w": 612.0,
+        "h": 263.0
+      },
+      "meta": {
+        "label": "Apache Tomcat",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "boundary",
+            "alias": "apache2",
+            "boundary_type": "node",
+            "parent": "bb2"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "none"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000013",
+      "kind": "rect",
+      "geom": {
+        "x": 868.0,
+        "y": 782.0,
+        "w": 712.0,
+        "h": 377.0
+      },
+      "meta": {
+        "label": "bigbank-web*** x4",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "boundary",
+            "alias": "bb2",
+            "boundary_type": "node",
+            "parent": "plc"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "none"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000014",
+      "kind": "rect",
+      "geom": {
+        "x": 250.0,
+        "y": 1337.0,
+        "w": 693.0,
+        "h": 263.0
+      },
+      "meta": {
+        "label": "Oracle - Primary",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "boundary",
+            "alias": "oracle",
+            "boundary_type": "node",
+            "parent": "bigbankdb01"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "none"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000015",
+      "kind": "rect",
+      "geom": {
+        "x": 200.0,
+        "y": 1273.0,
+        "w": 793.0,
+        "h": 377.0
+      },
+      "meta": {
+        "label": "bigbank-db01",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "boundary",
+            "alias": "bigbankdb01",
+            "boundary_type": "node",
+            "parent": "plc"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "none"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000016",
+      "kind": "rect",
+      "geom": {
+        "x": 1093.0,
+        "y": 1337.0,
+        "w": 693.0,
+        "h": 263.0
+      },
+      "meta": {
+        "label": "Oracle - Secondary",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "boundary",
+            "alias": "oracle2",
+            "boundary_type": "node",
+            "parent": "bigbankdb02"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "none"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000017",
+      "kind": "rect",
+      "geom": {
+        "x": 1043.0,
+        "y": 1273.0,
+        "w": 793.0,
+        "h": 377.0
+      },
+      "meta": {
+        "label": "bigbank-db02",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "boundary",
+            "alias": "bigbankdb02",
+            "boundary_type": "node",
+            "parent": "plc"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "none"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000018",
+      "kind": "rect",
+      "geom": {
+        "x": 150.0,
+        "y": 718.0,
+        "w": 1736.0,
+        "h": 982.0
+      },
+      "meta": {
+        "label": "Big Bank plc",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "boundary",
+            "alias": "plc",
+            "boundary_type": "node"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "none"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000019",
+      "kind": "line",
+      "geom": {
+        "x1": 557.64,
+        "y1": 421.0,
+        "x2": 531.59,
+        "y2": 946.0
+      },
+      "meta": {
+        "label": "Makes API calls to",
+        "tech": "json/HTTPS",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "rel",
+            "from": "mobile",
+            "to": "api"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000020",
+      "kind": "line",
+      "geom": {
+        "x1": 1299.13,
+        "y1": 504.0,
+        "x2": 628.06,
+        "y2": 946.0
+      },
+      "meta": {
+        "label": "Makes API calls to",
+        "tech": "json/HTTPS",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "rel",
+            "from": "spa",
+            "to": "api"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000021",
+      "kind": "line",
+      "geom": {
+        "x1": 1267.35,
+        "y1": 946.0,
+        "x2": 1365.19,
+        "y2": 504.0
+      },
+      "meta": {
+        "label": "Delivers to the customer's web browser",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "rel_u",
+            "from": "web",
+            "to": "spa"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000022",
+      "kind": "line",
+      "geom": {
+        "x1": 539.6,
+        "y1": 1059.0,
+        "x2": 623.68,
+        "y2": 1437.0
+      },
+      "meta": {
+        "label": "Reads from and writes to",
+        "tech": "JDBC",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "rel",
+            "from": "api",
+            "to": "db"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000023",
+      "kind": "line",
+      "geom": {
+        "x1": 626.59,
+        "y1": 1059.0,
+        "x2": 1357.06,
+        "y2": 1437.0
+      },
+      "meta": {
+        "label": "Reads from and writes to",
+        "tech": "JDBC",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "rel",
+            "from": "api",
+            "to": "db2"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000024",
+      "kind": "line",
+      "geom": {
+        "x1": 893.0,
+        "y1": 1508.2,
+        "x2": 1143.0,
+        "y2": 1524.15
+      },
+      "meta": {
+        "label": "Replicates data to",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "rel_r",
+            "from": "db",
+            "to": "db2"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    }
+  ]
+}

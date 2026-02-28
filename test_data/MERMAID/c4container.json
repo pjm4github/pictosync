@@ -1,0 +1,901 @@
+{
+  "version": "draft-1",
+  "image": {
+    "width": 1832,
+    "height": 1076
+  },
+  "annotations": [
+    {
+      "id": "m000001",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 150.0,
+        "y": 244.0,
+        "w": 281.0,
+        "h": 94.0
+      },
+      "meta": {
+        "label": "E-Mail System",
+        "note": "The internal Microsoft Exchange system",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "external_system",
+            "alias": "email_system"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#8A8A8A",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#999999"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000002",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 531.0,
+        "y": 244.0,
+        "w": 368.0,
+        "h": 142.0
+      },
+      "meta": {
+        "label": "Customer",
+        "note": "A customer of the bank, with personal bank accounts",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "person",
+            "alias": "customer"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#073B6F",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#08427B"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000003",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 999.0,
+        "y": 244.0,
+        "w": 589.0,
+        "h": 94.0
+      },
+      "meta": {
+        "label": "Mainframe Banking System",
+        "note": "Stores all of the core banking information about customers, accounts, transactions, etc.",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "external_system",
+            "alias": "banking_system"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#8A8A8A",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#999999"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000004",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 200.0,
+        "y": 600.0,
+        "w": 550.0,
+        "h": 113.0
+      },
+      "meta": {
+        "label": "Single-Page App",
+        "tech": "JavaScript, Angular",
+        "note": "Provides all the Internet banking functionality to customers via their web browser",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "container",
+            "alias": "spa",
+            "parent": "c1"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#3C7FC0",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#438DD5"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000005",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 850.0,
+        "y": 600.0,
+        "w": 661.0,
+        "h": 113.0
+      },
+      "meta": {
+        "label": "Mobile App",
+        "tech": "C#, Xamarin",
+        "note": "Provides a limited subset of the Internet banking functionality to customers via their mobile device",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "external_container",
+            "alias": "mobile_app",
+            "parent": "c1"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#A6A6A6",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#B3B3B3"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000006",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 200.0,
+        "y": 813.0,
+        "w": 385.0,
+        "h": 113.0
+      },
+      "meta": {
+        "label": "Web Application",
+        "tech": "Java, Spring MVC",
+        "note": "Delivers the static content and the Internet banking SPA",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "container",
+            "alias": "web_app",
+            "parent": "c1"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#3C7FC0",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#438DD5"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000007",
+      "kind": "cylinder",
+      "geom": {
+        "x": 685.0,
+        "y": 803.0,
+        "w": 528.0,
+        "h": 133.0
+      },
+      "meta": {
+        "label": "Database",
+        "tech": "SQL Database",
+        "note": "Stores user registration information, hashed auth credentials, access logs, etc.",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "container_db",
+            "alias": "database",
+            "parent": "c1"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#3C7FC0",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#438DD5"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000008",
+      "kind": "cylinder",
+      "geom": {
+        "x": 1313.0,
+        "y": 803.0,
+        "w": 319.0,
+        "h": 133.0
+      },
+      "meta": {
+        "label": "API Application",
+        "tech": "Java, Docker Container",
+        "note": "Provides Internet banking functionality via API",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "external_container_db",
+            "alias": "backend_api",
+            "parent": "c1"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#A6A6A6",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#B3B3B3"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000009",
+      "kind": "rect",
+      "geom": {
+        "x": 150.0,
+        "y": 500.0,
+        "w": 1532.0,
+        "h": 476.0
+      },
+      "meta": {
+        "label": "Internet Banking",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "boundary",
+            "alias": "c1",
+            "boundary_type": "CONTAINER"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "none"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000010",
+      "kind": "line",
+      "geom": {
+        "x1": 699.28,
+        "y1": 386.0,
+        "x2": 450.93,
+        "y2": 813.0
+      },
+      "meta": {
+        "label": "Uses",
+        "tech": "HTTPS",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "rel",
+            "from": "customer",
+            "to": "web_app"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000011",
+      "kind": "line",
+      "geom": {
+        "x1": 705.36,
+        "y1": 386.0,
+        "x2": 577.1,
+        "y2": 600.0
+      },
+      "meta": {
+        "label": "Uses",
+        "tech": "HTTPS",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "rel",
+            "from": "customer",
+            "to": "spa"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000012",
+      "kind": "line",
+      "geom": {
+        "x1": 826.79,
+        "y1": 386.0,
+        "x2": 1153.74,
+        "y2": 600.0
+      },
+      "meta": {
+        "label": "Uses",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "rel",
+            "from": "customer",
+            "to": "mobile_app"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000013",
+      "kind": "line",
+      "geom": {
+        "x1": 491.78,
+        "y1": 813.0,
+        "x2": 515.36,
+        "y2": 713.0
+      },
+      "meta": {
+        "label": "Delivers",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "rel",
+            "from": "web_app",
+            "to": "spa"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000014",
+      "kind": "line",
+      "geom": {
+        "x1": 741.78,
+        "y1": 713.0,
+        "x2": 1313.0,
+        "y2": 839.71
+      },
+      "meta": {
+        "label": "Uses",
+        "tech": "async, JSON/HTTPS",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "rel",
+            "from": "spa",
+            "to": "backend_api"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000015",
+      "kind": "line",
+      "geom": {
+        "x1": 1311.01,
+        "y1": 713.0,
+        "x2": 1424.66,
+        "y2": 813.0
+      },
+      "meta": {
+        "label": "Uses",
+        "tech": "async, JSON/HTTPS",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "rel",
+            "from": "mobile_app",
+            "to": "backend_api"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000016",
+      "kind": "line",
+      "geom": {
+        "x1": 1213.0,
+        "y1": 888.44,
+        "x2": 1313.0,
+        "y2": 894.26
+      },
+      "meta": {
+        "label": "Reads from and writes to",
+        "tech": "sync, JDBC",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "rel_b",
+            "from": "database",
+            "to": "backend_api"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "start"
+      }
+    },
+    {
+      "id": "m000017",
+      "kind": "line",
+      "geom": {
+        "x1": 431.0,
+        "y1": 308.66,
+        "x2": 531.0,
+        "y2": 350.96
+      },
+      "meta": {
+        "label": "Sends e-mails to",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "rel",
+            "from": "email_system",
+            "to": "customer"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000018",
+      "kind": "line",
+      "geom": {
+        "x1": 1361.83,
+        "y1": 813.0,
+        "x2": 389.87,
+        "y2": 338.0
+      },
+      "meta": {
+        "label": "Sends e-mails using",
+        "tech": "sync, SMTP",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "rel",
+            "from": "backend_api",
+            "to": "email_system"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000019",
+      "kind": "line",
+      "geom": {
+        "x1": 1470.39,
+        "y1": 813.0,
+        "x2": 1329.08,
+        "y2": 338.0
+      },
+      "meta": {
+        "label": "Uses",
+        "tech": "sync/async, XML/HTTPS",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "rel",
+            "from": "backend_api",
+            "to": "banking_system"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    }
+  ]
+}

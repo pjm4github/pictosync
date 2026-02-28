@@ -1,0 +1,1893 @@
+{
+  "version": "draft-1",
+  "image": {
+    "width": 1004,
+    "height": 790
+  },
+  "annotations": [
+    {
+      "id": "m000001",
+      "kind": "rect",
+      "geom": {
+        "x": 159.85,
+        "y": 83.0,
+        "w": 102.67,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "Client",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000002",
+      "kind": "rect",
+      "geom": {
+        "x": 43.0,
+        "y": 187.0,
+        "w": 87.72,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "DNS",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000003",
+      "kind": "rect",
+      "geom": {
+        "x": 120.92,
+        "y": 291.0,
+        "w": 89.59,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "CDN",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000004",
+      "kind": "rect",
+      "geom": {
+        "x": 559.75,
+        "y": 187.0,
+        "w": 161.03,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "Load Balancer",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000005",
+      "kind": "rect",
+      "geom": {
+        "x": 185.84,
+        "y": 599.0,
+        "w": 150.95,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "Object Store",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000006",
+      "kind": "rect",
+      "geom": {
+        "x": 569.88,
+        "y": 291.0,
+        "w": 140.78,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "Web Server",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000007",
+      "kind": "rect",
+      "geom": {
+        "x": 489.08,
+        "y": 445.0,
+        "w": 122.78,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "Sales API",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000008",
+      "kind": "rect",
+      "geom": {
+        "x": 720.29,
+        "y": 445.0,
+        "w": 121.47,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "Read API",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000009",
+      "kind": "rect",
+      "geom": {
+        "x": 200.72,
+        "y": 445.0,
+        "w": 191.89,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "Sales Rank Service",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000010",
+      "kind": "rect",
+      "geom": {
+        "x": 397.73,
+        "y": 599.0,
+        "w": 189.09,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "SQL Write Primary",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000011",
+      "kind": "rect",
+      "geom": {
+        "x": 525.76,
+        "y": 703.0,
+        "w": 188.77,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "SQL Read Replicas",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000012",
+      "kind": "rect",
+      "geom": {
+        "x": 832.29,
+        "y": 599.0,
+        "w": 164.25,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "Memory Cache",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000013",
+      "kind": "curve",
+      "geom": {
+        "x": 86.86,
+        "y": 131.47,
+        "w": 72.99,
+        "h": 51.53,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.8333,
+            "y": 0.0987
+          },
+          {
+            "cmd": "C",
+            "x": 0.1667,
+            "y": 0.5616,
+            "c1x": 0.6667,
+            "c1y": 0.1975,
+            "c2x": 0.3333,
+            "c2y": 0.395
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.9321,
+            "c1x": 0.0,
+            "c1y": 0.7283,
+            "c2x": 0.0,
+            "c2y": 0.8642
+          },
+          {
+            "cmd": "L",
+            "x": 0.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000014",
+      "kind": "curve",
+      "geom": {
+        "x": 165.72,
+        "y": 137.0,
+        "w": 21.86,
+        "h": 150.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.8333,
+            "y": 0.0278
+          },
+          {
+            "cmd": "C",
+            "x": 0.1667,
+            "y": 0.1967,
+            "c1x": 0.6667,
+            "c1y": 0.0556,
+            "c2x": 0.3333,
+            "c2y": 0.1111
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.5133,
+            "c1x": 0.0,
+            "c1y": 0.2822,
+            "c2x": 0.0,
+            "c2y": 0.3978
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.8256,
+            "c1x": 0.0,
+            "c1y": 0.6289,
+            "c2x": 0.0,
+            "c2y": 0.7444
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.9767,
+            "c1x": 0.0,
+            "c1y": 0.9067,
+            "c2x": 0.0,
+            "c2y": 0.9533
+          },
+          {
+            "cmd": "L",
+            "x": 0.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000015",
+      "kind": "curve",
+      "geom": {
+        "x": 262.52,
+        "y": 116.22,
+        "w": 377.75,
+        "h": 66.78,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.1667,
+            "y": 0.1143
+          },
+          {
+            "cmd": "C",
+            "x": 0.8333,
+            "y": 0.6237,
+            "c1x": 0.3333,
+            "c1y": 0.2285,
+            "c2x": 0.6667,
+            "c2y": 0.457
+          },
+          {
+            "cmd": "C",
+            "x": 1.0,
+            "y": 0.9476,
+            "c1x": 1.0,
+            "c1y": 0.7904,
+            "c2x": 1.0,
+            "c2y": 0.8952
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000016",
+      "kind": "curve",
+      "geom": {
+        "x": 165.72,
+        "y": 345.0,
+        "w": 42.45,
+        "h": 252.09,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.0,
+            "y": 0.0165
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.0992,
+            "c1x": 0.0,
+            "c1y": 0.0331,
+            "c2x": 0.0,
+            "c2y": 0.0661
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.1983,
+            "c1x": 0.0,
+            "c1y": 0.1322,
+            "c2x": 0.0,
+            "c2y": 0.1653
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.3154,
+            "c1x": 0.0,
+            "c1y": 0.2314,
+            "c2x": 0.0,
+            "c2y": 0.2645
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.5038,
+            "c1x": 0.0,
+            "c1y": 0.3663,
+            "c2x": 0.0,
+            "c2y": 0.435
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.6922,
+            "c1x": 0.0,
+            "c1y": 0.5725,
+            "c2x": 0.0,
+            "c2y": 0.6413
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.8092,
+            "c1x": 0.0,
+            "c1y": 0.7431,
+            "c2x": 0.0,
+            "c2y": 0.7762
+          },
+          {
+            "cmd": "C",
+            "x": 0.1667,
+            "y": 0.9071,
+            "c1x": 0.0,
+            "c1y": 0.8423,
+            "c2x": 0.0,
+            "c2y": 0.8754
+          },
+          {
+            "cmd": "C",
+            "x": 0.8333,
+            "y": 0.9847,
+            "c1x": 0.3333,
+            "c1y": 0.9389,
+            "c2x": 0.6667,
+            "c2y": 0.9695
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000017",
+      "kind": "line",
+      "geom": {
+        "x1": 640.27,
+        "y1": 241.0,
+        "x2": 640.27,
+        "y2": 287.0
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000018",
+      "kind": "curve",
+      "geom": {
+        "x": 550.47,
+        "y": 345.0,
+        "w": 43.17,
+        "h": 96.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.8333,
+            "y": 0.0434
+          },
+          {
+            "cmd": "C",
+            "x": 0.1667,
+            "y": 0.2604,
+            "c1x": 0.6667,
+            "c1y": 0.0868,
+            "c2x": 0.3333,
+            "c2y": 0.1736
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.5208,
+            "c1x": 0.0,
+            "c1y": 0.3472,
+            "c2x": 0.0,
+            "c2y": 0.434
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.7743,
+            "c1x": 0.0,
+            "c1y": 0.6076,
+            "c2x": 0.0,
+            "c2y": 0.6944
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.9635,
+            "c1x": 0.0,
+            "c1y": 0.8542,
+            "c2x": 0.0,
+            "c2y": 0.9271
+          },
+          {
+            "cmd": "L",
+            "x": 0.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000019",
+      "kind": "curve",
+      "geom": {
+        "x": 710.66,
+        "y": 344.0,
+        "w": 70.36,
+        "h": 97.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.1667,
+            "y": 0.0447
+          },
+          {
+            "cmd": "C",
+            "x": 0.8333,
+            "y": 0.2663,
+            "c1x": 0.3333,
+            "c1y": 0.0893,
+            "c2x": 0.6667,
+            "c2y": 0.1787
+          },
+          {
+            "cmd": "C",
+            "x": 1.0,
+            "y": 0.5257,
+            "c1x": 1.0,
+            "c1y": 0.3539,
+            "c2x": 1.0,
+            "c2y": 0.4398
+          },
+          {
+            "cmd": "C",
+            "x": 1.0,
+            "y": 0.7766,
+            "c1x": 1.0,
+            "c1y": 0.6117,
+            "c2x": 1.0,
+            "c2y": 0.6976
+          },
+          {
+            "cmd": "C",
+            "x": 1.0,
+            "y": 0.9639,
+            "c1x": 1.0,
+            "c1y": 0.8557,
+            "c2x": 1.0,
+            "c2y": 0.9278
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000020",
+      "kind": "curve",
+      "geom": {
+        "x": 492.27,
+        "y": 653.0,
+        "w": 61.48,
+        "h": 50.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.0,
+            "y": 0.0833
+          },
+          {
+            "cmd": "C",
+            "x": 0.1667,
+            "y": 0.5,
+            "c1x": 0.0,
+            "c1y": 0.1667,
+            "c2x": 0.0,
+            "c2y": 0.3333
+          },
+          {
+            "cmd": "C",
+            "x": 0.8333,
+            "y": 0.9167,
+            "c1x": 0.3333,
+            "c1y": 0.6667,
+            "c2x": 0.6667,
+            "c2y": 0.8333
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "dashed",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "none"
+      }
+    },
+    {
+      "id": "m000021",
+      "kind": "curve",
+      "geom": {
+        "x": 325.47,
+        "y": 499.0,
+        "w": 111.33,
+        "h": 98.15,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.0399,
+            "y": 0.0425
+          },
+          {
+            "cmd": "C",
+            "x": 0.2597,
+            "y": 0.2547,
+            "c1x": 0.0799,
+            "c1y": 0.0849,
+            "c2x": 0.1597,
+            "c2y": 0.1698
+          },
+          {
+            "cmd": "C",
+            "x": 0.5399,
+            "y": 0.5094,
+            "c1x": 0.3597,
+            "c1y": 0.3396,
+            "c2x": 0.4798,
+            "c2y": 0.4245
+          },
+          {
+            "cmd": "C",
+            "x": 0.6667,
+            "y": 0.761,
+            "c1x": 0.6,
+            "c1y": 0.5943,
+            "c2x": 0.6,
+            "c2y": 0.6792
+          },
+          {
+            "cmd": "C",
+            "x": 0.9333,
+            "y": 0.9607,
+            "c1x": 0.7333,
+            "c1y": 0.8427,
+            "c2x": 0.8667,
+            "c2y": 0.9214
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000022",
+      "kind": "curve",
+      "geom": {
+        "x": 241.19,
+        "y": 499.0,
+        "w": 26.67,
+        "h": 96.27,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.8333,
+            "y": 0.0433
+          },
+          {
+            "cmd": "C",
+            "x": 0.1667,
+            "y": 0.2597,
+            "c1x": 0.6667,
+            "c1y": 0.0866,
+            "c2x": 0.3333,
+            "c2y": 0.1731
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.5194,
+            "c1x": 0.0,
+            "c1y": 0.3462,
+            "c2x": 0.0,
+            "c2y": 0.4328
+          },
+          {
+            "cmd": "C",
+            "x": 0.0514,
+            "y": 0.7726,
+            "c1x": 0.0,
+            "c1y": 0.6059,
+            "c2x": 0.0,
+            "c2y": 0.6925
+          },
+          {
+            "cmd": "C",
+            "x": 0.2572,
+            "y": 0.9632,
+            "c1x": 0.1029,
+            "c1y": 0.8527,
+            "c2x": 0.2058,
+            "c2y": 0.9264
+          },
+          {
+            "cmd": "L",
+            "x": 0.3087,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000023",
+      "kind": "curve",
+      "geom": {
+        "x": 565.71,
+        "y": 499.0,
+        "w": 60.82,
+        "h": 98.55,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.3987,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.4989,
+            "y": 0.0423
+          },
+          {
+            "cmd": "C",
+            "x": 0.8998,
+            "y": 0.2537,
+            "c1x": 0.5991,
+            "c1y": 0.0846,
+            "c2x": 0.7996,
+            "c2y": 0.1691
+          },
+          {
+            "cmd": "C",
+            "x": 1.0,
+            "y": 0.5073,
+            "c1x": 1.0,
+            "c1y": 0.3382,
+            "c2x": 1.0,
+            "c2y": 0.4228
+          },
+          {
+            "cmd": "C",
+            "x": 0.8333,
+            "y": 0.7586,
+            "c1x": 1.0,
+            "c1y": 0.5919,
+            "c2x": 1.0,
+            "c2y": 0.6764
+          },
+          {
+            "cmd": "C",
+            "x": 0.1667,
+            "y": 0.9602,
+            "c1x": 0.6667,
+            "c1y": 0.8407,
+            "c2x": 0.3333,
+            "c2y": 0.9203
+          },
+          {
+            "cmd": "L",
+            "x": 0.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000024",
+      "kind": "curve",
+      "geom": {
+        "x": 312.01,
+        "y": 499.0,
+        "w": 210.08,
+        "h": 98.01,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.9792,
+            "y": 0.0425
+          },
+          {
+            "cmd": "C",
+            "x": 0.7819,
+            "y": 0.2551,
+            "c1x": 0.9583,
+            "c1y": 0.085,
+            "c2x": 0.9166,
+            "c2y": 0.17
+          },
+          {
+            "cmd": "C",
+            "x": 0.3055,
+            "y": 0.5101,
+            "c1x": 0.6471,
+            "c1y": 0.3401,
+            "c2x": 0.4194,
+            "c2y": 0.4251
+          },
+          {
+            "cmd": "C",
+            "x": 0.1597,
+            "y": 0.7618,
+            "c1x": 0.1916,
+            "c1y": 0.5951,
+            "c2x": 0.1916,
+            "c2y": 0.6802
+          },
+          {
+            "cmd": "C",
+            "x": 0.0319,
+            "y": 0.9609,
+            "c1x": 0.1277,
+            "c1y": 0.8435,
+            "c2x": 0.0639,
+            "c2y": 0.9217
+          },
+          {
+            "cmd": "L",
+            "x": 0.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000025",
+      "kind": "curve",
+      "geom": {
+        "x": 676.91,
+        "y": 499.0,
+        "w": 73.78,
+        "h": 202.19,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.9365,
+            "y": 0.0206
+          },
+          {
+            "cmd": "C",
+            "x": 0.6827,
+            "y": 0.1236,
+            "c1x": 0.8731,
+            "c1y": 0.0412,
+            "c2x": 0.7462,
+            "c2y": 0.0824
+          },
+          {
+            "cmd": "C",
+            "x": 0.6193,
+            "y": 0.2473,
+            "c1x": 0.6193,
+            "c1y": 0.1649,
+            "c2x": 0.6193,
+            "c2y": 0.2061
+          },
+          {
+            "cmd": "C",
+            "x": 0.6193,
+            "y": 0.3932,
+            "c1x": 0.6193,
+            "c1y": 0.2885,
+            "c2x": 0.6193,
+            "c2y": 0.3297
+          },
+          {
+            "cmd": "C",
+            "x": 0.6193,
+            "y": 0.6281,
+            "c1x": 0.6193,
+            "c1y": 0.4567,
+            "c2x": 0.6193,
+            "c2y": 0.5424
+          },
+          {
+            "cmd": "C",
+            "x": 0.516,
+            "y": 0.8616,
+            "c1x": 0.6193,
+            "c1y": 0.7138,
+            "c2x": 0.6193,
+            "c2y": 0.7996
+          },
+          {
+            "cmd": "C",
+            "x": 0.1032,
+            "y": 0.9809,
+            "c1x": 0.4128,
+            "c1y": 0.9235,
+            "c2x": 0.2064,
+            "c2y": 0.9618
+          },
+          {
+            "cmd": "L",
+            "x": 0.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000026",
+      "kind": "curve",
+      "geom": {
+        "x": 322.55,
+        "y": 487.1,
+        "w": 397.74,
+        "h": 110.2,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.9378,
+            "y": 0.0558
+          },
+          {
+            "cmd": "C",
+            "x": 0.6054,
+            "y": 0.3168,
+            "c1x": 0.8756,
+            "c1y": 0.1116,
+            "c2x": 0.7512,
+            "c2y": 0.2232
+          },
+          {
+            "cmd": "C",
+            "x": 0.2086,
+            "y": 0.5617,
+            "c1x": 0.4596,
+            "c1y": 0.4105,
+            "c2x": 0.2923,
+            "c2y": 0.4861
+          },
+          {
+            "cmd": "C",
+            "x": 0.1042,
+            "y": 0.786,
+            "c1x": 0.125,
+            "c1y": 0.6373,
+            "c2x": 0.125,
+            "c2y": 0.7129
+          },
+          {
+            "cmd": "C",
+            "x": 0.0208,
+            "y": 0.9648,
+            "c1x": 0.0833,
+            "c1y": 0.859,
+            "c2x": 0.0417,
+            "c2y": 0.9295
+          },
+          {
+            "cmd": "L",
+            "x": 0.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000027",
+      "kind": "curve",
+      "geom": {
+        "x": 841.76,
+        "y": 495.68,
+        "w": 72.65,
+        "h": 99.32,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.1667,
+            "y": 0.0475
+          },
+          {
+            "cmd": "C",
+            "x": 0.8333,
+            "y": 0.2796,
+            "c1x": 0.3333,
+            "c1y": 0.0951,
+            "c2x": 0.6667,
+            "c2y": 0.1901
+          },
+          {
+            "cmd": "C",
+            "x": 1.0,
+            "y": 0.5369,
+            "c1x": 1.0,
+            "c1y": 0.3691,
+            "c2x": 1.0,
+            "c2y": 0.453
+          },
+          {
+            "cmd": "C",
+            "x": 1.0,
+            "y": 0.7819,
+            "c1x": 1.0,
+            "c1y": 0.6208,
+            "c2x": 1.0,
+            "c2y": 0.7047
+          },
+          {
+            "cmd": "C",
+            "x": 1.0,
+            "y": 0.9648,
+            "c1x": 1.0,
+            "c1y": 0.859,
+            "c2x": 1.0,
+            "c2y": 0.9295
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000028",
+      "kind": "group",
+      "geom": {
+        "x": 8.0,
+        "y": 58.0,
+        "w": 793.02,
+        "h": 312.0
+      },
+      "meta": {
+        "label": "frontend",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#AAAA33",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#FFFFDE"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000029",
+      "kind": "group",
+      "geom": {
+        "x": 427.61,
+        "y": 420.0,
+        "w": 506.8,
+        "h": 104.0
+      },
+      "meta": {
+        "label": "apis",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#AAAA33",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#FFFFDE"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000030",
+      "kind": "group",
+      "geom": {
+        "x": 90.48,
+        "y": 574.0,
+        "w": 706.8,
+        "h": 208.0
+      },
+      "meta": {
+        "label": "storage",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#AAAA33",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#FFFFDE"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "name": "node",
+    "label": "Node",
+    "tooltip": "NS3 Network Node",
+    "icon": "dsl_node",
+    "base_kind": "roundedrect",
+    "defaults": {
+      "geom": { "w": 120, "h": 80, "adjust1": 10 },
+      "meta": { "label": "Node", "tech": "", "note": "" },
+      "style": {
+        "pen": { "color": "#FF0000", "width": 2, "dash": "solid" },
+        "fill": { "color": "#00000000" },
+        "text": { "color": "#FF0000", "size_pt": 12.0 }
+      }
+    }
+  }
+]

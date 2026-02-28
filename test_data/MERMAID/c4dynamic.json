@@ -1,0 +1,334 @@
+{
+  "version": "draft-1",
+  "image": {
+    "width": 893,
+    "height": 1260
+  },
+  "annotations": [
+    {
+      "id": "m000001",
+      "kind": "cylinder",
+      "geom": {
+        "x": 150.0,
+        "y": 234.0,
+        "w": 593.0,
+        "h": 133.0
+      },
+      "meta": {
+        "label": "Database",
+        "alias": "c4",
+        "c4_type": "container_db",
+        "tech": "Relational Database Schema",
+        "note": "Stores user registration information, hashed authentication credentials, access logs, etc.",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#3C7FC0",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#438DD5"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000002",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 150.0,
+        "y": 457.0,
+        "w": 571.0,
+        "h": 113.0
+      },
+      "meta": {
+        "label": "Single-Page Application",
+        "alias": "c1",
+        "c4_type": "container",
+        "tech": "JavaScript and Angular",
+        "note": "Provides all of the Internet banking functionality to customers via their web browser.",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#3C7FC0",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#438DD5"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000003",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 200.0,
+        "y": 784.0,
+        "w": 467.0,
+        "h": 113.0
+      },
+      "meta": {
+        "label": "Security Component",
+        "alias": "c3",
+        "c4_type": "component",
+        "tech": "Spring Bean",
+        "note": "Provides functionality Related to signing in, changing passwords, etc.",
+        "parent_boundary": "b",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#78A8D8",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#85BBF0"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000004",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 200.0,
+        "y": 997.0,
+        "w": 374.0,
+        "h": 113.0
+      },
+      "meta": {
+        "label": "Sign In Controller",
+        "alias": "c2",
+        "c4_type": "component",
+        "tech": "Spring MVC Rest Controller",
+        "note": "Allows users to sign in to the Internet Banking System.",
+        "parent_boundary": "b",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#78A8D8",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#85BBF0"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000005",
+      "kind": "rect",
+      "geom": {
+        "x": 150.0,
+        "y": 684.0,
+        "w": 567.0,
+        "h": 476.0
+      },
+      "meta": {
+        "label": "API Application",
+        "alias": "b",
+        "c4_type": "boundary",
+        "boundary_type": "CONTAINER",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "none"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000006",
+      "kind": "line",
+      "geom": {
+        "x1": 457.95,
+        "y1": 570.0,
+        "x2": 414.52,
+        "y2": 997.0
+      },
+      "meta": {
+        "label": "1: Submits credentials to",
+        "tech": "JSON/HTTPS",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000007",
+      "kind": "line",
+      "geom": {
+        "x1": 471.3,
+        "y1": 997.0,
+        "x2": 472.7,
+        "y2": 897.0
+      },
+      "meta": {
+        "label": "2: Calls isAuthenticated() on",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000008",
+      "kind": "line",
+      "geom": {
+        "x1": 462.31,
+        "y1": 784.0,
+        "x2": 473.35,
+        "y2": 357.0
+      },
+      "meta": {
+        "label": "3: select * from users where username = ?",
+        "tech": "JDBC",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    }
+  ]
+}

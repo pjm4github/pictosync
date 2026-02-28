@@ -35,6 +35,8 @@ from canvas.items import (
     MetaBlockArrowItem,
     MetaPolygonItem,
     MetaCurveItem,
+    MetaOrthoCurveItem,
+    MetaIsoCubeItem,
 )
 from settings import SettingsManager
 
@@ -46,7 +48,7 @@ from settings import SettingsManager
 
 ALL_KINDS = [
     "rect", "roundedrect", "ellipse", "hexagon", "cylinder",
-    "blockarrow", "line", "text", "polygon", "curve",
+    "blockarrow", "isocube", "line", "text", "polygon", "curve", "orthocurve",
 ]
 
 ITEM_CONFIG = {
@@ -56,12 +58,17 @@ ITEM_CONFIG = {
     "hexagon":     (MetaHexagonItem,     (50, 50, 120, 80, 0.25)),
     "cylinder":    (MetaCylinderItem,    (50, 50, 120, 100, 0.15)),
     "blockarrow":  (MetaBlockArrowItem,  (50, 50, 160, 80, 40, 0.5)),
+    "isocube":     (MetaIsoCubeItem,     (50, 50, 120, 80, 30, 135)),
     "line":        (MetaLineItem,        (50, 50, 200, 150)),
     "text":        (MetaTextItem,        (50, 50, "Sample")),
     "polygon":     (MetaPolygonItem,     (50, 50, 100, 100, [[0, 0], [1, 0], [0.5, 1]])),
     "curve":       (MetaCurveItem,       (50, 50, 100, 100,
                                           [{"cmd": "M", "x": 0, "y": 0},
                                            {"cmd": "L", "x": 1, "y": 1}])),
+    "orthocurve":  (MetaOrthoCurveItem, (50, 50, 100, 80,
+                                          [{"cmd": "M", "x": 0, "y": 0},
+                                           {"cmd": "H", "x": 1},
+                                           {"cmd": "V", "y": 1}])),
 }
 
 # Expected geom keys per kind (excluding nested list/dict fields like points/nodes)
@@ -72,21 +79,24 @@ GEOM_SCALAR_KEYS = {
     "hexagon":     {"x", "y", "w", "h", "adjust1"},
     "cylinder":    {"x", "y", "w", "h", "adjust1"},
     "blockarrow":  {"x", "y", "w", "h", "adjust1", "adjust2"},
+    "isocube":     {"x", "y", "w", "h", "adjust1", "adjust2"},
     "line":        {"x1", "y1", "x2", "y2"},
     "text":        {"x", "y"},
     "polygon":     {"x", "y", "w", "h"},
     "curve":       {"x", "y", "w", "h"},
+    "orthocurve":  {"x", "y", "w", "h"},
 }
 
 # Geom keys that contain list/dict values (not int/float)
 GEOM_COLLECTION_KEYS = {
-    "polygon": {"points"},
-    "curve":   {"nodes"},
+    "polygon":    {"points"},
+    "curve":      {"nodes"},
+    "orthocurve": {"nodes"},
 }
 
 # Kinds that have _apply_pen_brush (shapes)
 SHAPE_KINDS = {"rect", "roundedrect", "ellipse", "hexagon", "cylinder",
-               "blockarrow", "polygon", "curve"}
+               "blockarrow", "isocube", "polygon", "curve", "orthocurve"}
 # Kinds that have _apply_pen (line items)
 LINE_KINDS = {"line"}
 # Kinds with neither (text)

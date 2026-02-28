@@ -1,24 +1,98 @@
-@startuml
-'https://plantuml.com/state-diagram
-
-scale 350 width
-[*] --> NotShooting
-
-state NotShooting {
-  [*] --> Idle
-  Idle --> Configuring : EvConfig
-  Configuring --> Idle : EvConfig
+@startuml Recloser_State_Machine
+skinparam state {
+  BackgroundColor<<normal>> LightGreen
+  BackgroundColor<<fault>> LightCoral
+  BackgroundColor<<auto>> LightYellow
+  BackgroundColor<<lockout>> OrangeRed
+  BorderColor Black
+  FontSize 12
 }
 
-state Configuring {
-  [*] --> NewValueSelection
-  NewValueSelection --> NewValuePreview : EvNewValue
-  NewValuePreview --> NewValueSelection : EvNewValueRejected
-  NewValuePreview --> NewValueSelection : EvNewValueSaved
+title Recloser State Machine\nwith DNP3, Manual Control, and Power Fault Inputs
 
-  state NewValuePreview {
-     State1 -> State2
-  }
+'===== STATES =====
 
+state "RESET" as RESET <<normal>> : CB Closed\nNormal load condition\nAuto-reclose armed\nAwaiting initiate signal
+
+state "CYCLE\n(Auto-Reclose)" as CYCLE <<auto>> : CB Open / Closed cycling\nDead time counting\nReclose attempts remaining\nProtection active
+
+state CYCLE {
+  state "OPEN\n(Dead Time)" as OPEN : CB Open\nCounting dead time\nt = 10.5 + VLL/34.5 (cycles min)
+  state "RECLOSE\nATTEMPT" as RECLOSE : CB Closing\nChecking for fault clearance
+  OPEN --> RECLOSE : Dead time expired
+  RECLOSE --> OPEN : Trip (fault persists)\n[attempts remaining]
 }
+
+state "LOCKOUT" as LOCKOUT <<lockout>> : CB Open\nAll reclose attempts exhausted\nOR lockout condition met\nManual intervention required
+
+state "MANUAL\nOPEN" as MANUAL_OPEN <<fault>> : CB Open\nManually opened\nAuto-reclose inhibited
+
+'===== INITIAL STATE =====
+[*] --> RESET
+
+'===== DNP3 REMOTE CONTROL SIGNALS =====
+RESET --> LOCKOUT : [DNP3] Direct Operate\nCROBER TRIP / Select-Before-Operate TRIP
+LOCKOUT --> RESET : [DNP3] Direct Operate CLOSE\n+ Reset Time expires
+MANUAL_OPEN --> RESET : [DNP3] Direct Operate CLOSE\n+ Reset Time expires
+RESET --> MANUAL_OPEN : [DNP3] Direct Operate OPEN
+CYCLE --> LOCKOUT : [DNP3] Inhibit Reclose\n(Disable Autoreclosing BO)
+CYCLE --> LOCKOUT : [DNP3] Direct Operate TRIP\n(force to lockout)
+
+note right of LOCKOUT
+  **DNP3 Binary Outputs (BO)**
+  BO1: CLOSE command
+  BO2: OPEN/TRIP command
+  BO3: Inhibit Reclose
+  BO4: Hot Line Tag (force lockout)
+
+  **DNP3 Binary Inputs (BI) / Status**
+  BI1: CB Position (Open/Closed)
+  BI2: Reclose Enabled/Disabled
+  BI3: Lockout status
+  BI4: Hot Line Tag status
+  AI: Fault current magnitude
+end note
+
+'===== MANUAL LOCAL CONTROL =====
+RESET --> MANUAL_OPEN : [Manual] Local OPEN\n(panel switch / HMI)
+LOCKOUT --> RESET : [Manual] Local CLOSE\n+ Reset Time expires
+MANUAL_OPEN --> RESET : [Manual] Local CLOSE\n+ Reset Time expires
+CYCLE --> MANUAL_OPEN : [Manual] Local OPEN\n(inhibits reclose)
+
+'===== POWER FAULT TRIGGERS =====
+RESET --> CYCLE : [Fault] OC Trip (51/50)\nInitiate signal received\nEnter Cycle State
+RECLOSE --> RESET : [Fault Cleared]\nCB closed > Reset Time\nReturn to Reset State
+RECLOSE --> LOCKOUT : [Fault Persists]\nAll attempts exhausted\nOR Instantaneous Lockout (50L)\nOR HV Trip (27/59/81)
+RESET --> LOCKOUT : [Fault] Instantaneous Lockout\n50L / High-current trip\n(no reclose attempted)
+
+note left of CYCLE
+  **Fault Protection Elements**
+  50 – Instantaneous OC
+  51 – Time Overcurrent
+  50L – Instantaneous Lockout OC
+  27 – Undervoltage (→ Lockout)
+  59 – Overvoltage (→ Lockout)
+  81 – Frequency (→ Lockout)
+  Typical Reclose Attempts: 2-3
+  Dead Time 1: 0–5 sec
+  Dead Time 2: 10–20 sec
+  Dead Time 3: 10–30 sec
+end note
+
+'===== HOT LINE TAG (special lockout condition) =====
+state "HOT LINE\nTAG ACTIVE" as HLT <<fault>> : Auto-reclose disabled\nForced lockout on any trip\nLineman safety mode
+
+RESET --> HLT : [DNP3] BO4 Hot Line Tag ON\nOR [Manual] HLT switch ON
+HLT --> RESET : [DNP3] BO4 Hot Line Tag OFF\nAND [Manual] HLT switch OFF
+HLT --> LOCKOUT : [Fault] Any trip\n(no reclose attempted)
+
+'===== LEGEND =====
+note bottom
+  **Control Signal Sources**
+  🔵 [DNP3]   = SCADA / EMS remote command via DNP3 protocol
+  🟡 [Manual] = Local operator action (panel / HMI)
+  🔴 [Fault]  = Protection relay trip signal (power system event)
+  **CB = Circuit Breaker**
+end note
+
 @enduml

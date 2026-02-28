@@ -71,6 +71,9 @@ def _create_item(mw, kind, qapp):
         MetaHexagonItem,
         MetaCylinderItem,
         MetaBlockArrowItem,
+        MetaIsoCubeItem,
+        MetaCurveItem,
+        MetaOrthoCurveItem,
     )
 
     _ensure_linked(mw)
@@ -86,6 +89,25 @@ def _create_item(mw, kind, qapp):
         item = MetaCylinderItem(50, 50, 120, 100, 0.15, ann_id, on_change)
     elif kind == "blockarrow":
         item = MetaBlockArrowItem(50, 50, 160, 80, 40, 0.5, ann_id, on_change)
+    elif kind == "isocube":
+        item = MetaIsoCubeItem(50, 50, 120, 80, 30, 135, ann_id, on_change)
+    elif kind == "curve":
+        # Create a curve with H/V corners so adjust1 (bend radius) is active
+        nodes = [
+            {"cmd": "M", "x": 0.0, "y": 1.0},
+            {"cmd": "H", "x": 1.0},
+            {"cmd": "V", "y": 0.0},
+        ]
+        item = MetaCurveItem(50, 50, 120, 80, nodes, ann_id, on_change)
+        item.set_adjust1(10.0)
+    elif kind == "orthocurve":
+        nodes = [
+            {"cmd": "M", "x": 0.0, "y": 1.0},
+            {"cmd": "H", "x": 1.0},
+            {"cmd": "V", "y": 0.0},
+        ]
+        item = MetaOrthoCurveItem(50, 50, 120, 80, nodes, ann_id, on_change)
+        item.set_adjust1(10.0)
     else:
         raise ValueError(f"Unknown kind: {kind}")
 
@@ -143,7 +165,12 @@ class TestAdjustConfig:
         assert mw.props.adjust1_label.text() == cfg["label"]
         assert mw.props.adjust1_spin.suffix() == cfg["suffix"]
         assert mw.props.adjust1_spin.minimum() == cfg["min"]
-        assert mw.props.adjust1_spin.maximum() == cfg["max"]
+        if kind == "isocube":
+            # isocube max depth is dynamic (max bbox dimension)
+            expected_max = int(max(item._width, item._height))
+            assert mw.props.adjust1_spin.maximum() == expected_max
+        else:
+            assert mw.props.adjust1_spin.maximum() == cfg["max"]
 
     def test_blockarrow_adjust2_label_and_suffix(self, main_window, qapp):
         """Block arrow adjust2 should have the correct label and suffix."""

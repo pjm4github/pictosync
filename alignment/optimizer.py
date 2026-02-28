@@ -16,7 +16,7 @@ from typing import Dict, Tuple, Optional, Callable, List
 import cv2
 import numpy as np
 
-from settings import get_settings
+from settings import get_settings, DEBUG_LOG
 
 
 def _get_alignment_settings():
@@ -162,10 +162,11 @@ def extract_shapes_from_region(
             print(f"[ALIGN] Hue {hue_tol}: H=[{h_low}-{h_high}], S=[{s_low}-{s_high}], V=[{v_low}-{v_high}]")
 
         # Save debug mask
-        try:
-            cv2.imwrite(f"debug_color_mask_hue{hue_tol}.png", color_mask)
-        except:
-            pass
+        if DEBUG_LOG:
+            try:
+                cv2.imwrite(f"debug_color_mask_hue{hue_tol}.png", color_mask)
+            except:
+                pass
 
         # Clean up mask - close gaps, remove noise
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
@@ -735,12 +736,13 @@ def align_element(
     report(f"Search region center color (BGR): {tuple(int(v) for v in center_color)}")
 
     # Debug: save search region to file for inspection
-    try:
-        debug_path = "debug_search_region.png"
-        cv2.imwrite(debug_path, search_region)
-        report(f"DEBUG: Saved search region to {debug_path}")
-    except Exception as e:
-        report(f"DEBUG: Could not save search region: {e}")
+    if DEBUG_LOG:
+        try:
+            debug_path = "debug_search_region.png"
+            cv2.imwrite(debug_path, search_region)
+            report(f"DEBUG: Saved search region to {debug_path}")
+        except Exception as e:
+            report(f"DEBUG: Could not save search region: {e}")
 
     # Convert pen color to BGR
     pen_bgr = hex_to_bgr(pen_color)
@@ -818,18 +820,19 @@ def align_element(
     report(f"Final geometry: x={final_x:.1f}, y={final_y:.1f}, w={final_w}, h={final_h}")
 
     # Debug: save image showing alignment
-    try:
-        debug_match = search_region.copy()
-        # Draw detected shape bbox (blue) - this is where the element will be placed
-        cv2.rectangle(debug_match, (shape_x, shape_y), (shape_x + shape_w, shape_y + shape_h),
-                      (255, 0, 0), 2)  # Blue = detected shape = new element position
-        # Mark detected shape center (red dot)
-        cv2.circle(debug_match, (int(shape_cx), int(shape_cy)), 5, (0, 0, 255), -1)
-        cv2.imwrite("debug_match_result.png", debug_match)
-        report(f"DEBUG: Saved alignment result to debug_match_result.png")
-        report(f"  Blue rect = detected shape (element will match this exactly)")
-    except Exception as e:
-        report(f"DEBUG: Could not save alignment result: {e}")
+    if DEBUG_LOG:
+        try:
+            debug_match = search_region.copy()
+            # Draw detected shape bbox (blue) - this is where the element will be placed
+            cv2.rectangle(debug_match, (shape_x, shape_y), (shape_x + shape_w, shape_y + shape_h),
+                          (255, 0, 0), 2)  # Blue = detected shape = new element position
+            # Mark detected shape center (red dot)
+            cv2.circle(debug_match, (int(shape_cx), int(shape_cy)), 5, (0, 0, 255), -1)
+            cv2.imwrite("debug_match_result.png", debug_match)
+            report(f"DEBUG: Saved alignment result to debug_match_result.png")
+            report(f"  Blue rect = detected shape (element will match this exactly)")
+        except Exception as e:
+            report(f"DEBUG: Could not save alignment result: {e}")
 
     # Step 6: Optimize style parameters (pen width and radius)
     # Position is now fixed - we only optimize style
@@ -1325,7 +1328,7 @@ def orthogonal_search_for_line(
             matching_lines = filter_matching_lines(lines)
 
         # Save debug image for this search step
-        if save_debug:
+        if save_debug and DEBUG_LOG:
             try:
                 # Create debug image showing full image with search region
                 debug_img = img.copy()
@@ -1432,63 +1435,64 @@ def orthogonal_search_for_line(
     result_neg = binary_search_direction(-1)
 
     # Save summary image showing the search pattern
-    try:
-        summary_img = img.copy()
+    if DEBUG_LOG:
+        try:
+            summary_img = img.copy()
 
-        # Draw the original target line (magenta, thick)
-        cv2.line(summary_img, (int(line_x1), int(line_y1)),
-                 (int(line_x2), int(line_y2)), (255, 0, 255), 3)
+            # Draw the original target line (magenta, thick)
+            cv2.line(summary_img, (int(line_x1), int(line_y1)),
+                     (int(line_x2), int(line_y2)), (255, 0, 255), 3)
 
-        # Draw the orthogonal search direction (arrows)
-        arrow_len = 50
-        # Positive direction arrow (green)
-        arrow_end_pos = (int(mid_x + arrow_len * ortho_x), int(mid_y + arrow_len * ortho_y))
-        cv2.arrowedLine(summary_img, (int(mid_x), int(mid_y)), arrow_end_pos, (0, 255, 0), 2)
-        cv2.putText(summary_img, "+", arrow_end_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            # Draw the orthogonal search direction (arrows)
+            arrow_len = 50
+            # Positive direction arrow (green)
+            arrow_end_pos = (int(mid_x + arrow_len * ortho_x), int(mid_y + arrow_len * ortho_y))
+            cv2.arrowedLine(summary_img, (int(mid_x), int(mid_y)), arrow_end_pos, (0, 255, 0), 2)
+            cv2.putText(summary_img, "+", arrow_end_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-        # Negative direction arrow (red)
-        arrow_end_neg = (int(mid_x - arrow_len * ortho_x), int(mid_y - arrow_len * ortho_y))
-        cv2.arrowedLine(summary_img, (int(mid_x), int(mid_y)), arrow_end_neg, (0, 0, 255), 2)
-        cv2.putText(summary_img, "-", arrow_end_neg, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+            # Negative direction arrow (red)
+            arrow_end_neg = (int(mid_x - arrow_len * ortho_x), int(mid_y - arrow_len * ortho_y))
+            cv2.arrowedLine(summary_img, (int(mid_x), int(mid_y)), arrow_end_neg, (0, 0, 255), 2)
+            cv2.putText(summary_img, "-", arrow_end_neg, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
 
-        # Draw search window at center (yellow)
-        wx1 = int(mid_x - window_w / 2)
-        wy1 = int(mid_y - window_h / 2)
-        wx2 = int(mid_x + window_w / 2)
-        wy2 = int(mid_y + window_h / 2)
-        cv2.rectangle(summary_img, (wx1, wy1), (wx2, wy2), (0, 255, 255), 1)
+            # Draw search window at center (yellow)
+            wx1 = int(mid_x - window_w / 2)
+            wy1 = int(mid_y - window_h / 2)
+            wx2 = int(mid_x + window_w / 2)
+            wy2 = int(mid_y + window_h / 2)
+            cv2.rectangle(summary_img, (wx1, wy1), (wx2, wy2), (0, 255, 255), 1)
 
-        # Mark result positions
-        if result_pos:
-            pos_offset = result_pos[0]
-            pos_x = int(mid_x + pos_offset * ortho_x)
-            pos_y = int(mid_y + pos_offset * ortho_y)
-            cv2.circle(summary_img, (pos_x, pos_y), 8, (0, 255, 0), -1)
-            cv2.putText(summary_img, f"+{pos_offset:.0f}", (pos_x + 10, pos_y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+            # Mark result positions
+            if result_pos:
+                pos_offset = result_pos[0]
+                pos_x = int(mid_x + pos_offset * ortho_x)
+                pos_y = int(mid_y + pos_offset * ortho_y)
+                cv2.circle(summary_img, (pos_x, pos_y), 8, (0, 255, 0), -1)
+                cv2.putText(summary_img, f"+{pos_offset:.0f}", (pos_x + 10, pos_y),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
-        if result_neg:
-            neg_offset = result_neg[0]
-            neg_x = int(mid_x + neg_offset * ortho_x)
-            neg_y = int(mid_y + neg_offset * ortho_y)
-            cv2.circle(summary_img, (neg_x, neg_y), 8, (0, 0, 255), -1)
-            cv2.putText(summary_img, f"{neg_offset:.0f}", (neg_x + 10, neg_y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+            if result_neg:
+                neg_offset = result_neg[0]
+                neg_x = int(mid_x + neg_offset * ortho_x)
+                neg_y = int(mid_y + neg_offset * ortho_y)
+                cv2.circle(summary_img, (neg_x, neg_y), 8, (0, 0, 255), -1)
+                cv2.putText(summary_img, f"{neg_offset:.0f}", (neg_x + 10, neg_y),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
-        # Add legend
-        cv2.putText(summary_img, f"Orthogonal Search Summary", (10, 25),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(summary_img, f"Target color BGR: {pen_color_bgr}", (10, 50),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        cv2.putText(summary_img, f"Magenta=target line, Green=+dir, Red=-dir", (10, 70),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
-        cv2.putText(summary_img, f"Total steps: {search_step_counter[0]}", (10, 90),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            # Add legend
+            cv2.putText(summary_img, f"Orthogonal Search Summary", (10, 25),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            cv2.putText(summary_img, f"Target color BGR: {pen_color_bgr}", (10, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(summary_img, f"Magenta=target line, Green=+dir, Red=-dir", (10, 70),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+            cv2.putText(summary_img, f"Total steps: {search_step_counter[0]}", (10, 90),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
-        cv2.imwrite("debug_ortho_search_summary.png", summary_img)
-        report(f"DEBUG: Saved orthogonal search summary image")
-    except Exception as e:
-        report(f"DEBUG: Could not save summary image: {e}")
+            cv2.imwrite("debug_ortho_search_summary.png", summary_img)
+            report(f"DEBUG: Saved orthogonal search summary image")
+        except Exception as e:
+            report(f"DEBUG: Could not save summary image: {e}")
 
     # Choose the closest result
     if result_pos is None and result_neg is None:
@@ -1819,55 +1823,56 @@ def detect_lines_in_region(
             print(f"[LINE_ALIGN] Hue tolerance {hue_tol}: found {len(detected)} line segments")
 
             # Save debug images showing detection process
-            try:
-                import time
-                timestamp = int(time.time() * 1000) % 100000
+            if DEBUG_LOG:
+                try:
+                    import time
+                    timestamp = int(time.time() * 1000) % 100000
 
-                # Create debug composite image
-                h, w = img.shape[:2]
-                debug_h = h
-                debug_w = w * 4  # Side by side: original, color_mask, edges, detected lines
+                    # Create debug composite image
+                    h, w = img.shape[:2]
+                    debug_h = h
+                    debug_w = w * 4  # Side by side: original, color_mask, edges, detected lines
 
-                debug_composite = np.zeros((debug_h, debug_w, 3), dtype=np.uint8)
+                    debug_composite = np.zeros((debug_h, debug_w, 3), dtype=np.uint8)
 
-                # Panel 1: Original image
-                debug_composite[0:h, 0:w] = img
+                    # Panel 1: Original image
+                    debug_composite[0:h, 0:w] = img
 
-                # Panel 2: Color mask
-                color_mask_bgr = cv2.cvtColor(color_mask, cv2.COLOR_GRAY2BGR)
-                debug_composite[0:h, w:2*w] = color_mask_bgr
+                    # Panel 2: Color mask
+                    color_mask_bgr = cv2.cvtColor(color_mask, cv2.COLOR_GRAY2BGR)
+                    debug_composite[0:h, w:2*w] = color_mask_bgr
 
-                # Panel 3: Edges (from line_mask if filter_enclosed, else from color_mask)
-                if filter_enclosed:
-                    edges_bgr = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
-                else:
-                    edges_bgr = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
-                debug_composite[0:h, 2*w:3*w] = edges_bgr
+                    # Panel 3: Edges (from line_mask if filter_enclosed, else from color_mask)
+                    if filter_enclosed:
+                        edges_bgr = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+                    else:
+                        edges_bgr = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+                    debug_composite[0:h, 2*w:3*w] = edges_bgr
 
-                # Panel 4: Detected line segments overlaid on original
-                lines_overlay = img.copy()
-                for line in detected:
-                    lx1, ly1, lx2, ly2 = line[0]
-                    cv2.line(lines_overlay, (lx1, ly1), (lx2, ly2), (0, 255, 0), 2)
-                    # Mark endpoints
-                    cv2.circle(lines_overlay, (lx1, ly1), 4, (255, 0, 0), -1)
-                    cv2.circle(lines_overlay, (lx2, ly2), 4, (0, 0, 255), -1)
-                debug_composite[0:h, 3*w:4*w] = lines_overlay
+                    # Panel 4: Detected line segments overlaid on original
+                    lines_overlay = img.copy()
+                    for line in detected:
+                        lx1, ly1, lx2, ly2 = line[0]
+                        cv2.line(lines_overlay, (lx1, ly1), (lx2, ly2), (0, 255, 0), 2)
+                        # Mark endpoints
+                        cv2.circle(lines_overlay, (lx1, ly1), 4, (255, 0, 0), -1)
+                        cv2.circle(lines_overlay, (lx2, ly2), 4, (0, 0, 255), -1)
+                    debug_composite[0:h, 3*w:4*w] = lines_overlay
 
-                # Add labels
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                cv2.putText(debug_composite, "Original", (10, 20), font, 0.5, (0, 255, 255), 1)
-                cv2.putText(debug_composite, f"Color Mask (hue_tol={hue_tol})", (w+10, 20), font, 0.5, (0, 255, 255), 1)
-                cv2.putText(debug_composite, "Edges", (2*w+10, 20), font, 0.5, (0, 255, 255), 1)
-                cv2.putText(debug_composite, f"Detected ({len(detected)} segs)", (3*w+10, 20), font, 0.5, (0, 255, 255), 1)
+                    # Add labels
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    cv2.putText(debug_composite, "Original", (10, 20), font, 0.5, (0, 255, 255), 1)
+                    cv2.putText(debug_composite, f"Color Mask (hue_tol={hue_tol})", (w+10, 20), font, 0.5, (0, 255, 255), 1)
+                    cv2.putText(debug_composite, "Edges", (2*w+10, 20), font, 0.5, (0, 255, 255), 1)
+                    cv2.putText(debug_composite, f"Detected ({len(detected)} segs)", (3*w+10, 20), font, 0.5, (0, 255, 255), 1)
 
-                # Add color info
-                cv2.putText(debug_composite, f"Search BGR: {pen_color_bgr}", (10, h-10), font, 0.4, (0, 255, 255), 1)
+                    # Add color info
+                    cv2.putText(debug_composite, f"Search BGR: {pen_color_bgr}", (10, h-10), font, 0.4, (0, 255, 255), 1)
 
-                cv2.imwrite(f"debug_line_detection_{timestamp}.png", debug_composite)
-                print(f"[LINE_ALIGN] Saved debug_line_detection_{timestamp}.png")
-            except Exception as e:
-                print(f"[LINE_ALIGN] Could not save detection debug image: {e}")
+                    cv2.imwrite(f"debug_line_detection_{timestamp}.png", debug_composite)
+                    print(f"[LINE_ALIGN] Saved debug_line_detection_{timestamp}.png")
+                except Exception as e:
+                    print(f"[LINE_ALIGN] Could not save detection debug image: {e}")
 
             for line in detected:
                 lx1, ly1, lx2, ly2 = line[0]
@@ -1932,28 +1937,29 @@ def detect_lines_in_region(
     print(f"[LINE_ALIGN] Final lines after filter (min_length={min_length}): {len(final_lines)}")
 
     # Save debug image showing merged lines
-    try:
-        import time
-        timestamp = int(time.time() * 1000) % 100000
+    if DEBUG_LOG:
+        try:
+            import time
+            timestamp = int(time.time() * 1000) % 100000
 
-        merged_debug = img.copy()
-        colors = [(0, 255, 0), (255, 0, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255)]
-        for i, line in enumerate(final_lines):
-            color = colors[i % len(colors)]
-            x1, y1 = int(line["x1"]), int(line["y1"])
-            x2, y2 = int(line["x2"]), int(line["y2"])
-            cv2.line(merged_debug, (x1, y1), (x2, y2), color, 3)
-            cv2.circle(merged_debug, (x1, y1), 6, (255, 0, 0), -1)  # Blue = start
-            cv2.circle(merged_debug, (x2, y2), 6, (0, 0, 255), -1)  # Red = end
-            cv2.putText(merged_debug, f"L{i}: {line['length']:.0f}px", (x1, y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+            merged_debug = img.copy()
+            colors = [(0, 255, 0), (255, 0, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255)]
+            for i, line in enumerate(final_lines):
+                color = colors[i % len(colors)]
+                x1, y1 = int(line["x1"]), int(line["y1"])
+                x2, y2 = int(line["x2"]), int(line["y2"])
+                cv2.line(merged_debug, (x1, y1), (x2, y2), color, 3)
+                cv2.circle(merged_debug, (x1, y1), 6, (255, 0, 0), -1)  # Blue = start
+                cv2.circle(merged_debug, (x2, y2), 6, (0, 0, 255), -1)  # Red = end
+                cv2.putText(merged_debug, f"L{i}: {line['length']:.0f}px", (x1, y1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
 
-        cv2.putText(merged_debug, f"Final: {len(final_lines)} lines", (10, 20),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-        cv2.imwrite(f"debug_merged_lines_{timestamp}.png", merged_debug)
-        print(f"[LINE_ALIGN] Saved debug_merged_lines_{timestamp}.png")
-    except Exception as e:
-        print(f"[LINE_ALIGN] Could not save merged lines debug image: {e}")
+            cv2.putText(merged_debug, f"Final: {len(final_lines)} lines", (10, 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+            cv2.imwrite(f"debug_merged_lines_{timestamp}.png", merged_debug)
+            print(f"[LINE_ALIGN] Saved debug_merged_lines_{timestamp}.png")
+        except Exception as e:
+            print(f"[LINE_ALIGN] Could not save merged lines debug image: {e}")
 
     return final_lines
 
@@ -3002,75 +3008,76 @@ def align_line_element(
     search_region = padded_img[padded_search_y1:padded_search_y2, padded_search_x1:padded_search_x2]
 
     # DEBUG: Save color mask and search region for visualization
-    try:
-        # Save color mask showing what the threshold matching sees
-        color_mask = create_color_mask(search_region, pen_bgr, hue_tol=25)
-        cv2.imwrite("debug_line_color_mask.png", color_mask)
-        report(f"DEBUG: Saved color mask to debug_line_color_mask.png")
+    if DEBUG_LOG:
+        try:
+            # Save color mask showing what the threshold matching sees
+            color_mask = create_color_mask(search_region, pen_bgr, hue_tol=25)
+            cv2.imwrite("debug_line_color_mask.png", color_mask)
+            report(f"DEBUG: Saved color mask to debug_line_color_mask.png")
 
-        # Save full image with search region rectangle drawn (cyan)
-        # Use padded image to show the full search region even if it extends beyond original
-        debug_full = padded_img.copy()
-        cv2.rectangle(debug_full, (padded_search_x1, padded_search_y1),
-                      (padded_search_x2, padded_search_y2), (255, 255, 0), 2)  # Cyan rectangle
-        # Draw original line position (magenta) - adjusted for padding
-        cv2.line(debug_full, (int(x1 + pad_offset_x), int(y1 + pad_offset_y)),
-                 (int(x2 + pad_offset_x), int(y2 + pad_offset_y)), (255, 0, 255), 2)
-        # Draw line center (magenta filled circle)
-        cv2.circle(debug_full, (int(line_center_x + pad_offset_x), int(line_center_y + pad_offset_y)),
-                   6, (255, 0, 255), -1)
-        # Draw search region center (cyan filled circle)
-        padded_center_x = (padded_search_x1 + padded_search_x2) / 2
-        padded_center_y = (padded_search_y1 + padded_search_y2) / 2
-        cv2.circle(debug_full, (int(padded_center_x), int(padded_center_y)), 6, (255, 255, 0), -1)
-        # Draw crosshairs at search region center
-        cv2.line(debug_full, (int(padded_center_x) - 15, int(padded_center_y)),
-                 (int(padded_center_x) + 15, int(padded_center_y)), (255, 255, 0), 1)
-        cv2.line(debug_full, (int(padded_center_x), int(padded_center_y) - 15),
-                 (int(padded_center_x), int(padded_center_y) + 15), (255, 255, 0), 1)
-        cv2.imwrite("debug_line_full_image.png", debug_full)
-        report(f"DEBUG: Saved full image with search region to debug_line_full_image.png")
-        report(f"DEBUG: Cyan rect/crosshair = search region center, Magenta line/dot = original line & center")
+            # Save full image with search region rectangle drawn (cyan)
+            # Use padded image to show the full search region even if it extends beyond original
+            debug_full = padded_img.copy()
+            cv2.rectangle(debug_full, (padded_search_x1, padded_search_y1),
+                          (padded_search_x2, padded_search_y2), (255, 255, 0), 2)  # Cyan rectangle
+            # Draw original line position (magenta) - adjusted for padding
+            cv2.line(debug_full, (int(x1 + pad_offset_x), int(y1 + pad_offset_y)),
+                     (int(x2 + pad_offset_x), int(y2 + pad_offset_y)), (255, 0, 255), 2)
+            # Draw line center (magenta filled circle)
+            cv2.circle(debug_full, (int(line_center_x + pad_offset_x), int(line_center_y + pad_offset_y)),
+                       6, (255, 0, 255), -1)
+            # Draw search region center (cyan filled circle)
+            padded_center_x = (padded_search_x1 + padded_search_x2) / 2
+            padded_center_y = (padded_search_y1 + padded_search_y2) / 2
+            cv2.circle(debug_full, (int(padded_center_x), int(padded_center_y)), 6, (255, 255, 0), -1)
+            # Draw crosshairs at search region center
+            cv2.line(debug_full, (int(padded_center_x) - 15, int(padded_center_y)),
+                     (int(padded_center_x) + 15, int(padded_center_y)), (255, 255, 0), 1)
+            cv2.line(debug_full, (int(padded_center_x), int(padded_center_y) - 15),
+                     (int(padded_center_x), int(padded_center_y) + 15), (255, 255, 0), 1)
+            cv2.imwrite("debug_line_full_image.png", debug_full)
+            report(f"DEBUG: Saved full image with search region to debug_line_full_image.png")
+            report(f"DEBUG: Cyan rect/crosshair = search region center, Magenta line/dot = original line & center")
 
-        # Save search region with boundary box drawn
-        debug_region = search_region.copy()
-        region_h, region_w = debug_region.shape[:2]
-        region_center_x = region_w // 2
-        region_center_y = region_h // 2
+            # Save search region with boundary box drawn
+            debug_region = search_region.copy()
+            region_h, region_w = debug_region.shape[:2]
+            region_center_x = region_w // 2
+            region_center_y = region_h // 2
 
-        # Draw the search region boundary (green)
-        cv2.rectangle(debug_region, (0, 0),
-                      (region_w - 1, region_h - 1),
-                      (0, 255, 0), 2)
+            # Draw the search region boundary (green)
+            cv2.rectangle(debug_region, (0, 0),
+                          (region_w - 1, region_h - 1),
+                          (0, 255, 0), 2)
 
-        # Draw crosshairs at region center (green)
-        cv2.line(debug_region, (region_center_x - 20, region_center_y),
-                 (region_center_x + 20, region_center_y), (0, 255, 0), 1)
-        cv2.line(debug_region, (region_center_x, region_center_y - 20),
-                 (region_center_x, region_center_y + 20), (0, 255, 0), 1)
+            # Draw crosshairs at region center (green)
+            cv2.line(debug_region, (region_center_x - 20, region_center_y),
+                     (region_center_x + 20, region_center_y), (0, 255, 0), 1)
+            cv2.line(debug_region, (region_center_x, region_center_y - 20),
+                     (region_center_x, region_center_y + 20), (0, 255, 0), 1)
 
-        # Draw the target line position (yellow)
-        cv2.line(debug_region, (int(local_x1), int(local_y1)),
-                 (int(local_x2), int(local_y2)), (0, 255, 255), 2)
-        # Draw target line midpoint (yellow filled circle)
-        local_mid_x_draw = (local_x1 + local_x2) / 2
-        local_mid_y_draw = (local_y1 + local_y2) / 2
-        cv2.circle(debug_region, (int(local_mid_x_draw), int(local_mid_y_draw)), 5, (0, 255, 255), -1)
+            # Draw the target line position (yellow)
+            cv2.line(debug_region, (int(local_x1), int(local_y1)),
+                     (int(local_x2), int(local_y2)), (0, 255, 255), 2)
+            # Draw target line midpoint (yellow filled circle)
+            local_mid_x_draw = (local_x1 + local_x2) / 2
+            local_mid_y_draw = (local_y1 + local_y2) / 2
+            cv2.circle(debug_region, (int(local_mid_x_draw), int(local_mid_y_draw)), 5, (0, 255, 255), -1)
 
-        # Draw all detected lines (red)
-        for line in detected_lines:
-            lx1, ly1 = int(line["x1"]), int(line["y1"])
-            lx2, ly2 = int(line["x2"]), int(line["y2"])
-            cv2.line(debug_region, (lx1, ly1), (lx2, ly2), (0, 0, 255), 2)
+            # Draw all detected lines (red)
+            for line in detected_lines:
+                lx1, ly1 = int(line["x1"]), int(line["y1"])
+                lx2, ly2 = int(line["x2"]), int(line["y2"])
+                cv2.line(debug_region, (lx1, ly1), (lx2, ly2), (0, 0, 255), 2)
 
-        cv2.imwrite("debug_line_search_region.png", debug_region)
-        report(f"DEBUG: Saved search region to debug_line_search_region.png")
-        report(f"DEBUG: Green = boundary & center crosshairs, Yellow = target line & center, Red = detected lines")
-        report(f"DEBUG: Target line local coords: ({local_x1:.1f}, {local_y1:.1f}) -> ({local_x2:.1f}, {local_y2:.1f})")
-        report(f"DEBUG: Target line local center: ({local_mid_x_draw:.1f}, {local_mid_y_draw:.1f})")
-        report(f"DEBUG: Region center: ({region_center_x}, {region_center_y})")
-    except Exception as e:
-        report(f"DEBUG: Could not save debug images: {e}")
+            cv2.imwrite("debug_line_search_region.png", debug_region)
+            report(f"DEBUG: Saved search region to debug_line_search_region.png")
+            report(f"DEBUG: Green = boundary & center crosshairs, Yellow = target line & center, Red = detected lines")
+            report(f"DEBUG: Target line local coords: ({local_x1:.1f}, {local_y1:.1f}) -> ({local_x2:.1f}, {local_y2:.1f})")
+            report(f"DEBUG: Target line local center: ({local_mid_x_draw:.1f}, {local_mid_y_draw:.1f})")
+            report(f"DEBUG: Region center: ({region_center_x}, {region_center_y})")
+        except Exception as e:
+            report(f"DEBUG: Could not save debug images: {e}")
 
     if not detected_lines:
         report("No lines detected in initial region, trying orthogonal search...")
@@ -3157,34 +3164,35 @@ def align_line_element(
                 search_y1 += shift_y
 
                 # Save debug image for refined result
-                try:
-                    wx1 = int(new_mid_x - final_w / 2)
-                    wy1 = int(new_mid_y - final_h / 2)
-                    wx2 = int(new_mid_x + final_w / 2)
-                    wy2 = int(new_mid_y + final_h / 2)
+                if DEBUG_LOG:
+                    try:
+                        wx1 = int(new_mid_x - final_w / 2)
+                        wy1 = int(new_mid_y - final_h / 2)
+                        wx2 = int(new_mid_x + final_w / 2)
+                        wy2 = int(new_mid_y + final_h / 2)
 
-                    # Clamp to image bounds
-                    padded_h, padded_w = padded_img.shape[:2]
-                    wx1 = max(0, wx1)
-                    wy1 = max(0, wy1)
-                    wx2 = min(padded_w, wx2)
-                    wy2 = min(padded_h, wy2)
+                        # Clamp to image bounds
+                        padded_h, padded_w = padded_img.shape[:2]
+                        wx1 = max(0, wx1)
+                        wy1 = max(0, wy1)
+                        wx2 = min(padded_w, wx2)
+                        wy2 = min(padded_h, wy2)
 
-                    ortho_region = padded_img[wy1:wy2, wx1:wx2]
-                    ortho_mask = create_color_mask(ortho_region, pen_bgr, hue_tol=25, s_tol=70, v_tol=70)
-                    cv2.imwrite("debug_line_color_mask_ortho.png", ortho_mask)
-                    report(f"DEBUG: Saved refined color mask to debug_line_color_mask_ortho.png")
+                        ortho_region = padded_img[wy1:wy2, wx1:wx2]
+                        ortho_mask = create_color_mask(ortho_region, pen_bgr, hue_tol=25, s_tol=70, v_tol=70)
+                        cv2.imwrite("debug_line_color_mask_ortho.png", ortho_mask)
+                        report(f"DEBUG: Saved refined color mask to debug_line_color_mask_ortho.png")
 
-                    # Draw detected lines on region
-                    debug_ortho = ortho_region.copy()
-                    for line in detected_lines:
-                        lx1, ly1 = int(line["x1"]), int(line["y1"])
-                        lx2, ly2 = int(line["x2"]), int(line["y2"])
-                        cv2.line(debug_ortho, (lx1, ly1), (lx2, ly2), (0, 0, 255), 2)
-                    cv2.imwrite("debug_line_search_region_ortho.png", debug_ortho)
-                    report(f"DEBUG: Saved refined search region to debug_line_search_region_ortho.png")
-                except Exception as e:
-                    report(f"DEBUG: Could not save orthogonal debug images: {e}")
+                        # Draw detected lines on region
+                        debug_ortho = ortho_region.copy()
+                        for line in detected_lines:
+                            lx1, ly1 = int(line["x1"]), int(line["y1"])
+                            lx2, ly2 = int(line["x2"]), int(line["y2"])
+                            cv2.line(debug_ortho, (lx1, ly1), (lx2, ly2), (0, 0, 255), 2)
+                        cv2.imwrite("debug_line_search_region_ortho.png", debug_ortho)
+                        report(f"DEBUG: Saved refined search region to debug_line_search_region_ortho.png")
+                    except Exception as e:
+                        report(f"DEBUG: Could not save orthogonal debug images: {e}")
 
                 report(f"Using orthogonal search results with offset ({shift_x:.1f}, {shift_y:.1f})")
         else:
@@ -3348,36 +3356,37 @@ def align_line_element(
     report(f"Style: {style_info}")
 
     # Save final result debug image
-    try:
-        final_debug = padded_img.copy()
+    if DEBUG_LOG:
+        try:
+            final_debug = padded_img.copy()
 
-        # Draw detected line (with arrowhead extensions) in green
-        final_x1 = int(new_x1 + pad_offset_x)
-        final_y1 = int(new_y1 + pad_offset_y)
-        final_x2 = int(new_x2 + pad_offset_x)
-        final_y2 = int(new_y2 + pad_offset_y)
-        cv2.line(final_debug, (final_x1, final_y1), (final_x2, final_y2), (0, 255, 0), 3)
+            # Draw detected line (with arrowhead extensions) in green
+            final_x1 = int(new_x1 + pad_offset_x)
+            final_y1 = int(new_y1 + pad_offset_y)
+            final_x2 = int(new_x2 + pad_offset_x)
+            final_y2 = int(new_y2 + pad_offset_y)
+            cv2.line(final_debug, (final_x1, final_y1), (final_x2, final_y2), (0, 255, 0), 3)
 
-        # Mark endpoints: blue=start, red=end
-        cv2.circle(final_debug, (final_x1, final_y1), 8, (255, 0, 0), -1)
-        cv2.circle(final_debug, (final_x2, final_y2), 8, (0, 0, 255), -1)
+            # Mark endpoints: blue=start, red=end
+            cv2.circle(final_debug, (final_x1, final_y1), 8, (255, 0, 0), -1)
+            cv2.circle(final_debug, (final_x2, final_y2), 8, (0, 0, 255), -1)
 
-        # Draw original line in magenta for comparison
-        orig_x1 = int(x1 + pad_offset_x)
-        orig_y1 = int(y1 + pad_offset_y)
-        orig_x2 = int(x2 + pad_offset_x)
-        orig_y2 = int(y2 + pad_offset_y)
-        cv2.line(final_debug, (orig_x1, orig_y1), (orig_x2, orig_y2), (255, 0, 255), 1)
+            # Draw original line in magenta for comparison
+            orig_x1 = int(x1 + pad_offset_x)
+            orig_y1 = int(y1 + pad_offset_y)
+            orig_x2 = int(x2 + pad_offset_x)
+            orig_y2 = int(y2 + pad_offset_y)
+            cv2.line(final_debug, (orig_x1, orig_y1), (orig_x2, orig_y2), (255, 0, 255), 1)
 
-        # Add legend
-        cv2.putText(final_debug, "FINAL RESULT", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-        cv2.putText(final_debug, "Green=detected, Magenta=original", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        cv2.putText(final_debug, f"Arrow mode: {arrow_mode}", (10, 75), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        cv2.putText(final_debug, f"Color: {result['pen_color']}", (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            # Add legend
+            cv2.putText(final_debug, "FINAL RESULT", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            cv2.putText(final_debug, "Green=detected, Magenta=original", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(final_debug, f"Arrow mode: {arrow_mode}", (10, 75), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(final_debug, f"Color: {result['pen_color']}", (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
-        cv2.imwrite("debug_line_final_result.png", final_debug)
-        report("DEBUG: Saved debug_line_final_result.png")
-    except Exception as e:
-        report(f"DEBUG: Could not save final result image: {e}")
+            cv2.imwrite("debug_line_final_result.png", final_debug)
+            report("DEBUG: Saved debug_line_final_result.png")
+        except Exception as e:
+            report(f"DEBUG: Could not save final result image: {e}")
 
     return result

@@ -6,7 +6,6 @@ Mixin classes for graphics items providing annotation ID linking and metadata ha
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import Any, Callable, Dict, Optional
 
 from PyQt6.QtCore import Qt
@@ -67,7 +66,8 @@ class MetaMixin:
     """
 
     def __init__(self):
-        self.meta = AnnotationMeta(kind="unknown")
+        self.kind = "unknown"
+        self.meta = AnnotationMeta()
         self.pen_color = QColor(Qt.GlobalColor.red)
         self.pen_width = 2
         self.brush_color = QColor(0, 0, 0, 0)  # transparent
@@ -92,8 +92,12 @@ class MetaMixin:
 
     @staticmethod
     def _meta_dict(meta: AnnotationMeta) -> Dict[str, Any]:
-        """Convert metadata to dict for JSON serialization."""
-        return {"meta": asdict(meta)}
+        """Convert metadata to dict for JSON serialization.
+
+        Uses ``AnnotationMeta.to_dict()`` which merges any extra keys
+        (e.g. C4 fields like ``alias``, ``c4_type``) back into the dict.
+        """
+        return {"meta": meta.to_dict()}
 
     def _style_dict(self) -> Dict[str, Any]:
         """Get style as dict for JSON serialization."""

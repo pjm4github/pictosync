@@ -6,8 +6,8 @@ Data models and constants for the Diagram Annotator application.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
-from typing import Any, Dict
+from dataclasses import dataclass, field, fields
+from typing import Any, Dict, Optional
 
 from settings import get_settings
 
@@ -18,8 +18,14 @@ from settings import get_settings
 
 @dataclass
 class AnnotationMeta:
-    """Metadata for diagram annotations."""
-    kind: str                  # rect | ellipse | roundedrect | line | text | hexagon | cylinder | blockarrow
+    """Metadata for diagram annotations.
+
+    Known fields are stored as typed attributes.  Any additional keys
+    (e.g. C4-specific ``alias``, ``c4_type``, ``parent_boundary``,
+    ``from_alias``, ``to_alias``, ``rel_type``, ``boundary_type``)
+    are preserved in the ``extras`` dict so they survive the
+    JSON → canvas → JSON round-trip.
+    """
     label: str = ""            # semantic label (Component, Database, External, etc.)
     tech: str = ""             # optional (HTTPS/JSON, gRPC, Kafka, etc.)
     note: str = ""             # freeform note
@@ -36,6 +42,40 @@ class AnnotationMeta:
     # Text bounding box for lines (0 = auto-size, no box)
     text_box_width: float = 0.0
     text_box_height: float = 0.0
+    # Arbitrary extra keys preserved through round-trips
+    extras: Dict[str, Any] = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "AnnotationMeta":
+        """Create an AnnotationMeta from a dict, preserving unknown keys in ``extras``.
+
+        Args:
+            d: Meta dict that may contain both known and unknown keys.
+
+        Returns:
+            An ``AnnotationMeta`` instance with extras populated.
+        """
+        if not isinstance(d, dict):
+            return cls()
+        known_names = {f.name for f in fields(cls) if f.name != "extras"}
+        known = {}
+        extras = {}
+        for k, v in d.items():
+            if k in known_names:
+                known[k] = v
+            else:
+                extras[k] = v
+        return cls(**known, extras=extras)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize to a plain dict, merging extras back in.
+
+        Returns:
+            Dict with known fields first, then any extras.
+        """
+        d = {f.name: getattr(self, f.name) for f in fields(self) if f.name != "extras"}
+        d.update(self.extras)
+        return d
 
     @classmethod
     def get_formatting_defaults(cls) -> Dict[str, Any]:
@@ -67,7 +107,7 @@ def normalize_meta(meta_dict: Dict[str, Any], kind: str) -> Dict[str, Any]:
     """
     Normalize a meta dict by adding default values for missing formatting fields.
 
-    Content fields (kind, label, tech, note) come from extraction only.
+    Content fields (label, tech, note) come from extraction only.
     Formatting fields get defaults if not provided.
 
     Args:
@@ -82,9 +122,6 @@ def normalize_meta(meta_dict: Dict[str, Any], kind: str) -> Dict[str, Any]:
     if meta_dict:
         result.update(meta_dict)
 
-    # Set kind from parameter
-    result["kind"] = kind
-
     # Add formatting defaults for missing fields only
     formatting_defaults = AnnotationMeta.get_formatting_defaults()
     for key, default_value in formatting_defaults.items():
@@ -92,6 +129,68 @@ def normalize_meta(meta_dict: Dict[str, Any], kind: str) -> Dict[str, Any]:
             result[key] = default_value
 
     return result
+
+
+# ----------------------------
+# External type → PictoSync kind alias mapping
+# ----------------------------
+
+# Maps external type names (C4, PlantUML, etc.) to PictoSync annotation kinds.
+# Each alias key maps to exactly one kind — uniqueness is guaranteed by dict
+# structure.  Parsers call ``resolve_kind_alias()`` instead of ad-hoc checks.
+#
+# To add mappings for a new format (e.g. D2), add entries here.
+KIND_ALIAS_MAP: Dict[str, str] = {
+    # ── C4 Model types ──
+    "person":                   "roundedrect",
+    "external_person":          "roundedrect",
+    "system":                   "roundedrect",
+    "external_system":          "roundedrect",
+    "system_db":                "cylinder",
+    "external_system_db":       "cylinder",
+    "system_queue":             "roundedrect",
+    "external_system_queue":    "roundedrect",
+    "container":                "roundedrect",
+    "external_container":       "roundedrect",
+    "container_db":             "cylinder",
+    "external_container_db":    "cylinder",
+    "container_queue":          "roundedrect",
+    "external_container_queue": "roundedrect",
+    "component":                "roundedrect",
+    "external_component":       "roundedrect",
+    "component_db":             "cylinder",
+    "external_component_db":    "cylinder",
+    "component_queue":          "roundedrect",
+    "external_component_queue": "roundedrect",
+    # ── PlantUML types ──
+    "rectangle":  "rect",
+    "database":   "cylinder",
+    "actor":      "ellipse",
+    "interface":  "ellipse",
+    "cloud":      "ellipse",
+    "node":       "rect",
+    "folder":     "rect",
+    "queue":      "rect",
+    "participant": "rect",
+    "class":      "rect",
+    "entity":     "rect",
+    "note":       "roundedrect",
+    "title":      "text",
+}
+
+
+def resolve_kind_alias(external_type: str, fallback: Optional[str] = None) -> Optional[str]:
+    """Resolve an external type name to a PictoSync annotation kind.
+
+    Args:
+        external_type: The external type name (e.g. ``'container_db'``,
+            ``'database'``, ``'person'``).
+        fallback: Kind to return if no alias match.  Defaults to ``None``.
+
+    Returns:
+        The PictoSync kind string, or *fallback* if no mapping exists.
+    """
+    return KIND_ALIAS_MAP.get(external_type, fallback)
 
 
 # ----------------------------
@@ -111,6 +210,8 @@ class Mode:
     BLOCKARROW = "blockarrow"
     POLYGON = "polygon"
     CURVE = "curve"
+    ORTHOCURVE = "orthocurve"
+    ISOCUBE = "isocube"
 
 
 # ----------------------------

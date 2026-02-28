@@ -17,25 +17,35 @@ def find_plantuml_jar() -> str | None:
     """Find the PlantUML JAR file.
 
     Search order:
-        1. PLANTUML_JAR environment variable
-        2. plantuml.jar in the PictoSync project directory
-        3. plantuml.jar on system PATH
+        1. PictoSync settings (external_tools.plantuml_jar_path)
+        2. PLANTUML_JAR environment variable
+        3. plantuml.jar in the PictoSync project directory
+        4. plantuml.jar on system PATH
 
     Returns:
         Path to plantuml.jar if found, None otherwise.
     """
-    # 1. Environment variable
+    # 1. PictoSync settings
+    try:
+        from settings import get_settings
+        configured = get_settings().settings.external_tools.plantuml_jar_path
+        if configured and os.path.isfile(configured):
+            return configured
+    except Exception:
+        pass
+
+    # 2. Environment variable
     env_jar = os.environ.get("PLANTUML_JAR")
     if env_jar and os.path.isfile(env_jar):
         return env_jar
 
-    # 2. Project directory (next to main.py)
+    # 3. Project directory (next to main.py)
     project_dir = Path(__file__).resolve().parent.parent
     local_jar = project_dir / "plantuml.jar"
     if local_jar.is_file():
         return str(local_jar)
 
-    # 3. On system PATH
+    # 4. On system PATH
     path_jar = shutil.which("plantuml.jar")
     if path_jar:
         return path_jar
@@ -69,8 +79,17 @@ def _render_puml(puml_path: str, fmt: str, output_path: str | None = None) -> st
             "Save the file (something like plantuml-1.2026.1.jar) as plantuml.jar"
         )
 
-    # Verify Java is available
-    java = shutil.which("java")
+    # Verify Java is available (settings → PATH)
+    java = None
+    try:
+        from settings import get_settings
+        configured = get_settings().settings.external_tools.java_path
+        if configured and os.path.isfile(configured):
+            java = configured
+    except Exception:
+        pass
+    if java is None:
+        java = shutil.which("java")
     if java is None:
         raise RuntimeError(
             "Java not found on PATH.\n\n"

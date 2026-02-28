@@ -33,6 +33,8 @@ from canvas.items import (
     MetaBlockArrowItem,
     MetaPolygonItem,
     MetaCurveItem,
+    MetaOrthoCurveItem,
+    MetaIsoCubeItem,
     MetaGroupItem,
 )
 
@@ -675,7 +677,7 @@ class PropertyPanel(QWidget):
         self.tabs.setCurrentIndex(1)
 
         meta: AnnotationMeta = getattr(item, "meta")
-        self.kind_label.setText(meta.kind)
+        self.kind_label.setText(getattr(item, "kind", ""))
 
         # Block signals while setting values
         self._block_text_signals(True)
@@ -696,7 +698,7 @@ class PropertyPanel(QWidget):
         self._block_text_signals(False)
         self._set_enabled(True)
 
-        kind = meta.kind
+        kind = getattr(item, "kind", "")
         pen_color = getattr(item, "pen_color", QColor("red"))
 
         if kind == "rect":
@@ -715,9 +717,13 @@ class PropertyPanel(QWidget):
             self._setup_cylinder_controls(item, pen_color)
         elif kind == "blockarrow":
             self._setup_blockarrow_controls(item, pen_color)
+        elif kind == "isocube":
+            self._setup_isocube_controls(item, pen_color)
         elif kind == "polygon":
             self._setup_polygon_controls(item, pen_color)
         elif kind == "curve":
+            self._setup_curve_controls(item, pen_color)
+        elif kind == "orthocurve":
             self._setup_curve_controls(item, pen_color)
         elif kind == "group":
             self._setup_group_controls(item, pen_color)
@@ -1000,7 +1006,7 @@ class PropertyPanel(QWidget):
             self.undo_stack.push(cmd)
 
     def _on_adjust1_changed(self, value: int):
-        """Handle adjust1 change (radius, indent, cap, shaft depending on kind)."""
+        """Handle adjust1 change (radius, indent, cap, shaft, bend radius depending on kind)."""
         item = self._current_item
         if item is None:
             return
@@ -1017,6 +1023,10 @@ class PropertyPanel(QWidget):
             item.set_adjust1(value / 100.0)
         elif isinstance(item, MetaBlockArrowItem):
             item.set_adjust1(value / 100.0)
+        elif isinstance(item, (MetaCurveItem, MetaOrthoCurveItem)):
+            item.set_adjust1(float(value))
+        elif isinstance(item, MetaIsoCubeItem):
+            item.set_adjust1(float(value))
         else:
             return
 
@@ -1124,7 +1134,7 @@ class PropertyPanel(QWidget):
     def _on_arrow_changed(self, index: int):
         """Handle arrow mode change."""
         item = self._current_item
-        if item is None or not isinstance(item, (MetaLineItem, MetaCurveItem)):
+        if item is None or not isinstance(item, (MetaLineItem, MetaCurveItem, MetaOrthoCurveItem)):
             return
         arrow_modes = ["none", "start", "end", "both"]
         if 0 <= index < len(arrow_modes):
@@ -1142,7 +1152,7 @@ class PropertyPanel(QWidget):
     def _on_arrow_size_changed(self, value: int):
         """Handle arrow size change."""
         item = self._current_item
-        if item is None or not isinstance(item, (MetaLineItem, MetaCurveItem)):
+        if item is None or not isinstance(item, (MetaLineItem, MetaCurveItem, MetaOrthoCurveItem)):
             return
         old_val = item.arrow_size
         item.arrow_size = float(value)
@@ -1157,9 +1167,9 @@ class PropertyPanel(QWidget):
             self.undo_stack.push(cmd)
 
     def _on_adjust2_changed(self, value: int):
-        """Handle block arrow adjust2 (head length) change."""
+        """Handle adjust2 change (head length for blockarrow, angle for isocube)."""
         item = self._current_item
-        if item is None or not isinstance(item, MetaBlockArrowItem):
+        if item is None or not isinstance(item, (MetaBlockArrowItem, MetaIsoCubeItem)):
             return
         old_val = item._adjust2
         item.set_adjust2(float(value))
@@ -1304,6 +1314,28 @@ class PropertyPanel(QWidget):
         self._setup_line_style_controls(item)
         self._setup_text_layout_controls(item)
 
+    def _setup_isocube_controls(self, item, pen_color):
+        """Configure controls for isometric cube items."""
+        self._set_text_rows_visible(True, True, True)
+        self._set_color_rows_visible(True, True, True)
+        self._set_extra_rows_visible(True, True, True, False, False, text_box_width=False, text_layout=True, adjust2=True)
+        self._set_preview(self.pen_color_preview, pen_color)
+        self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
+        self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
+        self._configure_adjust_controls("isocube")
+        adjust1 = getattr(item, "_adjust1", 30)
+        max_depth = getattr(item, "_max_depth", lambda: 200)()
+        self.adjust1_spin.blockSignals(True)
+        self.adjust1_spin.setMaximum(int(max_depth))
+        self.adjust1_spin.setValue(int(adjust1))
+        self.adjust1_spin.blockSignals(False)
+        adjust2 = getattr(item, "_adjust2", 135)
+        self.adjust2_spin.blockSignals(True)
+        self.adjust2_spin.setValue(int(adjust2))
+        self.adjust2_spin.blockSignals(False)
+        self._setup_line_style_controls(item)
+        self._setup_text_layout_controls(item)
+
     def _setup_polygon_controls(self, item, pen_color):
         """Configure controls for polygon items."""
         self._set_text_rows_visible(True, True, True)
@@ -1316,10 +1348,18 @@ class PropertyPanel(QWidget):
         self._setup_text_layout_controls(item)
 
     def _setup_curve_controls(self, item, pen_color):
-        """Configure controls for curve items (pen, dash, arrow - no fill, no adjust)."""
+        """Configure controls for curve items (pen, dash, arrow, optional adjust1 for ortho)."""
         self._set_text_rows_visible(True, True, True)
         self._set_color_rows_visible(True, False, True)
-        self._set_extra_rows_visible(False, True, True, True, True, text_box_width=False, text_layout=False)
+        # Show adjust1 row if curve has H/V corners
+        has_hv = hasattr(item, "_has_hv_corners") and item._has_hv_corners()
+        self._set_extra_rows_visible(has_hv, True, True, True, True, text_box_width=False, text_layout=False)
+        if has_hv:
+            self._configure_adjust_controls("curve")
+            adjust1 = getattr(item, "_adjust1", 0)
+            self.adjust1_spin.blockSignals(True)
+            self.adjust1_spin.setValue(int(adjust1))
+            self.adjust1_spin.blockSignals(False)
         self._set_preview(self.pen_color_preview, pen_color)
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
         self._setup_line_style_controls(item)
@@ -1349,7 +1389,7 @@ class PropertyPanel(QWidget):
         if self._current_item is not item:
             return
         self.adjust1_spin.blockSignals(True)
-        if isinstance(item, MetaRoundedRectItem):
+        if isinstance(item, (MetaRoundedRectItem, MetaCurveItem, MetaOrthoCurveItem, MetaIsoCubeItem)):
             self.adjust1_spin.setValue(int(value))
         elif isinstance(item, (MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem)):
             self.adjust1_spin.setValue(int(value * 100))
@@ -1357,7 +1397,7 @@ class PropertyPanel(QWidget):
 
     def update_adjust2_display(self, item, value: float):
         """Update the adjust2 spinbox display when it changes via canvas handle."""
-        if self._current_item is item and isinstance(item, MetaBlockArrowItem):
+        if self._current_item is item and isinstance(item, (MetaBlockArrowItem, MetaIsoCubeItem)):
             self.adjust2_spin.blockSignals(True)
             self.adjust2_spin.setValue(int(value))
             self.adjust2_spin.blockSignals(False)

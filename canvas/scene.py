@@ -24,6 +24,8 @@ from canvas.items import (
     MetaBlockArrowItem,
     MetaPolygonItem,
     MetaCurveItem,
+    MetaOrthoCurveItem,
+    MetaIsoCubeItem,
     MetaGroupItem,
 )
 from settings import get_settings
@@ -62,6 +64,7 @@ class AnnotatorScene(QGraphicsScene):
         self._on_ungroup_item: Optional[Callable] = None  # For ungrouping
         self._on_items_moved: Optional[Callable] = None  # For move undo tracking
         self._on_select_mouse_up: Optional[Callable] = None  # For scroll-on-release
+        self._on_build_dsl_item: Optional[Callable] = None  # For "Build DSL Item" context menu
         self._undo_act = None  # QAction for undo (set from main.py)
         self._redo_act = None  # QAction for redo (set from main.py)
         # Move tracking state
@@ -73,6 +76,8 @@ class AnnotatorScene(QGraphicsScene):
         # Curve multi-click drawing state
         self._curve_points: List[QPointF] = []
         self._curve_preview: Optional[QGraphicsItem] = None
+        # Orthogonal curve direction tracking ("H" or "V")
+        self._ortho_direction: Optional[str] = None
 
     @property
     def is_interacting(self) -> bool:
@@ -131,6 +136,10 @@ class AnnotatorScene(QGraphicsScene):
         """Set callback for mouse release in SELECT mode (scroll-on-release)."""
         self._on_select_mouse_up = callback
 
+    def set_build_dsl_callback(self, callback):
+        """Set callback for the 'Build DSL Item' context menu action."""
+        self._on_build_dsl_item = callback
+
     def set_undo_actions(self, undo_act, redo_act):
         """Set undo/redo actions for use in context menus."""
         self._undo_act = undo_act
@@ -161,7 +170,7 @@ class AnnotatorScene(QGraphicsScene):
                 event.accept()
                 return
             # Cancel curve drawing on Escape
-            if self.mode == Mode.CURVE and self._curve_points:
+            if self.mode in (Mode.CURVE, Mode.ORTHOCURVE) and self._curve_points:
                 self._cancel_curve()
                 event.accept()
                 return
@@ -194,8 +203,12 @@ class AnnotatorScene(QGraphicsScene):
                 event.accept()
                 return
 
-            # Curve finish/cancel on right-click
-            if self.mode == Mode.CURVE and self._curve_points:
+            # Curve finish/cancel on right-click — capture click as final point
+            if self.mode in (Mode.CURVE, Mode.ORTHOCURVE) and self._curve_points:
+                sp = event.scenePos()
+                if self.mode == Mode.ORTHOCURVE:
+                    sp = self._commit_ortho_point(sp)
+                self._curve_points.append(sp)
                 if len(self._curve_points) >= 2:
                     self._finish_curve()
                 else:
@@ -214,7 +227,7 @@ class AnnotatorScene(QGraphicsScene):
                     super().mousePressEvent(event)
                     return
                 # Let curve handle right-click in node editing mode
-                if isinstance(item, MetaCurveItem) and item._node_editing:
+                if isinstance(item, (MetaCurveItem, MetaOrthoCurveItem)) and item._node_editing:
                     super().mousePressEvent(event)
                     return
                 self._show_context_menu(event.screenPos(), item)
@@ -242,7 +255,15 @@ class AnnotatorScene(QGraphicsScene):
                 event.accept()
                 return
 
-            if self.mode in (Mode.RECT, Mode.ROUNDEDRECT, Mode.ELLIPSE, Mode.LINE, Mode.HEXAGON, Mode.CYLINDER, Mode.BLOCKARROW):
+            # Orthogonal curve multi-click mode
+            if self.mode == Mode.ORTHOCURVE:
+                snapped = self._commit_ortho_point(sp)
+                self._curve_points.append(snapped)
+                self._update_curve_preview(snapped)
+                event.accept()
+                return
+
+            if self.mode in (Mode.RECT, Mode.ROUNDEDRECT, Mode.ELLIPSE, Mode.LINE, Mode.HEXAGON, Mode.CYLINDER, Mode.BLOCKARROW, Mode.ISOCUBE):
                 self._drag_start = sp
                 ann_id = self._make_id() if self._make_id else "local"
                 next_z = self._get_next_z_index()
@@ -278,6 +299,10 @@ class AnnotatorScene(QGraphicsScene):
                 elif self.mode == Mode.BLOCKARROW:
                     # adjust2 tracks 35% of width during drawing; adjust1=0.5 (shaft width ratio)
                     self._temp_item = MetaBlockArrowItem(sp.x(), sp.y(), 0, 0, 0, 0.5, ann_id, self._on_item_changed)
+                    self.addItem(self._temp_item)
+                    self._temp_item.setZValue(next_z)
+                elif self.mode == Mode.ISOCUBE:
+                    self._temp_item = MetaIsoCubeItem(sp.x(), sp.y(), 0, 0, 30, 135, ann_id, self._on_item_changed)
                     self.addItem(self._temp_item)
                     self._temp_item.setZValue(next_z)
 
@@ -325,12 +350,19 @@ class AnnotatorScene(QGraphicsScene):
             event.accept()
             return
 
+        # Ortho curve preview with snapped cursor position
+        if self.mode == Mode.ORTHOCURVE and self._curve_points:
+            snapped = self._peek_ortho_snap(event.scenePos())
+            self._update_curve_preview(snapped)
+            event.accept()
+            return
+
         if self._drag_start is not None and self._temp_item is not None:
             cur = event.scenePos()
             sx, sy = self._drag_start.x(), self._drag_start.y()
             cx, cy = cur.x(), cur.y()
 
-            if isinstance(self._temp_item, (MetaRectItem, MetaEllipseItem, MetaRoundedRectItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem)):
+            if isinstance(self._temp_item, (MetaRectItem, MetaEllipseItem, MetaRoundedRectItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaIsoCubeItem)):
                 x = min(sx, cx)
                 y = min(sy, cy)
                 w = abs(cx - sx)
@@ -381,7 +413,7 @@ class AnnotatorScene(QGraphicsScene):
 
     def _is_annotation_item(self, item: QGraphicsItem) -> bool:
         """Check if an item is one of our annotation items."""
-        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaLineItem, MetaTextItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaPolygonItem, MetaCurveItem, MetaGroupItem))
+        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaLineItem, MetaTextItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaPolygonItem, MetaCurveItem, MetaOrthoCurveItem, MetaIsoCubeItem, MetaGroupItem))
 
     def _get_annotation_items(self) -> List[QGraphicsItem]:
         """Get all annotation items in the scene (excluding background, etc.)."""
@@ -482,7 +514,10 @@ class AnnotatorScene(QGraphicsScene):
 
         if self._curve_preview is None:
             self._curve_preview = QGraphicsPathItem()
-            pen = QPen(QColor(160, 80, 220, 180), 1.5, Qt.PenStyle.DashLine)
+            if self.mode == Mode.ORTHOCURVE:
+                pen = QPen(QColor(80, 160, 220, 180), 1.5, Qt.PenStyle.DashLine)
+            else:
+                pen = QPen(QColor(160, 80, 220, 180), 1.5, Qt.PenStyle.DashLine)
             self._curve_preview.setPen(pen)
             self._curve_preview.setZValue(999999)
             self.addItem(self._curve_preview)
@@ -492,6 +527,7 @@ class AnnotatorScene(QGraphicsScene):
     def _finish_curve(self):
         """Create a MetaCurveItem from collected curve points."""
         points = self._curve_points
+        is_ortho = self.mode == Mode.ORTHOCURVE
 
         # Compute bounding box
         xs = [p.x() for p in points]
@@ -506,20 +542,36 @@ class AnnotatorScene(QGraphicsScene):
         if h < 5:
             h = 5
 
-        # Convert to nodes: first is M, rest are L
+        # Convert to nodes
         nodes = []
         for i, p in enumerate(points):
             rx = (p.x() - min_x) / w if w > 0 else 0.0
             ry = (p.y() - min_y) / h if h > 0 else 0.0
             if i == 0:
                 nodes.append({"cmd": "M", "x": rx, "y": ry})
+            elif is_ortho and i > 0:
+                prev = points[i - 1]
+                prev_rx = (prev.x() - min_x) / w if w > 0 else 0.0
+                prev_ry = (prev.y() - min_y) / h if h > 0 else 0.0
+                if abs(ry - prev_ry) < 1e-6:
+                    # Same Y → horizontal segment
+                    nodes.append({"cmd": "H", "x": rx})
+                elif abs(rx - prev_rx) < 1e-6:
+                    # Same X → vertical segment
+                    nodes.append({"cmd": "V", "y": ry})
+                else:
+                    nodes.append({"cmd": "L", "x": rx, "y": ry})
             else:
                 nodes.append({"cmd": "L", "x": rx, "y": ry})
 
         ann_id = self._make_id() if self._make_id else "local"
         next_z = self._get_next_z_index()
 
-        item = MetaCurveItem(min_x, min_y, w, h, nodes, ann_id, self._on_item_changed)
+        if is_ortho:
+            item = MetaOrthoCurveItem(min_x, min_y, w, h, nodes, ann_id, self._on_item_changed)
+            item.set_adjust1(10.0)  # Default bend radius for ortho curves
+        else:
+            item = MetaCurveItem(min_x, min_y, w, h, nodes, ann_id, self._on_item_changed)
         self.addItem(item)
         item.setZValue(next_z)
 
@@ -538,6 +590,49 @@ class AnnotatorScene(QGraphicsScene):
             self.removeItem(self._curve_preview)
             self._curve_preview = None
         self._curve_points.clear()
+        self._ortho_direction = None
+
+    # ---- Orthogonal curve snap helpers ----
+
+    def _peek_ortho_snap(self, pt: QPointF) -> QPointF:
+        """Return snapped point for ortho curve WITHOUT mutating direction state."""
+        if not self._curve_points:
+            return pt
+        last = self._curve_points[-1]
+        dx = abs(pt.x() - last.x())
+        dy = abs(pt.y() - last.y())
+
+        if self._ortho_direction is None:
+            # First segment: infer from cursor position
+            if dx >= dy:
+                return QPointF(pt.x(), last.y())  # H
+            else:
+                return QPointF(last.x(), pt.y())  # V
+        elif self._ortho_direction == "H":
+            # Last was H → next is V
+            return QPointF(last.x(), pt.y())
+        else:
+            # Last was V → next is H
+            return QPointF(pt.x(), last.y())
+
+    def _commit_ortho_point(self, pt: QPointF) -> QPointF:
+        """Return snapped point and toggle direction for next segment."""
+        snapped = self._peek_ortho_snap(pt)
+        if not self._curve_points:
+            return snapped
+        last = self._curve_points[-1]
+        dx = abs(snapped.x() - last.x())
+        dy = abs(snapped.y() - last.y())
+
+        if self._ortho_direction is None:
+            # First segment: determine direction
+            self._ortho_direction = "H" if dx >= dy else "V"
+        elif self._ortho_direction == "H":
+            self._ortho_direction = "V"
+        else:
+            self._ortho_direction = "H"
+
+        return snapped
 
     def _show_context_menu(self, screen_pos, item: QGraphicsItem):
         """Show context menu for the selected item."""
@@ -573,6 +668,12 @@ class AnnotatorScene(QGraphicsScene):
         send_to_back = QAction("Send to Back", menu)
         send_to_back.triggered.connect(lambda: self._send_to_back(item))
         menu.addAction(send_to_back)
+
+        if self._on_build_dsl_item and len(selected) == 1:
+            menu.addSeparator()
+            build_dsl_act = QAction("Build DSL Item", menu)
+            build_dsl_act.triggered.connect(lambda: self._on_build_dsl_item(item))
+            menu.addAction(build_dsl_act)
 
         # screenPos() returns QPoint in PyQt6
         menu.exec(screen_pos)

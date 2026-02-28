@@ -187,12 +187,24 @@ ICONS = {
   <polygon points="2,8 14,8 14,4 22,12 14,20 14,16 2,16" stroke="{stroke}" stroke-width="2" fill="{fill}" stroke-linejoin="round"/>
 </svg>''',
 
+    "isocube": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <polygon points="2,8 12,4 22,8 12,12" stroke="{stroke}" stroke-width="1.5" fill="{fill}" stroke-linejoin="round"/>
+  <polygon points="2,8 2,18 12,22 12,12" stroke="{stroke}" stroke-width="1.5" fill="{fill}" stroke-linejoin="round"/>
+  <polygon points="12,12 22,8 22,18 12,22" stroke="{stroke}" stroke-width="1.5" fill="{fill}" stroke-linejoin="round"/>
+</svg>''',
+
     "polygon": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
   <polygon points="3,8 9,3 20,5 21,14 15,12 18,20 7,19 5,13" stroke="{stroke}" stroke-width="2" fill="{fill}" stroke-linejoin="round"/>
 </svg>''',
 
     "curve": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
   <path d="M3 18 C7 4 17 20 21 6" stroke="{stroke}" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <circle cx="3" cy="18" r="2" fill="{accent}" stroke="{stroke}" stroke-width="1"/>
+  <circle cx="21" cy="6" r="2" fill="{accent}" stroke="{stroke}" stroke-width="1"/>
+</svg>''',
+
+    "ortho_curve": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <path d="M3 18 L3 9 Q3 6 6 6 L21 6" stroke="{stroke}" stroke-width="2" fill="none" stroke-linecap="round"/>
   <circle cx="3" cy="18" r="2" fill="{accent}" stroke="{stroke}" stroke-width="1"/>
   <circle cx="21" cy="6" r="2" fill="{accent}" stroke="{stroke}" stroke-width="1"/>
 </svg>''',
@@ -206,6 +218,11 @@ ICONS = {
   <!-- Center target -->
   <circle cx="12" cy="12" r="4" stroke="{accent}" stroke-width="2" fill="none"/>
   <circle cx="12" cy="12" r="1.5" fill="{accent}"/>
+</svg>''',
+
+    "dsl_node": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <rect x="3" y="5" width="18" height="14" stroke="{stroke}" stroke-width="1.5" fill="{fill}" rx="4"/>
+  <circle cx="12" cy="12" r="3" stroke="{accent}" stroke-width="1.5" fill="{accent}"/>
 </svg>''',
 }
 

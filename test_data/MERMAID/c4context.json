@@ -1,0 +1,931 @@
+{
+  "version": "draft-1",
+  "image": {
+    "width": 1972,
+    "height": 1718
+  },
+  "annotations": [
+    {
+      "id": "m000001",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 200.0,
+        "y": 308.0,
+        "w": 371.0,
+        "h": 142.0
+      },
+      "meta": {
+        "label": "Banking Customer A",
+        "note": "A customer of the bank, with personal bank accounts.",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "person",
+            "alias": "customerA",
+            "parent": "b0"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "red",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "grey"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000002",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 671.0,
+        "y": 308.0,
+        "w": 216.0,
+        "h": 108.0
+      },
+      "meta": {
+        "label": "Banking Customer B",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "person",
+            "alias": "customerB",
+            "parent": "b0"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#073B6F",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#08427B"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000003",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 987.0,
+        "y": 308.0,
+        "w": 216.0,
+        "h": 142.0
+      },
+      "meta": {
+        "label": "Banking Customer C",
+        "note": "desc",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "external_person",
+            "alias": "customerC",
+            "parent": "b0"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#8A8A8A",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#686868"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000004",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 1303.0,
+        "y": 308.0,
+        "w": 216.0,
+        "h": 156.0
+      },
+      "meta": {
+        "label": "Banking Customer D",
+        "note": "A customer of the bank, <br/> with personal bank accounts.",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "person",
+            "alias": "customerD",
+            "parent": "b0"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#073B6F",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#08427B"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000005",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 200.0,
+        "y": 564.0,
+        "w": 584.0,
+        "h": 94.0
+      },
+      "meta": {
+        "label": "Internet Banking System",
+        "note": "Allows customers to view information about their bank accounts, and make payments.",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "system",
+            "alias": "SystemAA",
+            "parent": "b0"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#3C7FC0",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#1168BD"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000006",
+      "kind": "cylinder",
+      "geom": {
+        "x": 250.0,
+        "y": 862.0,
+        "w": 589.0,
+        "h": 114.0
+      },
+      "meta": {
+        "label": "Mainframe Banking System",
+        "note": "Stores all of the core banking information about customers, accounts, transactions, etc.",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "external_system_db",
+            "alias": "SystemE",
+            "parent": "b1"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#8A8A8A",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#999999"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000007",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 939.0,
+        "y": 872.0,
+        "w": 328.0,
+        "h": 94.0
+      },
+      "meta": {
+        "label": "E-mail system",
+        "note": "The internal Microsoft Exchange e-mail system.",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "external_system",
+            "alias": "SystemC",
+            "parent": "b1"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#8A8A8A",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#999999"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000008",
+      "kind": "cylinder",
+      "geom": {
+        "x": 1367.0,
+        "y": 862.0,
+        "w": 355.0,
+        "h": 114.0
+      },
+      "meta": {
+        "label": "Banking System D Database",
+        "note": "A system of the bank, with personal bank accounts.",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "system_db",
+            "alias": "SystemD",
+            "parent": "b1"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#3C7FC0",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#1168BD"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000009",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 300.0,
+        "y": 1180.0,
+        "w": 216.0,
+        "h": 60.0
+      },
+      "meta": {
+        "label": "Banking System A",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "system",
+            "alias": "SystemA",
+            "parent": "b2"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#3C7FC0",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#1168BD"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000010",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 300.0,
+        "y": 1340.0,
+        "w": 418.0,
+        "h": 94.0
+      },
+      "meta": {
+        "label": "Banking System B",
+        "note": "A system of the bank, with personal bank accounts. next line.",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "system",
+            "alias": "SystemB",
+            "parent": "b2"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#3C7FC0",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#1168BD"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000011",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 863.0,
+        "y": 1180.0,
+        "w": 226.0,
+        "h": 94.0
+      },
+      "meta": {
+        "label": "Banking System F Queue",
+        "note": "A system of the bank.",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "system_queue",
+            "alias": "SystemF",
+            "parent": "b3"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#3C7FC0",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#1168BD"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000012",
+      "kind": "roundedrect",
+      "geom": {
+        "x": 863.0,
+        "y": 1374.0,
+        "w": 365.0,
+        "h": 94.0
+      },
+      "meta": {
+        "label": "Banking System G Queue",
+        "note": "A system of the bank, with personal bank accounts.",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "external_system_queue",
+            "alias": "SystemG",
+            "parent": "b3"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#8A8A8A",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#999999"
+        },
+        "text": {
+          "color": "#FFFFFF",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000013",
+      "kind": "rect",
+      "geom": {
+        "x": 250.0,
+        "y": 1080.0,
+        "w": 518.0,
+        "h": 404.0
+      },
+      "meta": {
+        "label": "BankBoundary2",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "boundary",
+            "alias": "b2",
+            "boundary_type": "SYSTEM",
+            "parent": "b1"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "none"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000014",
+      "kind": "rect",
+      "geom": {
+        "x": 818.0,
+        "y": 1080.0,
+        "w": 455.0,
+        "h": 438.0
+      },
+      "meta": {
+        "label": "BankBoundary3",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "boundary",
+            "alias": "b3",
+            "boundary_type": "boundary",
+            "parent": "b1"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "none"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000015",
+      "kind": "rect",
+      "geom": {
+        "x": 200.0,
+        "y": 772.0,
+        "w": 1572.0,
+        "h": 796.0
+      },
+      "meta": {
+        "label": "BankBoundary",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "boundary",
+            "alias": "b1",
+            "boundary_type": "ENTERPRISE",
+            "parent": "b0"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "none"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000016",
+      "kind": "rect",
+      "geom": {
+        "x": 150.0,
+        "y": 208.0,
+        "w": 1672.0,
+        "h": 1410.0
+      },
+      "meta": {
+        "label": "BankBoundary0",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "type": "boundary",
+            "alias": "b0",
+            "boundary_type": "ENTERPRISE"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#444444",
+          "width": 1,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "none"
+        },
+        "text": {
+          "color": "#444444",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000017",
+      "kind": "line",
+      "geom": {
+        "x1": 453.92,
+        "y1": 450.0,
+        "x2": 539.13,
+        "y2": 564.0
+      },
+      "meta": {
+        "label": "Uses",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "birel",
+            "from": "customerA",
+            "to": "SystemAA"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "blue",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "blue",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000018",
+      "kind": "line",
+      "geom": {
+        "x1": 537.61,
+        "y1": 658.0,
+        "x2": 588.08,
+        "y2": 872.0
+      },
+      "meta": {
+        "label": "Uses",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "birel",
+            "from": "SystemAA",
+            "to": "SystemE"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "blue",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "blue",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "start"
+      }
+    },
+    {
+      "id": "m000019",
+      "kind": "line",
+      "geom": {
+        "x1": 611.55,
+        "y1": 658.0,
+        "x2": 1022.51,
+        "y2": 872.0
+      },
+      "meta": {
+        "label": "Sends e-mails",
+        "tech": "SMTP",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "rel",
+            "from": "SystemAA",
+            "to": "SystemC"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "blue",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "blue",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    },
+    {
+      "id": "m000020",
+      "kind": "line",
+      "geom": {
+        "x1": 1050.23,
+        "y1": 872.0,
+        "x2": 490.43,
+        "y2": 450.0
+      },
+      "meta": {
+        "label": "Sends e-mails to",
+        "dsl": {
+          "tool": "mermaid",
+          "c4": {
+            "rel_type": "rel",
+            "from": "SystemC",
+            "to": "customerA"
+          }
+        },
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "red",
+          "width": 1,
+          "dash": "solid"
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "red",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      }
+    }
+  ]
+}

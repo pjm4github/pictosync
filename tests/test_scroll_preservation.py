@@ -213,7 +213,7 @@ class TestPumlImport:
         lines = [a for a in data["annotations"] if a.get("kind") == "line"]
         assert len(lines) > 0, "Should have at least one line annotation"
         expected_keys = {
-            "kind", "label", "tech", "note",
+            "label", "tech", "note",
             "label_align", "label_size",
             "tech_align", "tech_size",
             "note_align", "note_size",
@@ -235,7 +235,7 @@ class TestPumlImport:
         shapes = [a for a in data["annotations"] if a.get("kind") not in ("line", "group")]
         assert len(shapes) > 0, "Should have at least one shape annotation"
         expected_keys = {
-            "kind", "label", "tech", "note",
+            "label", "tech", "note",
             "label_align", "label_size",
             "tech_align", "tech_size",
             "note_align", "note_size",

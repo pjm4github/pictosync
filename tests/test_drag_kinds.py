@@ -18,7 +18,7 @@ app.processEvents()
 items = [i for i in mw.scene.items() if hasattr(i, 'ann_id')]
 by_kind = {}
 for it in items:
-    k = it.meta.kind if hasattr(it, 'meta') else type(it).__name__
+    k = it.kind if hasattr(it, 'kind') else type(it).__name__
     by_kind.setdefault(k, []).append(it)
 print('Item kinds:', {k: len(v) for k, v in by_kind.items()})
 

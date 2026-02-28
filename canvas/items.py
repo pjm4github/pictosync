@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (
     QStyleOptionGraphicsItem,
 )
 
-from models import AnnotationMeta, ANN_ID_KEY
+from models import AnnotationMeta, ANN_ID_KEY, KIND_ALIAS_MAP
 from canvas.mixins import LinkedMixin, MetaMixin
 from settings import get_settings
 from debug_trace import trace
@@ -185,13 +185,16 @@ def shape_with_handles(base_shape: QPainterPath, handle_positions: Dict[str, QPo
 class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
     """Rectangle item with resizable corners and embedded C4 text label."""
 
+    KIND = "rect"
+    KIND_ALIASES = frozenset(k for k, v in KIND_ALIAS_MAP.items() if v == "rect")
+
     def __init__(self, x: float, y: float, w: float, h: float, ann_id: str, on_change=None):
         trace(f"MetaRectItem.__init__ start: id={ann_id}", "ITEM_INIT")
         QGraphicsRectItem.__init__(self, QRectF(0, 0, w, h))
         MetaMixin.__init__(self)
         LinkedMixin.__init__(self, ann_id, on_change)
 
-        self.meta.kind = "rect"
+        self.kind ="rect"
         self.setPos(QPointF(x, y))
         self.setData(ANN_ID_KEY, ann_id)
 
@@ -507,6 +510,9 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
 class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     """Rounded rectangle item with configurable corner radius (adjust1)."""
 
+    KIND = "roundedrect"
+    KIND_ALIASES = frozenset(k for k, v in KIND_ALIAS_MAP.items() if v == "roundedrect")
+
     # Class-level callback for adjust1 changes (set by MainWindow)
     on_adjust1_changed = None  # Called with (item, new_value) when adjust1 changes via handle drag
 
@@ -515,7 +521,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         MetaMixin.__init__(self)
         LinkedMixin.__init__(self, ann_id, on_change)
 
-        self.meta.kind = "roundedrect"
+        self.kind ="roundedrect"
         self._width = w
         self._height = h
         self._adjust1 = adjust1
@@ -877,12 +883,15 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
     """Ellipse item with resizable corners."""
 
+    KIND = "ellipse"
+    KIND_ALIASES = frozenset(k for k, v in KIND_ALIAS_MAP.items() if v == "ellipse")
+
     def __init__(self, x: float, y: float, w: float, h: float, ann_id: str, on_change=None):
         QGraphicsEllipseItem.__init__(self, QRectF(0, 0, w, h))
         MetaMixin.__init__(self)
         LinkedMixin.__init__(self, ann_id, on_change)
 
-        self.meta.kind = "ellipse"
+        self.kind ="ellipse"
         self.setPos(QPointF(x, y))
         self.setData(ANN_ID_KEY, ann_id)
 
@@ -1190,6 +1199,9 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
 class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
     """Line item with draggable endpoints and optional arrowheads."""
 
+    KIND = "line"
+    KIND_ALIASES = frozenset()
+
     ARROW_NONE = "none"
     ARROW_START = "start"
     ARROW_END = "end"
@@ -1200,7 +1212,7 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
         MetaMixin.__init__(self)
         LinkedMixin.__init__(self, ann_id, on_change)
 
-        self.meta.kind = "line"
+        self.kind ="line"
         self.setPos(QPointF(x1, y1))
         self.setData(ANN_ID_KEY, ann_id)
 
@@ -1761,6 +1773,9 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
 class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
     """Text item with inline editing and configurable font."""
 
+    KIND = "text"
+    KIND_ALIASES = frozenset(k for k, v in KIND_ALIAS_MAP.items() if v == "text")
+
     # Class-level callbacks for focus events (set by MainWindow)
     on_editing_started = None  # Called when text editing begins
     on_editing_finished = None  # Called when text editing ends
@@ -1775,7 +1790,7 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
         MetaMixin.__init__(self)
         LinkedMixin.__init__(self, ann_id, on_change)
 
-        self.meta.kind = "text"
+        self.kind ="text"
         # Store initial text in meta.note
         self.meta.note = text
         self.setPos(QPointF(x, y))
@@ -1916,6 +1931,9 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     from the edges. A value of 0.25 (default) creates a regular hexagon.
     """
 
+    KIND = "hexagon"
+    KIND_ALIASES = frozenset(k for k, v in KIND_ALIAS_MAP.items() if v == "hexagon")
+
     # Class-level callback for adjust1 changes (set by MainWindow)
     on_adjust1_changed = None  # Called with (item, new_value) when adjust1 changes via handle drag
 
@@ -1924,7 +1942,7 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         MetaMixin.__init__(self)
         LinkedMixin.__init__(self, ann_id, on_change)
 
-        self.meta.kind = "hexagon"
+        self.kind ="hexagon"
         self._width = w
         self._height = h
         self._adjust1 = max(0.0, min(0.5, adjust1))  # Clamp to 0.0-0.5
@@ -2288,6 +2306,9 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     ratio of total height. Default is 0.15 (15% of height).
     """
 
+    KIND = "cylinder"
+    KIND_ALIASES = frozenset(k for k, v in KIND_ALIAS_MAP.items() if v == "cylinder")
+
     # Class-level callback for adjust1 changes (set by MainWindow)
     on_adjust1_changed = None
 
@@ -2296,7 +2317,7 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         MetaMixin.__init__(self)
         LinkedMixin.__init__(self, ann_id, on_change)
 
-        self.meta.kind = "cylinder"
+        self.kind ="cylinder"
         self._width = w
         self._height = h
         self._adjust1 = max(0.1, min(0.5, adjust1))
@@ -2699,6 +2720,9 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     adjust2: horizontal distance from arrow tip to head base (in pixels)
     """
 
+    KIND = "blockarrow"
+    KIND_ALIASES = frozenset(k for k, v in KIND_ALIAS_MAP.items() if v == "blockarrow")
+
     # Class-level callbacks for property changes
     on_adjust1_changed = None
     on_adjust2_changed = None
@@ -2708,7 +2732,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         MetaMixin.__init__(self)
         LinkedMixin.__init__(self, ann_id, on_change)
 
-        self.meta.kind = "blockarrow"
+        self.kind ="blockarrow"
         self._width = w
         self._height = h
         self._adjust2 = max(10, min(w * 0.8, adjust2)) if w > 0 else adjust2
@@ -3121,13 +3145,16 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     can be dragged.
     """
 
+    KIND = "polygon"
+    KIND_ALIASES = frozenset(k for k, v in KIND_ALIAS_MAP.items() if v == "polygon")
+
     def __init__(self, x: float, y: float, w: float, h: float,
                  points: list, ann_id: str, on_change=None):
         QGraphicsPathItem.__init__(self)
         MetaMixin.__init__(self)
         LinkedMixin.__init__(self, ann_id, on_change)
 
-        self.meta.kind = "polygon"
+        self.kind ="polygon"
         self._width = max(w, 1.0)
         self._height = max(h, 1.0)
 
@@ -3656,6 +3683,9 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     and control points can be dragged.
     """
 
+    KIND = "curve"
+    KIND_ALIASES = frozenset(k for k, v in KIND_ALIAS_MAP.items() if v == "curve")
+
     ARROW_NONE = "none"
     ARROW_START = "start"
     ARROW_END = "end"
@@ -3664,15 +3694,19 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     # Valid SVG path commands
     _VALID_CMDS = {"M", "L", "H", "V", "C", "S", "Q", "T", "A", "Z"}
 
+    on_adjust1_changed = None  # Called with (item, new_value) when adjust1 changes via handle drag
+
     def __init__(self, x: float, y: float, w: float, h: float,
                  nodes: list, ann_id: str, on_change=None):
         QGraphicsPathItem.__init__(self)
         MetaMixin.__init__(self)
         LinkedMixin.__init__(self, ann_id, on_change)
 
-        self.meta.kind = "curve"
+        self.kind ="curve"
         self._width = max(w, 1.0)
         self._height = max(h, 1.0)
+        self._adjust1 = 0.0  # bend radius in pixels for H/V corners
+        self._start_adjust1: Optional[float] = None  # for drag tracking
 
         # Deep copy nodes and validate
         import copy
@@ -3737,6 +3771,7 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
         w, h = self._width, self._height
         prev_x, prev_y = 0.0, 0.0  # track last endpoint for H/V/S/T
+        r = self._adjust1  # bend radius in pixels
 
         for i, node in enumerate(self._nodes):
             cmd = node.get("cmd", "L")
@@ -3749,12 +3784,69 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             elif cmd == "L":
                 path.lineTo(nx * w, ny * h)
                 prev_x, prev_y = nx, ny
-            elif cmd == "H":
-                path.lineTo(nx * w, prev_y * h)
-                prev_x = nx
-            elif cmd == "V":
-                path.lineTo(prev_x * w, ny * h)
-                prev_y = ny
+            elif cmd in ("H", "V"):
+                # Compute the target endpoint for this segment
+                if cmd == "H":
+                    target_x, target_y = nx, prev_y
+                else:  # V
+                    target_x, target_y = prev_x, ny
+
+                # Check if next node forms an H/V corner and we have a bend radius
+                next_node = self._nodes[i + 1] if i + 1 < len(self._nodes) else None
+                next_cmd = next_node.get("cmd", "") if next_node else ""
+                has_corner = (r > 0 and cmd in ("H", "V") and next_cmd in ("H", "V")
+                              and next_cmd != cmd)
+
+                if has_corner:
+                    # Compute next segment endpoint
+                    if next_cmd == "H":
+                        next_target_x = next_node.get("x", target_x)
+                        next_target_y = target_y
+                    else:  # V
+                        next_target_x = target_x
+                        next_target_y = next_node.get("y", target_y)
+
+                    # Incoming segment length (in pixels)
+                    in_dx = (target_x - prev_x) * w
+                    in_dy = (target_y - prev_y) * h
+                    in_len = math.sqrt(in_dx * in_dx + in_dy * in_dy)
+
+                    # Outgoing segment length (in pixels)
+                    out_dx = (next_target_x - target_x) * w
+                    out_dy = (next_target_y - target_y) * h
+                    out_len = math.sqrt(out_dx * out_dx + out_dy * out_dy)
+
+                    effective_r = min(r, in_len / 2, out_len / 2)
+
+                    if effective_r > 0.5:
+                        # Normalize incoming and outgoing directions
+                        in_ux = in_dx / in_len if in_len > 0 else 0
+                        in_uy = in_dy / in_len if in_len > 0 else 0
+                        out_ux = out_dx / out_len if out_len > 0 else 0
+                        out_uy = out_dy / out_len if out_len > 0 else 0
+
+                        # Stop r pixels before the corner
+                        arc_start_x = target_x * w - in_ux * effective_r
+                        arc_start_y = target_y * h - in_uy * effective_r
+                        # Start r pixels into the outgoing segment
+                        arc_end_x = target_x * w + out_ux * effective_r
+                        arc_end_y = target_y * h + out_uy * effective_r
+
+                        path.lineTo(arc_start_x, arc_start_y)
+                        path.quadTo(target_x * w, target_y * h,
+                                    arc_end_x, arc_end_y)
+
+                        # Update prev to arc endpoint in relative coords
+                        prev_x = arc_end_x / w if w > 0 else target_x
+                        prev_y = arc_end_y / h if h > 0 else target_y
+                    else:
+                        # Too small for rounding, just draw straight
+                        path.lineTo(target_x * w, target_y * h)
+                        prev_x, prev_y = target_x, target_y
+                else:
+                    # No corner or no radius — straight line
+                    path.lineTo(target_x * w, target_y * h)
+                    prev_x, prev_y = target_x, target_y
             elif cmd == "C":
                 c1x = node.get("c1x", prev_x)
                 c1y = node.get("c1y", prev_y)
@@ -4091,13 +4183,73 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._update_path()
         self._update_label_position()
 
+    @property
+    def adjust1(self) -> float:
+        """Bend radius for H/V corner transitions."""
+        return self._adjust1
+
+    def set_adjust1(self, value: float):
+        """Set bend radius, clamping >= 0."""
+        value = max(0.0, value)
+        if abs(value - self._adjust1) < 0.01:
+            return
+        self._adjust1 = value
+        self.prepareGeometryChange()
+        self._update_path()
+        self._update_label_position()
+
+    def _has_hv_corners(self) -> bool:
+        """Return True if this curve has any H->V or V->H transitions."""
+        for i in range(1, len(self._nodes)):
+            prev_cmd = self._nodes[i - 1].get("cmd", "L")
+            cur_cmd = self._nodes[i].get("cmd", "L")
+            if (prev_cmd in ("H", "V") and cur_cmd in ("H", "V") and prev_cmd != cur_cmd):
+                return True
+            # Also detect M->H/V followed by the complement
+            if prev_cmd == "M" and cur_cmd in ("H", "V") and i + 1 < len(self._nodes):
+                next_cmd = self._nodes[i + 1].get("cmd", "L")
+                if next_cmd in ("H", "V") and next_cmd != cur_cmd:
+                    return True
+        return False
+
+    def _find_first_hv_corner(self) -> Optional[int]:
+        """Find index of the second node in the first H->V or V->H pair."""
+        for i in range(1, len(self._nodes) - 1):
+            cur_cmd = self._nodes[i].get("cmd", "L")
+            next_cmd = self._nodes[i + 1].get("cmd", "L")
+            if cur_cmd in ("H", "V") and next_cmd in ("H", "V") and cur_cmd != next_cmd:
+                return i + 1
+        return None
+
     # ---- Bounding-box handles ----
+
+    def _bend_radius_handle_local(self) -> Optional[QPointF]:
+        """Compute local position of the bend radius handle at first H/V corner."""
+        corner_idx = self._find_first_hv_corner()
+        if corner_idx is None:
+            return None
+        w, h = self._width, self._height
+        # The corner point is the endpoint of the node before corner_idx
+        corner_x, corner_y = self._get_node_anchor(corner_idx - 1)
+        # Incoming direction from the node before that
+        prev_x, prev_y = self._get_node_anchor(corner_idx - 2) if corner_idx >= 2 else (corner_x, corner_y)
+        in_dx = (corner_x - prev_x) * w
+        in_dy = (corner_y - prev_y) * h
+        in_len = math.sqrt(in_dx * in_dx + in_dy * in_dy)
+        if in_len < 1e-6:
+            return None
+        in_ux = in_dx / in_len
+        in_uy = in_dy / in_len
+        # Position handle r pixels back from corner along incoming direction
+        handle_x = corner_x * w - in_ux * self._adjust1
+        handle_y = corner_y * h - in_uy * self._adjust1
+        return QPointF(handle_x, handle_y)
 
     def _handle_points_scene(self) -> Dict[str, QPointF]:
         p = self.pos()
         cx = p.x() + self._width / 2
         cy = p.y() + self._height / 2
-        return {
+        handles = {
             "tl": QPointF(p.x(), p.y()),
             "tr": QPointF(p.x() + self._width, p.y()),
             "bl": QPointF(p.x(), p.y() + self._height),
@@ -4107,11 +4259,15 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             "l":  QPointF(p.x(), cy),
             "r":  QPointF(p.x() + self._width, cy),
         }
+        br_local = self._bend_radius_handle_local()
+        if br_local is not None:
+            handles["adjust1"] = QPointF(p.x() + br_local.x(), p.y() + br_local.y())
+        return handles
 
     def _handle_points_local(self) -> Dict[str, QPointF]:
         cx = self._width / 2
         cy = self._height / 2
-        return {
+        handles = {
             "tl": QPointF(0, 0),
             "tr": QPointF(self._width, 0),
             "bl": QPointF(0, self._height),
@@ -4121,13 +4277,23 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             "l":  QPointF(0, cy),
             "r":  QPointF(self._width, cy),
         }
+        br_local = self._bend_radius_handle_local()
+        if br_local is not None:
+            handles["adjust1"] = br_local
+        return handles
 
     def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
         if not self._should_paint_handles():
             return None
         handles = self._handle_points_scene()
         hit_dist = _get_hit_distance()
+        # Test adjust1 first (it may overlap with other handles)
+        if "adjust1" in handles:
+            if QLineF(scene_pt, handles["adjust1"]).length() <= hit_dist:
+                return "adjust1"
         for k, hp in handles.items():
+            if k == "adjust1":
+                continue
             if QLineF(scene_pt, hp).length() <= hit_dist:
                 return k
         return None
@@ -4216,7 +4382,9 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 self.setCursor(Qt.CursorShape.ArrowCursor)
         else:
             h = self._hit_test_handle(event.scenePos())
-            if h in ("tl", "br"):
+            if h == "adjust1":
+                self.setCursor(Qt.CursorShape.CrossCursor)
+            elif h in ("tl", "br"):
                 self.setCursor(Qt.CursorShape.SizeFDiagCursor)
             elif h in ("tr", "bl"):
                 self.setCursor(Qt.CursorShape.SizeBDiagCursor)
@@ -4274,11 +4442,13 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                     event.accept()
                     return
 
-            # Bounding-box handle resize
+            # Bounding-box handle resize (or adjust1)
             h = self._hit_test_handle(event.scenePos())
             if h:
                 self._begin_resize_tracking()
                 self._active_handle = h
+                if h == "adjust1":
+                    self._start_adjust1 = self._adjust1
                 self._resizing = True
                 self._press_scene = event.scenePos()
                 self._start_pos = QPointF(self.pos())
@@ -4288,6 +4458,29 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        # Adjust1 (bend radius) handle drag
+        if self._resizing and self._active_handle == "adjust1":
+            corner_idx = self._find_first_hv_corner()
+            if corner_idx is not None:
+                cur = event.scenePos()
+                p = self.pos()
+                w, h = self._width, self._height
+                corner_x, corner_y = self._get_node_anchor(corner_idx - 1)
+                # Distance from cursor to corner point in pixels
+                dx = cur.x() - (p.x() + corner_x * w)
+                dy = cur.y() - (p.y() + corner_y * h)
+                dist = math.sqrt(dx * dx + dy * dy)
+                new_r = max(0.0, min(200.0, dist))
+                self._adjust1 = new_r
+                self.prepareGeometryChange()
+                self._update_path()
+                self._update_label_position()
+                if MetaCurveItem.on_adjust1_changed:
+                    MetaCurveItem.on_adjust1_changed(self, new_r)
+                self._notify_changed()
+            event.accept()
+            return
+
         # Node dragging
         if self._node_dragging and self._active_node is not None:
             cur = event.scenePos()
@@ -4584,13 +4777,13 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 if self.arrow_mode in (self.ARROW_END, self.ARROW_BOTH):
                     # Arrow at end: last two distinct points
                     from_pt, to_pt = self._get_path_end_segment(path, from_end=True)
-                    if from_pt and to_pt:
+                    if from_pt is not None and to_pt is not None:
                         self._draw_arrowhead(painter, from_pt, to_pt, effective_arrow_size)
 
                 if self.arrow_mode in (self.ARROW_START, self.ARROW_BOTH):
                     # Arrow at start: first two distinct points
                     from_pt, to_pt = self._get_path_end_segment(path, from_end=False)
-                    if from_pt and to_pt:
+                    if from_pt is not None and to_pt is not None:
                         self._draw_arrowhead(painter, from_pt, to_pt, effective_arrow_size)
 
         if not self._should_paint_handles():
@@ -4604,7 +4797,24 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             painter.setPen(sel_pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawPath(self.path())
-            draw_handles(painter, self._handle_points_local())
+
+            # Draw resize handles (excluding adjust1)
+            handles = self._handle_points_local()
+            adjust1_handle_pos = handles.pop("adjust1", None)
+            # Remove any subclass-added handles that aren't bbox handles
+            for k in list(handles):
+                if k.startswith("ortho_"):
+                    handles.pop(k)
+            draw_handles(painter, handles)
+
+            # Draw adjust1 handle in yellow
+            if adjust1_handle_pos is not None:
+                handle_size = _get_handle_size()
+                half = handle_size / 2
+                painter.setPen(QPen(QColor(204, 153, 0), 1))  # Dark yellow border
+                painter.setBrush(QBrush(QColor(255, 215, 0)))  # Gold/yellow fill
+                painter.drawEllipse(QRectF(adjust1_handle_pos.x() - half, adjust1_handle_pos.y() - half,
+                                           handle_size, handle_size))
 
     def _paint_node_handles(self, painter: QPainter):
         """Paint node editing handles: green circles for anchors, blue diamonds for controls."""
@@ -4754,18 +4964,970 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         style["arrow"] = self.arrow_mode
         style["arrow_size"] = round(self.arrow_size, 1)
 
+        geom = {
+            "x": round1(p.x()),
+            "y": round1(p.y()),
+            "w": round1(self._width),
+            "h": round1(self._height),
+            "nodes": clean_nodes,
+        }
+        if self._adjust1 > 0:
+            geom["adjust1"] = round(self._adjust1, 1)
+
         rec = {
             "id": self.ann_id,
             "kind": "curve",
+            "geom": geom,
+            **self._meta_dict(self.meta),
+            "style": style,
+        }
+        z = self.zValue()
+        if z != 0:
+            rec["z"] = int(z)
+        return rec
+
+
+class MetaOrthoCurveItem(MetaCurveItem):
+    """Orthogonal curve restricted to M/H/V nodes with green handles and Ctrl+click extend.
+
+    Inherits core curve infrastructure (path rendering, node editing, arrowheads,
+    bbox resize, adjust1/bend-radius handle) from MetaCurveItem.  Adds ortho-specific
+    features: green control handles at each H/V node, Ctrl+click endpoint extension,
+    and linked H/V node dragging.
+    """
+
+    KIND = "orthocurve"
+    KIND_ALIASES = frozenset(k for k, v in KIND_ALIAS_MAP.items() if v == "orthocurve")
+
+    def __init__(self, x: float, y: float, w: float, h: float,
+                 nodes: list, ann_id: str, on_change=None):
+        super().__init__(x, y, w, h, nodes, ann_id, on_change)
+        self.kind = "orthocurve"
+        self._ortho_drag_idx: Optional[int] = None
+
+    # ---- Ortho-specific helpers ----
+
+    def _has_hv_nodes(self) -> bool:
+        """Return True if this curve has any H or V command nodes."""
+        return any(n.get("cmd") in ("H", "V") for n in self._nodes)
+
+    def _last_path_index(self) -> int:
+        """Return index of last non-Z node."""
+        idx = len(self._nodes) - 1
+        while idx > 0 and self._nodes[idx].get("cmd") == "Z":
+            idx -= 1
+        return idx
+
+    def _try_extend_ortho(self, scene_pt: QPointF) -> bool:
+        """Try to extend ortho curve at start or end via Ctrl+click.
+
+        Returns True if the curve was extended.
+        """
+        if not self._has_hv_nodes():
+            return False
+        hit_dist = _get_hit_distance()
+        p = self.pos()
+        w, h = self._width, self._height
+
+        first_ax, first_ay = self._get_node_anchor(0)
+        first_scene = QPointF(p.x() + first_ax * w, p.y() + first_ay * h)
+
+        last_idx = self._last_path_index()
+        last_ax, last_ay = self._get_node_anchor(last_idx)
+        last_scene = QPointF(p.x() + last_ax * w, p.y() + last_ay * h)
+
+        near_end = QLineF(scene_pt, last_scene).length() <= hit_dist
+        near_start = QLineF(scene_pt, first_scene).length() <= hit_dist
+
+        if near_end:
+            self._extend_ortho_end(scene_pt)
+            return True
+        if near_start:
+            self._extend_ortho_start(scene_pt)
+            return True
+        return False
+
+    def _extend_ortho_end(self, scene_pt: QPointF):
+        """Append an orthogonal segment at the end of the curve."""
+        self._begin_resize_tracking()
+        p = self.pos()
+        rx = (scene_pt.x() - p.x()) / self._width if self._width > 0 else 0.5
+        ry = (scene_pt.y() - p.y()) / self._height if self._height > 0 else 0.5
+
+        last_idx = self._last_path_index()
+        last_cmd = self._nodes[last_idx].get("cmd", "L")
+
+        if last_cmd == "H":
+            new_node = {"cmd": "V", "y": ry}
+        elif last_cmd == "V":
+            new_node = {"cmd": "H", "x": rx}
+        else:
+            last_ax, last_ay = self._get_node_anchor(last_idx)
+            if abs(rx - last_ax) >= abs(ry - last_ay):
+                new_node = {"cmd": "H", "x": rx}
+            else:
+                new_node = {"cmd": "V", "y": ry}
+
+        self._nodes.insert(last_idx + 1, new_node)
+        self._recalculate_bbox()
+        self._notify_changed()
+        self._end_resize_tracking()
+
+    def _extend_ortho_start(self, scene_pt: QPointF):
+        """Prepend a new start point, converting old M to an orthogonal node."""
+        self._begin_resize_tracking()
+        p = self.pos()
+        rx = (scene_pt.x() - p.x()) / self._width if self._width > 0 else 0.5
+        ry = (scene_pt.y() - p.y()) / self._height if self._height > 0 else 0.5
+
+        old_m = self._nodes[0]
+        old_mx = old_m.get("x", 0.0)
+        old_my = old_m.get("y", 0.0)
+
+        if len(self._nodes) > 1:
+            next_cmd = self._nodes[1].get("cmd", "L")
+            if next_cmd == "H":
+                old_m["cmd"] = "V"
+                old_m["y"] = old_my
+                old_m.pop("x", None)
+            elif next_cmd == "V":
+                old_m["cmd"] = "H"
+                old_m["x"] = old_mx
+                old_m.pop("y", None)
+            else:
+                old_m["cmd"] = "L"
+        else:
+            old_m["cmd"] = "L"
+
+        self._nodes.insert(0, {"cmd": "M", "x": rx, "y": ry})
+        self._recalculate_bbox()
+        self._notify_changed()
+        self._end_resize_tracking()
+
+    # ---- Ortho control handle positions ----
+
+    def _ortho_handle_points_local(self) -> Dict[str, QPointF]:
+        """Return local positions of ortho control handles at each H/V node."""
+        handles: Dict[str, QPointF] = {}
+        w, h = self._width, self._height
+        for i in range(1, len(self._nodes)):
+            cmd = self._nodes[i].get("cmd", "L")
+            if cmd not in ("H", "V"):
+                continue
+            ax, ay = self._get_node_anchor(i)
+            handles[f"ortho_{i}"] = QPointF(ax * w, ay * h)
+        return handles
+
+    # ---- Ortho node insertion ----
+
+    def _flip_subsequent_hv(self, start_idx: int):
+        """Flip H<->V commands for all nodes from start_idx onwards."""
+        for i in range(start_idx, len(self._nodes)):
+            node = self._nodes[i]
+            cmd = node.get("cmd")
+            if cmd == "H":
+                val = node.pop("x", 0)
+                node["cmd"] = "V"
+                node["y"] = val
+            elif cmd == "V":
+                val = node.pop("y", 0)
+                node["cmd"] = "H"
+                node["x"] = val
+
+    def _insert_node_after(self, idx: int):
+        """Insert an ortho node after idx with opposite cmd, then flip subsequent."""
+        node = self._nodes[idx]
+        cmd = node.get("cmd", "L")
+        ax, ay = self._get_node_anchor(idx)
+        if idx + 1 < len(self._nodes):
+            nx, ny = self._get_node_anchor(idx + 1)
+        else:
+            nx, ny = ax + 0.1, ay
+
+        if cmd == "V":
+            new_node = {"cmd": "H", "x": (ax + nx) / 2}
+        elif cmd in ("H", "M"):
+            new_node = {"cmd": "V", "y": (ay + ny) / 2}
+        else:
+            new_node = {"cmd": "L", "x": (ax + nx) / 2, "y": (ay + ny) / 2}
+
+        self.prepareGeometryChange()
+        self._nodes.insert(idx + 1, new_node)
+        self._flip_subsequent_hv(idx + 2)
+        self._update_path()
+        self._update_label_position()
+        self._notify_changed()
+
+    def _insert_ortho_node_on_edge(self, edge_idx: int, scene_pt: QPointF):
+        """Insert an ortho node on edge at click position, then flip subsequent."""
+        p = self.pos()
+        rx = (scene_pt.x() - p.x()) / self._width if self._width > 0 else 0.5
+        ry = (scene_pt.y() - p.y()) / self._height if self._height > 0 else 0.5
+
+        prev_node = self._nodes[edge_idx]
+        prev_cmd = prev_node.get("cmd", "L")
+
+        if prev_cmd == "V":
+            new_node = {"cmd": "H", "x": rx}
+        elif prev_cmd in ("H", "M"):
+            new_node = {"cmd": "V", "y": ry}
+        else:
+            new_node = {"cmd": "L", "x": rx, "y": ry}
+
+        self.prepareGeometryChange()
+        self._nodes.insert(edge_idx + 1, new_node)
+        self._flip_subsequent_hv(edge_idx + 2)
+        self._update_path()
+        self._update_label_position()
+        self._notify_changed()
+
+    # ---- Handle overrides ----
+
+    def _handle_points_scene(self) -> Dict[str, QPointF]:
+        handles = super()._handle_points_scene()
+        p = self.pos()
+        for k, lp in self._ortho_handle_points_local().items():
+            handles[k] = QPointF(p.x() + lp.x(), p.y() + lp.y())
+        return handles
+
+    def _handle_points_local(self) -> Dict[str, QPointF]:
+        handles = super()._handle_points_local()
+        handles.update(self._ortho_handle_points_local())
+        return handles
+
+    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
+        if not self._should_paint_handles():
+            return None
+        handles = self._handle_points_scene()
+        hit_dist = _get_hit_distance()
+        # Test adjust1 first (it may overlap with other handles)
+        if "adjust1" in handles:
+            if QLineF(scene_pt, handles["adjust1"]).length() <= hit_dist:
+                return "adjust1"
+        # Test ortho handles next (priority over bbox handles)
+        for k, hp in handles.items():
+            if k.startswith("ortho_") and QLineF(scene_pt, hp).length() <= hit_dist:
+                return k
+        for k, hp in handles.items():
+            if k == "adjust1" or k.startswith("ortho_"):
+                continue
+            if QLineF(scene_pt, hp).length() <= hit_dist:
+                return k
+        return None
+
+    # ---- Mouse interaction overrides ----
+
+    def hoverMoveEvent(self, event):
+        if not self._node_editing:
+            h = self._hit_test_handle(event.scenePos())
+            if h and h.startswith("ortho_"):
+                self.setCursor(Qt.CursorShape.SizeAllCursor)
+                QGraphicsPathItem.hoverMoveEvent(self, event)
+                return
+        super().hoverMoveEvent(event)
+
+    def mousePressEvent(self, event):
+        # Right-click on edge in node editing: insert ortho node + flip subsequent
+        if event.button() == Qt.MouseButton.RightButton and self._node_editing:
+            scene_pt = event.scenePos()
+            hit = self._hit_test_node(scene_pt)
+            if hit is None:
+                edge_idx = self._hit_test_edge(scene_pt)
+                if edge_idx is not None:
+                    self._insert_ortho_node_on_edge(edge_idx, scene_pt)
+                    event.accept()
+                    return
+        if event.button() == Qt.MouseButton.LeftButton:
+            # Ctrl+click near start/end to extend ortho curve
+            if (event.modifiers() & Qt.KeyboardModifier.ControlModifier
+                    and not self._node_editing):
+                if self._try_extend_ortho(event.scenePos()):
+                    event.accept()
+                    return
+        super().mousePressEvent(event)
+        # If super set _active_handle to an ortho handle, record the index
+        if self._active_handle and self._active_handle.startswith("ortho_"):
+            self._ortho_drag_idx = int(self._active_handle.split("_", 1)[1])
+
+    def mouseMoveEvent(self, event):
+        # Ortho control handle drag (linked H/V node movement)
+        if self._resizing and self._ortho_drag_idx is not None:
+            cur = event.scenePos()
+            p = self.pos()
+            rx = (cur.x() - p.x()) / self._width if self._width > 0 else 0.5
+            ry = (cur.y() - p.y()) / self._height if self._height > 0 else 0.5
+            idx = self._ortho_drag_idx
+            node = self._nodes[idx]
+            prev = self._nodes[idx - 1]
+            cmd = node.get("cmd")
+            prev_cmd = prev.get("cmd")
+            if cmd == "H":
+                node["x"] = rx
+                if prev_cmd == "V":
+                    prev["y"] = ry
+                elif prev_cmd in ("M", "L"):
+                    prev["y"] = ry
+            elif cmd == "V":
+                node["y"] = ry
+                if prev_cmd == "H":
+                    prev["x"] = rx
+                elif prev_cmd in ("M", "L"):
+                    prev["x"] = rx
+            self.prepareGeometryChange()
+            self._update_path()
+            self._update_label_position()
+            self._notify_changed()
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._resizing and self._ortho_drag_idx is not None:
+            self._end_resize_tracking()
+            self._recalculate_bbox()
+            self._ortho_drag_idx = None
+            self._resizing = False
+            self._active_handle = None
+            self._press_scene = None
+            self._start_pos = None
+            self._start_size = None
+            self._notify_changed()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    # ---- Paint override ----
+
+    def _paint_node_handles(self, painter: QPainter):
+        """Paint ortho node handles: green circle for M node, blue squares for H/V."""
+        handle_size = _get_handle_size()
+        half = handle_size / 2
+        w, h = self._width, self._height
+
+        for i, node in enumerate(self._nodes):
+            cmd = node.get("cmd", "L")
+            if cmd == "Z":
+                continue
+            ax, ay = self._get_node_anchor(i)
+            anchor_local = QPointF(ax * w, ay * h)
+
+            is_active = (i == self._active_node and self._active_handle_type == "anchor")
+            if is_active:
+                painter.setPen(QPen(QColor(204, 102, 0), 1))
+                painter.setBrush(QBrush(QColor(255, 165, 0)))
+            elif i == 0:
+                # First node (M): green circle — free movement
+                painter.setPen(QPen(QColor(0, 128, 0), 1))
+                painter.setBrush(QBrush(QColor(0, 200, 0)))
+            else:
+                # H/V nodes: blue square — orthogonal movement
+                painter.setPen(QPen(QColor(0, 70, 180), 1))
+                painter.setBrush(QBrush(QColor(80, 140, 255)))
+
+            if i == 0 or is_active:
+                # Circle for first node and active node
+                painter.drawEllipse(QRectF(anchor_local.x() - half, anchor_local.y() - half,
+                                           handle_size, handle_size))
+            else:
+                # Square for H/V nodes
+                painter.drawRect(QRectF(anchor_local.x() - half, anchor_local.y() - half,
+                                        handle_size, handle_size))
+
+    def paint(self, painter: QPainter, option, widget=None):
+        super().paint(painter, option, widget)
+        # Paint green ortho control handles on top
+        if self._should_paint_handles() and not self._node_editing:
+            ortho_handles = self._ortho_handle_points_local()
+            if ortho_handles:
+                handle_size = _get_handle_size()
+                half = handle_size / 2
+                painter.setPen(QPen(QColor(0, 128, 0), 1))
+                painter.setBrush(QBrush(QColor(0, 200, 0)))
+                for hp in ortho_handles.values():
+                    painter.drawEllipse(QRectF(hp.x() - half, hp.y() - half,
+                                               handle_size, handle_size))
+
+    # ---- Serialization ----
+
+    def to_record(self) -> Dict[str, Any]:
+        """Serialize orthocurve to JSON record."""
+        rec = super().to_record()
+        rec["kind"] = "orthocurve"
+        return rec
+
+
+class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
+    """Isometric cube with configurable depth and extrusion angle.
+
+    adjust1: depth of isometric extrusion in pixels (0–max(w,h), default 30)
+    adjust2: angle of isometric extrusion in degrees (0–360, default 135)
+    """
+
+    KIND = "isocube"
+    KIND_ALIASES = frozenset(k for k, v in KIND_ALIAS_MAP.items() if v == "isocube")
+
+    # Class-level callbacks for property changes
+    on_adjust1_changed = None
+    on_adjust2_changed = None
+
+    def __init__(self, x: float, y: float, w: float, h: float, adjust1: float, adjust2: float, ann_id: str, on_change=None):
+        QGraphicsPathItem.__init__(self)
+        MetaMixin.__init__(self)
+        LinkedMixin.__init__(self, ann_id, on_change)
+
+        self.kind = "isocube"
+        self._width = w
+        self._height = h
+        self._adjust1 = max(0.0, float(adjust1))     # depth px (clamped to bbox on resize)
+        self._adjust2 = max(0, min(360, adjust2))     # angle degrees
+        self.setPos(QPointF(x, y))
+        self.setData(ANN_ID_KEY, ann_id)
+        self._update_path()
+
+        self.setAcceptHoverEvents(True)
+
+        self.setFlags(
+            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+            | QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+            | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
+        )
+
+        self._active_handle: Optional[str] = None
+        self._resizing = False
+        self._press_scene: Optional[QPointF] = None
+        self._start_pos: Optional[QPointF] = None
+        self._start_size: Optional[Tuple[float, float]] = None
+        self._start_adjust1: Optional[float] = None
+        self._start_adjust2: Optional[float] = None
+
+        self.pen_color = QColor("#000000")
+        self.pen_width = 2
+        self.brush_color = QColor(200, 200, 200, 200)
+        self.text_color = QColor(self.pen_color)
+        self.line_dash = "solid"
+        cached = _CachedCanvasSettings.get()
+        self.dash_pattern_length = cached.default_dash_length
+        self.dash_solid_percent = cached.default_dash_solid_percent
+        self._apply_pen_brush()
+
+        self._label_item = QGraphicsTextItem(self)
+        self._label_item.setDefaultTextColor(self.text_color)
+        self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        self._update_label_position()
+
+    # ----- geometry helpers ---------------------------------------------------
+
+    def _max_depth(self) -> float:
+        """Return maximum allowed depth: the larger bounding-box dimension."""
+        return max(self._width, self._height)
+
+    def _effective_depth(self) -> float:
+        """Return depth clamped so the cube fits within the bounding box.
+
+        The offset along each axis must not exceed that axis's dimension.
+        """
+        depth = self._adjust1
+        rad = math.radians(self._adjust2)
+        abs_sin = abs(math.sin(rad))
+        abs_cos = abs(math.cos(rad))
+        if abs_sin > 1e-9:
+            depth = min(depth, self._width / abs_sin)
+        if abs_cos > 1e-9:
+            depth = min(depth, self._height / abs_cos)
+        return max(0.0, depth)
+
+    def _depth_offset(self) -> Tuple[float, float]:
+        """Return (dx, dy) offset from front face to back face.
+
+        adjust2 stores the outward direction of the front face
+        (0° = up, CW positive).  Extrusion goes opposite.
+        Uses effective depth so the cube fits within the bounding box.
+        """
+        depth = self._effective_depth()
+        rad = math.radians(self._adjust2)
+        return -depth * math.sin(rad), depth * math.cos(rad)
+
+    def _front_rect(self) -> Tuple[float, float, float, float]:
+        """Return (fx, fy, fw, fh) for the front face, inset so the whole shape fits in (w, h)."""
+        dx, dy = self._depth_offset()
+        adx, ady = abs(dx), abs(dy)
+        fw = max(1, self._width - adx)
+        fh = max(1, self._height - ady)
+        # Shift front face so depth extends outward from it
+        fx = adx if dx < 0 else 0
+        fy = ady if dy < 0 else 0
+        # Clamp so front face stays within bounding box even at extreme depth
+        fx = max(0, min(fx, self._width - fw))
+        fy = max(0, min(fy, self._height - fh))
+        return fx, fy, fw, fh
+
+    def _update_path(self):
+        """Build the isometric cube path from current dimensions."""
+        path = QPainterPath()
+        # WindingFill so overlapping face polygons are all "inside" for hit-testing.
+        # Default OddEvenFill treats even-overlap regions as holes → flicker on hover.
+        path.setFillRule(Qt.FillRule.WindingFill)
+        if self._adjust1 < 0.5:
+            fx, fy, fw, fh = self._front_rect()
+            path.addRect(QRectF(fx, fy, fw, fh))
+        else:
+            for face in self._face_polygons():
+                path.addPolygon(face)
+        self.setPath(path)
+
+    def _face_polygons(self):
+        """Return the 6 cube face polygons in back-to-front paint order.
+
+        The order depends on the angle quadrant so that faces closer
+        to the viewer are painted on top of faces further away.
+        Front face is always last.
+
+        Extrusion offset is (-sin θ, cos θ) × depth, so the back face
+        position relative to the front determines which side faces are
+        forward (closer to viewer):
+          0–90°:   back is left+below  → left & bottom forward
+          90–180°: back is left+above  → left & top forward
+          180–270°: back is right+above → right & top forward
+          270–360°: back is right+below → right & bottom forward
+        """
+        dx, dy = self._depth_offset()
+        fx, fy, fw, fh = self._front_rect()
+        # Front corners
+        f_tl = QPointF(fx, fy)
+        f_tr = QPointF(fx + fw, fy)
+        f_bl = QPointF(fx, fy + fh)
+        f_br = QPointF(fx + fw, fy + fh)
+        # Back corners
+        b_tl = QPointF(fx + dx, fy + dy)
+        b_tr = QPointF(fx + fw + dx, fy + dy)
+        b_bl = QPointF(fx + dx, fy + fh + dy)
+        b_br = QPointF(fx + fw + dx, fy + fh + dy)
+
+        back   = QPolygonF([b_tl, b_tr, b_br, b_bl])
+        left   = QPolygonF([b_tl, b_bl, f_bl, f_tl])
+        bottom = QPolygonF([b_bl, b_br, f_br, f_bl])
+        top    = QPolygonF([f_tl, f_tr, b_tr, b_tl])
+        right  = QPolygonF([f_tr, f_br, b_br, b_tr])
+        front  = QPolygonF([f_tl, f_tr, f_br, f_bl])
+
+        angle = self._adjust2 % 360
+        if angle < 90:      # back is left+below → left & bottom forward
+            return [back, top, right, bottom, left, front]
+        elif angle < 180:   # back is left+above → left & top forward
+            return [back, bottom, right, top, left, front]
+        elif angle < 270:   # back is right+above → right & top forward
+            return [back, bottom, left, top, right, front]
+        else:               # back is right+below → right & bottom forward
+            return [back, top, left, bottom, right, front]
+
+    # ----- visual helpers -----------------------------------------------------
+
+    def _apply_pen_brush(self):
+        """Apply pen and brush from current colors."""
+        pen = QPen(self.pen_color, self.pen_width)
+        _apply_dash_style(pen, self.line_dash, self.dash_pattern_length, self.dash_solid_percent)
+        self.setPen(pen)
+        self.setBrush(QBrush(self.brush_color))
+
+    def _update_label_position(self):
+        """Position label text inside the front face."""
+        fx, fy, fw, fh = self._front_rect()
+        padding = 4
+        self._label_item.setTextWidth(max(10, fw - 2 * padding))
+
+        text_height = self._label_item.boundingRect().height()
+        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
+
+        if valign == "middle":
+            y_pos = fy + (fh - text_height) / 2
+        elif valign == "bottom":
+            y_pos = fy + fh - padding - text_height
+        else:
+            y_pos = fy + padding
+
+        self._label_item.setPos(fx + padding, max(fy + padding, y_pos))
+
+    def _update_label_text(self):
+        """Rebuild label HTML from meta fields."""
+        lines = []
+        align_map = {"left": "left", "center": "center", "right": "right"}
+
+        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
+        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
+
+        if self.meta.label:
+            align = align_map.get(self.meta.label_align, "center")
+            size = self.meta.label_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
+        if self.meta.tech:
+            align = align_map.get(self.meta.tech_align, "center")
+            size = self.meta.tech_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
+        if self.meta.note:
+            align = align_map.get(self.meta.note_align, "center")
+            size = self.meta.note_size
+            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
+
+        self._label_item.setHtml("".join(lines) if lines else "")
+        self._label_item.setDefaultTextColor(self.text_color)
+        self._update_label_position()
+
+    def set_meta(self, meta: AnnotationMeta) -> None:
+        """Set annotation metadata and update label display."""
+        self.meta = meta
+        self._update_label_text()
+
+    # ----- geometry accessors -------------------------------------------------
+
+    def rect(self) -> QRectF:
+        """Return bounding rect of the item in local coords."""
+        return QRectF(0, 0, self._width, self._height)
+
+    def setRect(self, r: QRectF):
+        """Resize the item to the given local rect."""
+        self._width = r.width()
+        self._height = r.height()
+        self._update_path()
+        self._update_label_position()
+
+    def adjust1(self) -> float:
+        """Return current depth (px)."""
+        return self._adjust1
+
+    def set_adjust1(self, value: float):
+        """Set depth (px), clamped to 0–max_depth."""
+        self._adjust1 = max(0, min(self._max_depth(), value))
+        self._update_path()
+        self._update_label_position()
+
+    def adjust2(self) -> float:
+        """Return current angle (degrees)."""
+        return self._adjust2
+
+    def set_adjust2(self, value: float):
+        """Set angle (degrees), clamped to 0–360."""
+        self._adjust2 = max(0, min(360, value))
+        self._update_path()
+        self._update_label_position()
+
+    # ----- handles ------------------------------------------------------------
+
+    def _handle_points_scene(self) -> Dict[str, QPointF]:
+        """Return handle positions in scene coordinates."""
+        p = self.pos()
+        cx = p.x() + self._width / 2
+        cy = p.y() + self._height / 2
+        fx, fy, fw, fh = self._front_rect()
+        # Depth handle on the front face center (drag away from back to increase depth)
+        front_cx = fx + fw / 2
+        front_cy = fy + fh / 2
+        return {
+            "tl": QPointF(p.x(), p.y()),
+            "tr": QPointF(p.x() + self._width, p.y()),
+            "bl": QPointF(p.x(), p.y() + self._height),
+            "br": QPointF(p.x() + self._width, p.y() + self._height),
+            "t":  QPointF(cx, p.y()),
+            "b":  QPointF(cx, p.y() + self._height),
+            "l":  QPointF(p.x(), cy),
+            "r":  QPointF(p.x() + self._width, cy),
+            "adjust1": QPointF(p.x() + front_cx, p.y() + front_cy),
+            # Angle handle at bbox center (stable — doesn't shift with angle/depth)
+            "adjust2": QPointF(cx + 20 * math.sin(math.radians(self._adjust2)),
+                               cy - 20 * math.cos(math.radians(self._adjust2))),
+        }
+
+    def _handle_points_local(self) -> Dict[str, QPointF]:
+        """Return handle positions in local coordinates."""
+        cx = self._width / 2
+        cy = self._height / 2
+        fx, fy, fw, fh = self._front_rect()
+        front_cx = fx + fw / 2
+        front_cy = fy + fh / 2
+        return {
+            "tl": QPointF(0, 0),
+            "tr": QPointF(self._width, 0),
+            "bl": QPointF(0, self._height),
+            "br": QPointF(self._width, self._height),
+            "t":  QPointF(cx, 0),
+            "b":  QPointF(cx, self._height),
+            "l":  QPointF(0, cy),
+            "r":  QPointF(self._width, cy),
+            "adjust1": QPointF(front_cx, front_cy),
+            # Angle handle at bbox center (stable — doesn't shift with angle/depth)
+            "adjust2": QPointF(cx + 20 * math.sin(math.radians(self._adjust2)),
+                               cy - 20 * math.cos(math.radians(self._adjust2))),
+        }
+
+    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
+        """Hit-test against all handles."""
+        if not self._should_paint_handles():
+            return None
+        handles = self._handle_points_scene()
+        hit_dist = _get_hit_distance()
+        for k, hp in handles.items():
+            if QLineF(scene_pt, hp).length() <= hit_dist:
+                return k
+        return None
+
+    def hoverMoveEvent(self, event):
+        """Update cursor based on handle under mouse."""
+        h = self._hit_test_handle(event.scenePos())
+        if h in ("tl", "br"):
+            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+        elif h in ("tr", "bl"):
+            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+        elif h in ("t", "b"):
+            self.setCursor(Qt.CursorShape.SizeVerCursor)
+        elif h in ("l", "r"):
+            self.setCursor(Qt.CursorShape.SizeHorCursor)
+        elif h in ("adjust1", "adjust2"):
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        else:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+        super().hoverMoveEvent(event)
+
+    def mousePressEvent(self, event):
+        """Begin resize/adjust tracking on handle press."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            h = self._hit_test_handle(event.scenePos())
+            if h:
+                self._begin_resize_tracking()
+                self._active_handle = h
+                self._resizing = True
+                self._press_scene = event.scenePos()
+                self._start_pos = QPointF(self.pos())
+                self._start_size = (self._width, self._height)
+                self._start_adjust1 = self._adjust1
+                self._start_adjust2 = self._adjust2
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """Handle drag for resize and adjust handles."""
+        if self._resizing and self._active_handle and self._press_scene and self._start_pos and self._start_size:
+            cur = event.scenePos()
+            d_x = cur.x() - self._press_scene.x()
+            d_y = cur.y() - self._press_scene.y()
+
+            # adjust1 (depth): drag front face away from back to increase depth
+            if self._active_handle == "adjust1" and self._start_adjust1 is not None:
+                fx, fy, fw, fh = self._front_rect()
+                front_cx = self.pos().x() + fx + fw / 2
+                front_cy = self.pos().y() + fy + fh / 2
+                vec_x = cur.x() - front_cx
+                vec_y = cur.y() - front_cy
+                rad = math.radians(self._adjust2)
+                sin_a, cos_a = math.sin(rad), math.cos(rad)
+                # Extrusion dir is (-sin, cos); negate to get "pull outward = more depth"
+                proj = vec_x * sin_a - vec_y * cos_a
+                new_depth = max(0, min(self._max_depth(), proj))
+                self._adjust1 = new_depth
+                self._update_path()
+                self._update_label_position()
+                self._notify_changed()
+                if MetaIsoCubeItem.on_adjust1_changed:
+                    MetaIsoCubeItem.on_adjust1_changed(self, new_depth)
+                event.accept()
+                return
+
+            # adjust2 (angle): atan2 from bbox center to cursor
+            if self._active_handle == "adjust2" and self._start_adjust2 is not None:
+                # Use bbox center — stable reference that doesn't shift with angle
+                ref_x = self.pos().x() + self._width / 2
+                ref_y = self.pos().y() + self._height / 2
+                vec_x = cur.x() - ref_x
+                vec_y = cur.y() - ref_y
+                angle_deg = math.degrees(math.atan2(vec_x, -vec_y)) % 360
+                self._adjust2 = angle_deg
+                self._update_path()
+                self._update_label_position()
+                self._notify_changed()
+                if MetaIsoCubeItem.on_adjust2_changed:
+                    MetaIsoCubeItem.on_adjust2_changed(self, angle_deg)
+                event.accept()
+                return
+
+            # Standard bbox resize handles
+            x0 = self._start_pos.x()
+            y0 = self._start_pos.y()
+            w0, h0 = self._start_size
+
+            left = x0
+            top = y0
+            right = x0 + w0
+            bottom = y0 + h0
+
+            if self._active_handle == "tl":
+                left += d_x; top += d_y
+            elif self._active_handle == "tr":
+                right += d_x; top += d_y
+            elif self._active_handle == "bl":
+                left += d_x; bottom += d_y
+            elif self._active_handle == "br":
+                right += d_x; bottom += d_y
+            elif self._active_handle == "t":
+                top += d_y
+            elif self._active_handle == "b":
+                bottom += d_y
+            elif self._active_handle == "l":
+                left += d_x
+            elif self._active_handle == "r":
+                right += d_x
+
+            min_size = _get_min_size()
+            if (right - left) < min_size:
+                if self._active_handle in ("tl", "bl", "l"):
+                    left = right - min_size
+                else:
+                    right = left + min_size
+            if (bottom - top) < min_size:
+                if self._active_handle in ("tl", "tr", "t"):
+                    top = bottom - min_size
+                else:
+                    bottom = top + min_size
+
+            new_w = right - left
+            new_h = bottom - top
+            self.setPos(QPointF(left, top))
+            self._width = new_w
+            self._height = new_h
+            self._update_path()
+            self._update_label_position()
+            self._notify_changed()
+            event.accept()
+            return
+
+        super().mouseMoveEvent(event)
+
+    def shape(self) -> QPainterPath:
+        """Return shape including handle hit areas when selected."""
+        base = super().shape()
+        if self._should_paint_handles():
+            return shape_with_handles(base, self._handle_points_local())
+        return base
+
+    def boundingRect(self) -> QRectF:
+        """Return bounding rect with handle margin."""
+        r = super().boundingRect()
+        margin = _get_handle_size() / 2 + 1
+        return r.adjusted(-margin, -margin, margin, margin)
+
+    def paint(self, painter: QPainter, option, widget=None):
+        """Paint the cube face-by-face for proper alpha stacking, then selection handles."""
+        # Custom rendering — draw each face individually so overlapping
+        # semi-transparent fills create natural depth shading.
+        dragging_adjust = self._resizing and self._active_handle in ("adjust1", "adjust2")
+
+        pen = QPen(self.pen_color, self.pen_width)
+        _apply_dash_style(pen, self.line_dash, self.dash_pattern_length, self.dash_solid_percent)
+        painter.setPen(pen)
+        painter.setBrush(QBrush(self.brush_color))
+
+        if self._adjust1 < 0.5:
+            fx, fy, fw, fh = self._front_rect()
+            painter.drawRect(QRectF(fx, fy, fw, fh))
+        else:
+            faces = self._face_polygons()
+            # Draw first 5 faces (back through right-front)
+            for face in faces[:-1]:
+                painter.drawPolygon(face)
+            # Front face — thicker edge while dragging adjust handles
+            if dragging_adjust:
+                front_pen = QPen(self.pen_color, max(self.pen_width * 2.5, 4))
+                _apply_dash_style(front_pen, self.line_dash, self.dash_pattern_length, self.dash_solid_percent)
+                painter.setPen(front_pen)
+            painter.drawPolygon(faces[-1])
+
+        if self._should_paint_handles():
+            sel_pen = QPen(_get_selection_color(), 1, Qt.PenStyle.DashLine)
+            painter.setPen(sel_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(QRectF(0, 0, self._width, self._height))
+
+            handles = self._handle_points_local()
+            adjust1_handle = handles.pop("adjust1")
+            adjust2_handle = handles.pop("adjust2")
+            draw_handles(painter, handles)
+
+            # Yellow depth handle (circle)
+            handle_size = _get_handle_size()
+            half = handle_size / 2
+            painter.setPen(QPen(QColor(204, 153, 0), 1))
+            painter.setBrush(QBrush(QColor(255, 215, 0)))
+            painter.drawEllipse(QRectF(adjust1_handle.x() - half, adjust1_handle.y() - half,
+                                       handle_size, handle_size))
+
+            # Angle handle — ∠ symbol with arc indicator (at bbox center)
+            cx = self._width / 2
+            cy = self._height / 2
+            arm = 20
+            arc_r = 8
+            painter.setPen(QPen(QColor(255, 215, 0), 2))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            # Vertical reference arm (0° = up)
+            painter.drawLine(QPointF(cx, cy), QPointF(cx, cy - arm))
+            # Angle arm toward handle
+            painter.drawLine(QPointF(cx, cy), adjust2_handle)
+            # Filled arc wedge between the two arms
+            angle_deg = self._adjust2
+            # Qt drawPie: 0° = 3-o'clock, CCW positive, 1/16° units
+            # Our 0° = up = Qt 90°; CW sweep = negative in Qt's CCW system
+            start_16 = 90 * 16
+            sweep_16 = int(-angle_deg * 16)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor(255, 215, 0, 80)))
+            painter.drawPie(QRectF(cx - arc_r, cy - arc_r, arc_r * 2, arc_r * 2),
+                            start_16, sweep_16)
+            # Small dot at the angle arm tip
+            dot_r = 3
+            painter.setPen(QPen(QColor(204, 153, 0), 1))
+            painter.setBrush(QBrush(QColor(255, 215, 0)))
+            painter.drawEllipse(QRectF(adjust2_handle.x() - dot_r, adjust2_handle.y() - dot_r,
+                                       dot_r * 2, dot_r * 2))
+
+    def mouseReleaseEvent(self, event):
+        """End resize tracking on mouse release."""
+        if self._resizing:
+            self._end_resize_tracking()
+            self._resizing = False
+            self._active_handle = None
+            self._press_scene = None
+            self._start_pos = None
+            self._start_size = None
+            self._start_adjust1 = None
+            self._start_adjust2 = None
+            self._notify_changed()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def itemChange(self, change, value):
+        """Notify on position/selection changes."""
+        out = super().itemChange(change, value)
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            if not self._resizing:
+                self._notify_changed()
+        elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+            self.prepareGeometryChange()
+        return out
+
+    def to_record(self) -> Dict[str, Any]:
+        """Serialize isocube to JSON record."""
+        p = self.pos()
+        rec = {
+            "id": self.ann_id,
+            "kind": "isocube",
             "geom": {
                 "x": round1(p.x()),
                 "y": round1(p.y()),
                 "w": round1(self._width),
                 "h": round1(self._height),
-                "nodes": clean_nodes,
+                "adjust1": round1(self._adjust1),
+                "adjust2": round1(self._adjust2),
             },
             **self._meta_dict(self.meta),
-            "style": style,
+            **self._style_dict(),
         }
         z = self.zValue()
         if z != 0:
@@ -4776,12 +5938,15 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 class MetaGroupItem(QGraphicsItemGroup, MetaMixin, LinkedMixin):
     """Group item that contains multiple annotation items as a single unit."""
 
+    KIND = "group"
+    KIND_ALIASES = frozenset(k for k, v in KIND_ALIAS_MAP.items() if v == "group")
+
     def __init__(self, ann_id: str, on_change=None):
         QGraphicsItemGroup.__init__(self)
         MetaMixin.__init__(self)
         LinkedMixin.__init__(self, ann_id, on_change)
 
-        self.meta.kind = "group"
+        self.kind ="group"
         self.setData(ANN_ID_KEY, ann_id)
 
         self.setFiltersChildEvents(False)
@@ -5155,3 +6320,27 @@ class MetaGroupItem(QGraphicsItemGroup, MetaMixin, LinkedMixin):
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self.prepareGeometryChange()
         return super().itemChange(change, value)
+
+
+# ═══════════════════════════════════════════════════════════
+# Kind alias registry — validates uniqueness at import time
+# ═══════════════════════════════════════════════════════════
+
+_ALL_META_CLASSES = [
+    MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaLineItem,
+    MetaTextItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem,
+    MetaPolygonItem, MetaCurveItem, MetaOrthoCurveItem, MetaIsoCubeItem,
+    MetaGroupItem,
+]
+
+# Validate: no alias appears in more than one class
+_seen_aliases: Dict[str, str] = {}
+for _cls in _ALL_META_CLASSES:
+    for _alias in _cls.KIND_ALIASES:
+        if _alias in _seen_aliases:
+            raise ValueError(
+                f"Duplicate KIND_ALIAS '{_alias}': claimed by both "
+                f"'{_seen_aliases[_alias]}' and '{_cls.KIND}'"
+            )
+        _seen_aliases[_alias] = _cls.KIND
+del _seen_aliases, _cls, _alias  # clean up module namespace

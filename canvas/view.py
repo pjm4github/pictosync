@@ -55,11 +55,13 @@ class AnnotatorView(QGraphicsView):
         self.scale(factor, factor)
 
     def dragEnterEvent(self, event):
-        """Accept PNG and PlantUML file drops."""
+        """Accept PNG, PlantUML, Mermaid SVG, and Mermaid source file drops."""
         if event.mimeData().hasUrls():
             for u in event.mimeData().urls():
                 lf = u.toLocalFile().lower()
-                if lf.endswith(".png") or lf.endswith(".puml"):
+                if (lf.endswith(".png") or lf.endswith(".puml")
+                        or lf.endswith(".svg") or lf.endswith(".mmd")
+                        or lf.endswith(".mermaid")):
                     event.acceptProposedAction()
                     return
         event.ignore()
@@ -68,12 +70,14 @@ class AnnotatorView(QGraphicsView):
         event.acceptProposedAction()
 
     def dropEvent(self, event):
-        """Handle PNG or PlantUML file drop."""
+        """Handle PNG, PlantUML, Mermaid SVG, or Mermaid source file drop."""
         if event.mimeData().hasUrls():
             for u in event.mimeData().urls():
                 path = u.toLocalFile()
                 lf = path.lower()
-                if lf.endswith(".png") or lf.endswith(".puml"):
+                if (lf.endswith(".png") or lf.endswith(".puml")
+                        or lf.endswith(".svg") or lf.endswith(".mmd")
+                        or lf.endswith(".mermaid")):
                     self.on_drop_png_cb(path)
                     event.acceptProposedAction()
                     return
