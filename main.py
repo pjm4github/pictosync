@@ -424,7 +424,7 @@ class MainWindow(QMainWindow):
         help_menu.addAction(help_contents_act)
 
         shortcuts_act = QAction("Keyboard Shortcuts", self)
-        shortcuts_act.triggered.connect(lambda: self._show_help_dialog(tab=2))
+        shortcuts_act.triggered.connect(lambda: self._show_help_dialog(tab=4))
         help_menu.addAction(shortcuts_act)
 
         help_menu.addSeparator()
