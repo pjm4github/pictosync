@@ -330,6 +330,11 @@ def build_expected_from_schema(kind: str) -> Dict[str, Any]:
         resolved = _resolve_ref(meta_ref["$ref"], defs)
         expected["meta"] = _extract_defaults(resolved, defs)
 
+    # Strip optional domain objects that should only appear when the
+    # actual annotation carries them (avoids gray "missing" noise on
+    # every manually-drawn item).
+    expected.get("meta", {}).pop("dsl", None)
+
     # Merge kind-specific meta overrides from then clause
     then_meta = then_props.get("meta", {})
     if then_meta.get("type") == "object" and "properties" in then_meta:

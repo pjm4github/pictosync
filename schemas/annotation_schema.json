@@ -72,7 +72,7 @@
         },
         "kind": {
           "type": "string",
-          "enum": ["rect", "roundedrect", "ellipse", "line", "text", "hexagon", "cylinder", "blockarrow", "polygon", "curve", "group"],
+          "enum": ["rect", "roundedrect", "ellipse", "line", "text", "hexagon", "cylinder", "blockarrow", "polygon", "curve", "orthocurve", "isocube", "group"],
           "description": "The type of annotation item"
         },
         "geom": {
@@ -243,6 +243,41 @@
         },
         {
           "if": {
+            "properties": { "kind": { "const": "orthocurve" } }
+          },
+          "then": {
+            "properties": {
+              "geom": { "$ref": "#/$defs/orthoCurveGeometry" },
+              "style": { "$ref": "#/$defs/lineStyleDefinition" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "isocube" } }
+          },
+          "then": {
+            "properties": {
+              "geom": { "$ref": "#/$defs/isoCubeGeometry" },
+              "style": {
+                "type": "object",
+                "properties": {
+                  "pen": { "type": "object", "properties": {
+                    "color": { "type": "string", "default": "#000000" }
+                  }},
+                  "fill": { "type": "object", "properties": {
+                    "color": { "type": "string", "default": "#C8C8C8C8" }
+                  }},
+                  "text": { "type": "object", "properties": {
+                    "color": { "type": "string", "default": "#000000" }
+                  }}
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
             "properties": { "kind": { "const": "group" } }
           },
           "then": {
@@ -268,7 +303,9 @@
         { "$ref": "#/$defs/hexagonGeometry" },
         { "$ref": "#/$defs/cylinderGeometry" },
         { "$ref": "#/$defs/blockArrowGeometry" },
-        { "$ref": "#/$defs/curveGeometry" }
+        { "$ref": "#/$defs/curveGeometry" },
+        { "$ref": "#/$defs/orthoCurveGeometry" },
+        { "$ref": "#/$defs/isoCubeGeometry" }
       ]
     },
     "rectGeometry": {
@@ -525,17 +562,92 @@
           "description": "Path nodes with SVG-like commands",
           "items": { "$ref": "#/$defs/curveNode" },
           "minItems": 2
+        },
+        "adjust1": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 200,
+          "default": 0,
+          "description": "Corner bend radius for H/V transitions in pixels",
+          "ui_label": "Bend Radius",
+          "ui_suffix": " px"
         }
       }
+    },
+    "orthoCurveNode": {
+      "type": "object",
+      "description": "A single node in an orthogonal curve path (M/H/V only)",
+      "required": ["cmd"],
+      "properties": {
+        "cmd": {
+          "type": "string",
+          "enum": ["M", "H", "V"],
+          "description": "Orthogonal path command"
+        },
+        "x": { "type": "number", "description": "Endpoint X (0-1 relative)" },
+        "y": { "type": "number", "description": "Endpoint Y (0-1 relative)" }
+      }
+    },
+    "orthoCurveGeometry": {
+      "type": "object",
+      "description": "Orthogonal curve geometry with bounding box and M/H/V path nodes",
+      "required": ["x", "y", "w", "h", "nodes"],
+      "properties": {
+        "x": { "type": "number", "description": "Bounding box X" },
+        "y": { "type": "number", "description": "Bounding box Y" },
+        "w": { "type": "number", "minimum": 0, "description": "Bounding box width" },
+        "h": { "type": "number", "minimum": 0, "description": "Bounding box height" },
+        "nodes": {
+          "type": "array",
+          "description": "Path nodes with orthogonal commands (M/H/V)",
+          "items": { "$ref": "#/$defs/orthoCurveNode" },
+          "minItems": 2
+        },
+        "adjust1": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 200,
+          "default": 10,
+          "description": "Corner bend radius in pixels",
+          "ui_label": "Bend Radius",
+          "ui_suffix": " px"
+        }
+      }
+    },
+    "isoCubeGeometry": {
+      "type": "object",
+      "description": "Isometric cube geometry with depth and angle controls",
+      "required": ["x", "y", "w", "h"],
+      "properties": {
+        "x": { "type": "number", "description": "X position of top-left corner" },
+        "y": { "type": "number", "description": "Y position of top-left corner" },
+        "w": { "type": "number", "minimum": 0, "description": "Width" },
+        "h": { "type": "number", "minimum": 0, "description": "Height" },
+        "adjust1": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000,
+          "default": 30,
+          "description": "Depth of isometric extrusion in pixels (runtime max = max bbox dimension)",
+          "ui_label": "Depth",
+          "ui_suffix": " px"
+        },
+        "adjust2": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 360,
+          "default": 135,
+          "description": "Angle of isometric extrusion in degrees",
+          "ui_label": "Angle",
+          "ui_suffix": " °"
+        }
+      },
+      "additionalProperties": false
     },
     "annotationMeta": {
       "type": "object",
       "description": "Annotation metadata including labels and formatting",
       "properties": {
-        "kind": {
-          "type": "string",
-          "description": "Semantic kind (may differ from item kind, e.g., 'Component', 'Database')"
-        },
         "label": {
           "type": "string",
           "default": "",
@@ -614,6 +726,9 @@
           "minimum": 0,
           "default": 0,
           "description": "Text box height for line labels (0 = auto-size)"
+        },
+        "dsl": {
+          "$ref": "#/$defs/dslMetadata"
         }
       },
       "additionalProperties": true
@@ -700,6 +815,68 @@
           "$ref": "#/$defs/textStyle"
         }
       }
+    },
+    "dslMetadata": {
+      "type": "object",
+      "description": "Domain-specific language metadata (meta.dsl). Contains a tool hint and one domain sub-object (c4, uml, d2, …). Stored as a standalone $defs entry — NOT referenced from annotationMeta.properties — so _extract_defaults won't inject empty dsl objects onto every annotation.",
+      "properties": {
+        "tool": {
+          "type": "string",
+          "enum": ["mermaid", "plantuml", "d2"],
+          "description": "Rendering tool that produced this annotation"
+        },
+        "c4": {
+          "$ref": "#/$defs/dslC4"
+        }
+      },
+      "additionalProperties": true
+    },
+    "dslC4": {
+      "type": "object",
+      "description": "C4 model metadata. Shapes carry type+alias+parent; boundaries carry type='boundary'+alias+boundary_type+parent; relationships carry rel_type+from+to.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "C4 element type. Shapes: person, system, container, component and their variants. Boundaries always use 'boundary'.",
+          "enum": [
+            "person", "external_person",
+            "system", "system_db", "system_queue",
+            "external_system", "external_system_db", "external_system_queue",
+            "container", "container_db", "container_queue",
+            "external_container", "external_container_db", "external_container_queue",
+            "component", "component_db", "component_queue",
+            "external_component", "external_component_db", "external_component_queue",
+            "boundary"
+          ]
+        },
+        "alias": {
+          "type": "string",
+          "description": "Unique identifier for this element within the C4 diagram (e.g. 'spa', 'b1')"
+        },
+        "parent": {
+          "type": "string",
+          "description": "Alias of the enclosing boundary. Omitted when the element is at global scope."
+        },
+        "boundary_type": {
+          "type": "string",
+          "description": "Classification of a boundary element (only present when type='boundary')",
+          "enum": ["ENTERPRISE", "SYSTEM", "CONTAINER", "node", "nodeL", "nodeR"]
+        },
+        "rel_type": {
+          "type": "string",
+          "description": "Canonical relationship direction type",
+          "enum": ["rel", "birel", "rel_b", "rel_u", "rel_d", "rel_l", "rel_r"]
+        },
+        "from": {
+          "type": "string",
+          "description": "Source element alias in a relationship"
+        },
+        "to": {
+          "type": "string",
+          "description": "Target element alias in a relationship"
+        }
+      },
+      "additionalProperties": true
     },
     "lineStyleDefinition": {
       "type": "object",

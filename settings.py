@@ -363,6 +363,35 @@ class GeminiSettings:
 
 
 # =============================================================================
+# External Tools Settings
+# =============================================================================
+
+@dataclass
+class ExternalToolsSettings:
+    """Paths to external CLI tools used for diagram import.
+
+    Empty strings mean "auto-detect" (environment variable, then system PATH).
+    When a path is set here, it takes priority over auto-detection.
+
+    Defaults:
+        java_path: ""
+        plantuml_jar_path: ""
+        nodejs_path: ""
+        mmdc_path: ""
+        mmdc_png_scale: 4
+        c4_shapes_per_row: 4
+        c4_boundaries_per_row: 2
+    """
+    java_path: str = ""              # Default: "" (auto-detect)
+    plantuml_jar_path: str = ""      # Default: "" (auto-detect)
+    nodejs_path: str = ""            # Default: "" (auto-detect)
+    mmdc_path: str = ""              # Default: "" (auto-detect)
+    mmdc_png_scale: int = 4          # Default: 4 (CSS scale factor for PNG output)
+    c4_shapes_per_row: int = 4       # Default: 4 (Mermaid C4 c4ShapeInRow)
+    c4_boundaries_per_row: int = 2   # Default: 2 (Mermaid C4 c4BoundaryInRow)
+
+
+# =============================================================================
 # Main App Settings
 # =============================================================================
 
@@ -393,6 +422,7 @@ class AppSettings:
     alignment: AlignmentSettings = field(default_factory=AlignmentSettings)
     defaults: DefaultTextSettings = field(default_factory=DefaultTextSettings)
     gemini: GeminiSettings = field(default_factory=GeminiSettings)
+    external_tools: ExternalToolsSettings = field(default_factory=ExternalToolsSettings)
 
 
 # =============================================================================
@@ -573,6 +603,16 @@ class SettingsManager:
             if settings.gemini.models:
                 settings.gemini.default_model = settings.gemini.models[0]
 
+        # External tools section
+        ext = data.get("external_tools", {})
+        settings.external_tools.java_path = ext.get("java_path", settings.external_tools.java_path)
+        settings.external_tools.plantuml_jar_path = ext.get("plantuml_jar_path", settings.external_tools.plantuml_jar_path)
+        settings.external_tools.nodejs_path = ext.get("nodejs_path", settings.external_tools.nodejs_path)
+        settings.external_tools.mmdc_path = ext.get("mmdc_path", settings.external_tools.mmdc_path)
+        settings.external_tools.mmdc_png_scale = int(ext.get("mmdc_png_scale", settings.external_tools.mmdc_png_scale))
+        settings.external_tools.c4_shapes_per_row = int(ext.get("c4_shapes_per_row", settings.external_tools.c4_shapes_per_row))
+        settings.external_tools.c4_boundaries_per_row = int(ext.get("c4_boundaries_per_row", settings.external_tools.c4_boundaries_per_row))
+
         return settings
 
     def save(self) -> None:
@@ -704,6 +744,15 @@ class SettingsManager:
             "gemini": {
                 "models": s.gemini.models,
                 "default_model": s.gemini.default_model,
+            },
+            "external_tools": {
+                "java_path": s.external_tools.java_path,
+                "plantuml_jar_path": s.external_tools.plantuml_jar_path,
+                "nodejs_path": s.external_tools.nodejs_path,
+                "mmdc_path": s.external_tools.mmdc_path,
+                "mmdc_png_scale": s.external_tools.mmdc_png_scale,
+                "c4_shapes_per_row": s.external_tools.c4_shapes_per_row,
+                "c4_boundaries_per_row": s.external_tools.c4_boundaries_per_row,
             },
         }
 

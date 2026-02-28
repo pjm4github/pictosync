@@ -65,6 +65,8 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 - **Flowchart Parser**: Parses nodes (rect, roundedrect, polygon/diamond), edge paths (curves and lines), edge labels, and cluster subgraphs from Mermaid flowchart SVGs
 - **Mermaid Detection**: Automatic identification via `aria-roledescription` attribute on the root `<svg>` element
 
+> **C4 diagram layout note**: The Mermaid CLI (`mmdc`) has a [known bug](https://github.com/mermaid-js/mermaid-cli/issues/440) where `UpdateLayoutConfig` / `c4ShapeInRow` is ignored in headless Puppeteer mode, causing C4 diagrams to render in a single column. PictoSync works around this by running mmdc in headed (non-headless) mode for C4 diagrams, which briefly opens a browser window during rendering. This is a Mermaid CLI issue, not a PictoSync bug.
+
 ### PowerPoint Export
 - **Slide Export**: Export annotations as native PowerPoint shapes via File > Export PPTX
 - **Shape Support**: Rectangles, rounded rectangles, ellipses, hexagons, cylinders, block arrows, isometric cubes, polygons, curves, orthogonal curves, lines, and text

@@ -23,11 +23,11 @@ def _normalize_annotations(annotations: List[Dict[str, Any]]) -> None:
     """Apply formatting defaults to all annotation meta dicts in place."""
     for ann in annotations:
         if isinstance(ann, dict) and "meta" in ann:
-            kind = ann.get("kind", ann["meta"].get("kind", ""))
+            kind = ann.get("kind", "")
             ann["meta"] = normalize_meta(ann["meta"], kind)
         for child in ann.get("children", []):
             if isinstance(child, dict) and "meta" in child:
-                kind = child.get("kind", child["meta"].get("kind", ""))
+                kind = child.get("kind", "")
                 child["meta"] = normalize_meta(child["meta"], kind)
 
 
@@ -105,10 +105,9 @@ def _make_line_style(
         "color": pen_color,
         "width": pen_width,
         "dash": "dashed" if dashed else "solid",
+        "dash_pattern_length": 30.0,
+        "dash_solid_percent": 50.0,
     }
-    if dashed:
-        pen["dash_pattern_length"] = 30.0
-        pen["dash_solid_percent"] = 50.0
     return {
         "pen": pen,
         "fill": {"color": "#00000000"},
@@ -916,7 +915,7 @@ def _parse_activity_diagram_svg(
             "kind": "text",
             "geom": dict(title_pos),
             "meta": {
-                "kind": "text", "label": title_text, "tech": "",
+                "label": title_text, "tech": "",
                 "note": title_text,
             },
             "style": {
@@ -944,7 +943,7 @@ def _parse_activity_diagram_svg(
             "kind": "roundedrect",
             "geom": {"x": x, "y": y, "w": w, "h": h},
             "meta": {
-                "kind": "roundedrect", "label": label, "tech": "",
+                "label": label, "tech": "",
                 "note": label,
             },
             "style": {
@@ -975,7 +974,7 @@ def _parse_activity_diagram_svg(
                 "kind": "rect",
                 "geom": {"x": x, "y": y, "w": w, "h": h},
                 "meta": {
-                    "kind": "rect", "label": title, "tech": "",
+                    "label": title, "tech": "",
                     "note": title,
                 },
                 "style": {
@@ -1056,7 +1055,6 @@ def _parse_activity_diagram_svg(
                 "kind": "group",
                 "children": all_children,
                 "meta": {
-                    "kind": "group",
                     "label": pd["ann"]["meta"]["label"],
                     "tech": "",
                     "note": pd["ann"]["meta"].get("note", ""),
@@ -1102,7 +1100,7 @@ def _parse_activity_diagram_svg(
                 "w": round(max_rx * 2, 2), "h": round(max_ry * 2, 2),
             },
             "meta": {
-                "kind": "ellipse", "label": label, "tech": "",
+                "label": label, "tech": "",
                 "note": label,
             },
             "style": {
@@ -1133,7 +1131,7 @@ def _parse_activity_diagram_svg(
             "id": ann_id,
             "kind": "line",
             "geom": {"x1": round(x1, 2), "y1": round(y1_val, 2), "x2": round(x2, 2), "y2": round(y2_val, 2)},
-            "meta": {"kind": "line", "label": "", "tech": "", "note": ""},
+            "meta": {"label": "", "tech": "", "note": ""},
             "style": _make_line_style(stroke_color, stroke_width),
         })
 
@@ -1307,7 +1305,7 @@ def _parse_sequence_diagram_svg(
                 "w": round(tl, 2), "h": round(fs * 1.5, 2),
             },
             "meta": {
-                "kind": "text", "label": title_text, "tech": "",
+                "label": title_text, "tech": "",
                 "note": title_text,
             },
             "style": {
@@ -1339,7 +1337,7 @@ def _parse_sequence_diagram_svg(
             "kind": "roundedrect",
             "geom": {"x": x, "y": y, "w": w, "h": h},
             "meta": {
-                "kind": "roundedrect", "label": label, "tech": "",
+                "label": label, "tech": "",
                 "note": label,
             },
             "style": {
@@ -1373,7 +1371,7 @@ def _parse_sequence_diagram_svg(
             "kind": "roundedrect",
             "geom": {"x": x, "y": y, "w": w, "h": h},
             "meta": {
-                "kind": "roundedrect", "label": label, "tech": "",
+                "label": label, "tech": "",
                 "note": label,
             },
             "style": {
@@ -1406,7 +1404,7 @@ def _parse_sequence_diagram_svg(
             "id": ann_id,
             "kind": "line",
             "geom": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
-            "meta": {"kind": "line", "label": "", "tech": "", "note": ""},
+            "meta": {"label": "", "tech": "", "note": ""},
             "style": _make_line_style(
                 stroke_color, stroke_width, dashed=True, arrow="none",
             ),
@@ -1431,7 +1429,7 @@ def _parse_sequence_diagram_svg(
             "id": ann_id,
             "kind": "rect",
             "geom": {"x": x, "y": y, "w": w, "h": h},
-            "meta": {"kind": "rect", "label": "", "tech": "", "note": ""},
+            "meta": {"label": "", "tech": "", "note": ""},
             "style": {
                 "pen": {
                     "color": stroke_color, "width": stroke_width, "dash": "solid",
@@ -1442,6 +1440,9 @@ def _parse_sequence_diagram_svg(
         })
 
     # 6. Messages (normal, return, self-loop)
+    #    When an SVG polygon arrowhead is present the message is emitted as
+    #    an orthocurve (self-loops: M→H→V→H, normal: M→H) so that the
+    #    native arrow rendering places the arrowhead at the correct end.
     for g in message_groups:
         e1 = g.get("data-entity-1", "")
         e2 = g.get("data-entity-2", "")
@@ -1454,38 +1455,102 @@ def _parse_sequence_diagram_svg(
         is_self = (e1 == e2)
 
         if is_self:
-            # Self-loop: bounding box of the U-shaped line group
-            all_x: List[float] = []
-            all_y: List[float] = []
-            for ln in lines:
-                all_x.extend([
-                    float(ln.get("x1", 0)), float(ln.get("x2", 0)),
-                ])
-                all_y.extend([
-                    float(ln.get("y1", 0)), float(ln.get("y2", 0)),
-                ])
-            if not all_x:
+            # Self-loop: 3 SVG lines form a U-shape → orthocurve
+            if len(lines) < 3:
                 continue
 
+            # Collect all coordinates from the three line segments
+            seg_pts: List[Tuple[float, float]] = []
+            for ln in lines:
+                seg_pts.append(
+                    (float(ln.get("x1", 0)), float(ln.get("y1", 0))),
+                )
+                seg_pts.append(
+                    (float(ln.get("x2", 0)), float(ln.get("y2", 0))),
+                )
+
             stroke_color, stroke_width = _extract_stroke(lines[0])
+            style_str = lines[0].get("style", "")
+            is_dashed = "stroke-dasharray" in style_str
+
+            # Path corners from the three segments:
+            # line[0]: horizontal right  (start → right)
+            # line[1]: vertical down     (right → bottom-right)
+            # line[2]: horizontal left   (bottom-right → end)
+            start_x = float(lines[0].get("x1", 0))
+            start_y = float(lines[0].get("y1", 0))
+            right_x = max(
+                float(lines[0].get("x2", 0)),
+                float(lines[1].get("x1", 0)),
+            )
+            bottom_y = float(lines[1].get("y2", 0))
+
+            # Arrow endpoint: use polygon tip if available
+            has_arrow = polygon is not None
+            if has_arrow:
+                pts_str = polygon.get("points", "")
+                pts = re.findall(
+                    r'([-+]?\d*\.?\d+),([-+]?\d*\.?\d+)', pts_str,
+                )
+                if pts:
+                    poly_pts = [
+                        (float(p[0]), float(p[1])) for p in pts
+                    ]
+                    # Tip = leftmost point (arrow points back to lifeline)
+                    tip = min(poly_pts, key=lambda p: p[0])
+                    end_x, end_y = tip
+                else:
+                    end_x = float(lines[2].get("x1", 0))
+                    end_y = bottom_y
+            else:
+                end_x = float(lines[2].get("x1", 0))
+                end_y = bottom_y
+
+            # Bounding box enclosing all path points
+            all_xs = [start_x, right_x, end_x]
+            all_ys = [start_y, bottom_y, end_y]
+            bx = min(all_xs)
+            by = min(all_ys)
+            bw = max(all_xs) - bx
+            bh = max(all_ys) - by
+            if bw < 1 or bh < 1:
+                continue
+
+            # Normalised orthocurve nodes: M → H → V → H
+            nodes: List[Dict[str, Any]] = [
+                {
+                    "cmd": "M",
+                    "x": round((start_x - bx) / bw, 4),
+                    "y": round((start_y - by) / bh, 4),
+                },
+                {"cmd": "H", "x": round((right_x - bx) / bw, 4)},
+                {"cmd": "V", "y": round((bottom_y - by) / bh, 4)},
+                {"cmd": "H", "x": round((end_x - bx) / bw, 4)},
+            ]
 
             ann_id = f"p{counter:06d}"
             counter += 1
             annotations.append({
                 "id": ann_id,
-                "kind": "line",
+                "kind": "orthocurve",
                 "geom": {
-                    "x1": round(min(all_x), 2), "y1": round(min(all_y), 2),
-                    "x2": round(max(all_x), 2), "y2": round(max(all_y), 2),
+                    "x": round(bx, 2), "y": round(by, 2),
+                    "w": round(bw, 2), "h": round(bh, 2),
+                    "nodes": nodes,
+                    "adjust1": 0,
                 },
                 "meta": {
-                    "kind": "line", "label": label, "tech": "",
+                    "label": label, "tech": "",
                     "note": label,
                 },
-                "style": _make_line_style(stroke_color, stroke_width),
+                "style": _make_line_style(
+                    stroke_color, stroke_width, dashed=is_dashed,
+                    arrow="end" if has_arrow else "none",
+                ),
             })
-        else:
-            # Normal or return message (single line + polygon arrowhead)
+
+        elif polygon is not None:
+            # Normal / return message with arrowhead → orthocurve (M→H)
             if not lines:
                 continue
             line = lines[0]
@@ -1499,33 +1564,104 @@ def _parse_sequence_diagram_svg(
             style_str = line.get("style", "")
             is_dashed = "stroke-dasharray" in style_str
 
-            # Arrow direction: polygon tip is at the target end.
-            # Swap endpoints if arrowhead is closer to (x1,y1) so
-            # arrow always points toward (x2,y2).
-            if polygon is not None:
-                pts_str = polygon.get("points", "")
-                pts = re.findall(
-                    r'([-+]?\d*\.?\d+),([-+]?\d*\.?\d+)', pts_str,
-                )
-                if pts:
-                    poly_xs = [float(p[0]) for p in pts]
-                    poly_cx = sum(poly_xs) / len(poly_xs)
-                    if abs(poly_cx - lx1) < abs(poly_cx - lx2):
-                        lx1, lx2 = lx2, lx1
-                        ly1, ly2 = ly2, ly1
+            # Determine arrow direction and polygon tip
+            pts_str = polygon.get("points", "")
+            pts = re.findall(
+                r'([-+]?\d*\.?\d+),([-+]?\d*\.?\d+)', pts_str,
+            )
+            if pts:
+                poly_pts = [
+                    (float(p[0]), float(p[1])) for p in pts
+                ]
+                poly_cx = sum(p[0] for p in poly_pts) / len(poly_pts)
+
+                if abs(poly_cx - lx1) < abs(poly_cx - lx2):
+                    # Arrow toward x1 → tip is leftmost polygon point
+                    tip = min(poly_pts, key=lambda p: p[0])
+                    start_x, start_y = lx2, ly2
+                else:
+                    # Arrow toward x2 → tip is rightmost polygon point
+                    tip = max(poly_pts, key=lambda p: p[0])
+                    start_x, start_y = lx1, ly1
+                end_x, end_y = tip
+            else:
+                start_x, start_y = lx1, ly1
+                end_x, end_y = lx2, ly2
+
+            # Bounding box (ensure non-zero height for horizontal lines)
+            min_h = 8.0
+            bx = min(start_x, end_x)
+            bw = abs(end_x - start_x)
+            dy = abs(end_y - start_y)
+            if dy < min_h:
+                by = min(start_y, end_y) - (min_h - dy) / 2
+                bh = min_h
+            else:
+                by = min(start_y, end_y)
+                bh = dy
+            if bw < 1:
+                continue
+
+            nodes = [
+                {
+                    "cmd": "M",
+                    "x": round((start_x - bx) / bw, 4),
+                    "y": round((start_y - by) / bh, 4),
+                },
+                {"cmd": "H", "x": round((end_x - bx) / bw, 4)},
+            ]
+
+            ann_id = f"p{counter:06d}"
+            counter += 1
+            annotations.append({
+                "id": ann_id,
+                "kind": "orthocurve",
+                "geom": {
+                    "x": round(bx, 2), "y": round(by, 2),
+                    "w": round(bw, 2), "h": round(bh, 2),
+                    "nodes": nodes,
+                    "adjust1": 0,
+                },
+                "meta": {
+                    "label": label, "tech": "",
+                    "note": label,
+                },
+                "style": _make_line_style(
+                    stroke_color, stroke_width, dashed=is_dashed,
+                ),
+            })
+
+        else:
+            # Message without polygon (no arrowhead) → plain line
+            if not lines:
+                continue
+            line = lines[0]
+
+            lx1 = float(line.get("x1", 0))
+            ly1 = float(line.get("y1", 0))
+            lx2 = float(line.get("x2", 0))
+            ly2 = float(line.get("y2", 0))
+
+            stroke_color, stroke_width = _extract_stroke(line)
+            style_str = line.get("style", "")
+            is_dashed = "stroke-dasharray" in style_str
 
             ann_id = f"p{counter:06d}"
             counter += 1
             annotations.append({
                 "id": ann_id,
                 "kind": "line",
-                "geom": {"x1": round(lx1, 2), "y1": round(ly1, 2), "x2": round(lx2, 2), "y2": round(ly2, 2)},
+                "geom": {
+                    "x1": round(lx1, 2), "y1": round(ly1, 2),
+                    "x2": round(lx2, 2), "y2": round(ly2, 2),
+                },
                 "meta": {
-                    "kind": "line", "label": label, "tech": "",
+                    "label": label, "tech": "",
                     "note": label,
                 },
                 "style": _make_line_style(
-                    stroke_color, stroke_width, dashed=is_dashed,
+                    stroke_color, stroke_width,
+                    dashed=is_dashed, arrow="none",
                 ),
             })
 
@@ -1570,7 +1706,7 @@ def _parse_sequence_diagram_svg(
             "kind": "text",
             "geom": geom,
             "meta": {
-                "kind": "text", "label": phase_label, "tech": "",
+                "label": phase_label, "tech": "",
                 "note": phase_label,
             },
             "style": {
@@ -1620,7 +1756,7 @@ def _parse_sequence_diagram_svg(
             "id": ann_id,
             "kind": "line",
             "geom": {"x1": lx1, "y1": mid_y, "x2": lx2, "y2": mid_y},
-            "meta": {"kind": "line", "label": "", "tech": "", "note": ""},
+            "meta": {"label": "", "tech": "", "note": ""},
             "style": _make_line_style(
                 stroke_color, stroke_width, arrow="none",
             ),
@@ -1987,7 +2123,7 @@ def _parse_description_diagram_svg(
             "kind": "text",
             "geom": dict(title_info["geom"]),
             "meta": {
-                "kind": "text", "label": title_info["text"],
+                "label": title_info["text"],
                 "tech": "", "note": title_info["text"],
             },
             "style": {
@@ -2011,7 +2147,6 @@ def _parse_description_diagram_svg(
             "kind": data["kind"],
             "geom": dict(data["geom"]),
             "meta": {
-                "kind": data["kind"],
                 "label": data["label"],
                 "tech": data["tech"],
                 "note": data["note"] or text,
@@ -2043,7 +2178,6 @@ def _parse_description_diagram_svg(
             "kind": data["kind"],
             "geom": geom_copy,
             "meta": {
-                "kind": data["kind"],
                 "label": data["label"],
                 "tech": data["tech"],
                 "note": data["note"] or text,
@@ -2096,7 +2230,6 @@ def _parse_description_diagram_svg(
             "kind": "group",
             "children": [parent_ann] + child_anns,
             "meta": {
-                "kind": "group",
                 "label": parent_ann["meta"]["label"],
                 "tech": parent_ann["meta"].get("tech", ""),
                 "note": parent_ann["meta"].get("note", ""),
@@ -2141,7 +2274,7 @@ def _parse_description_diagram_svg(
                         "nodes": curve_nodes,
                     },
                     "meta": {
-                        "kind": "curve", "label": link["label"],
+                        "label": link["label"],
                         "tech": "", "note": link["label"],
                     },
                     "style": _make_line_style(
@@ -2168,7 +2301,7 @@ def _parse_description_diagram_svg(
             "kind": "line",
             "geom": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
             "meta": {
-                "kind": "line", "label": link["label"],
+                "label": link["label"],
                 "tech": "", "note": link["label"],
             },
             "style": _make_line_style(pen_color, pen_width, dashed=dashed),
@@ -2188,6 +2321,722 @@ def _parse_description_diagram_svg(
         if ann:
             top_level.append(ann)
 
+    top_level.extend(line_anns)
+
+    # Sort by Y coordinate (title stays first)
+    if title_ann and len(top_level) > 1:
+        rest = top_level[1:]
+        rest.sort(key=_child_y)
+        top_level = [title_ann] + rest
+    else:
+        top_level.sort(key=_child_y)
+
+    _normalize_annotations(top_level)
+    return {
+        "version": "draft-1",
+        "image": {"width": canvas_w, "height": canvas_h},
+        "annotations": top_level,
+    }
+
+
+# ───────────────────────────────────────────────
+# STATE diagram SVG parser
+# ───────────────────────────────────────────────
+
+def _parse_state_diagram_svg(
+    tree: ET.ElementTree,
+) -> Dict[str, Any]:
+    """Parse a STATE diagram SVG into PictoSync annotations.
+
+    State diagrams use a mix of classified and unclassified ``<g>`` groups:
+    clusters for composite states, unnamed ``<g>`` for regular states,
+    ``<g class="entity">`` for notes, ``<g class="link">`` for transitions,
+    and bare ``<ellipse>`` for initial ``[*]`` markers.
+
+    Args:
+        tree: Parsed ElementTree of the SVG file.
+
+    Returns:
+        Dict with PictoSync schema: ``{"version", "image", "annotations"}``.
+    """
+    root = tree.getroot()
+    ns = _SVG_NS
+
+    # ── Canvas dimensions ────────────────────────────
+    viewbox = root.get("viewBox", "").split()
+    canvas_w = int(float(viewbox[2])) if len(viewbox) >= 3 else 1200
+    canvas_h = int(float(viewbox[3])) if len(viewbox) >= 4 else 800
+
+    empty: Dict[str, Any] = {
+        "version": "draft-1",
+        "image": {"width": canvas_w, "height": canvas_h},
+        "annotations": [],
+    }
+
+    # ── Helpers ──────────────────────────────────────
+
+    def _safe_fill(fill: str) -> str:
+        if not fill or fill.lower() == "none" or not fill.startswith("#"):
+            return "#00000000"
+        return _normalize_color(fill)
+
+    def _extract_stroke(el: ET.Element) -> Tuple[str, int]:
+        style = el.get("style", "")
+        sm = re.search(r'stroke:\s*(#[0-9A-Fa-f]{3,8})', style)
+        wm = re.search(r'stroke-width:\s*(\d+(?:\.\d+)?)', style)
+        return (
+            sm.group(1).upper() if sm else "#000000",
+            int(float(wm.group(1))) if wm else 1,
+        )
+
+    def _child_y(ann: Dict[str, Any]) -> float:
+        if "geom" in ann:
+            g = ann["geom"]
+            return g.get("y", g.get("y1", 0))
+        if ann.get("children"):
+            return _child_y(ann["children"][0])
+        return 0.0
+
+    # ── Pass 1: collect data from root <g> children ──
+    title_info: Optional[Dict[str, Any]] = None
+    cluster_info: Dict[str, Dict[str, Any]] = {}
+    unnamed_states: List[Dict[str, Any]] = []  # ordered list
+    note_info: Dict[str, Dict[str, Any]] = {}
+    initial_ellipses: List[Dict[str, Any]] = []
+    all_geom: Dict[str, Dict[str, Any]] = {}
+    link_list: List[Dict[str, Any]] = []
+
+    root_g = root.find(f"{{{ns}}}g")
+    if root_g is None:
+        return empty
+
+    for child in root_g:
+        tag_local = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+
+        if tag_local == "g":
+            cls = child.get("class", "")
+
+            if cls == "title":
+                # Collect all text elements (multi-line title)
+                text_items: List[Dict[str, Any]] = []
+                for t in child.findall(f"{{{ns}}}text"):
+                    txt = t.text or ""
+                    if txt.strip():
+                        text_items.append({
+                            "text": txt.strip(),
+                            "x": float(t.get("x", 0)),
+                            "y": float(t.get("y", 0)),
+                            "fs": float(t.get("font-size", 14)),
+                            "tl": float(t.get("textLength", 200)),
+                        })
+                if text_items:
+                    all_x = [ti["x"] for ti in text_items]
+                    all_x2 = [ti["x"] + ti["tl"] for ti in text_items]
+                    all_y = [ti["y"] - ti["fs"] for ti in text_items]
+                    all_y2 = [ti["y"] for ti in text_items]
+                    title_info = {
+                        "text": " ".join(ti["text"] for ti in text_items),
+                        "geom": {
+                            "x": round(min(all_x), 2),
+                            "y": round(min(all_y), 2),
+                            "w": round(max(all_x2) - min(all_x), 2),
+                            "h": round(
+                                max(all_y2) - min(all_y)
+                                + text_items[-1]["fs"] * 0.5,
+                                2,
+                            ),
+                        },
+                    }
+
+            elif cls == "cluster":
+                ent_id = child.get("id", "")
+                if not ent_id:
+                    continue
+
+                # Outer rect (fill="none") gives border geometry
+                rect_el = None
+                for r in child.findall(f"{{{ns}}}rect"):
+                    if r.get("fill", "").lower() == "none":
+                        rect_el = r
+                        break
+                if rect_el is None:
+                    continue
+
+                geom: Dict[str, Any] = {
+                    "x": round(float(rect_el.get("x", 0)), 2),
+                    "y": round(float(rect_el.get("y", 0)), 2),
+                    "w": round(float(rect_el.get("width", 0)), 2),
+                    "h": round(float(rect_el.get("height", 0)), 2),
+                }
+
+                # Header path gives fill colour
+                path_el = child.find(f"{{{ns}}}path")
+                fill = (
+                    path_el.get("fill", "#FFFFFF")
+                    if path_el is not None
+                    else "#FFFFFF"
+                )
+                stroke_color, stroke_width = _extract_stroke(rect_el)
+
+                # First <line> divider separates name from description
+                lines_el = child.findall(f"{{{ns}}}line")
+                line_ys = sorted(
+                    float(ln.get("y1", 0)) for ln in lines_el
+                )
+                first_div_y = line_ys[0] if line_ys else float("inf")
+
+                # Texts: above divider = name, below = description
+                name_parts: List[str] = []
+                desc_parts: List[str] = []
+                for t in child.findall(f"{{{ns}}}text"):
+                    ty = float(t.get("y", 0))
+                    txt = (t.text or "").strip()
+                    if not txt:
+                        continue
+                    if ty < first_div_y:
+                        name_parts.append(txt)
+                    else:
+                        desc_parts.append(txt)
+
+                label = name_parts[0] if name_parts else ""
+                tech = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+                note = "\n".join(desc_parts)
+
+                cluster_info[ent_id] = {
+                    "kind": "roundedrect",
+                    "geom": geom,
+                    "fill": fill,
+                    "label": label,
+                    "tech": tech,
+                    "note": note,
+                    "stroke_color": stroke_color,
+                    "stroke_width": stroke_width,
+                }
+                all_geom[ent_id] = {
+                    "x": geom["x"], "y": geom["y"],
+                    "w": geom["w"], "h": geom["h"],
+                }
+
+            elif cls == "entity":
+                ent_id = child.get("id", "")
+                if not ent_id:
+                    continue
+
+                path_el = child.find(f"{{{ns}}}path")
+                if path_el is None:
+                    continue
+
+                d = path_el.get("d", "")
+                bx, by, bw, bh = _path_bbox(d)
+                geom = {"x": bx, "y": by, "w": bw, "h": bh}
+                fill = path_el.get("fill", "#FEFFDD")
+                stroke_color, stroke_width = _extract_stroke(path_el)
+
+                # Collect texts, skip NBSP-only entries
+                texts: List[str] = []
+                for t in child.findall(f"{{{ns}}}text"):
+                    txt = (t.text or "").replace("\xa0", "").strip()
+                    if txt:
+                        texts.append(txt)
+
+                label = texts[0] if texts else ""
+                note_text = "\n".join(texts)
+
+                note_info[ent_id] = {
+                    "kind": "roundedrect",
+                    "geom": geom,
+                    "fill": fill,
+                    "label": label,
+                    "tech": "",
+                    "note": note_text,
+                    "stroke_color": stroke_color,
+                    "stroke_width": stroke_width,
+                }
+                all_geom[ent_id] = {
+                    "x": geom["x"], "y": geom["y"],
+                    "w": geom["w"], "h": geom["h"],
+                }
+
+            elif cls == "link":
+                src_id = child.get("data-entity-1", "")
+                dst_id = child.get("data-entity-2", "")
+                if not src_id or not dst_id:
+                    continue
+
+                link_type = child.get("data-link-type", "dependency")
+                texts_el = [
+                    t.text
+                    for t in child.findall(f"{{{ns}}}text")
+                    if t.text
+                ]
+                label = "\n".join(texts_el)
+
+                link_path = child.find(f"{{{ns}}}path")
+                style_str = (
+                    link_path.get("style", "")
+                    if link_path is not None
+                    else ""
+                )
+                d_attr = (
+                    link_path.get("d", "")
+                    if link_path is not None
+                    else ""
+                )
+                path_id = (
+                    link_path.get("id", "")
+                    if link_path is not None
+                    else ""
+                )
+                polys = child.findall(f"{{{ns}}}polygon")
+
+                link_list.append({
+                    "src_id": src_id,
+                    "dst_id": dst_id,
+                    "label": label,
+                    "style": style_str,
+                    "path_d": d_attr,
+                    "path_id": path_id,
+                    "link_type": link_type,
+                    "has_arrowhead": len(polys) > 0,
+                })
+
+            elif not cls:
+                # Unnamed <g> — detect regular state by structure:
+                # <rect rx="12.5"> + <line> + <text>
+                rect_el = child.find(f"{{{ns}}}rect")
+                line_el = child.find(f"{{{ns}}}line")
+                text_els = child.findall(f"{{{ns}}}text")
+
+                if (
+                    rect_el is not None
+                    and line_el is not None
+                    and text_els
+                    and float(rect_el.get("rx", 0)) >= 10
+                ):
+                    geom = {
+                        "x": round(float(rect_el.get("x", 0)), 2),
+                        "y": round(float(rect_el.get("y", 0)), 2),
+                        "w": round(float(rect_el.get("width", 0)), 2),
+                        "h": round(float(rect_el.get("height", 0)), 2),
+                    }
+                    fill = rect_el.get("fill", "#F1F1F1")
+                    stroke_color, stroke_width = _extract_stroke(rect_el)
+
+                    # Split texts by divider <line> y
+                    div_y = float(line_el.get("y1", 0))
+                    name_parts = []
+                    desc_parts = []
+                    for t in text_els:
+                        ty = float(t.get("y", 0))
+                        txt = (t.text or "").strip()
+                        if not txt:
+                            continue
+                        if ty < div_y:
+                            name_parts.append(txt)
+                        else:
+                            desc_parts.append(txt)
+
+                    label = name_parts[0] if name_parts else ""
+                    tech = (
+                        " ".join(name_parts[1:])
+                        if len(name_parts) > 1
+                        else ""
+                    )
+                    note_text = "\n".join(desc_parts)
+
+                    unnamed_states.append({
+                        "kind": "roundedrect",
+                        "geom": geom,
+                        "fill": fill,
+                        "label": label,
+                        "tech": tech,
+                        "note": note_text,
+                        "stroke_color": stroke_color,
+                        "stroke_width": stroke_width,
+                        "name_parts": name_parts,
+                    })
+
+        elif tag_local == "ellipse":
+            # Bare ellipse — initial [*] marker
+            rx = float(child.get("rx", 0))
+            ry = float(child.get("ry", 0))
+            if rx <= 12 and ry <= 12:
+                cx = float(child.get("cx", 0))
+                cy = float(child.get("cy", 0))
+                initial_ellipses.append({
+                    "kind": "ellipse",
+                    "geom": {
+                        "x": round(cx - rx, 2),
+                        "y": round(cy - ry, 2),
+                        "w": round(rx * 2, 2),
+                        "h": round(ry * 2, 2),
+                    },
+                    "fill": child.get("fill", "#222222"),
+                })
+
+    if not unnamed_states and not cluster_info and not note_info:
+        return empty
+
+    # ── Pass 2: entity-ID mapping for unnamed states ──
+    # Extract ent_id → alias set from link path id attributes
+    ent_id_aliases: Dict[str, set] = defaultdict(set)
+    for link in link_list:
+        path_id = link.get("path_id", "")
+        if not path_id:
+            continue
+        # Strip -N suffix for duplicate links (e.g. "LOCKOUT-to-RESET-1")
+        cleaned = re.sub(r"-(\d+)$", "", path_id)
+        m = re.match(r"^(.+?)-to-(.+)$", cleaned)
+        if m:
+            ent_id_aliases[link["src_id"]].add(m.group(1))
+            ent_id_aliases[link["dst_id"]].add(m.group(2))
+
+    # Pick a preferred alias per ent_id (skip *start* and GMN* names)
+    ent_id_to_alias: Dict[str, str] = {}
+    for ent_id, aliases in ent_id_aliases.items():
+        real = {
+            a for a in aliases
+            if not a.startswith("*") and not a.startswith("GMN")
+        }
+        if real:
+            ent_id_to_alias[ent_id] = sorted(real)[0]
+
+    alias_to_ent_id = {v: k for k, v in ent_id_to_alias.items()}
+
+    # Match aliases to unnamed states by label
+    state_to_ent_id: Dict[int, str] = {}
+    matched_ent_ids: set = set()
+    unmatched_ent_ids = (
+        set(ent_id_to_alias.keys()) - set(cluster_info.keys())
+    )
+
+    for idx, state in enumerate(unnamed_states):
+        parts = state.get("name_parts", [])
+        full_name = " ".join(parts)
+
+        # Candidate alias forms
+        candidates: List[str] = []
+        # Form 1: full name before '(', spaces → underscores
+        candidates.append(
+            full_name.split("(")[0].strip().replace(" ", "_"),
+        )
+        # Form 2: first word
+        if parts:
+            candidates.append(parts[0])
+
+        for candidate in candidates:
+            if (
+                candidate in alias_to_ent_id
+                and alias_to_ent_id[candidate] in unmatched_ent_ids
+                and alias_to_ent_id[candidate] not in matched_ent_ids
+            ):
+                eid = alias_to_ent_id[candidate]
+                state_to_ent_id[idx] = eid
+                matched_ent_ids.add(eid)
+                break
+
+    # Elimination fallback for remaining unmatched states
+    unmatched_states = [
+        i for i in range(len(unnamed_states)) if i not in state_to_ent_id
+    ]
+    remaining_ent_ids = sorted(unmatched_ent_ids - matched_ent_ids)
+    for i, sid in enumerate(unmatched_states):
+        if i < len(remaining_ent_ids):
+            state_to_ent_id[sid] = remaining_ent_ids[i]
+
+    # Populate all_geom: states and clusters override notes
+    for idx, ent_id in state_to_ent_id.items():
+        sg = unnamed_states[idx]["geom"]
+        all_geom[ent_id] = {
+            "x": sg["x"], "y": sg["y"],
+            "w": sg["w"], "h": sg["h"],
+        }
+    for ent_id, data in cluster_info.items():
+        cg = data["geom"]
+        all_geom[ent_id] = {
+            "x": cg["x"], "y": cg["y"],
+            "w": cg["w"], "h": cg["h"],
+        }
+
+    # ── Pass 3: parent map via geometric containment ──
+    parent_map: Dict[str, str] = {}
+    for idx, ent_id in state_to_ent_id.items():
+        sg = unnamed_states[idx]["geom"]
+        sx, sy = sg["x"], sg["y"]
+        sx2, sy2 = sx + sg["w"], sy + sg["h"]
+
+        for cluster_eid, cdata in cluster_info.items():
+            cg = cdata["geom"]
+            cx, cy = cg["x"], cg["y"]
+            cx2, cy2 = cx + cg["w"], cy + cg["h"]
+
+            if sx >= cx and sy >= cy and sx2 <= cx2 and sy2 <= cy2:
+                parent_map[ent_id] = cluster_eid
+                break
+
+    # ── Build individual annotations ─────────────────
+    counter = 1
+    id_to_ann: Dict[str, Dict[str, Any]] = {}
+
+    # Title
+    title_ann: Optional[Dict[str, Any]] = None
+    if title_info:
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        title_ann = {
+            "id": ann_id,
+            "kind": "text",
+            "geom": dict(title_info["geom"]),
+            "meta": {
+                "label": title_info["text"],
+                "tech": "", "note": title_info["text"],
+            },
+            "style": {
+                "pen": {"color": "#555555", "width": 2, "dash": "solid"},
+                "fill": {"color": "#00000000"},
+                "text": {"color": "#000000", "size_pt": 12.0},
+            },
+        }
+
+    # Initial [*] ellipses
+    ellipse_anns: List[Dict[str, Any]] = []
+    for ell in initial_ellipses:
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        ellipse_anns.append({
+            "id": ann_id,
+            "kind": "ellipse",
+            "geom": dict(ell["geom"]),
+            "meta": {"label": "Start", "tech": "", "note": "Start"},
+            "style": {
+                "pen": {"color": "#222222", "width": 1, "dash": "solid"},
+                "fill": {"color": _safe_fill(ell["fill"])},
+                "text": {"color": "#FFFFFF", "size_pt": 8.0},
+            },
+        })
+
+    # Unnamed states
+    for idx, state in enumerate(unnamed_states):
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        ent_id = state_to_ent_id.get(idx)
+
+        ann: Dict[str, Any] = {
+            "id": ann_id,
+            "kind": state["kind"],
+            "geom": dict(state["geom"]),
+            "meta": {
+                "label": state["label"],
+                "tech": state["tech"],
+                "note": state["note"] or state["label"],
+            },
+            "style": {
+                "pen": {
+                    "color": state["stroke_color"],
+                    "width": state["stroke_width"],
+                    "dash": "solid",
+                },
+                "fill": {"color": _safe_fill(state["fill"])},
+                "text": {"color": "#000000", "size_pt": 11.0},
+            },
+        }
+        if ent_id:
+            id_to_ann[ent_id] = ann
+
+    # Notes (separate from id_to_ann to avoid ent_id collisions)
+    note_anns: List[Dict[str, Any]] = []
+    for ent_id, data in note_info.items():
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        note_anns.append({
+            "id": ann_id,
+            "kind": data["kind"],
+            "geom": dict(data["geom"]),
+            "meta": {
+                "label": data["label"],
+                "tech": data["tech"],
+                "note": data["note"] or data["label"],
+            },
+            "style": {
+                "pen": {
+                    "color": data["stroke_color"],
+                    "width": data["stroke_width"],
+                    "dash": "solid",
+                },
+                "fill": {"color": _safe_fill(data["fill"])},
+                "text": {"color": "#000000", "size_pt": 11.0},
+            },
+        })
+
+    # Clusters
+    for ent_id, data in cluster_info.items():
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        ann = {
+            "id": ann_id,
+            "kind": data["kind"],
+            "geom": dict(data["geom"]),
+            "meta": {
+                "label": data["label"],
+                "tech": data["tech"],
+                "note": data["note"] or data["label"],
+            },
+            "style": {
+                "pen": {
+                    "color": data["stroke_color"],
+                    "width": data["stroke_width"],
+                    "dash": "solid",
+                },
+                "fill": {"color": _safe_fill(data["fill"])},
+                "text": {"color": "#000000", "size_pt": 11.0},
+            },
+        }
+        id_to_ann[ent_id] = ann
+
+    # ── Group assembly (bottom-up) ───────────────────
+    children_map: Dict[str, List[str]] = defaultdict(list)
+    for child_id, parent_id in parent_map.items():
+        if child_id in id_to_ann and parent_id in id_to_ann:
+            children_map[parent_id].append(child_id)
+
+    def _depth(ent_id: str) -> int:
+        d = 0
+        cur = ent_id
+        while cur in parent_map:
+            d += 1
+            cur = parent_map[cur]
+        return d
+
+    grouped_ids: set = set()
+    group_parents = sorted(
+        [eid for eid in cluster_info if eid in children_map],
+        key=_depth,
+        reverse=True,
+    )
+
+    for parent_id in group_parents:
+        child_ids = children_map[parent_id]
+        if not child_ids:
+            continue
+
+        child_anns = [
+            id_to_ann[cid] for cid in child_ids if cid in id_to_ann
+        ]
+        child_anns.sort(key=_child_y)
+
+        parent_ann = id_to_ann[parent_id]
+        group_id = "g" + parent_ann["id"][1:]
+        group_ann: Dict[str, Any] = {
+            "id": group_id,
+            "kind": "group",
+            "children": [parent_ann] + child_anns,
+            "meta": {
+                "label": parent_ann["meta"]["label"],
+                "tech": parent_ann["meta"].get("tech", ""),
+                "note": parent_ann["meta"].get("note", ""),
+            },
+            "style": parent_ann["style"],
+        }
+        id_to_ann[parent_id] = group_ann
+        grouped_ids.update(child_ids)
+
+    # ── Connector annotations ────────────────────────
+    line_anns: List[Dict[str, Any]] = []
+    for link in link_list:
+        pen_color = "#808080"
+        dashed = False
+        style_str = link["style"]
+        stroke_m = re.search(r'stroke:\s*(#[0-9A-Fa-f]{3,8})', style_str)
+        if stroke_m:
+            pen_color = stroke_m.group(1)
+        if "stroke-dasharray" in style_str:
+            dashed = True
+        width_m = re.search(
+            r'stroke-width:\s*(\d+(?:\.\d+)?)', style_str,
+        )
+        pen_width = int(float(width_m.group(1))) if width_m else 2
+
+        # Association links → dashed, no arrowhead
+        if link.get("link_type") == "association":
+            dashed = True
+            arrow_mode = "none"
+        else:
+            arrow_mode = "end" if link.get("has_arrowhead") else "none"
+
+        # Try emitting a curve from the SVG path geometry
+        d_attr = link.get("path_d", "")
+        has_curves = (
+            bool(re.search(r"[CcSsQqTt]", d_attr)) if d_attr else False
+        )
+
+        if has_curves:
+            curve_nodes, (bx, by, bw, bh) = _parse_path_to_curve_nodes(
+                d_attr,
+            )
+            if curve_nodes and bw > 0 and bh > 0:
+                ann_id = f"p{counter:06d}"
+                counter += 1
+                line_anns.append({
+                    "id": ann_id,
+                    "kind": "curve",
+                    "geom": {
+                        "x": bx, "y": by, "w": bw, "h": bh,
+                        "nodes": curve_nodes,
+                    },
+                    "meta": {
+                        "label": link["label"],
+                        "tech": "", "note": link["label"],
+                    },
+                    "style": _make_line_style(
+                        pen_color, pen_width,
+                        dashed=dashed, arrow=arrow_mode,
+                    ),
+                })
+                continue
+
+        # Fallback: center-to-center line
+        src_geom = all_geom.get(link["src_id"])
+        dst_geom = all_geom.get(link["dst_id"])
+        if not src_geom or not dst_geom:
+            continue
+
+        x1 = round(src_geom["x"] + src_geom["w"] / 2, 2)
+        y1 = round(src_geom["y"] + src_geom["h"] / 2, 2)
+        x2 = round(dst_geom["x"] + dst_geom["w"] / 2, 2)
+        y2 = round(dst_geom["y"] + dst_geom["h"] / 2, 2)
+
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        line_anns.append({
+            "id": ann_id,
+            "kind": "line",
+            "geom": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
+            "meta": {
+                "label": link["label"],
+                "tech": "", "note": link["label"],
+            },
+            "style": _make_line_style(
+                pen_color, pen_width,
+                dashed=dashed, arrow=arrow_mode,
+            ),
+        })
+
+    # ── Collect top-level annotations ────────────────
+    top_level: List[Dict[str, Any]] = []
+    if title_ann:
+        top_level.append(title_ann)
+    top_level.extend(ellipse_anns)
+
+    # States and clusters not consumed as group children
+    seen_ids: set = set()
+    for ent_id in id_to_ann:
+        if ent_id in grouped_ids or ent_id in seen_ids:
+            continue
+        seen_ids.add(ent_id)
+        top_level.append(id_to_ann[ent_id])
+
+    # Notes (always top-level)
+    top_level.extend(note_anns)
     top_level.extend(line_anns)
 
     # Sort by Y coordinate (title stays first)
@@ -2357,7 +3206,7 @@ def _build_element_annotation(
     ann: Dict[str, Any] = {
         "id": ann_id,
         "kind": kind,
-        "meta": {"kind": kind, "label": label, "tech": tech, "note": note or text},
+        "meta": {"label": label, "tech": tech, "note": note or text},
         "style": style,
     }
 
@@ -2465,7 +3314,6 @@ def _build_annotations(
                 "kind": "group",
                 "children": [parent_ann] + child_anns,
                 "meta": {
-                    "kind": "group",
                     "label": parent_ann["meta"]["label"],
                     "tech": parent_ann["meta"].get("tech", ""),
                     "note": parent_ann["meta"].get("note", ""),
@@ -2512,7 +3360,6 @@ def _build_annotations(
                         "nodes": curve_nodes,
                     },
                     "meta": {
-                        "kind": "curve",
                         "label": label,
                         "tech": "",
                         "note": label,
@@ -2542,7 +3389,6 @@ def _build_annotations(
             "kind": "line",
             "geom": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
             "meta": {
-                "kind": "line",
                 "label": label,
                 "tech": "",
                 "note": label,
@@ -2589,6 +3435,8 @@ def parse_puml_to_annotations(
             return _parse_sequence_diagram_svg(tree)
         if tree.getroot().get("data-diagram-type") == "DESCRIPTION":
             return _parse_description_diagram_svg(tree)
+        if tree.getroot().get("data-diagram-type") == "STATE":
+            return _parse_state_diagram_svg(tree)
 
     elements = _extract_elements(puml_text)
     known_aliases = {e["alias"] for e in elements}

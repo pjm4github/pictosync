@@ -139,6 +139,20 @@ def build_merged_annotation(
     if "id" in annotation:
         expected["id"] = annotation["id"]
 
+    # Dynamically populate optional schema objects that are present in
+    # the actual annotation so their sub-fields get validated rather than
+    # flagged as "extra".  These are stripped from the default template
+    # by build_expected_from_schema to avoid gray noise on non-DSL items.
+    actual_meta = annotation.get("meta", {})
+    if "dsl" in actual_meta and isinstance(actual_meta["dsl"], dict):
+        schema = get_annotation_schema()
+        defs = schema.get("$defs", {})
+        dsl_def = defs.get("dslMetadata", {})
+        if dsl_def:
+            expected.setdefault("meta", {})["dsl"] = _extract_defaults(
+                dsl_def, defs,
+            )
+
     diff = compute_field_diff(annotation, expected)
     merged = _ordered_merge(annotation, expected)
 

@@ -839,6 +839,44 @@ class SettingsDialog(QDialog):
         scale_row.addStretch()
         mmdc_layout.addLayout(scale_row)
 
+        # C4 layout: shapes per row
+        c4_shapes_row = QHBoxLayout()
+        c4_shapes_label = QLabel("C4 shapes per row:")
+        c4_shapes_label.setToolTip(
+            "Maximum number of C4 shapes rendered per row inside a boundary.\n"
+            "Passed to Mermaid via UpdateLayoutConfig($c4ShapeInRow).\n"
+            "Lower values produce taller, narrower diagrams."
+        )
+        c4_shapes_row.addWidget(c4_shapes_label)
+        self.tools_c4_shapes_spin = QSpinBox()
+        self.tools_c4_shapes_spin.setRange(1, 10)
+        self.tools_c4_shapes_spin.setValue(
+            self.settings_manager.settings.external_tools.c4_shapes_per_row
+        )
+        self.tools_c4_shapes_spin.setFixedWidth(70)
+        c4_shapes_row.addWidget(self.tools_c4_shapes_spin)
+        c4_shapes_row.addStretch()
+        mmdc_layout.addLayout(c4_shapes_row)
+
+        # C4 layout: boundaries per row
+        c4_bnd_row = QHBoxLayout()
+        c4_bnd_label = QLabel("C4 boundaries per row:")
+        c4_bnd_label.setToolTip(
+            "Maximum number of C4 boundaries rendered per row.\n"
+            "Passed to Mermaid via UpdateLayoutConfig($c4BoundaryInRow).\n"
+            "Lower values stack boundaries vertically."
+        )
+        c4_bnd_row.addWidget(c4_bnd_label)
+        self.tools_c4_bnd_spin = QSpinBox()
+        self.tools_c4_bnd_spin.setRange(1, 10)
+        self.tools_c4_bnd_spin.setValue(
+            self.settings_manager.settings.external_tools.c4_boundaries_per_row
+        )
+        self.tools_c4_bnd_spin.setFixedWidth(70)
+        c4_bnd_row.addWidget(self.tools_c4_bnd_spin)
+        c4_bnd_row.addStretch()
+        mmdc_layout.addLayout(c4_bnd_row)
+
         layout.addWidget(mmdc_group)
 
         layout.addStretch()
@@ -1056,6 +1094,8 @@ class SettingsDialog(QDialog):
             "tools_nodejs_path": s.external_tools.nodejs_path,
             "tools_mmdc_path": s.external_tools.mmdc_path,
             "tools_mmdc_png_scale": s.external_tools.mmdc_png_scale,
+            "tools_c4_shapes_per_row": s.external_tools.c4_shapes_per_row,
+            "tools_c4_boundaries_per_row": s.external_tools.c4_boundaries_per_row,
         }
 
     def _load_settings(self):
@@ -1282,6 +1322,8 @@ class SettingsDialog(QDialog):
         if not self.tools_mmdc_edit.isReadOnly():
             s.external_tools.mmdc_path = self.tools_mmdc_edit.text().strip()
         s.external_tools.mmdc_png_scale = self.tools_mmdc_scale_spin.value()
+        s.external_tools.c4_shapes_per_row = self.tools_c4_shapes_spin.value()
+        s.external_tools.c4_boundaries_per_row = self.tools_c4_bnd_spin.value()
 
         # Persist to file
         self.settings_manager.save()
@@ -1366,6 +1408,8 @@ class SettingsDialog(QDialog):
         s.external_tools.nodejs_path = snapshot["tools_nodejs_path"]
         s.external_tools.mmdc_path = snapshot["tools_mmdc_path"]
         s.external_tools.mmdc_png_scale = snapshot["tools_mmdc_png_scale"]
+        s.external_tools.c4_shapes_per_row = snapshot["tools_c4_shapes_per_row"]
+        s.external_tools.c4_boundaries_per_row = snapshot["tools_c4_boundaries_per_row"]
 
     # =========================================================================
     # Button Handlers
