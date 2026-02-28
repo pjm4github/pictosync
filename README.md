@@ -59,13 +59,22 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 - **Link Style Extraction**: Stroke colors and dash patterns from SVG applied to connectors
 - **Diagram Name Validation**: Warns about Windows-illegal characters in `@startuml` names that would cause silent rendering failures
 
-### Mermaid SVG Import
+### Mermaid Import
 - **Pre-Rendered SVG**: Import Mermaid SVG files (from Mermaid Live Editor, VS Code, or mermaid.ink) via drag-and-drop or File > Open
 - **SVG-to-PNG Rendering**: Qt-based SVG renderer converts Mermaid SVGs to temporary PNG for canvas background; `<foreignObject>` text replaced with native SVG `<text>` for Qt compatibility
 - **Flowchart Parser**: Parses nodes (rect, roundedrect, polygon/diamond), edge paths (curves and lines), edge labels, and cluster subgraphs from Mermaid flowchart SVGs
 - **Mermaid Detection**: Automatic identification via `aria-roledescription` attribute on the root `<svg>` element
+- **Mermaid Source Import**: Import `.mmd`/`.mermaid` files via drag-and-drop or File > Open; renders via mmdc CLI to PNG background + SVG for annotation parsing
+- **C4 Two-Step Pipeline**: C4 diagrams (Context, Container, Component, Dynamic, Deployment) use a source parser for semantic data (aliases, types, tech, boundaries, relationships) merged with SVG geometry for enriched annotations
+- **C4 Structured Metadata**: Annotations carry `meta.dsl` with `tool` (mermaid/plantuml/d2) and `c4` sub-object preserving C4 semantics — type, alias, parent, boundary_type, rel_type, from, to
+- **C4 Layout Settings**: Configurable shapes-per-row and boundaries-per-row via Settings panel; PictoSync overrides source `UpdateLayoutConfig` directives
 
 > **C4 diagram layout note**: The Mermaid CLI (`mmdc`) has a [known bug](https://github.com/mermaid-js/mermaid-cli/issues/440) where `UpdateLayoutConfig` / `c4ShapeInRow` is ignored in headless Puppeteer mode, causing C4 diagrams to render in a single column. PictoSync works around this by running mmdc in headed (non-headless) mode for C4 diagrams, which briefly opens a browser window during rendering. This is a Mermaid CLI issue, not a PictoSync bug.
+
+### Domain-Specific Language (DSL)
+- **Domain Plugin System**: Extensible `domains/` folder; each domain provides a `tools.json` defining drawing tools that map to base annotation kinds with custom defaults
+- **Schema-Documented DSL Metadata**: `meta.dsl` structure defined in `annotation_schema.json`; domain-first hierarchy (`dsl.tool` + `dsl.c4.*`) extensible to PlantUML, D2, SysML, ArchiMate
+- **NS3 Example Domain**: Reference implementation under `domains/ns3/` with network node tool
 
 ### PowerPoint Export
 - **Slide Export**: Export annotations as native PowerPoint shapes via File > Export PPTX
@@ -254,15 +263,18 @@ pictosync/
 ├── plantuml/            # PlantUML import
 │   ├── renderer.py      # PlantUML to PNG/SVG rendering
 │   └── parser.py        # PUML text parsing, SVG position/path extraction, description diagram parser
-├── mermaid/             # Mermaid SVG import
+├── mermaid/             # Mermaid import (SVG + source)
 │   ├── parser.py        # Mermaid SVG detection and flowchart parsing
-│   └── renderer.py      # SVG-to-PNG rendering with foreignObject preprocessing
+│   ├── renderer.py      # SVG-to-PNG rendering with foreignObject preprocessing
+│   ├── c4_source_parser.py  # C4 source text parsing (aliases, boundaries, relationships)
+│   └── c4_merger.py     # Merges C4 source semantics with SVG geometry
 ├── gemini/              # AI integration
 │   └── worker.py        # Threaded Gemini API worker
 ├── pptx_export.py       # PowerPoint slide export (all 12 kinds, native bezier curves, arrowheads, labels)
 ├── alignment/           # OpenCV alignment
 │   ├── optimizer.py     # Shape and line alignment algorithms
 │   └── worker.py        # Threaded alignment workers
+├── domains/             # Domain-specific DSL plugins (e.g. ns3/)
 ├── icons/               # Theme-aware SVG icons
 │   ├── generate_icons.py    # Icon generation script
 │   └── [Theme folders]      # Icons for each theme
@@ -332,7 +344,11 @@ See `schemas/annotation_schema.json` for the full specification.
 | ER Diagram | `er` | — | — | `er1.svg` | `nodes`/`edgePaths`; cardinality markers; attribute rows |
 | Requirement | `requirement` | — | — | `requirement1.svg` | `nodes`/`edgePaths`; dashed relationship lines |
 | **Other** | | | | | |
-| C4 Context | `c4` | — | — | `c4context1.svg` | Person icons, system boxes, relationships |
+| C4 Context | `c4` | Y | Y | `c4context.png` | Two-step C4 pipeline (source + SVG geometry) |
+| C4 Container | `c4` | Y | Y | `c4container.png` | Two-step C4 pipeline (source + SVG geometry) |
+| C4 Component | `c4` | Y | Y | `c4component.png` | Two-step C4 pipeline (source + SVG geometry) |
+| C4 Dynamic | `c4` | Y | Y | — | Two-step C4 pipeline (source + SVG geometry) |
+| C4 Deployment | `c4` | Y | Y | `c4deployment.png` | Two-step C4 pipeline (source + SVG geometry) |
 | Git Graph | `gitGraph` | — | — | `gitgraph1.svg` | Commit bullets, branch arrows, labels |
 | Mindmap | `mindmap` | — | — | `mindmap1.svg` | `nodes`/`edgePaths`; section-indexed branches |
 
