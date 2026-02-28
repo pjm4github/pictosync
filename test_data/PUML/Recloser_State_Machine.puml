@@ -1,0 +1,119 @@
+@startuml Recloser_State_Machine
+skinparam state {
+  BackgroundColor<<closed>>      D9EAD3
+  BackgroundColor<<open_ar>>     FFF2CC
+  BackgroundColor<<open_lo>>     F4CCCC
+  BackgroundColor<<open_man>>    CFE2F3
+  BackgroundColor<<hlt>>         EAD1DC
+  BorderColor                    444444
+  FontName                       Arial
+  FontSize                       11
+  ArrowFontName                  Arial
+  ArrowFontSize                  9
+}
+skinparam shadowing false
+skinparam note {
+  BackgroundColor FFFDE7
+  BorderColor     AAAAAA
+  FontName        Arial
+  FontSize        9
+}
+
+title <b>Recloser State Machine</b>\nStates: OPEN / CLOSED  |  Control: DNP3 · Manual · Fault Protection\n<i>Source: pacbasics.org</i>
+
+'─────────────────────────────────────────────
+' STATES
+'─────────────────────────────────────────────
+state "CLOSED" as CLOSED <<closed>> : **CB Energized — Line Loaded**\nAuto-reclose armed\nAwaiting protection initiate\nBI1 = 1 (Closed)
+
+state "OPEN\n(AUTO-RECLOSE)" as OPEN_AR <<open_ar>> : **CB De-energized — Auto Cycling**\nDead-time counting\nShot counter active\nBI1 = 0, BI2 = 1, BI3 = 0
+
+state OPEN_AR {
+  state "Dead Time\n(Open)" as DT : Counting open interval\nShot 1: 0–5 s\nShot 2: 10–20 s\nShot 3: 10–30 s
+  state "Reclose\nAttempt\n(Closed)" as RA : CB closes\nChecking fault clearance
+  DT --> RA : Dead time expired
+  RA --> DT : Re-trip\n[shots remaining]
+}
+
+state "OPEN\n(LOCKOUT)" as OPEN_LO <<open_lo>> : **CB De-energized — Latched Open**\nAll shots exhausted OR\nlockout condition forced\nBI1 = 0, BI3 = 1
+
+state "OPEN\n(MANUAL)" as OPEN_MAN <<open_man>> : **CB De-energized — Operator Commanded**\nAuto-reclose inhibited\nBI1 = 0, BI2 = 0
+
+state "HOT LINE TAG" as HLT <<hlt>> : **Safety Mode — CB Position Independent**\nAuto-reclose disabled\nAny trip → OPEN (LOCKOUT)\nBI4 = 1
+
+'─────────────────────────────────────────────
+' INITIAL STATE
+'─────────────────────────────────────────────
+[*] --> CLOSED
+
+'─────────────────────────────────────────────
+' FAULT-DRIVEN TRANSITIONS  (red labels)
+'─────────────────────────────────────────────
+CLOSED    --> OPEN_AR  : <color:#CC0000>[FAULT] OC Trip (50/51)\nReclose enabled</color>
+CLOSED    --> OPEN_LO  : <color:#CC0000>[FAULT] Instantaneous Lockout (50L)\nOR Voltage/Freq (27/59/81)</color>
+RA        --> CLOSED   : <color:#CC0000>[FAULT Cleared]\nCB closed ≥ Reset Time</color>
+RA        --> OPEN_LO  : <color:#CC0000>[FAULT Persists]\nAll shots exhausted\nOR 50L on reclose</color>
+HLT       --> OPEN_LO  : <color:#CC0000>[FAULT] Any protection trip\nwhile HLT active</color>
+
+'─────────────────────────────────────────────
+' DNP3 TRANSITIONS  (blue labels)
+'─────────────────────────────────────────────
+CLOSED    --> OPEN_LO  : <color:#1155CC>[DNP3] BO2: TRIP\n(Direct Operate / SBO)</color>
+CLOSED    --> OPEN_MAN : <color:#1155CC>[DNP3] BO2: OPEN command\n(operator switching)</color>
+CLOSED    --> HLT      : <color:#1155CC>[DNP3] BO4: Hot Line Tag ON</color>
+OPEN_AR   --> OPEN_LO  : <color:#1155CC>[DNP3] BO3: Inhibit Reclose\nOR BO2: Force TRIP</color>
+OPEN_LO   --> CLOSED   : <color:#1155CC>[DNP3] BO1: CLOSE\n+ CB closed ≥ Reset Time</color>
+OPEN_MAN  --> CLOSED   : <color:#1155CC>[DNP3] BO1: CLOSE\n+ CB closed ≥ Reset Time</color>
+HLT       --> CLOSED   : <color:#1155CC>[DNP3] BO4: Hot Line Tag OFF\n(AND local HLT cleared)</color>
+
+'─────────────────────────────────────────────
+' MANUAL LOCAL TRANSITIONS  (green labels)
+'─────────────────────────────────────────────
+CLOSED    --> OPEN_MAN : <color:#38761D>[MANUAL] Local OPEN\n(panel / HMI)</color>
+CLOSED    --> HLT      : <color:#38761D>[MANUAL] HLT switch ON\n(local panel)</color>
+OPEN_AR   --> OPEN_MAN : <color:#38761D>[MANUAL] Local OPEN\nduring reclose cycle</color>
+OPEN_LO   --> CLOSED   : <color:#38761D>[MANUAL] Local CLOSE\n+ CB closed ≥ Reset Time</color>
+OPEN_MAN  --> CLOSED   : <color:#38761D>[MANUAL] Local CLOSE\n+ CB closed ≥ Reset Time</color>
+HLT       --> CLOSED   : <color:#38761D>[MANUAL] HLT switch OFF\n(AND DNP3 HLT cleared)</color>
+
+'─────────────────────────────────────────────
+' NOTES
+'─────────────────────────────────────────────
+note right of CLOSED
+  **DNP3 Status Points**
+  BI1: CB Position (0=Open, 1=Closed)
+  BI2: Reclose Enabled
+  BI3: Lockout Status
+  BI4: Hot Line Tag Status
+  AI:  Fault Current (A)
+end note
+
+note right of OPEN_LO
+  **DNP3 Control Points**
+  BO1: CLOSE command
+  BO2: OPEN / TRIP command
+  BO3: Inhibit Reclose
+  BO4: Hot Line Tag On/Off
+end note
+
+note bottom of OPEN_AR
+  **Dead Time Settings (IEEE C37.104)**
+  Shot 1 (initial trip → 1st reclose): 0–5 s
+  Shot 2 (2nd trip → 2nd reclose): 10–20 s
+  Shot 3 (3rd trip → 3rd reclose): 10–30 s
+  Min dead time: t = 10.5 + V_LL/34.5 cycles
+end note
+
+legend bottom
+  |= Color |= Control Source |
+  |<#FFCCCC> Red label   | [FAULT]  — Protection relay trip (50/51/50L/27/59/81) |
+  |<#CCE0FF> Blue label  | [DNP3]   — SCADA/EMS remote command via DNP3 protocol  |
+  |<#CCFFCC> Green label | [MANUAL] — Local operator action (panel / HMI)          |
+  |<#D9EAD3> CLOSED      | CB energized, line loaded, auto-reclose armed            |
+  |<#FFF2CC> OPEN (AR)   | CB open, dead-time cycling, shots remaining              |
+  |<#F4CCCC> OPEN (LO)   | CB open, locked out, manual close required               |
+  |<#CFE2F3> OPEN (MAN)  | CB open by operator, auto-reclose inhibited              |
+  |<#EAD1DC> HOT LINE TAG| Safety mode, any trip forces OPEN (LOCKOUT)              |
+endlegend
+
+@enduml

@@ -4,7 +4,7 @@
 
 # PictoSync
 
-**v1.6** | PNG Image Canvas Tool for Object Synchronization
+**v1.7** | PNG Image Canvas Tool for Object Synchronization
 
 Diagram annotation tool with AI-powered extraction and bidirectional sync.
 
@@ -59,6 +59,12 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 - **Link Style Extraction**: Stroke colors and dash patterns from SVG applied to connectors
 - **Diagram Name Validation**: Warns about Windows-illegal characters in `@startuml` names that would cause silent rendering failures
 
+### Mermaid SVG Import
+- **Pre-Rendered SVG**: Import Mermaid SVG files (from Mermaid Live Editor, VS Code, or mermaid.ink) via drag-and-drop or File > Open
+- **SVG-to-PNG Rendering**: Qt-based SVG renderer converts Mermaid SVGs to temporary PNG for canvas background; `<foreignObject>` text replaced with native SVG `<text>` for Qt compatibility
+- **Flowchart Parser**: Parses nodes (rect, roundedrect, polygon/diamond), edge paths (curves and lines), edge labels, and cluster subgraphs from Mermaid flowchart SVGs
+- **Mermaid Detection**: Automatic identification via `aria-roledescription` attribute on the root `<svg>` element
+
 ### PowerPoint Export
 - **Slide Export**: Export annotations as native PowerPoint shapes via File > Export PPTX
 - **Shape Support**: Rectangles, rounded rectangles, ellipses, hexagons, cylinders, block arrows, isometric cubes, polygons, curves, orthogonal curves, lines, and text
@@ -108,6 +114,10 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 - **Text Formatting**: Font size, alignment, vertical position, and spacing controls
 
 ### User Interface
+- **Dynamic Title Bar**: Window title shows the currently loaded file (e.g. "PictoSync — diagram.puml"); reverts to default when no file is loaded
+- **Wait Cursor During Imports**: Busy cursor provides visual feedback while PlantUML/Mermaid CLI tools render
+- **Wider JSON Editor**: JSON editor dock starts at 500px width for less text wrapping
+- **Compact Settings Dialog**: Tighter tab labels, reduced margins, and smaller dialog footprint
 - **Hide/Show PNG**: Toggle background image visibility for cleaner annotation view
 - **Handle-Enclosed Selection**: Rubber band selection respects individual item handles with live preview
 - **Multiple Themes**: 7 built-in themes (Foundation Dark, Bulma Light, Bauhaus, Neumorphism, Materialize, Tailwind, Bootstrap)
@@ -242,6 +252,9 @@ pictosync/
 ├── plantuml/            # PlantUML import
 │   ├── renderer.py      # PlantUML to PNG/SVG rendering
 │   └── parser.py        # PUML text parsing, SVG position/path extraction, description diagram parser
+├── mermaid/             # Mermaid SVG import
+│   ├── parser.py        # Mermaid SVG detection and flowchart parsing
+│   └── renderer.py      # SVG-to-PNG rendering with foreignObject preprocessing
 ├── gemini/              # AI integration
 │   └── worker.py        # Threaded Gemini API worker
 ├── pptx_export.py       # PowerPoint slide export (all 12 kinds, native bezier curves, arrowheads, labels)
@@ -258,7 +271,8 @@ pictosync/
 │   ├── test_ungroup_drag.py         # Ungroup + drag correctness
 │   └── test_flow_ungroup.py         # Flow diagram ungroup + drag
 ├── test_data/           # Test fixture data
-│   └── PUML/            # Anonymized PlantUML test diagrams
+│   ├── PUML/            # Anonymized PlantUML test diagrams
+│   └── MERMAID/         # Mermaid SVG test files (all 18 diagram types)
 └── requirements.txt
 ```
 
@@ -274,7 +288,61 @@ Annotations follow a JSON schema with support for:
 
 See `schemas/annotation_schema.json` for the full specification.
 
+## Diagram Import Coverage
+
+### PlantUML
+
+| Diagram Type | Parse | Render | Test Data | Notes |
+|-------------|:-----:|:------:|:---------:|-------|
+| Component | Y | Y | `test_component.puml` | Description diagram parser (entities, clusters, links) |
+| Deployment | Y | Y | `test_descript.puml` | Description diagram parser |
+| Use Case | Y | Y | `test_use_case.puml` | Description diagram parser |
+| Architecture | Y | Y | `test_arch1.puml` | Description diagram parser |
+| Activity | Y | Y | `test_flow.puml` | Dedicated parser (partitions, flow lines, start/end nodes) |
+| Sequence | Y | Y | `test_seq1.puml` | Dedicated parser (participants, messages, lifelines) |
+| State | Y | Y | `Recloser_State_Machine.puml` | Dedicated parser (states, transitions, start/end) |
+| Class | Y | Y | — | Falls through to generic SVG position extraction |
+
+### Mermaid SVG
+
+| Diagram Type | `aria-roledescription` | Parse | Render | Test Data | SVG Structure |
+|-------------|----------------------|:-----:|:------:|:---------:|---------------|
+| **Flow & Logic** | | | | | |
+| Flowchart | `flowchart-v2` | Y | Y | `flowchart1.svg` | `nodes`/`edgePaths`/`edgeLabels` groups |
+| State Diagram | `stateDiagram` | — | — | `state1.svg` | Same groups; `state-*` IDs; circle + path shapes |
+| Block Diagram | `block` | — | — | `block1.svg` | Flat `<g class="block">` — nodes + edges as siblings |
+| Packet Diagram | `packet` | — | — | `packet1.svg` | Grid of `<rect class="packetBlock">` + `<text>` labels |
+| Kanban | `kanban` | — | — | `kanban1.svg` | `sections` clusters + `items` cards; no edges |
+| Architecture | `architecture` | — | — | `architecture1.svg` | `architecture-services`/`-edges`/`-groups`; native `<text>` |
+| **Sequence & Interaction** | | | | | |
+| Sequence | `sequence` | — | — | `sequence1.svg` | Actor boxes, lifelines, message arrows, notes, loops |
+| ZenUML | `zenuml` | — | — | `zenuml1.svg` | HTML/CSS-styled elements; no viewBox |
+| User Journey | `journey` | — | — | `journey1.svg` | Sections, tasks, face icons, legends |
+| **Data & Visualization** | | | | | |
+| Pie Chart | `pie` | — | — | `pie1.svg` | `pieCircle` slices + legend |
+| XY Chart | `xychart` | — | — | `xychart1.svg` | Axes, bar plots, line plots |
+| Gantt | `gantt` | — | — | `gantt1.svg` | Section bands, task bars, tick marks |
+| Timeline | `timeline` | — | — | `timeline1.svg` | Event/line/task wrappers, section nodes |
+| Sankey | `sankey` | — | — | `sankey1.svg` | `nodes`/`links` groups |
+| Quadrant Chart | `quadrantChart` | — | — | `quadrant1.svg` | 4 quadrant rects, data points, labels |
+| **Relationships** | | | | | |
+| Class Diagram | `class` | — | — | `class1.svg` | `nodes`/`edgePaths`/`edgeLabels`; member/method groups |
+| ER Diagram | `er` | — | — | `er1.svg` | `nodes`/`edgePaths`; cardinality markers; attribute rows |
+| Requirement | `requirement` | — | — | `requirement1.svg` | `nodes`/`edgePaths`; dashed relationship lines |
+| **Other** | | | | | |
+| C4 Context | `c4` | — | — | `c4context1.svg` | Person icons, system boxes, relationships |
+| Git Graph | `gitGraph` | — | — | `gitgraph1.svg` | Commit bullets, branch arrows, labels |
+| Mindmap | `mindmap` | — | — | `mindmap1.svg` | `nodes`/`edgePaths`; section-indexed branches |
+
+**Y** = implemented, **—** = test data collected, parser not yet implemented
+
 ## Version History
+
+### v1.7 (2026-02-27)
+- Dynamic title bar shows currently loaded file name after import (PlantUML, Mermaid SVG, Mermaid source, or standalone PNG)
+- Wait cursor during all import operations (PlantUML rendering, Mermaid CLI, SVG parsing) for visual feedback
+- Wider JSON editor dock (500px initial width) reduces text wrapping
+- Compact settings dialog: smaller footprint, tighter tab labels, reduced group box margins
 
 ### v1.6 (2026-02-22)
 - Gemini model selection: configurable model list and default in settings, dropdown menu in toolbar

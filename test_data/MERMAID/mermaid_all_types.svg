@@ -1,0 +1,191 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2600" height="1978"
+  viewBox="0 0 2600 1978">
+<defs>
+  <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+    <polygon points="0 0, 10 3.5, 0 7" fill="#58a6ff"/>
+  </marker>
+  <marker id="arr2" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+    <polygon points="0 0, 10 3.5, 0 7" fill="#e94560"/>
+  </marker>
+  <filter id="glow">
+    <feGaussianBlur stdDeviation="3" result="blur"/>
+    <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+</defs>
+
+<!-- Background -->
+<rect width="2600" height="1978" fill="#0d1117"/>
+
+<!-- Title bar -->
+<rect x="0" y="0" width="2600" height="28" fill="#161b22"/>
+<text x="1300" y="19" text-anchor="middle" font-family="Consolas,Monaco,monospace"
+  font-size="13" fill="#8b949e">
+  Mermaid Diagram Language — Complete Reference Map
+</text>
+
+<path d="M1300,130 C1060.0,130 1060.0,210 820,210" fill="none" stroke="#e94560" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1300,130 C1180.0,130 1180.0,210 1060,210" fill="none" stroke="#e94560" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1300,130 C1300.0,130 1300.0,210 1300,210" fill="none" stroke="#e94560" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1300,130 C1420.0,130 1420.0,210 1540,210" fill="none" stroke="#e94560" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1300,130 C1540.0,130 1540.0,210 1780,210" fill="none" stroke="#e94560" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M820,290 C820.0,290 820.0,370 820,370" fill="none" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M820,290 C820.0,290 820.0,568 820,568" fill="none" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1060,290 C1060.0,290 1060.0,370 1060,370" fill="none" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1060,290 C1060.0,290 1060.0,530 1060,530" fill="none" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1060,290 C1060.0,290 1060.0,708 1060,708" fill="none" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1060,290 C1060.0,290 1060.0,868 1060,868" fill="none" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1060,290 C1060.0,290 1060.0,1028 1060,1028" fill="none" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1060,290 C1060.0,290 1060.0,1188 1060,1188" fill="none" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1060,290 C1060.0,290 1060.0,1348 1060,1348" fill="none" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1060,290 C1060.0,290 1060.0,1508 1060,1508" fill="none" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1300,290 C1300.0,290 1300.0,370 1300,370" fill="none" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1300,290 C1300.0,290 1300.0,548 1300,548" fill="none" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1300,290 C1300.0,290 1300.0,708 1300,708" fill="none" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1300,290 C1300.0,290 1300.0,868 1300,868" fill="none" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1540,290 C1540.0,290 1540.0,370 1540,370" fill="none" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1780,290 C1780.0,290 1780.0,370 1780,370" fill="none" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1780,290 C1780.0,290 1780.0,530 1780,530" fill="none" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1780,290 C1780.0,290 1780.0,708 1780,708" fill="none" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1780,290 C1780.0,290 1780.0,868 1780,868" fill="none" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M1300,130 C1300.0,130 1300.0,1698 1300,1698" fill="none" stroke="#e94560" stroke-width="2" marker-end="url(#arr)"/>
+<rect x="1030" y="60" width="540" height="70" rx="35" fill="#e94560" stroke="#ffffff" stroke-width="2"/>
+<text x="1300" y="100.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="20" font-weight="700" fill="#ffffff">🧜 Mermaid Diagram Language</text>
+<rect x="730" y="210" width="180" height="80" rx="8" fill="#161b22" stroke="#e94560" stroke-width="2"/>
+<text x="820" y="230.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#e94560">Flow &amp;</text>
+<text x="820" y="248.85" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#e94560">Logic</text>
+<rect x="970" y="210" width="180" height="80" rx="8" fill="#161b22" stroke="#e94560" stroke-width="2"/>
+<text x="1060" y="230.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#e94560">Data &amp;</text>
+<text x="1060" y="248.85" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#e94560">Structure</text>
+<rect x="1210" y="210" width="180" height="80" rx="8" fill="#161b22" stroke="#e94560" stroke-width="2"/>
+<text x="1300" y="230.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#e94560">Time &amp;</text>
+<text x="1300" y="248.85" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#e94560">Sequence</text>
+<rect x="1450" y="210" width="180" height="80" rx="8" fill="#161b22" stroke="#e94560" stroke-width="2"/>
+<text x="1540" y="230.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#e94560">Architecture</text>
+<text x="1540" y="248.85" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#e94560">&amp; Infra</text>
+<rect x="1690" y="210" width="180" height="80" rx="8" fill="#161b22" stroke="#e94560" stroke-width="2"/>
+<text x="1780" y="230.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#e94560">Planning &amp;</text>
+<text x="1780" y="248.85" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#e94560">Process</text>
+<rect x="640" y="370" width="360" height="168" rx="8" fill="#0f3460" stroke="#58a6ff" stroke-width="2"/>
+<text x="820" y="390.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#a8d8ea">🔷 Flowchart</text>
+<text x="654" y="410" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">────────────</text>
+<text x="654" y="427" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Node shapes: rect, round, stadium,</text>
+<text x="654" y="444" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">  subroutine, cylinder, diamond,</text>
+<text x="654" y="461" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">  hexagon, parallelogram, trapezoid</text>
+<text x="654" y="478" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Edges: --&gt; --- -.-&gt; ==&gt; --text--&gt;</text>
+<text x="654" y="495" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Subgraphs  •  LR/TD/RL/BT</text>
+<rect x="640" y="568" width="360" height="130" rx="8" fill="#0f3460" stroke="#58a6ff" stroke-width="2"/>
+<text x="820" y="588.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#a8d8ea">🔄 State Diagram</text>
+<text x="654" y="608" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">────────────</text>
+<text x="654" y="625" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">[*] start/end  •  transitions</text>
+<text x="654" y="642" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Composite &amp; concurrent states</text>
+<text x="654" y="659" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Notes  •  v1 &amp; v2 syntax</text>
+<rect x="880" y="370" width="360" height="130" rx="8" fill="#0f3460" stroke="#58a6ff" stroke-width="2"/>
+<text x="1060" y="390.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#a8d8ea">🗄️ Entity Relationship</text>
+<text x="894" y="410" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">────────────</text>
+<text x="894" y="427" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Entities &amp; typed attributes</text>
+<text x="894" y="444" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">||--o|  ||--|{  }|--|{</text>
+<text x="894" y="461" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Optional / mandatory markers</text>
+<rect x="880" y="530" width="360" height="148" rx="8" fill="#0f3460" stroke="#58a6ff" stroke-width="2"/>
+<text x="1060" y="550.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#a8d8ea">📦 Class Diagram</text>
+<text x="894" y="570" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">────────────</text>
+<text x="894" y="587" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Classes, interfaces, enums</text>
+<text x="894" y="604" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">+ - # ~ visibility</text>
+<text x="894" y="621" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">--|&gt;  --*  --o  ..&gt;  relations</text>
+<text x="894" y="638" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Cardinality labels</text>
+<rect x="880" y="708" width="360" height="130" rx="8" fill="#0f3460" stroke="#58a6ff" stroke-width="2"/>
+<text x="1060" y="728.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#a8d8ea">🥧 Pie Chart</text>
+<text x="894" y="748" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">────────────</text>
+<text x="894" y="765" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">title + percentage slices</text>
+<text x="894" y="782" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Custom colors via themeVariables</text>
+<rect x="880" y="868" width="360" height="130" rx="8" fill="#0f3460" stroke="#58a6ff" stroke-width="2"/>
+<text x="1060" y="888.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#a8d8ea">🔲 Quadrant Chart</text>
+<text x="894" y="908" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">────────────</text>
+<text x="894" y="925" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">x-axis / y-axis labels</text>
+<text x="894" y="942" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Point plotting  •  4 regions</text>
+<rect x="880" y="1028" width="360" height="130" rx="8" fill="#0f3460" stroke="#58a6ff" stroke-width="2"/>
+<text x="1060" y="1048.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#a8d8ea">📊 Sankey Diagram (beta)</text>
+<text x="894" y="1068" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">────────────</text>
+<text x="894" y="1085" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Source, target, value triples</text>
+<text x="894" y="1102" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Flow width proportional to value</text>
+<rect x="880" y="1188" width="360" height="130" rx="8" fill="#0f3460" stroke="#58a6ff" stroke-width="2"/>
+<text x="1060" y="1208.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#a8d8ea">🧩 Block Diagram (beta)</text>
+<text x="894" y="1228" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">────────────</text>
+<text x="894" y="1245" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Rows &amp; columns  •  spanning blocks</text>
+<text x="894" y="1262" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Edge arrows  •  composite blocks</text>
+<rect x="880" y="1348" width="360" height="130" rx="8" fill="#0f3460" stroke="#58a6ff" stroke-width="2"/>
+<text x="1060" y="1368.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#a8d8ea">🏛️ Architecture Diagram (beta)</text>
+<text x="894" y="1388" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">────────────</text>
+<text x="894" y="1405" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Groups &amp; services  •  icons</text>
+<text x="894" y="1422" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Bidirectional edges  •  nesting</text>
+<rect x="880" y="1508" width="360" height="130" rx="8" fill="#0f3460" stroke="#58a6ff" stroke-width="2"/>
+<text x="1060" y="1528.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#a8d8ea">📈 XY Chart (beta)</text>
+<text x="894" y="1548" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">────────────</text>
+<text x="894" y="1565" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Bar &amp; line series  •  axes config</text>
+<text x="894" y="1582" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Multiple series  •  theme colors</text>
+<rect x="1120" y="370" width="360" height="148" rx="8" fill="#0f3460" stroke="#58a6ff" stroke-width="2"/>
+<text x="1300" y="390.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#a8d8ea">💬 Sequence Diagram</text>
+<text x="1134" y="410" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">────────────</text>
+<text x="1134" y="427" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Participants / actors</text>
+<text x="1134" y="444" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">-&gt;&gt;, --&gt;&gt;, -x, --x  messages</text>
+<text x="1134" y="461" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">loop / alt / opt / par / break</text>
+<text x="1134" y="478" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Notes  •  autonumber</text>
+<rect x="1120" y="548" width="360" height="130" rx="8" fill="#0f3460" stroke="#58a6ff" stroke-width="2"/>
+<text x="1300" y="568.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#a8d8ea">📅 Gantt Chart</text>
+<text x="1134" y="588" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">────────────</text>
+<text x="1134" y="605" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">dateFormat  •  sections &amp; tasks</text>
+<text x="1134" y="622" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">after / until  •  crit / done / active</text>
+<text x="1134" y="639" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Exclude weekends</text>
+<rect x="1120" y="708" width="360" height="130" rx="8" fill="#0f3460" stroke="#58a6ff" stroke-width="2"/>
+<text x="1300" y="728.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#a8d8ea">⏱️ Timeline</text>
+<text x="1134" y="748" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">────────────</text>
+<text x="1134" y="765" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Sections  •  time label → events</text>
+<text x="1134" y="782" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Multiple events per time point</text>
+<rect x="1120" y="868" width="360" height="130" rx="8" fill="#0f3460" stroke="#58a6ff" stroke-width="2"/>
+<text x="1300" y="888.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#a8d8ea">🌿 Git Graph</text>
+<text x="1134" y="908" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">────────────</text>
+<text x="1134" y="925" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">commit / branch / checkout / merge</text>
+<text x="1134" y="942" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">cherryPick  •  tags &amp; custom ids</text>
+<text x="1134" y="959" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">LR / TB  •  order: normal/reverse</text>
+<rect x="1360" y="370" width="360" height="148" rx="8" fill="#0f3460" stroke="#58a6ff" stroke-width="2"/>
+<text x="1540" y="390.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#a8d8ea">🏗️ C4 Diagram</text>
+<text x="1374" y="410" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">────────────</text>
+<text x="1374" y="427" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">C4Context / Container / Component</text>
+<text x="1374" y="444" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">  / Dynamic layouts</text>
+<text x="1374" y="461" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Person, System, SystemDb, Boundary</text>
+<text x="1374" y="478" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Rel / BiRel  •  Ext variants</text>
+<rect x="1600" y="370" width="360" height="130" rx="8" fill="#0f3460" stroke="#58a6ff" stroke-width="2"/>
+<text x="1780" y="390.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#a8d8ea">👤 User Journey</text>
+<text x="1614" y="410" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">────────────</text>
+<text x="1614" y="427" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Sections  •  task + score (1-5)</text>
+<text x="1614" y="444" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Actor list per task</text>
+<rect x="1600" y="530" width="360" height="148" rx="8" fill="#0f3460" stroke="#58a6ff" stroke-width="2"/>
+<text x="1780" y="550.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#a8d8ea">📋 Requirement Diagram</text>
+<text x="1614" y="570" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">────────────</text>
+<text x="1614" y="587" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">functionalRequirement</text>
+<text x="1614" y="604" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">performanceRequirement</text>
+<text x="1614" y="621" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">interfaceRequirement / designConstraint</text>
+<text x="1614" y="638" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Risk &amp; verify levels  •  element rels</text>
+<rect x="1600" y="708" width="360" height="130" rx="8" fill="#0f3460" stroke="#58a6ff" stroke-width="2"/>
+<text x="1780" y="728.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#a8d8ea">🧠 Mind Map</text>
+<text x="1614" y="748" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">────────────</text>
+<text x="1614" y="765" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Root + indented children</text>
+<text x="1614" y="782" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Icons &amp; classDef  •  shapes: ), ]], ((</text>
+<text x="1614" y="799" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Unlimited nesting depth</text>
+<rect x="1600" y="868" width="360" height="130" rx="8" fill="#0f3460" stroke="#58a6ff" stroke-width="2"/>
+<text x="1780" y="888.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="13" font-weight="700" fill="#a8d8ea">🉐 Zonal / Venn Diagram (beta)</text>
+<text x="1614" y="908" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">────────────</text>
+<text x="1614" y="925" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Circle sets  •  overlap regions</text>
+<text x="1614" y="942" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#a8d8ea">Labeled intersections</text>
+<rect x="960" y="1698" width="680" height="240" rx="12" fill="#533483" stroke="#e94560" stroke-width="2"/>
+<text x="1300" y="1720.0" text-anchor="middle" font-family="Consolas,Monaco,monospace" font-size="14" font-weight="700" fill="#ffffff">⚙️ Global Config &amp; Theming</text>
+<text x="980" y="1746" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#e0c3fc">──────────────────────────────</text>
+<text x="980" y="1764" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#e0c3fc">%%{init: {…}}%%  •  logLevel 0-5</text>
+<text x="980" y="1782" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#e0c3fc">Themes: default · dark · forest</text>
+<text x="980" y="1800" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#e0c3fc">         neutral · base</text>
+<text x="980" y="1818" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#e0c3fc">themeVariables overrides</text>
+<text x="980" y="1836" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#e0c3fc">securityLevel: strict / loose</text>
+<text x="980" y="1854" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#e0c3fc">fontFamily · fontSize</text>
+<text x="980" y="1872" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#e0c3fc">classDef / class directives</text>
+<text x="980" y="1890" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#e0c3fc">click interactions / callbacks</text>
+<text x="980" y="1908" text-anchor="start" font-family="Consolas,Monaco,monospace" font-size="11" font-weight="400" fill="#e0c3fc">Markdown strings  ("`…`")</text>
+</svg>

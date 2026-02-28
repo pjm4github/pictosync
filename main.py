@@ -71,7 +71,7 @@ compile_ui_if_needed()
 from PIL import Image
 
 from PyQt6.QtCore import Qt, QRectF, QFileInfo, QSize, QTimer, QThread
-from PyQt6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QKeySequence, QPen, QPixmap, QUndoStack
+from PyQt6.QtGui import QAction, QActionGroup, QBrush, QColor, QFont, QIcon, QKeySequence, QPen, QPixmap, QUndoStack
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -109,6 +109,8 @@ from canvas import (
     MetaBlockArrowItem,
     MetaPolygonItem,
     MetaCurveItem,
+    MetaOrthoCurveItem,
+    MetaIsoCubeItem,
     MetaGroupItem,
 )
 from editor import DraftDock
@@ -139,6 +141,7 @@ from undo_commands import (
     MoveItemCommand, ItemGeometryCommand, TextEditCommand,
 )
 from canvas.mixins import LinkedMixin
+from domains import scan_domains, DomainInfo, DomainTool
 
 
 # Mapping from style display names to icon directory names
@@ -191,7 +194,8 @@ class MainWindow(QMainWindow):
     def __init__(self, settings_manager: SettingsManager):
         super().__init__()
         self.settings_manager = settings_manager
-        self.setWindowTitle("PictoSync - Diagram Annotation with AI Extraction")
+        self._current_file: str | None = None
+        self._update_title()
 
         # Scene and view
         self.scene = AnnotatorScene()
@@ -233,9 +237,15 @@ class MainWindow(QMainWindow):
         self.undo_stack = QUndoStack(self)
         self.undo_stack.setUndoLimit(100)  # Limit undo history
 
+        # Scan domain plug-in folders
+        self._domains = scan_domains()
+        self._active_domain: Optional[DomainInfo] = None
+        self._domain_tool_actions: List[QAction] = []
+
         # Build UI (menus first since toolbar references menu actions)
         self._build_menus()
         self._build_toolbar()
+        self._build_left_toolbar()
 
         # Connect signals
         self.scene.selectionChanged.connect(self.on_selection_changed)
@@ -273,6 +283,9 @@ class MainWindow(QMainWindow):
         # Set up group/ungroup callbacks
         self.scene.set_group_callbacks(self._do_group_items, self._do_ungroup_item)
 
+        # Set up "Build DSL Item" context menu callback
+        self.scene.set_build_dsl_callback(self._on_build_dsl_item)
+
         # Set up text editing callbacks to disable shortcuts during editing
         self._setup_text_editing_callbacks()
 
@@ -288,6 +301,9 @@ class MainWindow(QMainWindow):
 
         self.statusBar().showMessage("Drop a PNG. Auto-Extract or edit Draft JSON. Import links JSON<->Scene.")
         self.props.set_image_info({})
+
+        # Give JSON editor ~45% of window width on startup
+        self.resizeDocks([self.draft], [500], Qt.Orientation.Horizontal)
 
         # Gemini worker thread
         self._thread: Optional[QThread] = None
@@ -417,6 +433,29 @@ class MainWindow(QMainWindow):
         about_act.triggered.connect(lambda: show_about_dialog(self))
         help_menu.addAction(about_act)
 
+        # Domain menu
+        domain_menu = menubar.addMenu("Do&main")
+        domain_group = QActionGroup(self)
+        domain_group.setExclusive(True)
+
+        none_act = QAction("None", self)
+        none_act.setCheckable(True)
+        none_act.setChecked(True)
+        none_act.triggered.connect(lambda: self._set_active_domain(None))
+        domain_group.addAction(none_act)
+        domain_menu.addAction(none_act)
+
+        if self._domains:
+            domain_menu.addSeparator()
+            for domain in self._domains:
+                act = QAction(domain.display_name, self)
+                act.setCheckable(True)
+                act.triggered.connect(
+                    lambda checked, d=domain: self._set_active_domain(d)
+                )
+                domain_group.addAction(act)
+                domain_menu.addAction(act)
+
     def _build_toolbar(self):
         """Build the application toolbar."""
         tb = QToolBar("Tools")
@@ -462,11 +501,37 @@ class MainWindow(QMainWindow):
                                             "Draw a cylinder (database)")
         self.act_blockarrow = add_mode_action("Block Arrow", Mode.BLOCKARROW, "A", "blockarrow",
                                               "Draw a block arrow")
+        self.act_isocube = add_mode_action("Iso Cube", Mode.ISOCUBE, "I", "isocube",
+                                           "Draw an isometric cube")
         self.act_polygon = add_mode_action("Polygon", Mode.POLYGON, "P", "polygon",
                                            "Draw a polygon (click vertices, right-click to close)")
-        self.act_curve = add_mode_action("Curve", Mode.CURVE, "V", "curve",
-                                         "Draw a curve path (click nodes, right-click to finish)")
-        self.mode_actions = [self.act_select, self.act_rect, self.act_rrect, self.act_ellipse, self.act_line, self.act_text, self.act_hexagon, self.act_cylinder, self.act_blockarrow, self.act_polygon, self.act_curve]
+
+        # Curve / Ortho Curve split button
+        self._curve_variant = Mode.CURVE  # tracks active variant
+        self.act_curve = QAction("Curve", self)
+        self.act_curve.setCheckable(True)
+        self.act_curve.setShortcut("V")
+        self.act_curve.setToolTip("Draw a curve path (click nodes, right-click to finish) (V)")
+        self.act_curve.setStatusTip("Draw a curve path (click nodes, right-click to finish)")
+        self.act_curve.triggered.connect(lambda checked: self._on_mode_action_triggered(self._curve_variant))
+        self._icon_actions[self.act_curve] = "curve"
+
+        self._curve_btn = QToolButton(self)
+        self._curve_btn.setDefaultAction(self.act_curve)
+        self._curve_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+
+        curve_menu = QMenu(self)
+        self._act_curve_free = curve_menu.addAction("Curve")
+        self._act_curve_free.setCheckable(True)
+        self._act_curve_free.setChecked(True)
+        self._act_curve_free.triggered.connect(lambda: self._set_curve_variant(Mode.CURVE))
+        self._act_curve_ortho = curve_menu.addAction("Ortho Curve")
+        self._act_curve_ortho.setCheckable(True)
+        self._act_curve_ortho.triggered.connect(lambda: self._set_curve_variant(Mode.ORTHOCURVE))
+        self._curve_btn.setMenu(curve_menu)
+        tb.addWidget(self._curve_btn)
+
+        self.mode_actions = [self.act_select, self.act_rect, self.act_rrect, self.act_ellipse, self.act_line, self.act_text, self.act_hexagon, self.act_cylinder, self.act_blockarrow, self.act_isocube, self.act_polygon, self.act_curve]
         self.act_select.setChecked(True)
 
         tb.addSeparator()
@@ -621,6 +686,129 @@ class MainWindow(QMainWindow):
             lambda checked: self._update_focus_mode_icon(checked)
         )
 
+    def _build_left_toolbar(self):
+        """Build the left-side domain tools toolbar."""
+        self._left_tb = QToolBar("Domain Tools")
+        self._left_tb.setIconSize(QSize(18, 18))
+        self._left_tb.setMovable(True)
+        self._left_tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.addToolBar(Qt.ToolBarArea.LeftToolBarArea, self._left_tb)
+        self._left_tb.setVisible(False)
+
+    def _set_active_domain(self, domain: Optional[DomainInfo]):
+        """Switch the active domain, updating the left toolbar.
+
+        Args:
+            domain: The domain to activate, or None to hide the toolbar.
+        """
+        # Remove old domain tool actions from icon tracking
+        for act in self._domain_tool_actions:
+            if act in self._icon_actions:
+                del self._icon_actions[act]
+        self._domain_tool_actions.clear()
+        self._left_tb.clear()
+
+        if domain is None:
+            self._active_domain = None
+            self._left_tb.setVisible(False)
+            return
+
+        self._active_domain = domain
+        app = QApplication.instance()
+        current_style = getattr(app, "_current_style", DEFAULT_STYLE)
+
+        for tool in domain.tools:
+            act = QAction(tool.label, self)
+            act.setToolTip(tool.tooltip)
+            if tool.icon:
+                icon = create_icon_with_states(tool.icon, current_style)
+                act.setIcon(icon)
+                self._icon_actions[act] = tool.icon
+            act.triggered.connect(
+                lambda checked, t=tool: self._on_domain_tool_clicked(t)
+            )
+            self._left_tb.addAction(act)
+            self._domain_tool_actions.append(act)
+
+        self._left_tb.setVisible(True)
+
+    def _on_domain_tool_clicked(self, tool: DomainTool):
+        """Create a canvas item from a DSL tool definition.
+
+        Args:
+            tool: The domain tool that was clicked.
+        """
+        base_kind = tool.base_kind
+        defaults = tool.defaults or {}
+        geom_defaults = defaults.get("geom", {})
+        meta_defaults = defaults.get("meta", {})
+
+        ann_id = self._new_ann_id()
+
+        # Compute center of current viewport for item placement
+        vr = self.view.mapToScene(self.view.viewport().rect()).boundingRect()
+        cx = vr.center().x()
+        cy = vr.center().y()
+
+        w = float(geom_defaults.get("w", 120))
+        h = float(geom_defaults.get("h", 80))
+        x = cx - w / 2
+        y = cy - h / 2
+
+        it = None
+        on_change = self._on_scene_item_changed
+        next_z = self.scene._get_next_z_index()
+
+        if base_kind == "rect":
+            it = MetaRectItem(x, y, w, h, ann_id, on_change)
+        elif base_kind == "roundedrect":
+            adjust1 = float(geom_defaults.get("adjust1", 10))
+            it = MetaRoundedRectItem(x, y, w, h, adjust1, ann_id, on_change)
+        elif base_kind == "ellipse":
+            it = MetaEllipseItem(x, y, w, h, ann_id, on_change)
+        elif base_kind == "hexagon":
+            adjust1 = float(geom_defaults.get("adjust1", 0.25))
+            it = MetaHexagonItem(x, y, w, h, adjust1, ann_id, on_change)
+        elif base_kind == "cylinder":
+            adjust1 = float(geom_defaults.get("adjust1", 0.15))
+            it = MetaCylinderItem(x, y, w, h, adjust1, ann_id, on_change)
+        elif base_kind == "blockarrow":
+            adjust1 = float(geom_defaults.get("adjust1", 0.5))
+            adjust2 = float(geom_defaults.get("adjust2", 15))
+            it = MetaBlockArrowItem(x, y, w, h, adjust2, adjust1, ann_id, on_change)
+
+        if it is None:
+            self.statusBar().showMessage(f"Unknown base_kind: {base_kind}")
+            return
+
+        # Apply meta defaults
+        meta = AnnotationMeta.from_dict(meta_defaults) if meta_defaults else AnnotationMeta()
+        it.set_meta(meta)
+
+        # Apply style defaults
+        if defaults:
+            it.apply_style_from_record(defaults)
+        it._apply_pen_brush()
+        it._update_label_text()
+
+        self.scene.addItem(it)
+        it.setZValue(next_z)
+        it.setSelected(True)
+        self._on_new_scene_item(it)
+
+        self.statusBar().showMessage(f"Created {tool.label} ({base_kind})")
+
+    def _on_build_dsl_item(self, item):
+        """Stub callback for 'Build DSL Item' context menu action.
+
+        Args:
+            item: The selected canvas item to build a DSL tool from.
+        """
+        ann_id = item.data(ANN_ID_KEY) if hasattr(item, 'data') else "?"
+        self.statusBar().showMessage(
+            f"Build DSL Item: not yet implemented (item {ann_id})"
+        )
+
     def _build_model_menu(self):
         """Rebuild the model dropdown menu from settings."""
         self.model_menu.clear()
@@ -679,7 +867,7 @@ class MainWindow(QMainWindow):
 
         def on_editing_finished():
             # Re-enable mode shortcuts when done editing
-            shortcuts = ["S", "R", "U", "E", "L", "T", "H", "Y", "A"]
+            shortcuts = ["S", "R", "U", "E", "L", "T", "H", "Y", "A", "P", "V"]
             for action, shortcut in zip(self.mode_actions, shortcuts):
                 action.setShortcut(shortcut)
 
@@ -699,6 +887,9 @@ class MainWindow(QMainWindow):
         MetaCylinderItem.on_adjust1_changed = self.props.update_adjust1_display
         MetaBlockArrowItem.on_adjust1_changed = self.props.update_adjust1_display
         MetaBlockArrowItem.on_adjust2_changed = self.props.update_adjust2_display
+        MetaIsoCubeItem.on_adjust1_changed = self.props.update_adjust1_display
+        MetaIsoCubeItem.on_adjust2_changed = self.props.update_adjust2_display
+        MetaCurveItem.on_adjust1_changed = self.props.update_adjust1_display
 
         # Set initial default text color based on current theme
         self._update_default_text_color(DEFAULT_STYLE)
@@ -726,6 +917,26 @@ class MainWindow(QMainWindow):
         if self._sticky_mode:
             self.statusBar().showMessage(f"Mode: {mode} (sticky - Ctrl+click, Esc or right-click to exit)")
 
+    def _set_curve_variant(self, variant: str):
+        """Switch the curve split button between Curve and Ortho Curve."""
+        self._curve_variant = variant
+        self._act_curve_free.setChecked(variant == Mode.CURVE)
+        self._act_curve_ortho.setChecked(variant == Mode.ORTHOCURVE)
+        # Swap icon
+        icon_name = "curve" if variant == Mode.CURVE else "ortho_curve"
+        self._icon_actions[self.act_curve] = icon_name
+        app = QApplication.instance()
+        style = getattr(app, "_current_style", DEFAULT_STYLE)
+        icon = create_icon_with_states(icon_name, style)
+        self.act_curve.setIcon(icon)
+        # Update tooltip
+        if variant == Mode.CURVE:
+            self.act_curve.setToolTip("Draw a curve path (click nodes, right-click to finish) (V)")
+        else:
+            self.act_curve.setToolTip("Draw an ortho curve (click nodes, right-click to finish) (V)")
+        # Activate the mode
+        self._on_mode_action_triggered(variant)
+
     def set_mode(self, mode: str, from_item_created: bool = False):
         """Set the current drawing mode."""
         self.scene.set_mode(mode)
@@ -739,8 +950,10 @@ class MainWindow(QMainWindow):
             Mode.HEXAGON: self.act_hexagon,
             Mode.CYLINDER: self.act_cylinder,
             Mode.BLOCKARROW: self.act_blockarrow,
+            Mode.ISOCUBE: self.act_isocube,
             Mode.POLYGON: self.act_polygon,
             Mode.CURVE: self.act_curve,
+            Mode.ORTHOCURVE: self.act_curve,
         }
         for a in self.mode_actions:
             a.setChecked(False)
@@ -906,25 +1119,61 @@ class MainWindow(QMainWindow):
         self.props.set_item(None)
         self.draft.set_status(f"Annotation in JSON: {ann_id} (no canvas item)")
 
+    def _update_title(self, filepath: str | None = None):
+        """Update the window title to reflect the currently loaded file.
+
+        Args:
+            filepath: Path to the loaded file, or None for default title.
+        """
+        base = "PictoSync"
+        if filepath:
+            self._current_file = filepath
+            self.setWindowTitle(f"{base} \u2014 {os.path.basename(filepath)}")
+        else:
+            self._current_file = None
+            self.setWindowTitle(f"{base} \u2014 Diagram Annotation with AI Extraction")
+
     def open_graphic_dialog(self):
-        """Open a file dialog to select a PNG image or PlantUML file."""
+        """Open a file dialog to select a PNG image, PlantUML, Mermaid SVG, or Mermaid source file."""
         path, _ = QFileDialog.getOpenFileName(
             self, "Open Graphic", "",
-            "All Supported (*.png *.puml);;PNG Images (*.png);;PlantUML (*.puml)"
+            "All Supported (*.png *.puml *.svg *.mmd *.mermaid);;"
+            "PNG Images (*.png);;PlantUML (*.puml);;Mermaid SVG (*.svg);;"
+            "Mermaid Source (*.mmd *.mermaid)"
         )
         if not path:
             return
-        if path.lower().endswith(".puml"):
-            self._import_puml(path)
-        else:
-            self.load_background_png(path)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            lp = path.lower()
+            if lp.endswith(".puml"):
+                self._import_puml(path)
+            elif lp.endswith(".mmd") or lp.endswith(".mermaid"):
+                self._import_mmd(path)
+            elif lp.endswith(".svg"):
+                self._import_mermaid_svg(path)
+            else:
+                self.load_background_png(path)
+                self._update_title(path)
+        finally:
+            QApplication.restoreOverrideCursor()
 
     def _on_drop_file(self, path: str):
-        """Handle a file dropped onto the canvas (PNG or PUML)."""
-        if path.lower().endswith(".puml"):
-            self._import_puml(path)
-        else:
-            self.load_background_png(path)
+        """Handle a file dropped onto the canvas (PNG, PUML, SVG, or MMD)."""
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            lp = path.lower()
+            if lp.endswith(".puml"):
+                self._import_puml(path)
+            elif lp.endswith(".mmd") or lp.endswith(".mermaid"):
+                self._import_mmd(path)
+            elif lp.endswith(".svg"):
+                self._import_mermaid_svg(path)
+            else:
+                self.load_background_png(path)
+                self._update_title(path)
+        finally:
+            QApplication.restoreOverrideCursor()
 
     def _import_puml(self, puml_path: str):
         """Import a PlantUML file: render to PNG background and parse to annotations.
@@ -935,81 +1184,248 @@ class MainWindow(QMainWindow):
         from plantuml.renderer import render_puml_to_png, render_puml_to_svg
         from plantuml.parser import parse_puml_to_annotations
 
-        # Read PUML source text
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            with open(puml_path, "r", encoding="utf-8") as f:
-                puml_text = f.read()
-        except Exception as e:
-            QMessageBox.warning(self, "Read Error", f"Could not read PUML file:\n{e}")
-            return
+            # Read PUML source text
+            try:
+                with open(puml_path, "r", encoding="utf-8") as f:
+                    puml_text = f.read()
+            except Exception as e:
+                QMessageBox.warning(self, "Read Error", f"Could not read PUML file:\n{e}")
+                return
 
-        # Check @startuml diagram name for illegal Windows filename chars.
-        # PlantUML uses this name as the output filename, so characters like
-        # : * ? " < > | will silently produce a 0-byte output on Windows.
-        _ILLEGAL_FNAME_CHARS = set('\\/:*?"<>|')
-        for line_num, line in enumerate(puml_text.splitlines(), start=1):
-            stripped = line.strip()
-            if stripped.lower().startswith("@startuml"):
-                diagram_name = stripped[len("@startuml"):].strip()
-                bad_chars = sorted(set(ch for ch in diagram_name if ch in _ILLEGAL_FNAME_CHARS))
-                if bad_chars:
-                    chars_display = "  ".join(repr(c) for c in bad_chars)
-                    QMessageBox.warning(
-                        self,
-                        "Illegal Characters in Diagram Name",
-                        f"The @startuml diagram name contains characters that are "
-                        f"illegal in Windows filenames. PlantUML uses this name "
-                        f"for the output file, so rendering will fail.\n\n"
-                        f"Line {line_num}: {stripped}\n\n"
-                        f"Illegal characters: {chars_display}\n\n"
-                        f"Please remove these characters from the @startuml line.",
-                    )
-                    return
-                break  # Only need to check the first @startuml line
+            # Check @startuml diagram name for illegal Windows filename chars.
+            # PlantUML uses this name as the output filename, so characters like
+            # : * ? " < > | will silently produce a 0-byte output on Windows.
+            _ILLEGAL_FNAME_CHARS = set('\\/:*?"<>|')
+            for line_num, line in enumerate(puml_text.splitlines(), start=1):
+                stripped = line.strip()
+                if stripped.lower().startswith("@startuml"):
+                    diagram_name = stripped[len("@startuml"):].strip()
+                    bad_chars = sorted(set(ch for ch in diagram_name if ch in _ILLEGAL_FNAME_CHARS))
+                    if bad_chars:
+                        chars_display = "  ".join(repr(c) for c in bad_chars)
+                        QMessageBox.warning(
+                            self,
+                            "Illegal Characters in Diagram Name",
+                            f"The @startuml diagram name contains characters that are "
+                            f"illegal in Windows filenames. PlantUML uses this name "
+                            f"for the output file, so rendering will fail.\n\n"
+                            f"Line {line_num}: {stripped}\n\n"
+                            f"Illegal characters: {chars_display}\n\n"
+                            f"Please remove these characters from the @startuml line.",
+                        )
+                        return
+                    break  # Only need to check the first @startuml line
 
-        # Try to render to PNG for background
-        png_path = None
-        try:
-            png_path = render_puml_to_png(puml_path)
-            self.load_background_png(png_path)
-        except RuntimeError as e:
-            QMessageBox.warning(
-                self, "PlantUML Rendering",
-                f"Could not render PNG background (Java/JAR issue).\n"
-                f"Annotations will still be parsed from PUML text.\n\n{e}"
+            # Try to render to PNG for background
+            png_path = None
+            try:
+                png_path = render_puml_to_png(puml_path)
+                self.load_background_png(png_path)
+            except RuntimeError as e:
+                QMessageBox.warning(
+                    self, "PlantUML Rendering",
+                    f"Could not render PNG background (Java/JAR issue).\n"
+                    f"Annotations will still be parsed from PUML text.\n\n{e}"
+                )
+
+            # Try to render SVG for pixel-accurate position extraction
+            svg_path = None
+            try:
+                svg_path = render_puml_to_svg(puml_path)
+            except RuntimeError:
+                pass  # Fall back to auto-layout grid
+
+            # Determine canvas dimensions
+            if self.bg_item is not None:
+                pm = self.bg_item.pixmap()
+                canvas_w, canvas_h = pm.width(), pm.height()
+            else:
+                canvas_w, canvas_h = 1200, 800
+
+            # Parse PUML to annotations (SVG positions when available)
+            data = parse_puml_to_annotations(puml_text, canvas_w, canvas_h, svg_path=svg_path)
+            num_annotations = len(data.get("annotations", []))
+
+            # Place JSON in editor
+            pretty = json.dumps(data, indent=2)
+            self._set_draft_text_programmatically(
+                pretty,
+                enable_import=True,
+                status=f"PUML imported: {num_annotations} annotations. Click Import to link JSON↔Scene.",
+                focus_id=None,
             )
 
-        # Try to render SVG for pixel-accurate position extraction
-        svg_path = None
+            self.statusBar().showMessage(
+                f"Imported {puml_path} — {num_annotations} annotations extracted",
+                8000,
+            )
+            self._update_title(puml_path)
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def _import_mermaid_svg(self, svg_path: str):
+        """Import a pre-rendered Mermaid SVG file.
+
+        Renders the SVG to a temp PNG for the canvas background, then
+        parses the SVG structure into annotations for the JSON editor.
+
+        Args:
+            svg_path: Path to the .svg file.
+        """
+        from mermaid.parser import detect_mermaid_svg, parse_mermaid_svg_to_annotations
+        from mermaid.renderer import render_svg_to_png
+
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            svg_path = render_puml_to_svg(puml_path)
-        except RuntimeError:
-            pass  # Fall back to auto-layout grid
+            # Detect if this is a Mermaid SVG
+            diagram_type = detect_mermaid_svg(svg_path)
+            if diagram_type is None:
+                QMessageBox.warning(
+                    self, "Unsupported SVG",
+                    "This SVG does not appear to be a Mermaid-rendered diagram.\n\n"
+                    "PictoSync supports all Mermaid diagram types (flowchart, sequence, "
+                    "class, state, ER, Gantt, pie, etc.) exported from "
+                    "Mermaid Live Editor, VS Code, or mermaid.ink.",
+                )
+                return
 
-        # Determine canvas dimensions
-        if self.bg_item is not None:
-            pm = self.bg_item.pixmap()
-            canvas_w, canvas_h = pm.width(), pm.height()
-        else:
-            canvas_w, canvas_h = 1200, 800
+            # Render SVG → temp PNG for canvas background (1× so pixel
+            # coords match the SVG viewBox used for annotation positions)
+            try:
+                png_path = render_svg_to_png(svg_path, scale=1.0)
+                self.load_background_png(png_path)
+            except RuntimeError as e:
+                QMessageBox.warning(
+                    self, "SVG Rendering",
+                    f"Could not render SVG to PNG background.\n"
+                    f"Annotations will still be parsed from the SVG.\n\n{e}",
+                )
 
-        # Parse PUML to annotations (SVG positions when available)
-        data = parse_puml_to_annotations(puml_text, canvas_w, canvas_h, svg_path=svg_path)
-        num_annotations = len(data.get("annotations", []))
+            # Parse SVG structure into annotations
+            try:
+                data = parse_mermaid_svg_to_annotations(svg_path)
+            except Exception as e:
+                QMessageBox.warning(
+                    self, "Parse Error",
+                    f"Could not parse Mermaid SVG:\n{e}",
+                )
+                return
 
-        # Place JSON in editor
-        pretty = json.dumps(data, indent=2)
-        self._set_draft_text_programmatically(
-            pretty,
-            enable_import=True,
-            status=f"PUML imported: {num_annotations} annotations. Click Import to link JSON↔Scene.",
-            focus_id=None,
-        )
+            num_annotations = len(data.get("annotations", []))
+            pretty = json.dumps(data, indent=2)
+            self._set_draft_text_programmatically(
+                pretty,
+                enable_import=True,
+                status=f"Mermaid SVG imported: {num_annotations} annotations. Click Import to link JSON↔Scene.",
+                focus_id=None,
+            )
 
-        self.statusBar().showMessage(
-            f"Imported {puml_path} — {num_annotations} annotations extracted",
-            8000,
-        )
+            self.statusBar().showMessage(
+                f"Imported {svg_path} — {num_annotations} annotations extracted",
+                8000,
+            )
+            self._update_title(svg_path)
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def _import_mmd(self, mmd_path: str):
+        """Import a Mermaid source file (.mmd/.mermaid) via mmdc CLI.
+
+        For C4 diagrams the two-step pipeline is used: the source text is
+        parsed for semantic data (aliases, labels, tech, relationships,
+        boundaries) and the rendered SVG provides geometry.  The merger
+        produces enriched annotations that carry both.
+
+        For non-C4 diagrams the generic Mermaid SVG parser is used.
+
+        Args:
+            mmd_path: Path to the .mmd or .mermaid source file.
+        """
+        from mermaid.renderer import render_mmd_to_png, render_mmd_to_svg
+        from mermaid.parser import parse_mermaid_svg_to_annotations
+        from mermaid.c4_source_parser import parse_c4_source_file
+        from mermaid.c4_merger import merge_c4_source_with_svg
+
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            # ── Try C4 source parse (step 1) ──
+            c4_source = None
+            try:
+                c4_source = parse_c4_source_file(mmd_path)
+            except (ValueError, OSError):
+                pass  # Not a C4 diagram or file error — fall through to generic
+
+            # ── Render to PNG for canvas background (non-fatal) ──
+            try:
+                png_path = render_mmd_to_png(mmd_path)
+                self.load_background_png(png_path)
+            except RuntimeError as e:
+                QMessageBox.warning(
+                    self, "Mermaid Rendering",
+                    f"Could not render PNG background (mmdc issue).\n"
+                    f"Annotations will still be parsed from SVG.\n\n{e}",
+                )
+
+            # ── Render to SVG (fatal — no annotations without SVG) ──
+            try:
+                svg_path = render_mmd_to_svg(mmd_path)
+            except RuntimeError as e:
+                QMessageBox.warning(
+                    self, "Mermaid Rendering",
+                    f"Could not render SVG for annotation parsing.\n\n{e}",
+                )
+                return
+
+            # ── Parse annotations ──
+            try:
+                if c4_source is not None:
+                    # Two-step C4 pipeline: source semantics + SVG geometry
+                    data = merge_c4_source_with_svg(c4_source, svg_path)
+                else:
+                    # Generic Mermaid SVG parser
+                    data = parse_mermaid_svg_to_annotations(svg_path)
+            except Exception as e:
+                QMessageBox.warning(
+                    self, "Parse Error",
+                    f"Could not parse Mermaid SVG:\n{e}",
+                )
+                return
+
+            num_annotations = len(data.get("annotations", []))
+            pretty = json.dumps(data, indent=2)
+
+            # ── Write JSON beside the .mmd source ──
+            json_path = os.path.splitext(mmd_path)[0] + ".json"
+            try:
+                with open(json_path, "w", encoding="utf-8") as f:
+                    f.write(pretty)
+            except OSError as e:
+                QMessageBox.warning(
+                    self, "Write Error",
+                    f"Could not save JSON file:\n{json_path}\n\n{e}",
+                )
+
+            pipeline = "C4 two-step" if c4_source is not None else "SVG"
+            self._set_draft_text_programmatically(
+                pretty,
+                enable_import=True,
+                status=(
+                    f"Mermaid source imported ({pipeline}): "
+                    f"{num_annotations} annotations. Click Import to link JSON↔Scene."
+                ),
+                focus_id=None,
+            )
+
+            self.statusBar().showMessage(
+                f"Imported {mmd_path} — {num_annotations} annotations ({pipeline}), "
+                f"PNG/SVG/JSON saved beside source",
+                8000,
+            )
+            self._update_title(mmd_path)
+        finally:
+            QApplication.restoreOverrideCursor()
 
     def load_background_png(self, path: str):
         """Load a PNG image as the background."""
@@ -1862,7 +2278,6 @@ class MainWindow(QMainWindow):
         # Use 'g' prefix for group IDs
         ann_id = "g" + ann_id[1:]
         group_item = MetaGroupItem(ann_id, self._on_scene_item_changed)
-        group_item.meta.kind = "group"
 
         # Determine z-value for the group (max of children)
         max_z = max(it.zValue() for it in items)
@@ -2098,10 +2513,9 @@ class MainWindow(QMainWindow):
             ann_id = self._new_ann_id()
 
         meta_dict = rec.get("meta") or {}
-        try:
-            meta = AnnotationMeta(**meta_dict) if isinstance(meta_dict, dict) else AnnotationMeta(kind=kind or "unknown")
-        except Exception:
-            meta = AnnotationMeta(kind=kind or "unknown")
+        if isinstance(meta_dict, dict):
+            meta_dict.pop("kind", None)  # Strip legacy meta.kind
+        meta = AnnotationMeta.from_dict(meta_dict)
 
         # Strip brackets from tech field - they will be added in the view
         if meta.tech:
@@ -2133,7 +2547,6 @@ class MainWindow(QMainWindow):
             it = MetaRectItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]), ann_id, on_change)
             trace("  Setting meta", "ITEM")
             it.set_meta(meta)
-            it.meta.kind = "rect"
             trace("  Applying style", "ITEM")
             it.apply_style_from_record(rec)
             it._apply_pen_brush()
@@ -2152,7 +2565,6 @@ class MainWindow(QMainWindow):
             it = MetaRoundedRectItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]), adjust1, ann_id, on_change)
             trace("  Setting meta", "ITEM")
             it.set_meta(meta)
-            it.meta.kind = "roundedrect"
             trace("  Applying style", "ITEM")
             it.apply_style_from_record(rec)
             it._apply_pen_brush()
@@ -2170,7 +2582,6 @@ class MainWindow(QMainWindow):
             it = MetaEllipseItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]), ann_id, on_change)
             trace("  Setting meta", "ITEM")
             it.set_meta(meta)
-            it.meta.kind = "ellipse"
             trace("  Applying style", "ITEM")
             it.apply_style_from_record(rec)
             it._apply_pen_brush()
@@ -2188,7 +2599,6 @@ class MainWindow(QMainWindow):
             it = MetaLineItem(float(g["x1"]), float(g["y1"]), float(g["x2"]), float(g["y2"]), ann_id, on_change)
             trace("  Setting meta", "ITEM")
             it.set_meta(meta)
-            it.meta.kind = "line"
             trace("  Applying style", "ITEM")
             it.apply_style_from_record(rec)
             it._apply_pen()
@@ -2205,7 +2615,6 @@ class MainWindow(QMainWindow):
             text = meta.note or rec.get("text", "")
             it = MetaTextItem(float(g["x"]), float(g["y"]), str(text), ann_id, on_change)
             it.set_meta(meta)
-            it.meta.kind = "text"
             it.apply_style_from_record(rec)
             it._apply_text_style()
             self.scene.addItem(it)
@@ -2217,7 +2626,6 @@ class MainWindow(QMainWindow):
             adjust1 = float(g.get("adjust1", 0.25))
             it = MetaHexagonItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]), adjust1, ann_id, on_change)
             it.set_meta(meta)
-            it.meta.kind = "hexagon"
             it.apply_style_from_record(rec)
             it._apply_pen_brush()
             it._update_label_text()
@@ -2230,7 +2638,6 @@ class MainWindow(QMainWindow):
             adjust1 = float(g.get("adjust1", 0.15))
             it = MetaCylinderItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]), adjust1, ann_id, on_change)
             it.set_meta(meta)
-            it.meta.kind = "cylinder"
             it.apply_style_from_record(rec)
             it._apply_pen_brush()
             it._update_label_text()
@@ -2244,7 +2651,20 @@ class MainWindow(QMainWindow):
             adjust1 = float(g.get("adjust1", 0.5))
             it = MetaBlockArrowItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]), adjust2, adjust1, ann_id, on_change)
             it.set_meta(meta)
-            it.meta.kind = "blockarrow"
+            it.apply_style_from_record(rec)
+            it._apply_pen_brush()
+            it._update_label_text()
+            self.scene.addItem(it)
+            if z_index:
+                it.setZValue(z_index)
+
+        elif kind == "isocube":
+            g = rec.get("geom", {})
+            adjust1 = float(g.get("adjust1", 30))
+            adjust2 = float(g.get("adjust2", 135))
+            it = MetaIsoCubeItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]),
+                                 adjust1, adjust2, ann_id, on_change)
+            it.set_meta(meta)
             it.apply_style_from_record(rec)
             it._apply_pen_brush()
             it._update_label_text()
@@ -2258,7 +2678,6 @@ class MainWindow(QMainWindow):
             it = MetaPolygonItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]),
                                  points, ann_id, on_change)
             it.set_meta(meta)
-            it.meta.kind = "polygon"
             it.apply_style_from_record(rec)
             it._apply_pen_brush()
             it._update_label_text()
@@ -2271,8 +2690,25 @@ class MainWindow(QMainWindow):
             nodes = g.get("nodes", [{"cmd": "M", "x": 0.0, "y": 0.0}, {"cmd": "L", "x": 1.0, "y": 1.0}])
             it = MetaCurveItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]),
                                nodes, ann_id, on_change)
+            adjust1 = float(g.get("adjust1", 0.0))
+            if adjust1 > 0:
+                it.set_adjust1(adjust1)
             it.set_meta(meta)
-            it.meta.kind = "curve"
+            it.apply_style_from_record(rec)
+            it._apply_pen_brush()
+            it._update_label_text()
+            self.scene.addItem(it)
+            if z_index:
+                it.setZValue(z_index)
+
+        elif kind == "orthocurve":
+            g = rec.get("geom", {})
+            nodes = g.get("nodes", [{"cmd": "M", "x": 0, "y": 0}, {"cmd": "H", "x": 1}])
+            it = MetaOrthoCurveItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]),
+                                    nodes, ann_id, on_change)
+            adjust1 = float(g.get("adjust1", 10.0))
+            it.set_adjust1(adjust1)
+            it.set_meta(meta)
             it.apply_style_from_record(rec)
             it._apply_pen_brush()
             it._update_label_text()
@@ -2333,7 +2769,7 @@ class MainWindow(QMainWindow):
 
     def _is_alignable_item(self, item) -> bool:
         """Check if an item is alignable (rect, roundedrect, ellipse, hexagon, cylinder, blockarrow)."""
-        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaPolygonItem))
+        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaIsoCubeItem, MetaPolygonItem))
 
     # ---- Focus Align (Gemini) methods ----
 
@@ -2434,7 +2870,8 @@ class MainWindow(QMainWindow):
         elif isinstance(item, MetaTextItem):
             item.setPos(QPointF(float(geom.get("x", 0)), float(geom.get("y", 0))))
         elif isinstance(item, (MetaRoundedRectItem, MetaHexagonItem, MetaCylinderItem,
-                               MetaBlockArrowItem, MetaPolygonItem, MetaCurveItem)):
+                               MetaBlockArrowItem, MetaIsoCubeItem, MetaPolygonItem,
+                               MetaCurveItem, MetaOrthoCurveItem)):
             item.setPos(QPointF(float(geom.get("x", 0)), float(geom.get("y", 0))))
             new_w = float(geom.get("w", item._width))
             new_h = float(geom.get("h", item._height))

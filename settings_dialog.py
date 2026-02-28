@@ -7,6 +7,8 @@ Organizes all settings into logical tabs and groups.
 
 from __future__ import annotations
 
+import os
+import shutil
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt
@@ -96,8 +98,8 @@ class SettingsDialog(QDialog):
         self.settings_manager = settings_manager
         self._parent_window = parent  # Store parent for theme application
         self.setWindowTitle("PictoSync Settings")
-        self.setMinimumSize(650, 550)
-        self.resize(720, 650)
+        self.setMinimumSize(650, 480)
+        self.resize(720, 580)
 
         # Store original settings for cancel
         self._original_settings = self._snapshot_settings()
@@ -108,9 +110,12 @@ class SettingsDialog(QDialog):
     def _setup_ui(self):
         """Create the dialog UI."""
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(4)
 
         # Tab widget
         self.tabs = QTabWidget()
+        self.tabs.setStyleSheet("QTabBar::tab { padding: 4px 10px; }")
         layout.addWidget(self.tabs)
 
         # Create tabs
@@ -119,6 +124,7 @@ class SettingsDialog(QDialog):
         self.tabs.addTab(self._create_canvas_tab(), "Canvas")
         self.tabs.addTab(self._create_alignment_tab(), "Alignment")
         self.tabs.addTab(self._create_defaults_tab(), "Text Defaults")
+        self.tabs.addTab(self._create_external_tools_tab(), "External Tools")
 
         # Button box
         button_box = QDialogButtonBox(
@@ -155,7 +161,7 @@ class SettingsDialog(QDialog):
         # Theme group
         theme_group = QGroupBox("Appearance")
         theme_layout = QFormLayout(theme_group)
-        theme_layout.setContentsMargins(8, 8, 8, 8)
+        theme_layout.setContentsMargins(6, 4, 6, 4)
         theme_layout.setSpacing(4)
 
         self.theme_combo = QComboBox()
@@ -167,7 +173,7 @@ class SettingsDialog(QDialog):
         # Workspace group
         workspace_group = QGroupBox("Workspace")
         workspace_layout = QFormLayout(workspace_group)
-        workspace_layout.setContentsMargins(8, 8, 8, 8)
+        workspace_layout.setContentsMargins(6, 4, 6, 4)
         workspace_layout.setSpacing(4)
 
         workspace_row = QHBoxLayout()
@@ -187,7 +193,7 @@ class SettingsDialog(QDialog):
         # Gemini AI group
         gemini_group = QGroupBox("Gemini AI")
         gemini_layout = QVBoxLayout(gemini_group)
-        gemini_layout.setContentsMargins(8, 8, 8, 8)
+        gemini_layout.setContentsMargins(6, 4, 6, 4)
         gemini_layout.setSpacing(4)
 
         model_label = QLabel("Available Models:")
@@ -569,7 +575,7 @@ class SettingsDialog(QDialog):
         # Label settings
         label_group = QGroupBox("Label (Title)")
         label_layout = QFormLayout(label_group)
-        label_layout.setContentsMargins(8, 8, 8, 8)
+        label_layout.setContentsMargins(6, 4, 6, 4)
         label_layout.setSpacing(4)
 
         self.default_label_align = QComboBox()
@@ -586,7 +592,7 @@ class SettingsDialog(QDialog):
         # Tech settings
         tech_group = QGroupBox("Technology Tag")
         tech_layout = QFormLayout(tech_group)
-        tech_layout.setContentsMargins(8, 8, 8, 8)
+        tech_layout.setContentsMargins(6, 4, 6, 4)
         tech_layout.setSpacing(4)
 
         self.default_tech_align = QComboBox()
@@ -603,7 +609,7 @@ class SettingsDialog(QDialog):
         # Note settings
         note_group = QGroupBox("Note (Description)")
         note_layout = QFormLayout(note_group)
-        note_layout.setContentsMargins(8, 8, 8, 8)
+        note_layout.setContentsMargins(6, 4, 6, 4)
         note_layout.setSpacing(4)
 
         self.default_note_align = QComboBox()
@@ -620,7 +626,7 @@ class SettingsDialog(QDialog):
         # Layout settings
         layout_group = QGroupBox("Text Layout")
         layout_layout = QFormLayout(layout_group)
-        layout_layout.setContentsMargins(8, 8, 8, 8)
+        layout_layout.setContentsMargins(6, 4, 6, 4)
         layout_layout.setSpacing(4)
 
         self.default_valign = QComboBox()
@@ -647,6 +653,330 @@ class SettingsDialog(QDialog):
         layout.addStretch()
 
         return self._create_scrollable_tab(widget)
+
+    # =========================================================================
+    # External Tools Tab
+    # =========================================================================
+
+    def _create_external_tools_tab(self) -> QWidget:
+        """Create the External Tools settings tab.
+
+        Shows auto-detected paths as read-only when found, with browse
+        buttons for manual override.  Each tool group includes a
+        description of what features it enables.
+        """
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(8)
+
+        # Intro note
+        intro = QLabel(
+            "PictoSync uses external CLI tools for diagram import. "
+            "Auto-detected paths are shown grayed out. Use Browse to "
+            "override a path manually, or Clear to revert to auto-detection."
+        )
+        intro.setWordWrap(True)
+        intro.setStyleSheet("color: #666; margin-bottom: 4px;")
+        layout.addWidget(intro)
+
+        # ── Java ──
+        java_group = QGroupBox("Java Runtime")
+        java_layout = QVBoxLayout(java_group)
+        java_layout.setContentsMargins(6, 4, 6, 4)
+        java_layout.setSpacing(4)
+
+        java_note = QLabel(
+            "Java (JRE 8+) is required by PlantUML to render .puml diagrams. "
+            "Without Java, PlantUML import is unavailable."
+        )
+        java_note.setWordWrap(True)
+        java_note.setStyleSheet("color: #666; font-size: 11px;")
+        java_layout.addWidget(java_note)
+
+        java_row = QHBoxLayout()
+        self.tools_java_edit = QLineEdit()
+        self.tools_java_edit.setPlaceholderText("Auto-detect from PATH")
+        java_row.addWidget(self.tools_java_edit)
+        java_browse = QPushButton("Browse...")
+        java_browse.setFixedWidth(80)
+        java_browse.clicked.connect(lambda: self._browse_tool_exe(self.tools_java_edit, "Java Executable"))
+        java_row.addWidget(java_browse)
+        java_clear = QPushButton("Clear")
+        java_clear.setFixedWidth(50)
+        java_clear.clicked.connect(lambda: self._clear_tool_path(self.tools_java_edit))
+        java_row.addWidget(java_clear)
+        java_layout.addLayout(java_row)
+
+        self.tools_java_status = QLabel()
+        self.tools_java_status.setStyleSheet("font-size: 11px;")
+        java_layout.addWidget(self.tools_java_status)
+
+        layout.addWidget(java_group)
+
+        # ── PlantUML JAR ──
+        puml_group = QGroupBox("PlantUML JAR")
+        puml_layout = QVBoxLayout(puml_group)
+        puml_layout.setContentsMargins(6, 4, 6, 4)
+        puml_layout.setSpacing(4)
+
+        puml_note = QLabel(
+            "PlantUML renders .puml source files into diagrams. "
+            "Requires Java. Enables: import .puml files as annotated backgrounds. "
+            "Download from: https://github.com/plantuml/plantuml/releases"
+        )
+        puml_note.setWordWrap(True)
+        puml_note.setStyleSheet("color: #666; font-size: 11px;")
+        puml_layout.addWidget(puml_note)
+
+        puml_row = QHBoxLayout()
+        self.tools_puml_jar_edit = QLineEdit()
+        self.tools_puml_jar_edit.setPlaceholderText("Auto-detect (PLANTUML_JAR env, project dir, PATH)")
+        puml_row.addWidget(self.tools_puml_jar_edit)
+        puml_browse = QPushButton("Browse...")
+        puml_browse.setFixedWidth(80)
+        puml_browse.clicked.connect(lambda: self._browse_tool_file(
+            self.tools_puml_jar_edit, "PlantUML JAR", "JAR Files (*.jar);;All Files (*)"
+        ))
+        puml_row.addWidget(puml_browse)
+        puml_clear = QPushButton("Clear")
+        puml_clear.setFixedWidth(50)
+        puml_clear.clicked.connect(lambda: self._clear_tool_path(self.tools_puml_jar_edit))
+        puml_row.addWidget(puml_clear)
+        puml_layout.addLayout(puml_row)
+
+        self.tools_puml_status = QLabel()
+        self.tools_puml_status.setStyleSheet("font-size: 11px;")
+        puml_layout.addWidget(self.tools_puml_status)
+
+        layout.addWidget(puml_group)
+
+        # ── Node.js ──
+        node_group = QGroupBox("Node.js")
+        node_layout = QVBoxLayout(node_group)
+        node_layout.setContentsMargins(6, 4, 6, 4)
+        node_layout.setSpacing(4)
+
+        node_note = QLabel(
+            "Node.js is required by the Mermaid CLI (mmdc) to render "
+            ".mmd/.mermaid source files. Without Node.js, mmdc cannot run."
+        )
+        node_note.setWordWrap(True)
+        node_note.setStyleSheet("color: #666; font-size: 11px;")
+        node_layout.addWidget(node_note)
+
+        node_row = QHBoxLayout()
+        self.tools_node_edit = QLineEdit()
+        self.tools_node_edit.setPlaceholderText("Auto-detect from PATH")
+        node_row.addWidget(self.tools_node_edit)
+        node_browse = QPushButton("Browse...")
+        node_browse.setFixedWidth(80)
+        node_browse.clicked.connect(lambda: self._browse_tool_exe(self.tools_node_edit, "Node.js Executable"))
+        node_row.addWidget(node_browse)
+        node_clear = QPushButton("Clear")
+        node_clear.setFixedWidth(50)
+        node_clear.clicked.connect(lambda: self._clear_tool_path(self.tools_node_edit))
+        node_row.addWidget(node_clear)
+        node_layout.addLayout(node_row)
+
+        self.tools_node_status = QLabel()
+        self.tools_node_status.setStyleSheet("font-size: 11px;")
+        node_layout.addWidget(self.tools_node_status)
+
+        layout.addWidget(node_group)
+
+        # ── Mermaid CLI (mmdc) ──
+        mmdc_group = QGroupBox("Mermaid CLI (mmdc)")
+        mmdc_layout = QVBoxLayout(mmdc_group)
+        mmdc_layout.setContentsMargins(6, 4, 6, 4)
+        mmdc_layout.setSpacing(4)
+
+        mmdc_note = QLabel(
+            "mmdc renders .mmd/.mermaid source files into PNG and SVG using "
+            "Puppeteer/Chromium for pixel-perfect output. Requires Node.js. "
+            "Enables: import Mermaid source files as annotated backgrounds. "
+            "Install with: npm install -g @mermaid-js/mermaid-cli"
+        )
+        mmdc_note.setWordWrap(True)
+        mmdc_note.setStyleSheet("color: #666; font-size: 11px;")
+        mmdc_layout.addWidget(mmdc_note)
+
+        mmdc_row = QHBoxLayout()
+        self.tools_mmdc_edit = QLineEdit()
+        self.tools_mmdc_edit.setPlaceholderText("Auto-detect (MMDC_PATH env, PATH)")
+        mmdc_row.addWidget(self.tools_mmdc_edit)
+        mmdc_browse = QPushButton("Browse...")
+        mmdc_browse.setFixedWidth(80)
+        mmdc_browse.clicked.connect(lambda: self._browse_tool_exe(self.tools_mmdc_edit, "mmdc Executable"))
+        mmdc_row.addWidget(mmdc_browse)
+        mmdc_clear = QPushButton("Clear")
+        mmdc_clear.setFixedWidth(50)
+        mmdc_clear.clicked.connect(lambda: self._clear_tool_path(self.tools_mmdc_edit))
+        mmdc_row.addWidget(mmdc_clear)
+        mmdc_layout.addLayout(mmdc_row)
+
+        self.tools_mmdc_status = QLabel()
+        self.tools_mmdc_status.setStyleSheet("font-size: 11px;")
+        mmdc_layout.addWidget(self.tools_mmdc_status)
+
+        # PNG scale factor
+        scale_row = QHBoxLayout()
+        scale_label = QLabel("PNG scale factor:")
+        scale_label.setToolTip(
+            "CSS zoom/scale passed to mmdc via the -s flag.\n"
+            "Higher values produce larger, sharper PNG backgrounds.\n"
+            "1 = native size, 4 = 4\u00d7 resolution (default)."
+        )
+        scale_row.addWidget(scale_label)
+        self.tools_mmdc_scale_spin = QSpinBox()
+        self.tools_mmdc_scale_spin.setRange(1, 10)
+        self.tools_mmdc_scale_spin.setValue(
+            self.settings_manager.settings.external_tools.mmdc_png_scale
+        )
+        self.tools_mmdc_scale_spin.setSuffix("\u00d7")
+        self.tools_mmdc_scale_spin.setFixedWidth(70)
+        scale_row.addWidget(self.tools_mmdc_scale_spin)
+        scale_row.addStretch()
+        mmdc_layout.addLayout(scale_row)
+
+        layout.addWidget(mmdc_group)
+
+        layout.addStretch()
+
+        # Run auto-detection to populate status labels
+        self._detect_external_tools()
+
+        return self._create_scrollable_tab(widget)
+
+    def _detect_external_tools(self):
+        """Auto-detect external tools and update status labels.
+
+        For each tool, if the settings field is empty, tries to find
+        the tool automatically.  Populates the line edit (grayed out)
+        when auto-detected, and updates the status label.
+        """
+        s = self.settings_manager.settings
+
+        # ── Java ──
+        configured = s.external_tools.java_path
+        if configured and os.path.isfile(configured):
+            self.tools_java_edit.setText(configured)
+            self.tools_java_edit.setReadOnly(False)
+            self._set_tool_status(self.tools_java_status, True, "Configured manually")
+        else:
+            detected = shutil.which("java")
+            if detected:
+                self.tools_java_edit.setText(detected)
+                self.tools_java_edit.setReadOnly(True)
+                self._set_tool_status(self.tools_java_status, True, "Auto-detected from PATH")
+            else:
+                self.tools_java_edit.setText("")
+                self.tools_java_edit.setReadOnly(False)
+                self._set_tool_status(self.tools_java_status, False,
+                                      "Not found — install JRE 8+ from https://adoptium.net/")
+
+        # ── PlantUML JAR ──
+        configured = s.external_tools.plantuml_jar_path
+        if configured and os.path.isfile(configured):
+            self.tools_puml_jar_edit.setText(configured)
+            self.tools_puml_jar_edit.setReadOnly(False)
+            self._set_tool_status(self.tools_puml_status, True, "Configured manually")
+        else:
+            from plantuml.renderer import find_plantuml_jar
+            detected = find_plantuml_jar()
+            if detected:
+                self.tools_puml_jar_edit.setText(detected)
+                self.tools_puml_jar_edit.setReadOnly(True)
+                self._set_tool_status(self.tools_puml_status, True, "Auto-detected")
+            else:
+                self.tools_puml_jar_edit.setText("")
+                self.tools_puml_jar_edit.setReadOnly(False)
+                self._set_tool_status(self.tools_puml_status, False,
+                                      "Not found — download from github.com/plantuml/plantuml/releases")
+
+        # ── Node.js ──
+        configured = s.external_tools.nodejs_path
+        if configured and os.path.isfile(configured):
+            self.tools_node_edit.setText(configured)
+            self.tools_node_edit.setReadOnly(False)
+            self._set_tool_status(self.tools_node_status, True, "Configured manually")
+        else:
+            detected = shutil.which("node")
+            if detected:
+                self.tools_node_edit.setText(detected)
+                self.tools_node_edit.setReadOnly(True)
+                self._set_tool_status(self.tools_node_status, True, "Auto-detected from PATH")
+            else:
+                self.tools_node_edit.setText("")
+                self.tools_node_edit.setReadOnly(False)
+                self._set_tool_status(self.tools_node_status, False,
+                                      "Not found — install from https://nodejs.org/")
+
+        # ── mmdc ──
+        configured = s.external_tools.mmdc_path
+        if configured and os.path.isfile(configured):
+            self.tools_mmdc_edit.setText(configured)
+            self.tools_mmdc_edit.setReadOnly(False)
+            self._set_tool_status(self.tools_mmdc_status, True, "Configured manually")
+        else:
+            from mermaid.renderer import find_mmdc
+            detected = find_mmdc()
+            if detected:
+                self.tools_mmdc_edit.setText(detected)
+                self.tools_mmdc_edit.setReadOnly(True)
+                self._set_tool_status(self.tools_mmdc_status, True, "Auto-detected")
+            else:
+                self.tools_mmdc_edit.setText("")
+                self.tools_mmdc_edit.setReadOnly(False)
+                self._set_tool_status(self.tools_mmdc_status, False,
+                                      "Not found — install with: npm install -g @mermaid-js/mermaid-cli")
+
+    @staticmethod
+    def _set_tool_status(label: QLabel, found: bool, message: str):
+        """Update a tool status label with found/not-found styling."""
+        if found:
+            label.setText(f"Found: {message}")
+            label.setStyleSheet("color: #27AE60; font-size: 11px;")
+        else:
+            label.setText(f"Not found: {message}")
+            label.setStyleSheet("color: #E74C3C; font-size: 11px;")
+
+    def _browse_tool_exe(self, line_edit: QLineEdit, title: str):
+        """Open file dialog to browse for an executable."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, f"Select {title}", "",
+            "Executables (*.exe *.cmd *.bat);;All Files (*)"
+        )
+        if path:
+            line_edit.setText(path)
+            line_edit.setReadOnly(False)
+
+    def _browse_tool_file(self, line_edit: QLineEdit, title: str, file_filter: str):
+        """Open file dialog to browse for a file."""
+        path, _ = QFileDialog.getOpenFileName(self, f"Select {title}", "", file_filter)
+        if path:
+            line_edit.setText(path)
+            line_edit.setReadOnly(False)
+
+    def _clear_tool_path(self, line_edit: QLineEdit):
+        """Clear a tool path and re-run auto-detection."""
+        line_edit.setText("")
+        line_edit.setReadOnly(False)
+        # Save cleared value so detection uses auto-detect
+        self._save_tool_path_from_edit(line_edit, "")
+        self._detect_external_tools()
+
+    def _save_tool_path_from_edit(self, line_edit: QLineEdit, value: str):
+        """Update the matching settings field for a tool line edit."""
+        s = self.settings_manager.settings
+        if line_edit is self.tools_java_edit:
+            s.external_tools.java_path = value
+        elif line_edit is self.tools_puml_jar_edit:
+            s.external_tools.plantuml_jar_path = value
+        elif line_edit is self.tools_node_edit:
+            s.external_tools.nodejs_path = value
+        elif line_edit is self.tools_mmdc_edit:
+            s.external_tools.mmdc_path = value
 
     # =========================================================================
     # Settings Load/Save
@@ -720,6 +1050,12 @@ class SettingsDialog(QDialog):
             # Gemini
             "gemini_models": list(s.gemini.models),
             "gemini_default_model": s.gemini.default_model,
+            # External Tools
+            "tools_java_path": s.external_tools.java_path,
+            "tools_puml_jar_path": s.external_tools.plantuml_jar_path,
+            "tools_nodejs_path": s.external_tools.nodejs_path,
+            "tools_mmdc_path": s.external_tools.mmdc_path,
+            "tools_mmdc_png_scale": s.external_tools.mmdc_png_scale,
         }
 
     def _load_settings(self):
@@ -820,6 +1156,9 @@ class SettingsDialog(QDialog):
         self.gemini_default_combo.clear()
         self.gemini_default_combo.addItems(s.gemini.models)
         self.gemini_default_combo.setCurrentText(s.gemini.default_model)
+
+        # External Tools — re-run detection to refresh status labels
+        self._detect_external_tools()
 
     def _save_settings(self):
         """Save UI widget values to settings."""
@@ -932,6 +1271,18 @@ class SettingsDialog(QDialog):
             s.gemini.models[0] if s.gemini.models else "gemini-2.5-flash-image"
         )
 
+        # External Tools — only save non-empty manually-entered paths
+        # (auto-detected read-only fields are not persisted)
+        if not self.tools_java_edit.isReadOnly():
+            s.external_tools.java_path = self.tools_java_edit.text().strip()
+        if not self.tools_puml_jar_edit.isReadOnly():
+            s.external_tools.plantuml_jar_path = self.tools_puml_jar_edit.text().strip()
+        if not self.tools_node_edit.isReadOnly():
+            s.external_tools.nodejs_path = self.tools_node_edit.text().strip()
+        if not self.tools_mmdc_edit.isReadOnly():
+            s.external_tools.mmdc_path = self.tools_mmdc_edit.text().strip()
+        s.external_tools.mmdc_png_scale = self.tools_mmdc_scale_spin.value()
+
         # Persist to file
         self.settings_manager.save()
 
@@ -1009,6 +1360,13 @@ class SettingsDialog(QDialog):
         s.gemini.models = snapshot["gemini_models"]
         s.gemini.default_model = snapshot["gemini_default_model"]
 
+        # External Tools
+        s.external_tools.java_path = snapshot["tools_java_path"]
+        s.external_tools.plantuml_jar_path = snapshot["tools_puml_jar_path"]
+        s.external_tools.nodejs_path = snapshot["tools_nodejs_path"]
+        s.external_tools.mmdc_path = snapshot["tools_mmdc_path"]
+        s.external_tools.mmdc_png_scale = snapshot["tools_mmdc_png_scale"]
+
     # =========================================================================
     # Button Handlers
     # =========================================================================
@@ -1048,6 +1406,7 @@ class SettingsDialog(QDialog):
         s.alignment = defaults.alignment
         s.defaults = defaults.defaults
         s.gemini = defaults.gemini
+        s.external_tools = defaults.external_tools
 
         # Reload UI
         self._load_settings()
