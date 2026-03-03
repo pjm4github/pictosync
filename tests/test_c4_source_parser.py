@@ -11,49 +11,9 @@ from mermaid.c4_source_parser import (
     C4ParseResult,
     C4Rel,
     C4Shape,
-    _extract_attributes,
     parse_c4_source,
     parse_c4_source_file,
 )
-
-
-# ═══════════════════════════════════════════════════════════
-# _extract_attributes unit tests
-# ═══════════════════════════════════════════════════════════
-
-class TestExtractAttributes:
-    """Unit tests for the attribute extraction helper."""
-
-    def test_quoted_strings(self):
-        assert _extract_attributes('"hello", "world"') == ["hello", "world"]
-
-    def test_bare_identifiers(self):
-        assert _extract_attributes("foo, bar") == ["foo", "bar"]
-
-    def test_mixed_quoted_and_bare(self):
-        assert _extract_attributes('alias, "Label Text"') == ["alias", "Label Text"]
-
-    def test_dollar_attributes_skipped(self):
-        attrs = _extract_attributes('"a", "b", $tags="v1.0"')
-        assert attrs == ["a", "b"]
-
-    def test_dollar_with_equals(self):
-        attrs = _extract_attributes('alias, "Label", $fontColor="red", $bgColor="grey"')
-        assert attrs == ["alias", "Label"]
-
-    def test_empty_input(self):
-        assert _extract_attributes("") == []
-
-    def test_single_quoted(self):
-        assert _extract_attributes('"only"') == ["only"]
-
-    def test_commas_inside_quotes(self):
-        attrs = _extract_attributes('"a, b, c", "d"')
-        assert attrs == ["a, b, c", "d"]
-
-    def test_whitespace_stripping(self):
-        attrs = _extract_attributes('  alias , "Label"  ')
-        assert attrs == ["alias", "Label"]
 
 
 # ═══════════════════════════════════════════════════════════

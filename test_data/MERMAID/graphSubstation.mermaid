@@ -1,0 +1,61 @@
+graph TD
+    subgraph DMZ [Security Layer: DMZ]
+        FW[Dual Firewalls / Proxy]
+    end
+
+    subgraph Station_Bus_A [Station Bus - LAN A]
+        SWA[Station Switch A]
+    end
+
+    subgraph Station_Bus_B [Station Bus - LAN B]
+        SWB[Station Switch B]
+    end
+
+    subgraph Bay_Level [Redundant IEDs / Protection]
+        IED1[Distance Relay - DAN]
+        IED2[Differential Relay - DAN]
+    end
+
+    subgraph Process_Bus_A [Process Bus - LAN A]
+        PBA[Process Switch A]
+    end
+
+    subgraph Process_Bus_B [Process Bus - LAN B]
+        PBB[Process Switch B]
+    end
+
+    subgraph Field_Level [Redundant Input/Output]
+        MU1[Merging Unit 1 - DAN]
+        MU2[Merging Unit 2 - DAN]
+    end
+
+    %% Connections for Redundancy
+    FW <--> SWA
+    FW <--> SWB
+
+    %% IEDs connecting to both Station Bus A and B
+    IED1 --- SWA
+    IED1 --- SWB
+    IED2 --- SWA
+    IED2 --- SWB
+
+    %% IEDs connecting to both Process Bus A and B
+    IED1 --- PBA
+    IED1 --- PBB
+    IED2 --- PBA
+    IED2 --- PBB
+
+    %% Merging Units connecting to both Process Bus A and B
+    MU1 --- PBA
+    MU1 --- PBB
+    MU2 --- PBA
+    MU2 --- PBB
+
+    %% Styling
+    classDef redA fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef redB fill:#fff3e0,stroke:#e65100,stroke-width:2px;
+    classDef dan fill:#f3e5f5,stroke:#4a148c,stroke-width:2px,stroke-dasharray: 5 5;
+
+    class SWA,PBA redA;
+    class SWB,PBB redB;
+    class IED1,IED2,MU1,MU2 dan;

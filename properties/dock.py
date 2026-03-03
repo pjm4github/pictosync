@@ -35,6 +35,7 @@ from canvas.items import (
     MetaCurveItem,
     MetaOrthoCurveItem,
     MetaIsoCubeItem,
+    MetaSeqBlockItem,
     MetaGroupItem,
 )
 
@@ -76,7 +77,7 @@ def _build_adjust_config_from_schema() -> dict:
         geom_def = defs.get(geom_def_name, {})
         props = geom_def.get("properties", {})
         adjusts: dict = {}
-        for key in ("adjust1", "adjust2"):
+        for key in ("adjust1", "adjust2", "adjust3"):
             adj = props.get(key)
             if adj and "ui_label" in adj:
                 suffix = adj["ui_suffix"]
@@ -194,6 +195,28 @@ class PropertyPanel(QWidget):
         self.adjust2_spin = self.ui.spin_adjust2
         self.adjust2_label = self.ui.label_adjust2
         self.radius_spin = self.adjust1_spin  # compat alias
+        # adjust3 + divider count — created dynamically (not in .ui)
+        from PyQt6.QtWidgets import QLabel as _QLabel, QSpinBox as _QSpinBox
+        self.divider_count_label = _QLabel("Dividers")
+        self.divider_count_spin = _QSpinBox()
+        self.divider_count_spin.setRange(0, 3)
+        self.divider_count_spin.setValue(0)
+        self.adjust3_label = _QLabel("Divider 3")
+        self.adjust3_spin = _QSpinBox()
+        self.adjust3_spin.setRange(0, 100)
+        self.adjust3_spin.setValue(83)
+        self.adjust3_spin.setSuffix(" %")
+        layout = self.adjust_row.layout()
+        if layout:
+            # Insert divider count at position 0 (before adjust1)
+            layout.insertWidget(0, self.divider_count_label)
+            layout.insertWidget(1, self.divider_count_spin)
+            layout.addWidget(self.adjust3_label)
+            layout.addWidget(self.adjust3_spin)
+        self.divider_count_label.setVisible(False)
+        self.divider_count_spin.setVisible(False)
+        self.adjust3_label.setVisible(False)
+        self.adjust3_spin.setVisible(False)
 
         # Properties tab - Extra controls
         self.line_width_spin = self.ui.spin_line_width
@@ -393,10 +416,14 @@ class PropertyPanel(QWidget):
         tr_l.addWidget(self.text_color_preview)
         tr_l.addStretch(1)
 
-        # Unified adjust controls row (adjust1 + adjust2 in one row)
+        # Unified adjust controls row (adjust1 + adjust2 + adjust3 in one row)
         self.adjust_row = QWidget()
         adjust_l = QHBoxLayout(self.adjust_row)
         adjust_l.setContentsMargins(0, 0, 0, 0)
+        self.divider_count_label = QLabel("Dividers")
+        self.divider_count_spin = QSpinBox()
+        self.divider_count_spin.setRange(0, 3)
+        self.divider_count_spin.setValue(0)
         self.adjust1_label = QLabel("Adjust1")
         self.adjust1_spin = QSpinBox()
         self.adjust1_spin.setRange(0, 200)
@@ -407,10 +434,19 @@ class PropertyPanel(QWidget):
         self.adjust2_spin.setRange(10, 500)
         self.adjust2_spin.setValue(15)
         self.adjust2_spin.setSuffix(" px")
+        self.adjust3_label = QLabel("Divider 3")
+        self.adjust3_spin = QSpinBox()
+        self.adjust3_spin.setRange(0, 100)
+        self.adjust3_spin.setValue(83)
+        self.adjust3_spin.setSuffix(" %")
+        adjust_l.addWidget(self.divider_count_label)
+        adjust_l.addWidget(self.divider_count_spin)
         adjust_l.addWidget(self.adjust1_label)
         adjust_l.addWidget(self.adjust1_spin)
         adjust_l.addWidget(self.adjust2_label)
         adjust_l.addWidget(self.adjust2_spin)
+        adjust_l.addWidget(self.adjust3_label)
+        adjust_l.addWidget(self.adjust3_spin)
         adjust_l.addStretch(1)
         self.radius_spin = self.adjust1_spin  # compat alias
 
@@ -546,6 +582,8 @@ class PropertyPanel(QWidget):
         self.arrow_combo.currentIndexChanged.connect(self._on_arrow_changed)
         self.arrow_size_spin.valueChanged.connect(self._on_arrow_size_changed)
         self.adjust2_spin.valueChanged.connect(self._on_adjust2_changed)
+        self.adjust3_spin.valueChanged.connect(self._on_adjust3_changed)
+        self.divider_count_spin.valueChanged.connect(self._on_divider_count_changed)
         self.text_box_width_spin.valueChanged.connect(self._on_text_box_width_changed)
 
         # Text layout controls
@@ -581,6 +619,8 @@ class PropertyPanel(QWidget):
         self.text_color_btn.setEnabled(enabled)
         self.adjust1_spin.setEnabled(enabled)
         self.adjust2_spin.setEnabled(enabled)
+        self.adjust3_spin.setEnabled(enabled)
+        self.divider_count_spin.setEnabled(enabled)
         self.line_width_spin.setEnabled(enabled)
         self.dash_combo.setEnabled(enabled)
         self.dash_length_spin.setEnabled(enabled)
@@ -591,14 +631,20 @@ class PropertyPanel(QWidget):
         self.text_spacing_combo.setEnabled(enabled)
         self.text_valign_combo.setEnabled(enabled)
 
-    def _set_extra_rows_visible(self, adjust: bool, line_width: bool, dash: bool, arrow: bool, arrow_size: bool, text_box_width: bool = False, text_layout: bool = False, adjust2: bool = False):
+    def _set_extra_rows_visible(self, adjust: bool, line_width: bool, dash: bool, arrow: bool, arrow_size: bool, text_box_width: bool = False, text_layout: bool = False, adjust2: bool = False, adjust3: bool = False, divider_count: bool = False):
         """Show or hide extra control rows."""
-        self.adjust_row.setVisible(adjust)
+        self.adjust_row.setVisible(adjust or divider_count)
         self.adjust1_spin.setVisible(adjust)
         self.adjust1_label.setVisible(adjust)
         # Show/hide adjust2 within the same row
         self.adjust2_label.setVisible(adjust and adjust2)
         self.adjust2_spin.setVisible(adjust and adjust2)
+        # Show/hide adjust3 within the same row
+        self.adjust3_label.setVisible(adjust and adjust3)
+        self.adjust3_spin.setVisible(adjust and adjust3)
+        # Show/hide divider count
+        self.divider_count_label.setVisible(divider_count)
+        self.divider_count_spin.setVisible(divider_count)
         self.line_width_row.setVisible(line_width)
         # text_box_width_row contains both text_box_width spin AND text layout controls
         # Show the row if either text_box_width or text_layout is needed
@@ -634,6 +680,13 @@ class PropertyPanel(QWidget):
             self.adjust2_spin.setSuffix(a2["suffix"])
             self.adjust2_spin.setRange(a2["min"], a2["max"])
             self.adjust2_spin.blockSignals(False)
+        a3 = cfg.get("adjust3")
+        if a3:
+            self.adjust3_label.setText(a3["label"])
+            self.adjust3_spin.blockSignals(True)
+            self.adjust3_spin.setSuffix(a3["suffix"])
+            self.adjust3_spin.setRange(a3["min"], a3["max"])
+            self.adjust3_spin.blockSignals(False)
 
     def _set_dash_pattern_visible(self, visible: bool):
         """Show or hide the custom dash pattern controls."""
@@ -725,6 +778,8 @@ class PropertyPanel(QWidget):
             self._setup_curve_controls(item, pen_color)
         elif kind == "orthocurve":
             self._setup_curve_controls(item, pen_color)
+        elif kind == "seqblock":
+            self._setup_seqblock_controls(item, pen_color)
         elif kind == "group":
             self._setup_group_controls(item, pen_color)
         else:
@@ -1027,6 +1082,8 @@ class PropertyPanel(QWidget):
             item.set_adjust1(float(value))
         elif isinstance(item, MetaIsoCubeItem):
             item.set_adjust1(float(value))
+        elif isinstance(item, MetaSeqBlockItem):
+            item.set_adjust1(value / 100.0)
         else:
             return
 
@@ -1167,12 +1224,15 @@ class PropertyPanel(QWidget):
             self.undo_stack.push(cmd)
 
     def _on_adjust2_changed(self, value: int):
-        """Handle adjust2 change (head length for blockarrow, angle for isocube)."""
+        """Handle adjust2 change (head length for blockarrow, angle for isocube, divider for seqblock)."""
         item = self._current_item
-        if item is None or not isinstance(item, (MetaBlockArrowItem, MetaIsoCubeItem)):
+        if item is None or not isinstance(item, (MetaBlockArrowItem, MetaIsoCubeItem, MetaSeqBlockItem)):
             return
         old_val = item._adjust2
-        item.set_adjust2(float(value))
+        if isinstance(item, MetaSeqBlockItem):
+            item.set_adjust2(value / 100.0)
+        else:
+            item.set_adjust2(float(value))
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
 
@@ -1314,6 +1374,43 @@ class PropertyPanel(QWidget):
         self._setup_line_style_controls(item)
         self._setup_text_layout_controls(item)
 
+    def _setup_seqblock_controls(self, item, pen_color):
+        """Configure controls for sequence block items."""
+        self._set_text_rows_visible(True, True, True)
+        self._set_color_rows_visible(True, True, True)
+        dc = getattr(item, "_divider_count", 0)
+        show_a1 = dc >= 1
+        show_a2 = dc >= 2
+        show_a3 = dc >= 3
+        self._set_extra_rows_visible(
+            show_a1, True, True, False, False,
+            text_box_width=False, text_layout=True,
+            adjust2=show_a2, adjust3=show_a3,
+            divider_count=True,
+        )
+        # Divider count spinner
+        self.divider_count_spin.blockSignals(True)
+        self.divider_count_spin.setValue(dc)
+        self.divider_count_spin.blockSignals(False)
+        self._set_preview(self.pen_color_preview, pen_color)
+        self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
+        self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
+        self._configure_adjust_controls("seqblock")
+        if show_a1:
+            self.adjust1_spin.blockSignals(True)
+            self.adjust1_spin.setValue(int(getattr(item, "_adjust1", 0.5) * 100))
+            self.adjust1_spin.blockSignals(False)
+        if show_a2:
+            self.adjust2_spin.blockSignals(True)
+            self.adjust2_spin.setValue(int(getattr(item, "_adjust2", 0.67) * 100))
+            self.adjust2_spin.blockSignals(False)
+        if show_a3:
+            self.adjust3_spin.blockSignals(True)
+            self.adjust3_spin.setValue(int(getattr(item, "_adjust3", 0.83) * 100))
+            self.adjust3_spin.blockSignals(False)
+        self._setup_line_style_controls(item)
+        self._setup_text_layout_controls(item)
+
     def _setup_isocube_controls(self, item, pen_color):
         """Configure controls for isometric cube items."""
         self._set_text_rows_visible(True, True, True)
@@ -1391,16 +1488,64 @@ class PropertyPanel(QWidget):
         self.adjust1_spin.blockSignals(True)
         if isinstance(item, (MetaRoundedRectItem, MetaCurveItem, MetaOrthoCurveItem, MetaIsoCubeItem)):
             self.adjust1_spin.setValue(int(value))
-        elif isinstance(item, (MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem)):
+        elif isinstance(item, (MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaSeqBlockItem)):
             self.adjust1_spin.setValue(int(value * 100))
         self.adjust1_spin.blockSignals(False)
 
     def update_adjust2_display(self, item, value: float):
         """Update the adjust2 spinbox display when it changes via canvas handle."""
-        if self._current_item is item and isinstance(item, (MetaBlockArrowItem, MetaIsoCubeItem)):
+        if self._current_item is not item:
+            return
+        if isinstance(item, (MetaBlockArrowItem, MetaIsoCubeItem)):
             self.adjust2_spin.blockSignals(True)
             self.adjust2_spin.setValue(int(value))
             self.adjust2_spin.blockSignals(False)
+        elif isinstance(item, MetaSeqBlockItem):
+            self.adjust2_spin.blockSignals(True)
+            self.adjust2_spin.setValue(int(value * 100))
+            self.adjust2_spin.blockSignals(False)
+
+    def update_adjust3_display(self, item, value: float):
+        """Update the adjust3 spinbox display when it changes via canvas handle."""
+        if self._current_item is not item:
+            return
+        if isinstance(item, MetaSeqBlockItem):
+            self.adjust3_spin.blockSignals(True)
+            self.adjust3_spin.setValue(int(value * 100))
+            self.adjust3_spin.blockSignals(False)
+
+    def _on_adjust3_changed(self, value: int):
+        """Handle adjust3 change (third divider for seqblock)."""
+        item = self._current_item
+        if item is None or not isinstance(item, MetaSeqBlockItem):
+            return
+        old_val = item._adjust3
+        item.set_adjust3(value / 100.0)
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+
+        if self.undo_stack:
+            new_val = item._adjust3
+            def apply():
+                item._update_path()
+                if hasattr(item, "_update_label_position"):
+                    item._update_label_position()
+            cmd = ChangeStyleCommand(item, "_adjust3", old_val, new_val, apply)
+            self.undo_stack.push(cmd)
+
+    def _on_divider_count_changed(self, value: int):
+        """Handle divider count change for seqblock items."""
+        item = self._current_item
+        if item is None or not isinstance(item, MetaSeqBlockItem):
+            return
+        old_count = item._divider_count
+        if value == old_count:
+            return
+        item.set_divider_count(value)
+        item._notify_changed()
+        # Refresh the property panel to show/hide adjust spinners
+        pen_color = getattr(item, "pen_color", QColor("red"))
+        self._setup_seqblock_controls(item, pen_color)
 
 
 # Backwards compatibility alias

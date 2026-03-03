@@ -1,0 +1,83 @@
+graph TD
+    %% Purdue Level 4/5: Enterprise
+    subgraph L4_5 [Level 4/5: Enterprise & External]
+        Corporate[Corporate WAN / Office Network]
+        Remote[Remote Control Center / Cloud]
+    end
+
+    %% Purdue Level 3.5: DMZ
+    subgraph L3_5 [Level 3.5: Security DMZ]
+        direction TB
+        ExtFW[External Firewall]
+        Proxy[Data Historian / Jump Host / Patch Server]
+        IntFW[Internal Firewall]
+
+        Corporate <--> ExtFW
+        Remote <--> ExtFW
+        ExtFW <--> Proxy
+        Proxy <--> IntFW
+    end
+
+    %% Purdue Level 3: Site Operations
+    subgraph L3 [Level 3: Site Operations]
+        HMI[Local HMI / SCADA]
+        Eng[Engineering Workstation]
+        IntFW <--> HMI
+        IntFW <--> Eng
+    end
+
+    %% Purdue Level 2: Station Bus (Control)
+    subgraph L2 [Level 2: Station Bus - IEC 61850 MMS]
+        direction LR
+        SWA[Station Switch A]
+        SWB[Station Switch B]
+
+        HMI --- SWA
+        HMI --- SWB
+    end
+
+    %% Purdue Level 1: Bay Level (IEDs)
+    subgraph L1 [Level 1: IEDs & Protection]
+        IED_Prot[Protection IED]
+        IED_Ctrl[Control IED]
+
+        SWA --- IED_Prot
+        SWB --- IED_Prot
+        SWA --- IED_Ctrl
+        SWB --- IED_Ctrl
+    end
+
+    %% IEC 61850 Process Bus (Real-time)
+    subgraph L1_PB [Level 1: Process Bus - SV / GOOSE]
+        direction LR
+        PBA[Process Switch A]
+        PBB[Process Switch B]
+
+        IED_Prot --- PBA
+        IED_Prot --- PBB
+        IED_Ctrl --- PBA
+        IED_Ctrl --- PBB
+    end
+
+    %% Purdue Level 0: Process
+    subgraph L0 [Level 0: Physical Process]
+        MU[Merging Unit / SAMU]
+        IntAct[Intelligent Actuator]
+        Primary[Breakers / Transformers / Sensors]
+
+        PBA --- MU
+        PBB --- MU
+        PBA --- IntAct
+        PBB --- IntAct
+
+        MU --- Primary
+        IntAct --- Primary
+    end
+
+
+
+    %% Styling
+    style L3_5 fill:#ffccbc,stroke:#bf360c,stroke-width:2px
+    style L1_PB fill:#e1f5fe,stroke:#01579b,stroke-dasharray: 5 5
+    style L2 fill:#e1f5fe,stroke:#01579b
+    style L0 fill:#f5f5f5,stroke:#212121

@@ -26,6 +26,7 @@ from canvas.items import (
     MetaCurveItem,
     MetaOrthoCurveItem,
     MetaIsoCubeItem,
+    MetaSeqBlockItem,
     MetaGroupItem,
 )
 from settings import get_settings
@@ -78,6 +79,8 @@ class AnnotatorScene(QGraphicsScene):
         self._curve_preview: Optional[QGraphicsItem] = None
         # Orthogonal curve direction tracking ("H" or "V")
         self._ortho_direction: Optional[str] = None
+        # Sequence block type (alt/loop/opt/critical/break/par)
+        self._seqblock_type: str = "alt"
 
     @property
     def is_interacting(self) -> bool:
@@ -263,7 +266,7 @@ class AnnotatorScene(QGraphicsScene):
                 event.accept()
                 return
 
-            if self.mode in (Mode.RECT, Mode.ROUNDEDRECT, Mode.ELLIPSE, Mode.LINE, Mode.HEXAGON, Mode.CYLINDER, Mode.BLOCKARROW, Mode.ISOCUBE):
+            if self.mode in (Mode.RECT, Mode.ROUNDEDRECT, Mode.ELLIPSE, Mode.LINE, Mode.HEXAGON, Mode.CYLINDER, Mode.BLOCKARROW, Mode.ISOCUBE, Mode.SEQBLOCK):
                 self._drag_start = sp
                 ann_id = self._make_id() if self._make_id else "local"
                 next_z = self._get_next_z_index()
@@ -303,6 +306,11 @@ class AnnotatorScene(QGraphicsScene):
                     self._temp_item.setZValue(next_z)
                 elif self.mode == Mode.ISOCUBE:
                     self._temp_item = MetaIsoCubeItem(sp.x(), sp.y(), 0, 0, 30, 135, ann_id, self._on_item_changed)
+                    self.addItem(self._temp_item)
+                    self._temp_item.setZValue(next_z)
+                elif self.mode == Mode.SEQBLOCK:
+                    self._temp_item = MetaSeqBlockItem(sp.x(), sp.y(), 0, 0,
+                                                       self._seqblock_type, ann_id, self._on_item_changed)
                     self.addItem(self._temp_item)
                     self._temp_item.setZValue(next_z)
 
@@ -362,7 +370,7 @@ class AnnotatorScene(QGraphicsScene):
             sx, sy = self._drag_start.x(), self._drag_start.y()
             cx, cy = cur.x(), cur.y()
 
-            if isinstance(self._temp_item, (MetaRectItem, MetaEllipseItem, MetaRoundedRectItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaIsoCubeItem)):
+            if isinstance(self._temp_item, (MetaRectItem, MetaEllipseItem, MetaRoundedRectItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaIsoCubeItem, MetaSeqBlockItem)):
                 x = min(sx, cx)
                 y = min(sy, cy)
                 w = abs(cx - sx)
@@ -413,7 +421,7 @@ class AnnotatorScene(QGraphicsScene):
 
     def _is_annotation_item(self, item: QGraphicsItem) -> bool:
         """Check if an item is one of our annotation items."""
-        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaLineItem, MetaTextItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaPolygonItem, MetaCurveItem, MetaOrthoCurveItem, MetaIsoCubeItem, MetaGroupItem))
+        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaLineItem, MetaTextItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaPolygonItem, MetaCurveItem, MetaOrthoCurveItem, MetaIsoCubeItem, MetaSeqBlockItem, MetaGroupItem))
 
     def _get_annotation_items(self) -> List[QGraphicsItem]:
         """Get all annotation items in the scene (excluding background, etc.)."""
@@ -669,6 +677,18 @@ class AnnotatorScene(QGraphicsScene):
         send_to_back.triggered.connect(lambda: self._send_to_back(item))
         menu.addAction(send_to_back)
 
+        # Seqblock: Add / Remove divider
+        if isinstance(item, MetaSeqBlockItem) and len(selected) == 1:
+            menu.addSeparator()
+            if item._divider_count < 3:
+                add_div = QAction("Add Divider", menu)
+                add_div.triggered.connect(lambda: self._seqblock_add_divider(item))
+                menu.addAction(add_div)
+            if item._divider_count > 0:
+                rem_div = QAction("Remove Divider", menu)
+                rem_div.triggered.connect(lambda: self._seqblock_remove_divider(item))
+                menu.addAction(rem_div)
+
         if self._on_build_dsl_item and len(selected) == 1:
             menu.addSeparator()
             build_dsl_act = QAction("Build DSL Item", menu)
@@ -761,6 +781,22 @@ class AnnotatorScene(QGraphicsScene):
         """Request ungrouping via callback."""
         if self._on_ungroup_item:
             self._on_ungroup_item(group_item)
+
+    def _seqblock_add_divider(self, item):
+        """Add a divider to a seqblock item and notify."""
+        if item.add_divider():
+            item._notify_changed()
+            # Re-select to refresh property panel with new controls
+            item.setSelected(False)
+            item.setSelected(True)
+
+    def _seqblock_remove_divider(self, item):
+        """Remove a divider from a seqblock item and notify."""
+        if item.remove_divider():
+            item._notify_changed()
+            # Re-select to refresh property panel with new controls
+            item.setSelected(False)
+            item.setSelected(True)
 
     def _get_top_level_annotation_items(self) -> list:
         """Get annotation items that are NOT children of a MetaGroupItem."""

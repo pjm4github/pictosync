@@ -2,8 +2,7 @@
 mermaid/c4_source_parser.py
 
 Parse Mermaid C4 source text (.mmd/.mermaid) into structured shape and
-relationship data, following the official JISON grammar from
-``packages/mermaid/src/diagrams/c4/parser/c4Diagram.jison``.
+relationship data using an ANTLR4 grammar (MermaidC4Lexer + MermaidC4Parser).
 
 This is **step 1** of a two-step pipeline:
 
@@ -17,8 +16,24 @@ C4Deployment diagrams.
 from __future__ import annotations
 
 import re
+import sys
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import List
+
+from antlr4 import CommonTokenStream, InputStream
+
+# Ensure the generated/ package is importable
+_grammar_dir = str(Path(__file__).resolve().parent / "grammar")
+_generated_dir = str(Path(__file__).resolve().parent / "grammar" / "generated")
+if _grammar_dir not in sys.path:
+    sys.path.insert(0, _grammar_dir)
+if _generated_dir not in sys.path:
+    sys.path.insert(0, _generated_dir)
+
+from MermaidC4Lexer import MermaidC4Lexer          # noqa: E402
+from MermaidC4Parser import MermaidC4Parser         # noqa: E402
+from MermaidC4ParserVisitor import MermaidC4ParserVisitor  # noqa: E402
 
 
 # ═══════════════════════════════════════════════════════════
@@ -101,148 +116,267 @@ class C4ParseResult:
 
 
 # ═══════════════════════════════════════════════════════════
-# Keyword → argument-signature mapping
+# Token → type mapping dicts
 # ═══════════════════════════════════════════════════════════
 
-# Person/System: (alias, label, ?descr, ?sprite, ?tags, ?link)
-_PERSON_SYSTEM_KEYWORDS: Dict[str, str] = {
-    "Person":              "person",
-    "Person_Ext":          "external_person",
-    "System":              "system",
-    "SystemDb":            "system_db",
-    "SystemQueue":         "system_queue",
-    "System_Ext":          "external_system",
-    "SystemDb_Ext":        "external_system_db",
-    "SystemQueue_Ext":     "external_system_queue",
+P = MermaidC4Parser
+
+_ELEMENT_TOKEN_TO_C4TYPE = {
+    P.PERSON: "person",               P.PERSON_EXT: "external_person",
+    P.SYSTEM: "system",               P.SYSTEM_EXT: "external_system",
+    P.SYSTEM_DB: "system_db",         P.SYSTEM_DB_EXT: "external_system_db",
+    P.SYSTEM_QUEUE: "system_queue",   P.SYSTEM_QUEUE_EXT: "external_system_queue",
+    P.CONTAINER: "container",         P.CONTAINER_EXT: "external_container",
+    P.CONTAINER_DB: "container_db",   P.CONTAINER_DB_EXT: "external_container_db",
+    P.CONTAINER_QUEUE: "container_queue",
+    P.CONTAINER_QUEUE_EXT: "external_container_queue",
+    P.COMPONENT: "component",         P.COMPONENT_EXT: "external_component",
+    P.COMPONENT_DB: "component_db",   P.COMPONENT_DB_EXT: "external_component_db",
+    P.COMPONENT_QUEUE: "component_queue",
+    P.COMPONENT_QUEUE_EXT: "external_component_queue",
 }
 
-# Container/Component: (alias, label, ?techn, ?descr, ?sprite, ?tags, ?link)
-_CONTAINER_COMPONENT_KEYWORDS: Dict[str, str] = {
-    "Container":             "container",
-    "ContainerDb":           "container_db",
-    "ContainerQueue":        "container_queue",
-    "Container_Ext":         "external_container",
-    "ContainerDb_Ext":       "external_container_db",
-    "ContainerQueue_Ext":    "external_container_queue",
-    "Component":             "component",
-    "ComponentDb":           "component_db",
-    "ComponentQueue":        "component_queue",
-    "Component_Ext":         "external_component",
-    "ComponentDb_Ext":       "external_component_db",
-    "ComponentQueue_Ext":    "external_component_queue",
+# Person/System keywords use 2-arg signature: (alias, label, ?descr)
+_PERSON_SYSTEM_TOKENS = {
+    P.PERSON, P.PERSON_EXT,
+    P.SYSTEM, P.SYSTEM_EXT,
+    P.SYSTEM_DB, P.SYSTEM_DB_EXT,
+    P.SYSTEM_QUEUE, P.SYSTEM_QUEUE_EXT,
 }
 
-# Relationship: (from, to, label, ?techn, ?descr, ?sprite, ?tags, ?link)
-_REL_KEYWORDS = {
-    "Rel", "BiRel", "Rel_Up", "Rel_U", "Rel_Down", "Rel_D",
-    "Rel_Left", "Rel_L", "Rel_Right", "Rel_R", "Rel_Back",
+_REL_TOKEN_TO_TYPE = {
+    P.REL: "rel", P.BIREL: "birel", P.REL_BACK: "rel_b",
+    P.REL_U: "rel_u", P.REL_UP: "rel_u",
+    P.REL_D: "rel_d", P.REL_DOWN: "rel_d",
+    P.REL_L: "rel_l", P.REL_LEFT: "rel_l",
+    P.REL_R: "rel_r", P.REL_RIGHT: "rel_r",
+    P.REL_INDEX: "rel",
 }
 
-# Boundary: (alias, label, ?type, ?tags, ?link) — opens a { } block
-_BOUNDARY_KEYWORDS: Dict[str, str] = {
-    "Enterprise_Boundary":  "ENTERPRISE",
-    "System_Boundary":      "SYSTEM",
-    "Boundary":             "",
-    "Container_Boundary":   "CONTAINER",
-    "Deployment_Node":      "node",
-    "Node":                 "node",
-    "Node_L":               "nodeL",
-    "Node_R":               "nodeR",
+_BOUNDARY_TOKEN_TO_TYPE = {
+    P.ENTERPRISE_BOUNDARY: "ENTERPRISE",
+    P.SYSTEM_BOUNDARY: "SYSTEM",
+    P.CONTAINER_BOUNDARY: "CONTAINER",
+    P.BOUNDARY: "",
 }
 
-# Diagram type keywords
-_DIAGRAM_TYPES = {"C4Context", "C4Container", "C4Component", "C4Dynamic", "C4Deployment"}
+_DEPLOY_TOKEN_TO_TYPE = {
+    P.DEPLOYMENT_NODE: "node",
+    P.NODE: "node",
+    P.NODE_L: "nodeL",
+    P.NODE_R: "nodeR",
+}
 
-# Style/layout keywords — recognised and skipped
-_SKIP_KEYWORDS = {"UpdateElementStyle", "UpdateRelStyle", "UpdateLayoutConfig", "RelIndex"}
+_DIAGRAM_TYPE_TOKENS = {
+    P.C4CONTEXT: "C4Context",
+    P.C4CONTAINER: "C4Container",
+    P.C4COMPONENT: "C4Component",
+    P.C4DYNAMIC: "C4Dynamic",
+    P.C4DEPLOYMENT: "C4Deployment",
+}
+
+_C4_HEADER_KEYWORDS = set(_DIAGRAM_TYPE_TOKENS.values())
 
 
 # ═══════════════════════════════════════════════════════════
-# Attribute extraction
+# Helpers
 # ═══════════════════════════════════════════════════════════
 
-def _extract_attributes(paren_content: str) -> List[str]:
-    """Extract comma-separated attributes from the content inside ``(...)``.
+def _strip_quotes(text: str) -> str:
+    """Remove surrounding double quotes from a string."""
+    if len(text) >= 2 and text[0] == '"' and text[-1] == '"':
+        return text[1:-1]
+    return text
 
-    Handles quoted strings (which may contain commas), bare identifiers,
-    empty attributes (``,,``), and ``$key="value"`` pairs (skipped).
+
+def _extract_positional_args(arg_list_ctx: MermaidC4Parser.ArgListContext) -> List[str]:
+    """Extract positional arguments from an argList context.
+
+    Skips named arguments (``$key="value"``).  Strips surrounding quotes
+    from ``QUOTED_STRING`` tokens.
 
     Args:
-        paren_content: The text between ``(`` and ``)``, exclusive.
+        arg_list_ctx: ANTLR4 argList context node.
 
     Returns:
-        List of attribute strings with quotes stripped.
+        List of positional argument strings.
     """
-    attrs: List[str] = []
-    i = 0
-    current: List[str] = []
-
-    while i < len(paren_content):
-        ch = paren_content[i]
-        if ch == '"':
-            # Quoted string — collect until closing quote
-            i += 1
-            start = i
-            while i < len(paren_content) and paren_content[i] != '"':
-                i += 1
-            attrs.append(paren_content[start:i])
-            i += 1  # skip closing quote
-        elif ch == ',':
-            # Separator — flush any bare token
-            bare = "".join(current).strip()
-            if bare:
-                # Skip $key="value" style attributes
-                if not bare.startswith("$"):
-                    attrs.append(bare)
-                current = []
-            elif not attrs:
-                # Leading comma → empty first attribute
-                attrs.append("")
-            i += 1
-        elif ch == '$':
-            # $key="value" — skip to next comma or end
-            while i < len(paren_content) and paren_content[i] != ',':
-                i += 1
-            current = []
+    if arg_list_ctx is None:
+        return []
+    args: List[str] = []
+    for arg_ctx in arg_list_ctx.arg():
+        # Skip named args ($key="value")
+        if arg_ctx.namedArg() is not None:
+            continue
+        pos_ctx = arg_ctx.positionalArg()
+        if pos_ctx is None:
+            continue
+        # QUOTED_STRING includes the surrounding quotes
+        qs = pos_ctx.QUOTED_STRING()
+        if qs is not None:
+            args.append(_strip_quotes(qs.getText()))
         else:
-            current.append(ch)
-            i += 1
-
-    # Flush trailing bare token
-    bare = "".join(current).strip()
-    if bare and not bare.startswith("$"):
-        attrs.append(bare)
-
-    return attrs
-
-
-def _find_paren_content(text: str, start: int) -> Optional[str]:
-    """Find matching parentheses starting from ``start`` and return the content.
-
-    Args:
-        text: Full source text.
-        start: Index of the opening ``(``.
-
-    Returns:
-        Content between ``(`` and ``)`` or None if unbalanced.
-    """
-    if start >= len(text) or text[start] != "(":
-        return None
-    depth = 0
-    i = start
-    while i < len(text):
-        if text[i] == "(":
-            depth += 1
-        elif text[i] == ")":
-            depth -= 1
-            if depth == 0:
-                return text[start + 1:i]
-        i += 1
-    return None
+            # ID, UNQUOTED_TEXT, or INT — raw text
+            args.append(pos_ctx.getText())
+    return args
 
 
 # ═══════════════════════════════════════════════════════════
-# Main parser
+# ANTLR4 Visitor
+# ═══════════════════════════════════════════════════════════
+
+class _C4Visitor(MermaidC4ParserVisitor):
+    """Walk the ANTLR4 parse tree and populate a ``C4ParseResult``."""
+
+    def __init__(self) -> None:
+        self.result = C4ParseResult()
+        self._boundary_stack: List[str] = ["global"]
+
+    # ── Diagram ──────────────────────────────────────────
+
+    def visitDiagram(self, ctx: MermaidC4Parser.DiagramContext):
+        dt_ctx = ctx.diagramType()
+        token_type = dt_ctx.start.type
+        self.result.diagram_type = _DIAGRAM_TYPE_TOKENS.get(token_type, "")
+        return self.visitChildren(ctx)
+
+    # ── Title ────────────────────────────────────────────
+
+    def visitTitleStmt(self, ctx: MermaidC4Parser.TitleStmtContext):
+        tt_ctx = ctx.titleText()
+        if tt_ctx is None:
+            return None
+        qs = tt_ctx.QUOTED_STRING()
+        if qs is not None:
+            self.result.title = _strip_quotes(qs.getText())
+        else:
+            tr = tt_ctx.TEXT_REST()
+            if tr is not None:
+                self.result.title = tr.getText().strip()
+        return None
+
+    # ── Element ──────────────────────────────────────────
+
+    def visitElementStmt(self, ctx: MermaidC4Parser.ElementStmtContext):
+        kw_ctx = ctx.elementKw()
+        token_type = kw_ctx.start.type
+        c4_type = _ELEMENT_TOKEN_TO_C4TYPE.get(token_type, "")
+
+        args = _extract_positional_args(ctx.argList())
+        current_boundary = self._boundary_stack[-1]
+
+        if token_type in _PERSON_SYSTEM_TOKENS:
+            # Person/System: (alias, label, ?descr)
+            shape = C4Shape(
+                alias=args[0] if len(args) > 0 else "",
+                label=args[1] if len(args) > 1 else "",
+                c4_type=c4_type,
+                descr=args[2] if len(args) > 2 else "",
+                parent_boundary=current_boundary,
+            )
+        else:
+            # Container/Component: (alias, label, ?tech, ?descr)
+            shape = C4Shape(
+                alias=args[0] if len(args) > 0 else "",
+                label=args[1] if len(args) > 1 else "",
+                c4_type=c4_type,
+                tech=args[2] if len(args) > 2 else "",
+                descr=args[3] if len(args) > 3 else "",
+                parent_boundary=current_boundary,
+            )
+        self.result.shapes.append(shape)
+        return None
+
+    # ── Boundary ─────────────────────────────────────────
+
+    def visitBoundaryBlock(self, ctx: MermaidC4Parser.BoundaryBlockContext):
+        kw_ctx = ctx.boundaryKw()
+        token_type = kw_ctx.start.type
+        btype = _BOUNDARY_TOKEN_TO_TYPE.get(token_type, "")
+
+        args = _extract_positional_args(ctx.argList())
+
+        # For generic Boundary(), the type comes from the third positional arg
+        if not btype and len(args) > 2:
+            btype = args[2]
+
+        current_boundary = self._boundary_stack[-1]
+        boundary = C4Boundary(
+            alias=args[0] if len(args) > 0 else "",
+            label=args[1] if len(args) > 1 else "",
+            boundary_type=btype,
+            parent_boundary=current_boundary,
+        )
+        self.result.boundaries.append(boundary)
+
+        # Push boundary onto stack and visit nested statements
+        self._boundary_stack.append(boundary.alias)
+        self.visitChildren(ctx)
+        self._boundary_stack.pop()
+        return None
+
+    # ── Deployment Node ──────────────────────────────────
+
+    def visitDeployNodeBlock(self, ctx: MermaidC4Parser.DeployNodeBlockContext):
+        kw_ctx = ctx.deployNodeKw()
+        token_type = kw_ctx.start.type
+        btype = _DEPLOY_TOKEN_TO_TYPE.get(token_type, "node")
+
+        args = _extract_positional_args(ctx.argList())
+        current_boundary = self._boundary_stack[-1]
+
+        boundary = C4Boundary(
+            alias=args[0] if len(args) > 0 else "",
+            label=args[1] if len(args) > 1 else "",
+            boundary_type=btype,
+            parent_boundary=current_boundary,
+        )
+        self.result.boundaries.append(boundary)
+
+        # Push boundary onto stack and visit nested statements
+        self._boundary_stack.append(boundary.alias)
+        self.visitChildren(ctx)
+        self._boundary_stack.pop()
+        return None
+
+    # ── Relationship ─────────────────────────────────────
+
+    def visitRelationStmt(self, ctx: MermaidC4Parser.RelationStmtContext):
+        kw_ctx = ctx.relKw()
+        token_type = kw_ctx.start.type
+        rel_type = _REL_TOKEN_TO_TYPE.get(token_type, "rel")
+
+        args = _extract_positional_args(ctx.argList())
+
+        # RelIndex has an extra leading integer index — skip it
+        if token_type == P.REL_INDEX and args and args[0].isdigit():
+            args = args[1:]
+
+        rel = C4Rel(
+            rel_type=rel_type,
+            from_alias=args[0] if len(args) > 0 else "",
+            to_alias=args[1] if len(args) > 1 else "",
+            label=args[2] if len(args) > 2 else "",
+            tech=args[3] if len(args) > 3 else "",
+            descr=args[4] if len(args) > 4 else "",
+        )
+        self.result.rels.append(rel)
+        return None
+
+    # ── Style/layout/tags — skip ─────────────────────────
+
+    def visitStyleStmt(self, ctx):
+        return None
+
+    def visitLayoutStmt(self, ctx):
+        return None
+
+    def visitAddTagStmt(self, ctx):
+        return None
+
+
+# ═══════════════════════════════════════════════════════════
+# Public API
 # ═══════════════════════════════════════════════════════════
 
 def parse_c4_source(text: str) -> C4ParseResult:
@@ -257,160 +391,34 @@ def parse_c4_source(text: str) -> C4ParseResult:
     Raises:
         ValueError: If the text does not start with a C4 diagram keyword.
     """
-    result = C4ParseResult()
-
-    # Strip leading whitespace and detect diagram type
+    # Quick validation — first non-blank line must start with a C4 keyword
     stripped = text.strip()
     first_line = stripped.split("\n", 1)[0].strip()
-
-    for dt in _DIAGRAM_TYPES:
-        if first_line.startswith(dt):
-            result.diagram_type = dt
-            break
-    if not result.diagram_type:
+    if not any(first_line.startswith(kw) for kw in _C4_HEADER_KEYWORDS):
         raise ValueError(
             f"Not a C4 diagram. First line must start with one of: "
-            f"{', '.join(sorted(_DIAGRAM_TYPES))}"
+            f"{', '.join(sorted(_C4_HEADER_KEYWORDS))}"
         )
 
-    # Remove comments (%% ...)
+    # Pre-strip %% comments (inline comments confuse the grammar's
+    # statement → NEWLINE+ expectation)
     text = re.sub(r"%%[^\n]*", "", text)
 
-    # Track boundary nesting
-    boundary_stack: List[str] = ["global"]
+    # Ensure trailing newline (grammar expects NEWLINE+ after statements)
+    if not text.endswith("\n"):
+        text += "\n"
 
-    # Extract title
-    title_m = re.search(r"^\s*title\s+(.+)$", text, re.MULTILINE)
-    if title_m:
-        result.title = title_m.group(1).strip()
+    # ANTLR4 pipeline
+    input_stream = InputStream(text)
+    lexer = MermaidC4Lexer(input_stream)
+    token_stream = CommonTokenStream(lexer)
+    parser = MermaidC4Parser(token_stream)
+    tree = parser.diagram()
 
-    # Build combined keyword pattern (longest match first to avoid prefix collisions)
-    all_keywords = sorted(
-        (list(_PERSON_SYSTEM_KEYWORDS.keys())
-         + list(_CONTAINER_COMPONENT_KEYWORDS.keys())
-         + list(_REL_KEYWORDS)
-         + list(_BOUNDARY_KEYWORDS.keys())
-         + list(_SKIP_KEYWORDS)),
-        key=len,
-        reverse=True,
-    )
-    kw_pattern = re.compile(
-        r"\b(" + "|".join(re.escape(k) for k in all_keywords) + r")\s*\(",
-    )
-
-    # Also handle closing braces for boundary nesting
-    # Walk through the text finding keywords and braces
-    pos = 0
-    while pos < len(text):
-        # Skip whitespace and newlines
-        if text[pos] in " \t\r\n":
-            pos += 1
-            continue
-
-        # Closing brace — pop boundary stack
-        if text[pos] == "}":
-            if len(boundary_stack) > 1:
-                boundary_stack.pop()
-            pos += 1
-            continue
-
-        # Opening brace (standalone, not after a keyword paren)
-        if text[pos] == "{":
-            pos += 1
-            continue
-
-        # Try keyword match at current position
-        m = kw_pattern.match(text, pos)
-        if not m:
-            # Advance to next line or next interesting char
-            nl = text.find("\n", pos)
-            pos = nl + 1 if nl >= 0 else len(text)
-            continue
-
-        keyword = m.group(1)
-        paren_start = m.end() - 1  # index of '('
-        content = _find_paren_content(text, paren_start)
-        if content is None:
-            pos = m.end()
-            continue
-
-        attrs = _extract_attributes(content)
-        # Advance past the closing paren
-        pos = paren_start + len(content) + 2  # +2 for ( and )
-
-        current_boundary = boundary_stack[-1]
-
-        # ── Skip styling/layout keywords ──
-        if keyword in _SKIP_KEYWORDS:
-            continue
-
-        # ── Person / System ──
-        if keyword in _PERSON_SYSTEM_KEYWORDS:
-            c4_type = _PERSON_SYSTEM_KEYWORDS[keyword]
-            shape = C4Shape(
-                alias=attrs[0] if len(attrs) > 0 else "",
-                label=attrs[1] if len(attrs) > 1 else "",
-                c4_type=c4_type,
-                descr=attrs[2] if len(attrs) > 2 else "",
-                parent_boundary=current_boundary,
-            )
-            result.shapes.append(shape)
-            continue
-
-        # ── Container / Component ──
-        if keyword in _CONTAINER_COMPONENT_KEYWORDS:
-            c4_type = _CONTAINER_COMPONENT_KEYWORDS[keyword]
-            shape = C4Shape(
-                alias=attrs[0] if len(attrs) > 0 else "",
-                label=attrs[1] if len(attrs) > 1 else "",
-                c4_type=c4_type,
-                tech=attrs[2] if len(attrs) > 2 else "",
-                descr=attrs[3] if len(attrs) > 3 else "",
-                parent_boundary=current_boundary,
-            )
-            result.shapes.append(shape)
-            continue
-
-        # ── Relationship ──
-        if keyword in _REL_KEYWORDS:
-            # Normalise directional aliases to canonical form
-            _REL_TYPE_MAP = {
-                "Rel": "rel", "BiRel": "birel", "Rel_Back": "rel_b",
-                "Rel_Up": "rel_u", "Rel_U": "rel_u",
-                "Rel_Down": "rel_d", "Rel_D": "rel_d",
-                "Rel_Left": "rel_l", "Rel_L": "rel_l",
-                "Rel_Right": "rel_r", "Rel_R": "rel_r",
-            }
-            rel_type = _REL_TYPE_MAP.get(keyword, keyword.lower())
-            rel = C4Rel(
-                rel_type=rel_type,
-                from_alias=attrs[0] if len(attrs) > 0 else "",
-                to_alias=attrs[1] if len(attrs) > 1 else "",
-                label=attrs[2] if len(attrs) > 2 else "",
-                tech=attrs[3] if len(attrs) > 3 else "",
-                descr=attrs[4] if len(attrs) > 4 else "",
-            )
-            result.rels.append(rel)
-            continue
-
-        # ── Boundary ──
-        if keyword in _BOUNDARY_KEYWORDS:
-            btype = _BOUNDARY_KEYWORDS[keyword]
-            # For boundaries with explicit type in attrs[2]
-            if not btype and len(attrs) > 2:
-                btype = attrs[2]
-            boundary = C4Boundary(
-                alias=attrs[0] if len(attrs) > 0 else "",
-                label=attrs[1] if len(attrs) > 1 else "",
-                boundary_type=btype,
-                parent_boundary=current_boundary,
-            )
-            result.boundaries.append(boundary)
-            # Push onto boundary stack — the { will be consumed by the main loop
-            boundary_stack.append(boundary.alias)
-            continue
-
-    return result
+    # Walk with visitor
+    visitor = _C4Visitor()
+    visitor.visit(tree)
+    return visitor.result
 
 
 def parse_c4_source_file(path: str) -> C4ParseResult:

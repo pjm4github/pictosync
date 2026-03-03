@@ -111,6 +111,7 @@ from canvas import (
     MetaCurveItem,
     MetaOrthoCurveItem,
     MetaIsoCubeItem,
+    MetaSeqBlockItem,
     MetaGroupItem,
 )
 from editor import DraftDock
@@ -531,7 +532,34 @@ class MainWindow(QMainWindow):
         self._curve_btn.setMenu(curve_menu)
         tb.addWidget(self._curve_btn)
 
-        self.mode_actions = [self.act_select, self.act_rect, self.act_rrect, self.act_ellipse, self.act_line, self.act_text, self.act_hexagon, self.act_cylinder, self.act_blockarrow, self.act_isocube, self.act_polygon, self.act_curve]
+        # Sequence block split button (alt/loop/opt/critical/break/par)
+        self._seqblock_type = "alt"  # tracks which block type to stamp
+        self.act_seqblock = QAction("Seq Block", self)
+        self.act_seqblock.setCheckable(True)
+        self.act_seqblock.setShortcut("K")
+        self.act_seqblock.setToolTip("Draw a sequence block – Alt (K)")
+        self.act_seqblock.setStatusTip("Draw a sequence diagram control-flow block")
+        self.act_seqblock.triggered.connect(lambda checked: self._on_mode_action_triggered(Mode.SEQBLOCK))
+        self._icon_actions[self.act_seqblock] = "seqblock_alt"
+
+        self._seqblock_btn = QToolButton(self)
+        self._seqblock_btn.setDefaultAction(self.act_seqblock)
+        self._seqblock_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+
+        seqblock_menu = QMenu(self)
+        self._seqblock_menu_actions = {}
+        for btype, blabel in [("alt", "Alt"), ("loop", "Loop"), ("opt", "Opt"),
+                               ("critical", "Critical"), ("break", "Break"), ("par", "Par")]:
+            act = seqblock_menu.addAction(blabel)
+            act.setCheckable(True)
+            if btype == "alt":
+                act.setChecked(True)
+            act.triggered.connect(lambda checked, bt=btype: self._set_seqblock_type(bt))
+            self._seqblock_menu_actions[btype] = act
+        self._seqblock_btn.setMenu(seqblock_menu)
+        tb.addWidget(self._seqblock_btn)
+
+        self.mode_actions = [self.act_select, self.act_rect, self.act_rrect, self.act_ellipse, self.act_line, self.act_text, self.act_hexagon, self.act_cylinder, self.act_blockarrow, self.act_isocube, self.act_polygon, self.act_curve, self.act_seqblock]
         self.act_select.setChecked(True)
 
         tb.addSeparator()
@@ -890,6 +918,9 @@ class MainWindow(QMainWindow):
         MetaIsoCubeItem.on_adjust1_changed = self.props.update_adjust1_display
         MetaIsoCubeItem.on_adjust2_changed = self.props.update_adjust2_display
         MetaCurveItem.on_adjust1_changed = self.props.update_adjust1_display
+        MetaSeqBlockItem.on_adjust1_changed = self.props.update_adjust1_display
+        MetaSeqBlockItem.on_adjust2_changed = self.props.update_adjust2_display
+        MetaSeqBlockItem.on_adjust3_changed = self.props.update_adjust3_display
 
         # Set initial default text color based on current theme
         self._update_default_text_color(DEFAULT_STYLE)
@@ -937,6 +968,25 @@ class MainWindow(QMainWindow):
         # Activate the mode
         self._on_mode_action_triggered(variant)
 
+    def _set_seqblock_type(self, block_type: str):
+        """Switch the seqblock split button between block types."""
+        self._seqblock_type = block_type
+        self.scene._seqblock_type = block_type
+        # Update menu check marks
+        for bt, act in self._seqblock_menu_actions.items():
+            act.setChecked(bt == block_type)
+        # Swap icon
+        icon_name = f"seqblock_{block_type}" if block_type != "critical" else "seqblock_crit"
+        self._icon_actions[self.act_seqblock] = icon_name
+        app = QApplication.instance()
+        style = getattr(app, "_current_style", DEFAULT_STYLE)
+        icon = create_icon_with_states(icon_name, style)
+        self.act_seqblock.setIcon(icon)
+        # Update tooltip
+        self.act_seqblock.setToolTip(f"Draw a sequence block \u2013 {block_type.capitalize()} (K)")
+        # Activate the mode
+        self._on_mode_action_triggered(Mode.SEQBLOCK)
+
     def set_mode(self, mode: str, from_item_created: bool = False):
         """Set the current drawing mode."""
         self.scene.set_mode(mode)
@@ -954,6 +1004,7 @@ class MainWindow(QMainWindow):
             Mode.POLYGON: self.act_polygon,
             Mode.CURVE: self.act_curve,
             Mode.ORTHOCURVE: self.act_curve,
+            Mode.SEQBLOCK: self.act_seqblock,
         }
         for a in self.mode_actions:
             a.setChecked(False)
@@ -1355,7 +1406,16 @@ class MainWindow(QMainWindow):
             try:
                 c4_source = parse_c4_source_file(mmd_path)
             except (ValueError, OSError):
-                pass  # Not a C4 diagram or file error — fall through to generic
+                pass  # Not a C4 diagram or file error — fall through
+
+            # ── Try sequence source parse (step 1) ──
+            seq_source = None
+            if c4_source is None:
+                try:
+                    from mermaid.sequence_source_parser import parse_sequence_source_file
+                    seq_source = parse_sequence_source_file(mmd_path)
+                except (ValueError, OSError):
+                    pass  # Not a sequence diagram — fall through to generic
 
             # ── Render to PNG for canvas background (non-fatal) ──
             try:
@@ -1383,6 +1443,10 @@ class MainWindow(QMainWindow):
                 if c4_source is not None:
                     # Two-step C4 pipeline: source semantics + SVG geometry
                     data = merge_c4_source_with_svg(c4_source, svg_path)
+                elif seq_source is not None:
+                    # Two-step sequence pipeline: source semantics + SVG geometry
+                    from mermaid.sequence_merger import merge_sequence_source_with_svg
+                    data = merge_sequence_source_with_svg(seq_source, svg_path)
                 else:
                     # Generic Mermaid SVG parser
                     data = parse_mermaid_svg_to_annotations(svg_path)
@@ -1407,7 +1471,9 @@ class MainWindow(QMainWindow):
                     f"Could not save JSON file:\n{json_path}\n\n{e}",
                 )
 
-            pipeline = "C4 two-step" if c4_source is not None else "SVG"
+            pipeline = ("C4 two-step" if c4_source is not None
+                        else "Sequence two-step" if seq_source is not None
+                        else "SVG")
             self._set_draft_text_programmatically(
                 pretty,
                 enable_import=True,
@@ -2169,6 +2235,13 @@ class MainWindow(QMainWindow):
         if "id" not in rec or not rec["id"]:
             rec["id"] = item.data(ANN_ID_KEY) if isinstance(item.data(ANN_ID_KEY), str) else self._new_ann_id()
 
+        # Stamp seqblock metadata on new items
+        if isinstance(item, MetaSeqBlockItem):
+            bt = item.block_type
+            item.meta.label = bt.capitalize()
+            item.meta.extras.setdefault("dsl", {})["sequence"] = {"block_type": bt}
+            rec = item.to_record()  # re-serialize with stamped meta
+
         anns = self._draft_data.get("annotations", [])
         if not isinstance(anns, list):
             anns = []
@@ -2716,6 +2789,34 @@ class MainWindow(QMainWindow):
             if z_index:
                 it.setZValue(z_index)
 
+        elif kind == "seqblock":
+            g = rec.get("geom", {})
+            # Determine block_type from DSL metadata, then meta.label fallback
+            dsl = meta_dict.get("dsl", {})
+            seq = dsl.get("sequence", {}) if isinstance(dsl, dict) else {}
+            block_type = seq.get("block_type", "")
+            if not block_type:
+                block_type = (meta.label or "alt").lower()
+            it = MetaSeqBlockItem(float(g["x"]), float(g["y"]), float(g["w"]), float(g["h"]),
+                                  block_type, ann_id, on_change)
+            # Restore dividers from geom
+            if "adjust1" in g:
+                it._divider_count = max(it._divider_count, 1)
+                it._adjust1 = float(g["adjust1"])
+            if "adjust2" in g:
+                it._divider_count = max(it._divider_count, 2)
+                it._adjust2 = float(g["adjust2"])
+            if "adjust3" in g:
+                it._divider_count = max(it._divider_count, 3)
+                it._adjust3 = float(g["adjust3"])
+            it.set_meta(meta)
+            it.apply_style_from_record(rec)
+            it._apply_pen_brush()
+            it._update_label_text()
+            self.scene.addItem(it)
+            if z_index:
+                it.setZValue(z_index)
+
         elif kind == "group":
             children_recs = rec.get("children", [])
             it = MetaGroupItem(ann_id, on_change)
@@ -2769,7 +2870,7 @@ class MainWindow(QMainWindow):
 
     def _is_alignable_item(self, item) -> bool:
         """Check if an item is alignable (rect, roundedrect, ellipse, hexagon, cylinder, blockarrow)."""
-        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaIsoCubeItem, MetaPolygonItem))
+        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaIsoCubeItem, MetaPolygonItem, MetaSeqBlockItem))
 
     # ---- Focus Align (Gemini) methods ----
 

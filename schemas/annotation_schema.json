@@ -72,7 +72,7 @@
         },
         "kind": {
           "type": "string",
-          "enum": ["rect", "roundedrect", "ellipse", "line", "text", "hexagon", "cylinder", "blockarrow", "polygon", "curve", "orthocurve", "isocube", "group"],
+          "enum": ["rect", "roundedrect", "ellipse", "line", "text", "hexagon", "cylinder", "blockarrow", "polygon", "curve", "orthocurve", "isocube", "seqblock", "group"],
           "description": "The type of annotation item"
         },
         "geom": {
@@ -278,6 +278,16 @@
         },
         {
           "if": {
+            "properties": { "kind": { "const": "seqblock" } }
+          },
+          "then": {
+            "properties": {
+              "geom": { "$ref": "#/$defs/seqblockGeometry" }
+            }
+          }
+        },
+        {
+          "if": {
             "properties": { "kind": { "const": "group" } }
           },
           "then": {
@@ -305,7 +315,8 @@
         { "$ref": "#/$defs/blockArrowGeometry" },
         { "$ref": "#/$defs/curveGeometry" },
         { "$ref": "#/$defs/orthoCurveGeometry" },
-        { "$ref": "#/$defs/isoCubeGeometry" }
+        { "$ref": "#/$defs/isoCubeGeometry" },
+        { "$ref": "#/$defs/seqblockGeometry" }
       ]
     },
     "rectGeometry": {
@@ -640,6 +651,43 @@
           "description": "Angle of isometric extrusion in degrees",
           "ui_label": "Angle",
           "ui_suffix": " °"
+        }
+      },
+      "additionalProperties": false
+    },
+    "seqblockGeometry": {
+      "type": "object",
+      "description": "Sequence block geometry with adjustable divider positions",
+      "required": ["x", "y", "w", "h"],
+      "properties": {
+        "x": { "type": "number", "description": "X position of top-left corner" },
+        "y": { "type": "number", "description": "Y position of top-left corner" },
+        "w": { "type": "number", "minimum": 0, "description": "Width" },
+        "h": { "type": "number", "minimum": 0, "description": "Height" },
+        "adjust1": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.5,
+          "description": "First divider Y position as ratio of height (0.0-1.0)",
+          "ui_label": "Divider 1",
+          "ui_suffix": " %"
+        },
+        "adjust2": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Second divider Y position as ratio of height (0.0-1.0, omit if unused)",
+          "ui_label": "Divider 2",
+          "ui_suffix": " %"
+        },
+        "adjust3": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Third divider Y position as ratio of height (0.0-1.0, omit if unused)",
+          "ui_label": "Divider 3",
+          "ui_suffix": " %"
         }
       },
       "additionalProperties": false

@@ -18,6 +18,7 @@ from canvas.items import (
     MetaCurveItem,
     MetaOrthoCurveItem,
     MetaIsoCubeItem,
+    MetaSeqBlockItem,
     MetaGroupItem,
 )
 from canvas.scene import AnnotatorScene
@@ -38,6 +39,7 @@ __all__ = [
     "MetaCurveItem",
     "MetaOrthoCurveItem",
     "MetaIsoCubeItem",
+    "MetaSeqBlockItem",
     "MetaGroupItem",
     "AnnotatorScene",
     "AnnotatorView",

@@ -1,0 +1,74 @@
+graph TD
+    %% Define Purdue Model Layers
+    subgraph Layer5_6 [Purdue Layer 5/6 - Enterprise]
+        direction TB
+        Enterprise[Corporate Network / WAN]
+        RemoteVPN[Remote Control Center]
+    end
+
+    %% Security - The DMZ
+    subgraph Security_DMZ [Security Layer: DMZ / Perimeter Security]
+        FW1[Outer Firewall]
+        Proxy[Security Proxy / Data Historian]
+        FW2[Inner Firewall]
+
+        Enterprise <--> FW1
+        RemoteVPN <--> FW1
+        FW1 <--> Proxy
+        Proxy <--> FW2
+    end
+
+    subgraph Layer3_4 [Purdue Layer 3/4 - Operational / Supervisory]
+        direction TB
+        SCADA[Substation SCADA / HMI]
+        GW[Communication Gateway]
+        Workstation[Engineering / Maintenance Workstation]
+
+        FW2 <--> GW
+        GW --- SCADA
+        GW --- Workstation
+    end
+
+    %% Station Bus (Layer 2)
+    subgraph Layer2_Station_Bus [Purdue Layer 2 - Station Bus - MMS/GOOSE]
+        IED1[IED 1 - Local Protection]
+        IED2[IED 2 - Transformer Relay]
+        Switch_SB[Station Bus Switch]
+
+        %% Connectivity
+        SCADA --- Switch_SB
+        Switch_SB --- IED1
+        Switch_SB --- IED2
+    end
+
+    %% Process Bus (Layer 1)
+    subgraph Layer1_Process_Bus [Purdue Layer 1 - Process Bus - SV/GOOSE]
+        MU1[Merging Unit 1]
+        MU2[Merging Unit 2]
+        Actuator[Intelligent Actuator]
+        Switch_PB[Process Bus Switch]
+
+        %% Connectivity
+        IED1 --- Switch_PB
+        IED2 --- Switch_PB
+        Switch_PB --- MU1
+        Switch_PB --- MU2
+        Switch_PB --- Actuator
+    end
+
+    %% Primary Equipment (Layer 0)
+    subgraph Layer0_Process [Purdue Layer 0 - Primary Equipment]
+        CB[Circuit Breaker]
+        CTVT[CT / VT Sensors]
+        Trans[Transformer]
+
+        MU1 --- CTVT
+        Actuator --- CB
+        MU2 --- Trans
+    end
+
+    %% Styling for clarity
+    style Security_DMZ fill:#ffcc80,stroke:#333,stroke-width:2px;
+    style Layer2_Station_Bus fill:#e1f5fe,stroke:#01579b;
+    style Layer1_Process_Bus fill:#d1ffd1,stroke:#006600;
+    style Layer0_Process fill:#eee,stroke:#333,stroke-dasharray: 5 5;

@@ -1362,7 +1362,9 @@ def _parse_sequence(root: ET.Element, ns: str) -> List[Dict[str, Any]]:
 
     Elements are flat (no class-based grouping). Actors are ``<rect>`` with
     class ``actor``, messages are ``<line class="messageLine*">``, notes are
-    ``<rect class="note">``.
+    ``<rect class="note">``.  Actor lifelines are ``<line class="actor-line">``,
+    actor bottom boxes are ``<rect class="actor actor-bottom">``, and
+    activation boxes are ``<rect class="activation*">``.
     """
     annotations: List[Dict[str, Any]] = []
     next_id = _make_id_gen()
@@ -1373,7 +1375,7 @@ def _parse_sequence(root: ET.Element, ns: str) -> List[Dict[str, Any]]:
         tag = _strip_ns(el.tag, ns)
         cls = el.get("class", "")
 
-        # ── Actor boxes (top only to avoid duplicates) ──
+        # ── Actor boxes (top) ──
         if tag == "rect" and "actor" in cls and "actor-top" in cls:
             name = el.get("name", "")
             x, y, w, h = _extract_rect_geom(el)
@@ -1383,8 +1385,52 @@ def _parse_sequence(root: ET.Element, ns: str) -> List[Dict[str, Any]]:
                 "id": aid,
                 "kind": "roundedrect",
                 "geom": {"x": x, "y": y, "w": w, "h": h},
-                "meta": {"label": name},
+                "meta": {"label": name, "seq_role": "actor_top"},
                 "style": _make_shape_style("#EAEAEA", "#666666"),
+            })
+
+        # ── Actor boxes (bottom — repeated name at diagram foot) ──
+        if tag == "rect" and "actor" in cls and "actor-bottom" in cls:
+            name = el.get("name", "")
+            x, y, w, h = _extract_rect_geom(el)
+            annotations.append({
+                "id": next_id(),
+                "kind": "roundedrect",
+                "geom": {"x": x, "y": y, "w": w, "h": h},
+                "meta": {"label": name, "seq_role": "actor_bottom"},
+                "style": _make_shape_style("#EAEAEA", "#666666"),
+            })
+
+        # ── Actor lifelines (vertical dashed lines) ──
+        if tag == "line" and "actor-line" in cls:
+            name = el.get("name", "")
+            x1 = float(el.get("x1", "0"))
+            y1 = float(el.get("y1", "0"))
+            x2 = float(el.get("x2", "0"))
+            y2 = float(el.get("y2", "0"))
+            stroke = el.get("stroke", "#999")
+            annotations.append({
+                "id": next_id(),
+                "kind": "line",
+                "geom": {
+                    "x1": round(x1, 2), "y1": round(y1, 2),
+                    "x2": round(x2, 2), "y2": round(y2, 2),
+                },
+                "meta": {"label": name, "seq_role": "lifeline"},
+                "style": _make_line_style(stroke, 1, True, "none"),
+            })
+
+        # ── Activation boxes (narrow rects on lifelines) ──
+        if tag == "rect" and "activation" in cls:
+            x, y, w, h = _extract_rect_geom(el)
+            fill = _get_fill(el) or "#F4F4F4"
+            stroke = _get_stroke(el) or "#666"
+            annotations.append({
+                "id": next_id(),
+                "kind": "rect",
+                "geom": {"x": x, "y": y, "w": w, "h": h},
+                "meta": {"label": "", "seq_role": "activation"},
+                "style": _make_shape_style(fill, stroke),
             })
 
         # ── Notes ──
@@ -1426,34 +1472,122 @@ def _parse_sequence(root: ET.Element, ns: str) -> List[Dict[str, Any]]:
                 if ann is not None:
                     annotations.append(ann)
 
-        # ── Loop boxes (loopLine rects implied by polygon) ──
-        if tag == "polygon" and "labelBox" in cls:
-            points_str = el.get("points", "")
-            pts = _parse_polygon_points(points_str)
-            if pts:
-                xs = [p[0] for p in pts]
-                ys = [p[1] for p in pts]
-                annotations.append({
-                    "id": next_id(),
-                    "kind": "roundedrect",
-                    "geom": {
-                        "x": round(min(xs), 2), "y": round(min(ys), 2),
-                        "w": round(max(xs) - min(xs), 2),
-                        "h": round(max(ys) - min(ys), 2),
-                    },
-                    "meta": {"label": "loop"},
-                    "style": _make_shape_style("#ECECFF", "#9370DB"),
-                })
+    # ── Block groups (alt/par/loop/opt/critical/break/rect) ──
+    # Each block is a <g> containing loopLine border lines, a labelBox
+    # polygon (keyword tab), a labelText (block keyword), loopText
+    # elements (section labels), and dashed loopLine dividers for
+    # else/and boundaries.
+    for g_el in root.iter(f"{{{ns}}}g"):
+        children = list(g_el)
+        # Quick check: must contain at least one loopLine
+        has_loopline = any(
+            "loopLine" in c.get("class", "")
+            for c in children
+            if _strip_ns(c.tag, ns) == "line"
+        )
+        if not has_loopline:
+            continue
+
+        # Collect border lines (solid) and dividers (dashed)
+        border_lines: List[ET.Element] = []
+        divider_lines: List[ET.Element] = []
+        label_text = ""
+        section_labels: List[str] = []
+
+        for child in children:
+            ctag = _strip_ns(child.tag, ns)
+            ccls = child.get("class", "")
+
+            if ctag == "line" and "loopLine" in ccls:
+                style = child.get("style", "")
+                if "dash" in style:
+                    divider_lines.append(child)
+                else:
+                    border_lines.append(child)
+
+            elif ctag == "text" and "labelText" in ccls:
+                label_text = _text_from_el(child)
+
+            elif ctag == "text" and "loopText" in ccls:
+                txt = _text_from_el(child)
+                # Strip surrounding brackets [...]
+                if txt.startswith("[") and txt.endswith("]"):
+                    txt = txt[1:-1]
+                section_labels.append(txt)
+
+        # Compute outer bounding box from border loopLines
+        if not border_lines:
+            continue
+        all_x: List[float] = []
+        all_y: List[float] = []
+        for ln in border_lines:
+            all_x.append(float(ln.get("x1", "0")))
+            all_x.append(float(ln.get("x2", "0")))
+            all_y.append(float(ln.get("y1", "0")))
+            all_y.append(float(ln.get("y2", "0")))
+        bx = round(min(all_x), 2)
+        by = round(min(all_y), 2)
+        bw = round(max(all_x) - min(all_x), 2)
+        bh = round(max(all_y) - min(all_y), 2)
+
+        # Build section label string for meta.tech (pipe-separated)
+        sections_tech = ""
+        if section_labels:
+            sections_tech = " | ".join(section_labels)
+
+        # Compute adjust values from divider Y positions relative to block bbox
+        geom: Dict[str, Any] = {"x": bx, "y": by, "w": bw, "h": bh}
+        if bh > 0 and divider_lines:
+            # Sort dividers by Y position (top to bottom)
+            div_ys = sorted(
+                float(div.get("y1", "0")) for div in divider_lines
+            )
+            adjust_keys = ("adjust1", "adjust2", "adjust3")
+            for i, dy in enumerate(div_ys[:3]):
+                ratio = max(0.05, min(0.95, (dy - by) / bh))
+                geom[adjust_keys[i]] = round(ratio, 4)
+
+        # Emit the seqblock annotation (consolidated block + dividers)
+        annotations.append({
+            "id": next_id(),
+            "kind": "seqblock",
+            "geom": geom,
+            "meta": {
+                "label": label_text,
+                "seq_role": "block",
+                "tech": sections_tech,
+            },
+            "style": {
+                "pen": {
+                    "color": "#9370DB", "width": 2, "dash": "solid",
+                    "dash_pattern_length": 30, "dash_solid_percent": 50,
+                },
+                "fill": {"color": "#ECECFF40"},
+                "text": {"color": "#333333", "size_pt": 10.0},
+            },
+        })
 
     # ── Collect message text labels ──
+    # Include both line messages and curve self-referencing messages,
+    # sorted by Y position to match SVG messageText document order.
+    def _msg_y(a: Dict[str, Any]) -> float:
+        g = a.get("geom", {})
+        return g.get("y1", g.get("y", 0.0))
+
+    msg_anns = [a for a in annotations
+                if (a["kind"] == "line"
+                    and a.get("meta", {}).get("seq_role")
+                    not in ("lifeline", "block_divider"))
+                or (a["kind"] == "curve")]
+    msg_anns.sort(key=_msg_y)
+
     msg_idx = 0
-    line_anns = [a for a in annotations if a["kind"] == "line"]
     for el in root.iter(f"{{{ns}}}text"):
         cls = el.get("class", "")
         if "messageText" in cls:
             txt = _text_from_el(el)
-            if msg_idx < len(line_anns):
-                line_anns[msg_idx]["meta"]["label"] = txt
+            if msg_idx < len(msg_anns):
+                msg_anns[msg_idx]["meta"]["label"] = txt
             msg_idx += 1
 
     # ── Collect note text labels ──

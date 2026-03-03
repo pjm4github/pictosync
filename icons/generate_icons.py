@@ -224,6 +224,42 @@ ICONS = {
   <rect x="3" y="5" width="18" height="14" stroke="{stroke}" stroke-width="1.5" fill="{fill}" rx="4"/>
   <circle cx="12" cy="12" r="3" stroke="{accent}" stroke-width="1.5" fill="{accent}"/>
 </svg>''',
+
+    "seqblock_alt": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <rect x="3" y="3" width="18" height="18" stroke="{stroke}" stroke-width="1.5" fill="{fill}" rx="1"/>
+  <line x1="3" y1="12" x2="21" y2="12" stroke="{stroke}" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="5" y="11" font-family="Arial,sans-serif" font-size="14" font-weight="bold" fill="{stroke}">A</text>
+</svg>''',
+
+    "seqblock_loop": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <rect x="3" y="3" width="18" height="18" stroke="{stroke}" stroke-width="1.5" fill="{fill}" rx="1"/>
+  <line x1="3" y1="12" x2="21" y2="12" stroke="{stroke}" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="5" y="11" font-family="Arial,sans-serif" font-size="14" font-weight="bold" fill="{stroke}">L</text>
+</svg>''',
+
+    "seqblock_opt": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <rect x="3" y="3" width="18" height="18" stroke="{stroke}" stroke-width="1.5" fill="{fill}" rx="1"/>
+  <line x1="3" y1="12" x2="21" y2="12" stroke="{stroke}" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="5" y="11" font-family="Arial,sans-serif" font-size="14" font-weight="bold" fill="{stroke}">O</text>
+</svg>''',
+
+    "seqblock_crit": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <rect x="3" y="3" width="18" height="18" stroke="{stroke}" stroke-width="1.5" fill="{fill}" rx="1"/>
+  <line x1="3" y1="12" x2="21" y2="12" stroke="{stroke}" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="5" y="11" font-family="Arial,sans-serif" font-size="14" font-weight="bold" fill="{stroke}">C</text>
+</svg>''',
+
+    "seqblock_break": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <rect x="3" y="3" width="18" height="18" stroke="{stroke}" stroke-width="1.5" fill="{fill}" rx="1"/>
+  <line x1="3" y1="12" x2="21" y2="12" stroke="{stroke}" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="5" y="11" font-family="Arial,sans-serif" font-size="14" font-weight="bold" fill="{stroke}">B</text>
+</svg>''',
+
+    "seqblock_par": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <rect x="3" y="3" width="18" height="18" stroke="{stroke}" stroke-width="1.5" fill="{fill}" rx="1"/>
+  <line x1="3" y1="12" x2="21" y2="12" stroke="{stroke}" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="5" y="11" font-family="Arial,sans-serif" font-size="14" font-weight="bold" fill="{stroke}">P</text>
+</svg>''',
 }
 
 

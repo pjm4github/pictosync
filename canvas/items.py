@@ -6323,6 +6323,582 @@ class MetaGroupItem(QGraphicsItemGroup, MetaMixin, LinkedMixin):
 
 
 # ═══════════════════════════════════════════════════════════
+# MetaSeqBlockItem — Sequence diagram block (alt/loop/opt/…)
+# ═══════════════════════════════════════════════════════════
+
+# Divider defaults per block type
+_SEQBLOCK_DEFAULTS: Dict[str, int] = {
+    "alt": 1, "par": 1,
+    "loop": 0, "opt": 0, "break": 0, "critical": 0,
+}
+
+
+class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
+    """Sequence-diagram combined fragment (alt/loop/opt/critical/break/par).
+
+    A rectangular block with a type-tab in the top-left corner and up to
+    three horizontal dashed dividers whose vertical positions are controlled
+    by adjust1/adjust2/adjust3 (ratios 0.0–1.0 of total height).
+    """
+
+    KIND = "seqblock"
+    KIND_ALIASES = frozenset()
+
+    # Class-level callbacks (wired from main.py)
+    on_adjust1_changed = None
+    on_adjust2_changed = None
+    on_adjust3_changed = None
+
+    _TAB_HEIGHT = 20
+    _TAB_PADDING = 4
+
+    def __init__(self, x: float, y: float, w: float, h: float,
+                 block_type: str, ann_id: str, on_change=None):
+        QGraphicsPathItem.__init__(self)
+        MetaMixin.__init__(self)
+        LinkedMixin.__init__(self, ann_id, on_change)
+
+        self.kind = "seqblock"
+        self._block_type = block_type
+        self._width = w
+        self._height = h
+        self._divider_count = _SEQBLOCK_DEFAULTS.get(block_type, 0)
+        self._adjust1 = 0.5
+        self._adjust2 = 0.67
+        self._adjust3 = 0.83
+        self.setPos(QPointF(x, y))
+        self.setData(ANN_ID_KEY, ann_id)
+        self._update_path()
+
+        self.setAcceptHoverEvents(True)
+        self.setFlags(
+            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+            | QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+            | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
+        )
+
+        self._active_handle: Optional[str] = None
+        self._resizing = False
+        self._press_scene: Optional[QPointF] = None
+        self._start_pos: Optional[QPointF] = None
+        self._start_size: Optional[Tuple[float, float]] = None
+        self._start_adjust1: Optional[float] = None
+        self._start_adjust2: Optional[float] = None
+        self._start_adjust3: Optional[float] = None
+
+        self.pen_color = QColor("#9370DB")
+        self.pen_width = 2
+        self.brush_color = QColor("#ECECFF40")
+        self.text_color = QColor("#333333")
+        self.line_dash = "solid"
+        cached = _CachedCanvasSettings.get()
+        self.dash_pattern_length = cached.default_dash_length
+        self.dash_solid_percent = cached.default_dash_solid_percent
+        self._apply_pen_brush()
+
+        # Section text items: one per region (top + up to 3 divider regions).
+        # tech meta is pipe-separated; each section "[text]" is placed just
+        # below its corresponding divider (first section below the tab).
+        self._section_items: List[QGraphicsTextItem] = []
+        for _ in range(4):
+            ti = QGraphicsTextItem(self)
+            ti.setDefaultTextColor(self.text_color)
+            ti.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+            ti.setVisible(False)
+            self._section_items.append(ti)
+        # Legacy compat: _label_item points to first section for shared code
+        self._label_item = self._section_items[0]
+        self._update_label_position()
+
+    # ---- geometry helpers ----
+
+    def _update_path(self):
+        """Rebuild the outline path (simple rectangle)."""
+        path = QPainterPath()
+        path.addRect(0, 0, self._width, self._height)
+        self.setPath(path)
+
+    def _apply_pen_brush(self):
+        """Apply pen and brush from current style properties."""
+        pen = QPen(self.pen_color, self.pen_width)
+        _apply_dash_style(pen, self.line_dash, self.dash_pattern_length, self.dash_solid_percent)
+        self.setPen(pen)
+        self.setBrush(QBrush(self.brush_color))
+
+    def _update_label_position(self):
+        """Position section labels: first just below tab, rest just below dividers."""
+        tab_bottom = self._TAB_HEIGHT + self._TAB_PADDING
+        padding = 4
+        text_w = max(10, self._width - 2 * padding)
+
+        # Region top-Y values: section 0 starts below tab,
+        # section N starts below divider N.
+        divider_ys = []
+        if self._divider_count >= 1:
+            divider_ys.append(self._adjust1 * self._height)
+        if self._divider_count >= 2:
+            divider_ys.append(self._adjust2 * self._height)
+        if self._divider_count >= 3:
+            divider_ys.append(self._adjust3 * self._height)
+
+        for i, ti in enumerate(self._section_items):
+            if not ti.isVisible():
+                continue
+            ti.setTextWidth(text_w)
+            if i == 0:
+                ti.setPos(padding, tab_bottom)
+            elif i - 1 < len(divider_ys):
+                ti.setPos(padding, divider_ys[i - 1] + padding)
+            else:
+                ti.setVisible(False)
+
+    def _update_label_text(self):
+        """Render pipe-separated tech sections as bracketed labels.
+
+        ``meta.tech`` is split on ``|``.  Each section is displayed as
+        ``[text]`` — the first just below the type tab, subsequent ones
+        just below each divider line.
+        """
+        align_map = {"left": "left", "center": "center", "right": "right"}
+        align = align_map.get(self.meta.tech_align, "center")
+        size = self.meta.tech_size
+
+        sections: List[str] = []
+        if self.meta.tech:
+            sections = [s.strip() for s in self.meta.tech.split("|")]
+
+        for i, ti in enumerate(self._section_items):
+            if i < len(sections) and sections[i]:
+                html = (f'<p style="text-align:{align}; font-size:{size}pt;">'
+                        f'<i>[{sections[i]}]</i></p>')
+                ti.setHtml(html)
+                ti.setDefaultTextColor(self.text_color)
+                ti.setVisible(True)
+            else:
+                ti.setPlainText("")
+                ti.setVisible(False)
+
+        self._update_label_position()
+
+    def set_meta(self, meta: AnnotationMeta) -> None:
+        """Assign metadata and refresh label."""
+        self.meta = meta
+        self._update_label_text()
+
+    # ---- rect / adjust API ----
+
+    def rect(self) -> QRectF:
+        """Return the logical rectangle."""
+        return QRectF(0, 0, self._width, self._height)
+
+    def setRect(self, r: QRectF):
+        """Set width/height and rebuild."""
+        self._width = r.width()
+        self._height = r.height()
+        self._update_path()
+        self._update_label_position()
+
+    @property
+    def block_type(self) -> str:
+        return self._block_type
+
+    def set_block_type(self, block_type: str):
+        """Change the block type and reset divider count."""
+        self._block_type = block_type
+        self._divider_count = _SEQBLOCK_DEFAULTS.get(block_type, 0)
+        self.prepareGeometryChange()
+        self.update()
+
+    def set_divider_count(self, count: int):
+        """Set the number of dividers (0–3), spacing evenly if adding."""
+        count = max(0, min(3, count))
+        old = self._divider_count
+        if count == old:
+            return
+        # When adding dividers, space them evenly in the available range
+        if count > old:
+            positions = []
+            for i in range(count):
+                positions.append((i + 1) / (count + 1))
+            if count >= 1:
+                self._adjust1 = positions[0]
+            if count >= 2:
+                self._adjust2 = positions[1]
+            if count >= 3:
+                self._adjust3 = positions[2]
+        self.prepareGeometryChange()
+        self._divider_count = count
+        self._update_path()
+        self._update_label_position()
+        self.update()
+
+    def add_divider(self) -> bool:
+        """Add one divider.  Returns True if successful."""
+        if self._divider_count >= 3:
+            return False
+        new_count = self._divider_count + 1
+        # Place the new divider evenly between the last divider and 1.0
+        if new_count == 1:
+            self._adjust1 = 0.5
+        elif new_count == 2:
+            # Place between adjust1 and bottom
+            self._adjust2 = self._adjust1 + (1.0 - self._adjust1) / 2
+        elif new_count == 3:
+            self._adjust3 = self._adjust2 + (1.0 - self._adjust2) / 2
+        self.prepareGeometryChange()
+        self._divider_count = new_count
+        self._update_path()
+        self._update_label_position()
+        self.update()
+        return True
+
+    def remove_divider(self) -> bool:
+        """Remove the last divider.  Returns True if successful."""
+        if self._divider_count <= 0:
+            return False
+        self.prepareGeometryChange()
+        self._divider_count -= 1
+        self._update_path()
+        self._update_label_position()
+        self.update()
+        return True
+
+    def set_adjust1(self, value: float):
+        """Set first divider position (ratio 0.05–0.95)."""
+        value = max(0.05, min(0.95, value))
+        if self._divider_count >= 2:
+            value = min(value, self._adjust2 - 0.05)
+        self.prepareGeometryChange()
+        self._adjust1 = value
+        self._update_path()
+        self._update_label_position()
+        self.update()
+
+    def set_adjust2(self, value: float):
+        """Set second divider position (ratio 0.05–0.95)."""
+        value = max(0.05, min(0.95, value))
+        value = max(value, self._adjust1 + 0.05)
+        if self._divider_count >= 3:
+            value = min(value, self._adjust3 - 0.05)
+        self.prepareGeometryChange()
+        self._adjust2 = value
+        self._update_path()
+        self._update_label_position()
+        self.update()
+
+    def set_adjust3(self, value: float):
+        """Set third divider position (ratio 0.05–0.95)."""
+        value = max(0.05, min(0.95, value))
+        value = max(value, self._adjust2 + 0.05)
+        self.prepareGeometryChange()
+        self._adjust3 = value
+        self._update_path()
+        self._update_label_position()
+        self.update()
+
+    # ---- handle points ----
+
+    def _handle_points_local(self) -> Dict[str, QPointF]:
+        """Standard 8 resize handles + yellow divider handles."""
+        cx = self._width / 2
+        cy = self._height / 2
+        pts = {
+            "tl": QPointF(0, 0),
+            "tr": QPointF(self._width, 0),
+            "bl": QPointF(0, self._height),
+            "br": QPointF(self._width, self._height),
+            "t":  QPointF(cx, 0),
+            "b":  QPointF(cx, self._height),
+            "l":  QPointF(0, cy),
+            "r":  QPointF(self._width, cy),
+        }
+        if self._divider_count >= 1:
+            pts["adjust1"] = QPointF(cx, self._adjust1 * self._height)
+        if self._divider_count >= 2:
+            pts["adjust2"] = QPointF(cx, self._adjust2 * self._height)
+        if self._divider_count >= 3:
+            pts["adjust3"] = QPointF(cx, self._adjust3 * self._height)
+        return pts
+
+    def _handle_points_scene(self) -> Dict[str, QPointF]:
+        """Handle positions in scene coordinates."""
+        p = self.pos()
+        return {
+            k: QPointF(pt.x() + p.x(), pt.y() + p.y())
+            for k, pt in self._handle_points_local().items()
+        }
+
+    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
+        if not self._should_paint_handles():
+            return None
+        handles = self._handle_points_scene()
+        hit_dist = _get_hit_distance()
+        for k, hp in handles.items():
+            if QLineF(scene_pt, hp).length() <= hit_dist:
+                return k
+        return None
+
+    # ---- mouse events ----
+
+    def hoverMoveEvent(self, event):
+        h = self._hit_test_handle(event.scenePos())
+        if h in ("tl", "br"):
+            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+        elif h in ("tr", "bl"):
+            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+        elif h in ("t", "b"):
+            self.setCursor(Qt.CursorShape.SizeVerCursor)
+        elif h in ("l", "r"):
+            self.setCursor(Qt.CursorShape.SizeHorCursor)
+        elif h in ("adjust1", "adjust2", "adjust3"):
+            self.setCursor(Qt.CursorShape.SizeVerCursor)
+        else:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+        super().hoverMoveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            h = self._hit_test_handle(event.scenePos())
+            if h:
+                self._begin_resize_tracking()
+                self._active_handle = h
+                self._resizing = True
+                self._press_scene = event.scenePos()
+                self._start_pos = QPointF(self.pos())
+                self._start_size = (self._width, self._height)
+                self._start_adjust1 = self._adjust1
+                self._start_adjust2 = self._adjust2
+                self._start_adjust3 = self._adjust3
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._resizing and self._active_handle and self._press_scene and self._start_pos and self._start_size:
+            cur = event.scenePos()
+            dx = cur.x() - self._press_scene.x()
+            dy = cur.y() - self._press_scene.y()
+
+            # Divider handle: vertical-only drag
+            if self._active_handle == "adjust1" and self._start_adjust1 is not None:
+                new_val = self._start_adjust1 + dy / self._height if self._height > 0 else 0.5
+                self.set_adjust1(new_val)
+                self._notify_changed()
+                if MetaSeqBlockItem.on_adjust1_changed:
+                    MetaSeqBlockItem.on_adjust1_changed(self, self._adjust1)
+                event.accept()
+                return
+
+            if self._active_handle == "adjust2" and self._start_adjust2 is not None:
+                new_val = self._start_adjust2 + dy / self._height if self._height > 0 else 0.67
+                self.set_adjust2(new_val)
+                self._notify_changed()
+                if MetaSeqBlockItem.on_adjust2_changed:
+                    MetaSeqBlockItem.on_adjust2_changed(self, self._adjust2)
+                event.accept()
+                return
+
+            if self._active_handle == "adjust3" and self._start_adjust3 is not None:
+                new_val = self._start_adjust3 + dy / self._height if self._height > 0 else 0.83
+                self.set_adjust3(new_val)
+                self._notify_changed()
+                if MetaSeqBlockItem.on_adjust3_changed:
+                    MetaSeqBlockItem.on_adjust3_changed(self, self._adjust3)
+                event.accept()
+                return
+
+            # Standard resize handles
+            x0 = self._start_pos.x()
+            y0 = self._start_pos.y()
+            w0, h0 = self._start_size
+
+            left, top = x0, y0
+            right, bottom = x0 + w0, y0 + h0
+
+            h = self._active_handle
+            if h == "tl":
+                left += dx; top += dy
+            elif h == "tr":
+                right += dx; top += dy
+            elif h == "bl":
+                left += dx; bottom += dy
+            elif h == "br":
+                right += dx; bottom += dy
+            elif h == "t":
+                top += dy
+            elif h == "b":
+                bottom += dy
+            elif h == "l":
+                left += dx
+            elif h == "r":
+                right += dx
+
+            min_size = _get_min_size()
+            if (right - left) < min_size:
+                if h in ("tl", "bl", "l"):
+                    left = right - min_size
+                else:
+                    right = left + min_size
+            if (bottom - top) < min_size:
+                if h in ("tl", "tr", "t"):
+                    top = bottom - min_size
+                else:
+                    bottom = top + min_size
+
+            self.setPos(QPointF(left, top))
+            self._width = right - left
+            self._height = bottom - top
+            self._update_path()
+            self._update_label_position()
+            self._notify_changed()
+            event.accept()
+            return
+
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._resizing:
+            self._end_resize_tracking()
+            self._resizing = False
+            self._active_handle = None
+            self._press_scene = None
+            self._start_pos = None
+            self._start_size = None
+            self._start_adjust1 = None
+            self._start_adjust2 = None
+            self._start_adjust3 = None
+            self._notify_changed()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    # ---- paint ----
+
+    def paint(self, painter: QPainter, option, widget=None):
+        """Draw the sequence block: fill, border, type tab, dividers, handles."""
+        my_option = QStyleOptionGraphicsItem(option)
+        my_option.state &= ~QStyle.StateFlag.State_Selected
+        super().paint(painter, my_option, widget)
+
+        w = self._width
+        h = self._height
+        if w <= 0 or h <= 0:
+            return
+
+        # --- Type tab in top-left ---
+        tab_text = self._block_type.upper()
+        fm = painter.fontMetrics()
+        text_w = fm.horizontalAdvance(tab_text)
+        tab_w = text_w + 2 * self._TAB_PADDING + 8
+        tab_h = self._TAB_HEIGHT
+
+        # Pentagon tab shape (like UML combined fragments)
+        tab_path = QPainterPath()
+        tab_path.moveTo(0, 0)
+        tab_path.lineTo(tab_w, 0)
+        tab_path.lineTo(tab_w, tab_h - 6)
+        tab_path.lineTo(tab_w - 6, tab_h)
+        tab_path.lineTo(0, tab_h)
+        tab_path.closeSubpath()
+
+        painter.setPen(QPen(self.pen_color, self.pen_width))
+        painter.setBrush(QBrush(QColor(self.pen_color.red(), self.pen_color.green(),
+                                       self.pen_color.blue(), 60)))
+        painter.drawPath(tab_path)
+
+        painter.setPen(QPen(self.text_color))
+        painter.drawText(self._TAB_PADDING, int(tab_h * 0.72), tab_text)
+
+        # --- Dashed divider lines ---
+        if self._divider_count >= 1:
+            div_pen = QPen(self.pen_color, 1, Qt.PenStyle.DashLine)
+            painter.setPen(div_pen)
+            y1 = self._adjust1 * h
+            painter.drawLine(QPointF(0, y1), QPointF(w, y1))
+        if self._divider_count >= 2:
+            y2 = self._adjust2 * h
+            painter.drawLine(QPointF(0, y2), QPointF(w, y2))
+        if self._divider_count >= 3:
+            y3 = self._adjust3 * h
+            painter.drawLine(QPointF(0, y3), QPointF(w, y3))
+
+        # --- Selection handles ---
+        if self._should_paint_handles():
+            sel_pen = QPen(_get_selection_color(), 1, Qt.PenStyle.DashLine)
+            painter.setPen(sel_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(QRectF(0, 0, w, h))
+
+            handles = self._handle_points_local()
+            # Separate adjust handles for yellow drawing
+            adjust_handles = {}
+            for key in ("adjust1", "adjust2", "adjust3"):
+                if key in handles:
+                    adjust_handles[key] = handles.pop(key)
+            draw_handles(painter, handles)
+
+            # Yellow adjust handles
+            if adjust_handles:
+                handle_size = _get_handle_size()
+                half = handle_size / 2
+                painter.setPen(QPen(QColor(204, 153, 0), 1))
+                painter.setBrush(QBrush(QColor(255, 215, 0)))
+                for pt in adjust_handles.values():
+                    painter.drawEllipse(QRectF(pt.x() - half, pt.y() - half,
+                                               handle_size, handle_size))
+
+    def shape(self) -> QPainterPath:
+        base = super().shape()
+        if self._should_paint_handles():
+            return shape_with_handles(base, self._handle_points_local())
+        return base
+
+    def boundingRect(self) -> QRectF:
+        r = super().boundingRect()
+        margin = _get_handle_size() / 2 + 1
+        return r.adjusted(-margin, -margin, margin, margin)
+
+    def itemChange(self, change, value):
+        out = super().itemChange(change, value)
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            if not self._resizing:
+                self._notify_changed()
+        elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+            self.prepareGeometryChange()
+        return out
+
+    # ---- serialization ----
+
+    def to_record(self) -> Dict[str, Any]:
+        """Serialize to a JSON-compatible dict."""
+        p = self.pos()
+        geom = {
+            "x": round1(p.x()),
+            "y": round1(p.y()),
+            "w": round1(self._width),
+            "h": round1(self._height),
+        }
+        if self._divider_count >= 1:
+            geom["adjust1"] = round1(self._adjust1)
+        if self._divider_count >= 2:
+            geom["adjust2"] = round1(self._adjust2)
+        if self._divider_count >= 3:
+            geom["adjust3"] = round1(self._adjust3)
+
+        rec = {
+            "id": self.ann_id,
+            "kind": "seqblock",
+            "geom": geom,
+            **self._meta_dict(self.meta),
+            **self._style_dict(),
+        }
+        z = self.zValue()
+        if z != 0:
+            rec["z"] = int(z)
+        return rec
+
+
+# ═══════════════════════════════════════════════════════════
 # Kind alias registry — validates uniqueness at import time
 # ═══════════════════════════════════════════════════════════
 
@@ -6330,7 +6906,7 @@ _ALL_META_CLASSES = [
     MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaLineItem,
     MetaTextItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem,
     MetaPolygonItem, MetaCurveItem, MetaOrthoCurveItem, MetaIsoCubeItem,
-    MetaGroupItem,
+    MetaSeqBlockItem, MetaGroupItem,
 ]
 
 # Validate: no alias appears in more than one class

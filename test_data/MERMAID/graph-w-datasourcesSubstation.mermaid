@@ -1,0 +1,73 @@
+graph TD
+    %% Level 4/5: Enterprise
+    subgraph L4_5 [Level 4/5: Enterprise]
+        Splunk[**Splunk Enterprise** / SIEM]
+        AssetMgmt[Asset Health Dashboard]
+    end
+
+    %% Level 3.5: DMZ
+    subgraph L3_5 [Level 3.5: DMZ]
+        Syslog[Syslog Collector]
+        Hist[Data Historian]
+        Jump[Secure Jump Host]
+
+        Syslog --> Splunk
+        Hist --> AssetMgmt
+    end
+
+    %% Level 2/3: Station Bus
+    subgraph L2_3 [Level 2/3: Station Bus - MMS]
+        direction TB
+        SWA[Station Switch A]
+        SWB[Station Switch B]
+        HMI[Local HMI]
+
+        HMI --- SWA
+        SWA --> Hist
+        SWA --> Syslog
+    end
+
+    %% Level 1: Bay Level (IEDs)
+    subgraph L1 [Level 1: Protection & Control]
+        direction LR
+        Relay[**Protection Relay**]
+        BCU[Bay Control Unit]
+
+        Relay -- "Fault Records (COMTRADE)" --- SWA
+        Relay -- "Event Logs" --- SWA
+    end
+
+    %% Level 1: Process Bus (High Speed)
+    subgraph L1_PB [Level 1: Process Bus - SV/GOOSE]
+        PBA[Process Switch A]
+        PBB[Process Switch B]
+    end
+
+    %% Level 0: Sensors & Primary Equipment
+    subgraph L0 [Level 0: Physical Process & Sensors]
+        direction TB
+        subgraph Transformer_Monitoring [Transformer Health]
+            DGA[**Digital Gas Analyzer**]
+            Bush[**Bushing Monitors**]
+        end
+
+        subgraph Safety_Sensors [Arc/Flash Detection]
+            Arc[**Arc Flash Sensors**]
+            Spark[**Spark Gap Sensors**]
+        end
+
+        subgraph Primary [Switchyard]
+            CB[Circuit Breakers]
+            MU[Merging Units]
+        end
+    end
+
+    %% Connections
+    Relay --- PBA
+    MU --- PBA
+
+    %% Data Source Routing
+    DGA -- "RS485/Ethernet" --- BCU
+    Bush -- "Analog/Digital" --- MU
+    Arc -- "High-Speed Fiber" --- Relay
+    Spark -- "Hardwired" --- Relay

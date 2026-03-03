@@ -43,6 +43,8 @@ def capture_geometry(item) -> dict:
             state["adjust1"] = item._adjust1
         if hasattr(item, '_adjust2'):
             state["adjust2"] = item._adjust2
+        if hasattr(item, '_adjust3'):
+            state["adjust3"] = item._adjust3
         if hasattr(item, '_rel_points'):
             state["rel_points"] = [list(p) for p in item._rel_points]
         if hasattr(item, '_nodes'):
@@ -84,6 +86,8 @@ def apply_geometry(item, state: dict) -> None:
             item._adjust1 = state["adjust1"]
         if "adjust2" in state and hasattr(item, '_adjust2'):
             item._adjust2 = state["adjust2"]
+        if "adjust3" in state and hasattr(item, '_adjust3'):
+            item._adjust3 = state["adjust3"]
         if "rel_points" in state and hasattr(item, '_rel_points'):
             item._rel_points = [list(p) for p in state["rel_points"]]
         if "nodes" in state and hasattr(item, '_nodes'):

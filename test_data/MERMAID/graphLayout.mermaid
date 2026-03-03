@@ -1,0 +1,66 @@
+graph TD
+    subgraph Corporate_External [External Network]
+        WAN[Corporate WAN / Remote Control Center]
+    end
+
+    subgraph DMZ [Demilitarized Zone]
+        direction TB
+        FW1[Outer Firewall]
+        Proxy[Data Historian / Proxy Server]
+        FW2[Inner Firewall]
+
+        WAN <--> FW1
+        FW1 <--> Proxy
+        Proxy <--> FW2
+    end
+
+    subgraph Station_Bus [Station Bus - IEC 61850 MMS/GOOSE]
+        direction TB
+        HMI[Local HMI]
+        GW[Communication Gateway]
+        Eng[Engineering Workstation]
+
+        FW2 <--> GW
+        GW --- HMI
+        GW --- Eng
+    end
+
+    subgraph Bay_Level [Protection & Control Layer]
+        Relay1[Distance Relay / IED]
+        Relay2[Transformer Relay / IED]
+        BCU[Bay Control Unit]
+
+        HMI --- Relay1
+        HMI --- Relay2
+        HMI --- BCU
+    end
+
+    subgraph Process_Bus [Process Bus - IEC 61850 SV/GOOSE]
+        direction TB
+        MU1[Merging Unit 1]
+        MU2[Merging Unit 2]
+        Switch_PB[Process Bus Switch]
+
+        Relay1 --- Switch_PB
+        Relay2 --- Switch_PB
+        BCU --- Switch_PB
+
+        Switch_PB --- MU1
+        Switch_PB --- MU2
+    end
+
+    subgraph Primary_Equipment [Switchyard / Primary Plant]
+        CB[Circuit Breaker]
+        CTVT[CT / VT Sensors]
+        Trans[Transformer]
+
+        MU1 --- CTVT
+        MU1 --- CB
+        MU2 --- Trans
+    end
+
+    %% Styling
+    style DMZ fill:#f96,stroke:#333,stroke-width:2px
+    style Station_Bus fill:#d1e7ff,stroke:#004a99
+    style Process_Bus fill:#d1ffd1,stroke:#006600
+    style Primary_Equipment fill:#eee,stroke:#333,stroke-dasharray: 5 5

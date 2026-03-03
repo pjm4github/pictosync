@@ -82,6 +82,16 @@ def _is_c4_source(source: str) -> bool:
     return False
 
 
+def _is_sequence_source(source: str) -> bool:
+    """Return True if *source* starts with ``sequenceDiagram``."""
+    for line in source.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("%%"):
+            continue
+        return stripped.startswith("sequenceDiagram")
+    return False
+
+
 def _maybe_inject_layout_config(mmd: Path, tmp_dir: str) -> tuple[Path, bool]:
     """Ensure C4 diagrams use the PictoSync layout settings.
 
