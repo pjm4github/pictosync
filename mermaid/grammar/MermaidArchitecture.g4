@@ -1,225 +1,336 @@
-// MermaidArchitecture.g4
-// ANTLR4 Grammar for Mermaid Architecture Diagrams (architecture-beta)
-// Reference: https://mermaid.js.org/syntax/architecture
+// MermaidArchitectureDiagram.g4
+// ANTLR4 grammar for Mermaid Architecture Diagrams (v11.1.0+)
+// Reference: https://mermaid.ai/open-source/syntax/architecture.html
 //
-// Syntax coverage:
-//   - architecture-beta header
-//   - group declarations    (nested via 'in <parentId>')
-//   - service declarations  (placed in group via 'in <parentId>')
-//   - junction declarations (placed in group via 'in <parentId>')
-//   - edge statements       (side specifiers L|R|T|B, arrows <--, -->, <-->,
-//                            no-arrow --, {group} modifier)
-//   - iconify icon names    (builtin shortnames AND namespaced pack:name form)
-//   - %% line comments
+// ── Diagram header ────────────────────────────────────────────────────────
+//   architecture-beta
+//
+// ── Building blocks ───────────────────────────────────────────────────────
+//   group   {id}({icon})[{label}] (in {parentId})?
+//   service {id}({icon})[{label}] (in {parentId})?
+//   junction {id}              (in {parentId})?
+//   {lhsSvc}{group}?:{side} {<}?--{>}? {side}:{rhsSvc}{group}?
+//
+// ── Icon syntax ───────────────────────────────────────────────────────────
+//   (cloud)                   built-in icon by bare name
+//   (disk)                    built-in: cloud database disk internet server
+//   (aws:Lambda)              icon pack: "packName:icon-name"
+//   (azure:FunctionApp)
+//
+// ── Label syntax ──────────────────────────────────────────────────────────
+//   [My Database]             free-text label in square brackets
+//   [Public API]
+//
+// ── Group membership ──────────────────────────────────────────────────────
+//   in parentId               optional suffix on group / service / junction
+//
+// ── Edge syntax (full form) ───────────────────────────────────────────────
+//   db:R -- L:server                   open line, right-of-db  to left-of-server
+//   db:T -- L:server                   90-degree bend
+//   subnet:R --> L:gateway             arrow into gateway
+//   subnet:R <-- L:gateway             arrow into subnet
+//   subnet:R <--> L:gateway            bidirectional arrows
+//   server{group}:B --> T:subnet{group} edge exits the parent group boundary
+//
+// ── Edge sides ────────────────────────────────────────────────────────────
+//   L  left    R  right    T  top    B  bottom
+//
+// ── Junction ──────────────────────────────────────────────────────────────
+//   junction jId
+//   junction jId in groupId
+//   (junctions are 4-way edge split points)
+//
+// ── Comments ──────────────────────────────────────────────────────────────
+//   %% anything to end of line
+//
+// ── Lexer ordering notes ──────────────────────────────────────────────────
+//   1. KW_ARCH_BETA 'architecture-beta' before any ID (hyphen in name)
+//   2. EDGE_BIDIR  '<-->'  before EDGE_LEFT  '<--'  before EDGE_OPEN  '--'
+//   3. EDGE_RIGHT  '-->'   before EDGE_OPEN  '--'
+//   4. LBRACE_GROUP '{group}' literal before LBRACE '{'
+//   5. SIDE token  (L|R|T|B) declared as alternatives inside a parser rule,
+//      backed by individual keyword tokens, all before ID
+//   6. ICON_REF  handles both bare-name and pack:name inside parentheses
+//      via a dedicated lexer token to avoid COLON ambiguity
+//   7. All multi-char keyword tokens before ID
 
-grammar MermaidArchitecture;
+grammar MermaidArchitectureDiagram;
 
-// =============================================================================
-// Parser Rules
-// =============================================================================
+// ═══════════════════════════════════════════════════════════════════════════
+// PARSER RULES
+// ═══════════════════════════════════════════════════════════════════════════
 
 diagram
-    : NEWLINE* ARCHITECTURE_BETA NEWLINE+ statement* EOF
+    : NEWLINE* KW_ARCH_BETA NEWLINE+
+      statement*
+      EOF
     ;
 
+// ── Statement dispatcher ──────────────────────────────────────────────────
+
 statement
-    : groupDecl    NEWLINE+
-    | serviceDecl  NEWLINE+
+    : groupDecl   NEWLINE+
+    | serviceDecl NEWLINE+
     | junctionDecl NEWLINE+
-    | edgeStmt     NEWLINE+
-    | COMMENT      NEWLINE+
+    | edgeStmt    NEWLINE+
+    | COMMENT     NEWLINE+
     | NEWLINE+
     ;
 
-// ---------------------------------------------------------------------------
-// group {groupId}({iconName})[{label}] (in {parentId})?
-// ---------------------------------------------------------------------------
+// ═══════════════════════════════════════════════════════════════════════════
+// GROUP DECLARATION
+//
+//   group {id}({icon})[{label}] (in {parentId})?
+//
+// Examples:
+//   group public_api(cloud)[Public API]
+//   group private_api(cloud)[Private API] in public_api
+//   group db_cluster(database)[DB Cluster] in private_api
+// ═══════════════════════════════════════════════════════════════════════════
+
 groupDecl
-    : GROUP nodeId iconSpec labelSpec (IN nodeId)?
+    : KW_GROUP nodeId iconRef labelRef groupMembership?
     ;
 
-// ---------------------------------------------------------------------------
-// service {serviceId}({iconName})[{label}] (in {parentId})?
-// ---------------------------------------------------------------------------
+// ═══════════════════════════════════════════════════════════════════════════
+// SERVICE DECLARATION
+//
+//   service {id}({icon})[{label}] (in {parentId})?
+//
+// Examples:
+//   service database1(database)[My Database]
+//   service database1(database)[My Database] in private_api
+//   service lambda1(aws:Lambda)[Lambda] in compute_group
+// ═══════════════════════════════════════════════════════════════════════════
+
 serviceDecl
-    : SERVICE nodeId iconSpec labelSpec (IN nodeId)?
+    : KW_SERVICE nodeId iconRef labelRef groupMembership?
     ;
 
-// ---------------------------------------------------------------------------
-// junction {junctionId} (in {parentId})?
-// Junctions have no icon or label — they are invisible routing nodes.
-// ---------------------------------------------------------------------------
+// ═══════════════════════════════════════════════════════════════════════════
+// JUNCTION DECLARATION
+//
+//   junction {id}
+//   junction {id} in {parentId}
+//
+// A junction is a 4-way edge-split point with no icon or label.
+// ═══════════════════════════════════════════════════════════════════════════
+
 junctionDecl
-    : JUNCTION nodeId (IN nodeId)?
+    : KW_JUNCTION nodeId groupMembership?
     ;
 
-// ---------------------------------------------------------------------------
-// Icon spec: ({iconName})
-//   iconName is either a simple name  (e.g. cloud, database, disk)
-//   or a namespaced name              (e.g. logos:aws-lambda, mdi:server)
-// ---------------------------------------------------------------------------
-iconSpec
-    : LPAREN iconName RPAREN
+// ── Node identifier ───────────────────────────────────────────────────────
+// Identifiers for groups, services, and junctions.  Allows hyphens and
+// underscores as commonly seen in cloud resource names.
+
+nodeId : ID ;
+
+// ── Icon reference ────────────────────────────────────────────────────────
+// Wrapped in parentheses.  Two forms:
+//   (cloud)           — bare built-in icon name
+//   (aws:Lambda)      — pack:iconName  (colon is INSIDE the parens)
+//
+// Design: ICON_REF is a single lexer token that consumes the entire
+// '(' content ')' sequence.  This sidesteps the COLON ambiguity that would
+// arise if we tried to tokenize pack:name with the shared COLON token.
+// The visitor strips the surrounding parens and splits on ':' if present.
+
+iconRef
+    : ICON_REF
     ;
 
-iconName
-    : ICON_NAME           // simple or pack:name token
+// ── Label reference ───────────────────────────────────────────────────────
+// Free-text label wrapped in square brackets.
+// LABEL_REF is a single lexer token: '[' ~[\]\r\n]* ']'
+// The visitor strips the surrounding brackets.
+
+labelRef
+    : LABEL_REF
     ;
 
-// ---------------------------------------------------------------------------
-// Label spec: [{label text}]
-//   Label text may contain spaces and most printable characters.
-// ---------------------------------------------------------------------------
-labelSpec
-    : LBRACKET labelText RBRACKET
+// ── Group membership ──────────────────────────────────────────────────────
+// Optional suffix: "in parentId"
+
+groupMembership
+    : KW_IN nodeId
     ;
 
-labelText
-    : LABEL_TEXT
-    ;
-
-// ---------------------------------------------------------------------------
-// Node identifier
-//   Used for serviceId, groupId, junctionId, and parentId.
-// ---------------------------------------------------------------------------
-nodeId
-    : ID
-    ;
-
-// ---------------------------------------------------------------------------
-// Edge statement
+// ═══════════════════════════════════════════════════════════════════════════
+// EDGE STATEMENT
 //
 // Full BNF:
-//   edgeStmt ::= edgeEndpoint edgeConnector edgeEndpoint
+//   {lhsSvc}{group}?:{side} {<}?--{>}? {side}:{rhsSvc}{group}?
 //
-//   edgeEndpoint ::= nodeId ('{group}')? ':' sideSpec
-//
-//   edgeConnector ::= '<'? '--' '>'?
-//                     (the '<' and '>' are the arrowhead markers)
-//
-//   sideSpec ::= 'L' | 'R' | 'T' | 'B'
+// Where:
+//   {group}  is the literal token  {group}  (braces included)
+//   {side}   is one of  L  R  T  B
+//   <        signals an arrowhead pointing INTO the left service
+//   >        signals an arrowhead pointing INTO the right service
 //
 // Examples:
 //   db:R -- L:server
-//   db:T --> B:server
-//   api{group}:L <-- R:client
-//   lb:R <--> L:cache
-// ---------------------------------------------------------------------------
+//   subnet:R --> L:gateway
+//   subnet:R <-- L:gateway
+//   subnet:R <--> L:gateway
+//   server{group}:B --> T:subnet{group}
+// ═══════════════════════════════════════════════════════════════════════════
+
 edgeStmt
-    : edgeSide edgeConnector edgeSide
+    : lhsEndpoint edgeLine rhsEndpoint
     ;
 
-edgeSide
-    : nodeId groupModifier? COLON sideSpec   // nodeId{group}:L  (left of arrow)
-    | sideSpec COLON nodeId groupModifier?   // R:nodeId{group}  (right of arrow)
+// ── Left-hand endpoint ────────────────────────────────────────────────────
+// Format: nodeId {group}? : side
+
+lhsEndpoint
+    : nodeId GROUP_MOD? COLON side
     ;
 
-groupModifier
-    : LBRACE GROUP RBRACE       // literal {group}
+// ── Right-hand endpoint ───────────────────────────────────────────────────
+// Format: side : nodeId {group}?
+
+rhsEndpoint
+    : side COLON nodeId GROUP_MOD?
     ;
 
-edgeConnector
-    : ARROW_LEFT? EDGE_LINE ARROW_RIGHT?
+// ── Edge line (the connecting shaft with optional arrowheads) ─────────────
+// Four variants, in declaration-order priority:
+//   <-->   bidirectional
+//   -->    right arrow only
+//   <--    left arrow only
+//   --     open (no arrows)
+//
+// These are emitted as four dedicated tokens so the parser rule is simple.
+
+edgeLineToken
+    : EDGE_BIDIR
+    | EDGE_RIGHT
+    | EDGE_LEFT
+    | EDGE_OPEN
     ;
 
-sideSpec
-    : SIDE_L
-    | SIDE_R
-    | SIDE_T
-    | SIDE_B
+// edgeLine wraps the token for a cleaner visitor API
+edgeLine
+    : edgeLineToken
     ;
 
-// =============================================================================
-// Lexer Rules
-// =============================================================================
+// ── Side specifier ────────────────────────────────────────────────────────
+// L=left  R=right  T=top  B=bottom
+// Each is a keyword token so they win over ID for single-letter matches.
 
-// ---------------------------------------------------------------------------
-// Keywords  (order matters — must precede general ID rule)
-// ---------------------------------------------------------------------------
+side
+    : KW_L | KW_R | KW_T | KW_B
+    ;
 
-ARCHITECTURE_BETA : 'architecture-beta' ;
-GROUP             : 'group' ;
-SERVICE           : 'service' ;
-JUNCTION          : 'junction' ;
-IN                : 'in' ;
 
-// Side specifiers are single uppercase letters used only in edge statements.
-// Declared as tokens so they don't collide with identifiers that happen to be
-// single letters in other positions.
-SIDE_L : 'L' ;
-SIDE_R : 'R' ;
-SIDE_T : 'T' ;
-SIDE_B : 'B' ;
+// ═══════════════════════════════════════════════════════════════════════════
+// LEXER RULES
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Critical ordering:
+//   1.  KW_ARCH_BETA   — 'architecture-beta' hyphenated, before ID
+//   2.  EDGE_BIDIR     — '<-->' longest, before EDGE_LEFT '<--'
+//   3.  EDGE_RIGHT     — '-->'  before EDGE_OPEN '--'
+//   4.  EDGE_LEFT      — '<--'  before EDGE_OPEN '--'
+//   5.  GROUP_MOD      — literal '{group}' before LBRACE '{'
+//   6.  ICON_REF       — '(' ... ')' composite token; before LPAREN
+//   7.  LABEL_REF      — '[' ... ']' composite token; before LBRACK
+//   8.  Side keywords KW_L KW_R KW_T KW_B — before ID
+//   9.  All other keywords — before ID
 
-// ---------------------------------------------------------------------------
-// Edge tokens
-// ---------------------------------------------------------------------------
+// ── Diagram type ──────────────────────────────────────────────────────────
 
-ARROW_LEFT  : '<' ;
-ARROW_RIGHT : '>' ;
-EDGE_LINE   : '--' ;
+KW_ARCH_BETA : 'architecture-beta' ;
 
-// ---------------------------------------------------------------------------
-// Structural punctuation
-// ---------------------------------------------------------------------------
+// ── Declaration keywords ──────────────────────────────────────────────────
 
-COLON   : ':' ;
-LPAREN  : '(' ;
-RPAREN  : ')' ;
-LBRACKET : '[' ;
-RBRACKET : ']' ;
+KW_GROUP    : 'group' ;
+KW_SERVICE  : 'service' ;
+KW_JUNCTION : 'junction' ;
+KW_IN       : 'in' ;
+
+// ── Side keywords (single uppercase letters) ──────────────────────────────
+// These must be declared before ID so that bare L / R / T / B in an
+// edge statement tokenise as side keywords rather than identifiers.
+// Using single-char tokens means "LR" or "TB" still tokenise as ID
+// (longer match wins), which is correct since those are valid node ids.
+
+KW_L : 'L' ;
+KW_R : 'R' ;
+KW_T : 'T' ;
+KW_B : 'B' ;
+
+// ── Edge shaft tokens ─────────────────────────────────────────────────────
+// Declared longest-first.  ANTLR4 longest-match rule resolves ties.
+
+EDGE_BIDIR  : '<-->' ;    // bidirectional arrow
+EDGE_RIGHT  : '-->'  ;    // right-pointing arrow
+EDGE_LEFT   : '<--'  ;    // left-pointing arrow
+EDGE_OPEN   : '--'   ;    // open line (no arrowheads)
+
+// ── Group modifier ────────────────────────────────────────────────────────
+// The literal string '{group}' (including braces) used as a modifier on
+// edge endpoint service ids.  Must be declared before LBRACE so the
+// full literal wins over a bare '{'.
+
+GROUP_MOD : '{group}' ;
+
+// ── Icon reference token ──────────────────────────────────────────────────
+// Consumes:  '(' iconContent ')'
+// iconContent is: packName ':' iconName  or  bare iconName
+// Using a composite token avoids COLON ambiguity inside parens.
+// The character class ~[)\r\n] excludes the closing paren and newlines.
+
+ICON_REF
+    : '(' ~[)\r\n]+ ')'
+    ;
+
+// ── Label reference token ─────────────────────────────────────────────────
+// Consumes:  '[' labelContent ']'
+// labelContent is free text (spaces allowed), excluding newlines.
+
+LABEL_REF
+    : '[' ~[\]\r\n]* ']'
+    ;
+
+// ── Punctuation ───────────────────────────────────────────────────────────
+
 LBRACE  : '{' ;
 RBRACE  : '}' ;
+LPAREN  : '(' ;    // kept for potential future use / error recovery
+RPAREN  : ')' ;
+LBRACK  : '[' ;
+RBRACK  : ']' ;
+COLON   : ':' ;    // used between nodeId and side in edge endpoints
 
-// ---------------------------------------------------------------------------
-// Icon name
-//   Matches  simple names:     cloud  database  disk  internet  server
-//   Matches  namespaced names: logos:aws-lambda  mdi:server  fa:home
-//   The colon in namespaced icons is consumed inside this single token so
-//   it does not conflict with the COLON token used in edge side-specs.
-//   The token is greedy and will match the longest possible sequence of
-//   valid icon-name characters.
-// ---------------------------------------------------------------------------
-ICON_NAME
-    : ICON_PART (':' ICON_PART)?
-    ;
+// ── Integer ───────────────────────────────────────────────────────────────
 
-fragment ICON_PART
-    : [a-zA-Z0-9_\-]+
-    ;
+INT : [0-9]+ ;
 
-// ---------------------------------------------------------------------------
-// Label text
-//   Everything between [ and ] on a single line.
-//   Captured as a single token to avoid keyword conflicts inside labels.
-// ---------------------------------------------------------------------------
-LABEL_TEXT
-    : ~[\[\]\r\n]+
-    ;
+// ── Identifier ────────────────────────────────────────────────────────────
+// Node ids, group ids, icon pack names (inside ICON_REF handled above).
+// Allows hyphens, underscores, dots — common in cloud resource naming
+// (e.g. "private-api", "db_cluster", "lambda.v2").
+// Declared after all keyword tokens.
 
-// ---------------------------------------------------------------------------
-// General identifier
-//   Service IDs, group IDs, junction IDs.
-//   Must start with a letter or underscore; can contain letters, digits,
-//   underscores, hyphens, and dots (common in real infra identifiers).
-// ---------------------------------------------------------------------------
 ID
     : [a-zA-Z_] [a-zA-Z0-9_\-.]*
     ;
 
-// ---------------------------------------------------------------------------
-// Comments
-// ---------------------------------------------------------------------------
+// ── Comment ───────────────────────────────────────────────────────────────
+
 COMMENT
     : '%%' ~[\r\n]*
     ;
 
-// ---------------------------------------------------------------------------
-// Whitespace and newlines
-// ---------------------------------------------------------------------------
+// ── Newline ───────────────────────────────────────────────────────────────
+
 NEWLINE
     : [\r\n]+
     ;
+
+// ── Whitespace ────────────────────────────────────────────────────────────
 
 WS
     : [ \t]+ -> skip

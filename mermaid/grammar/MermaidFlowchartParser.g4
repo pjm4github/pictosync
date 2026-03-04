@@ -1,5 +1,5 @@
-// MermaidFlowchart.g4
-// ANTLR4 grammar for Mermaid Flowchart / Graph diagrams
+// MermaidFlowchartParser.g4
+// ANTLR4 *parser* grammar for Mermaid Flowchart / Graph diagrams
 // Reference: https://mermaid.js.org/syntax/flowchart.html  (v11.12)
 //
 // Diagram types covered
@@ -20,9 +20,9 @@
 //   {text}            rhombus / diamond
 //   {{text}}          hexagon
 //   [/text/]          parallelogram lean-right
-//   [\text\]          parallelogram lean-left
-//   [/text\]          trapezoid
-//   [\text/]          trapezoid-alt
+//   [\\text\\]          parallelogram lean-left
+//   [/text\\]          trapezoid
+//   [\\text/]          trapezoid-alt
 //
 // ── New @{} shape syntax (v11.3+) ────────────────────────────────────────
 //   A@{ shape: rect, label: "text" }
@@ -72,7 +72,9 @@
 // ── Comments ──────────────────────────────────────────────────────────────
 //   %% anything to end of line
 
-grammar MermaidFlowchart;
+parser grammar MermaidFlowchartParser;
+
+options { tokenVocab = MermaidFlowchartLexer; }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PARSER RULES
@@ -152,9 +154,9 @@ classicShape
     | LBRACK LPAREN nodeLabel RPAREN RBRACK                 // [(t)]    cylinder
     | LPAREN LPAREN nodeLabel RPAREN RPAREN                 // ((t))    circle
     | LBRACK FSLASH nodeLabel FSLASH RBRACK                 // [/t/]    parallelogram
-    | LBRACK BSLASH nodeLabel BSLASH RBRACK                 // [\t\]    parallelogram-alt
-    | LBRACK FSLASH nodeLabel BSLASH RBRACK                 // [/t\]    trapezoid
-    | LBRACK BSLASH nodeLabel FSLASH RBRACK                 // [\t/]    trapezoid-alt
+    | LBRACK BSLASH nodeLabel BSLASH RBRACK                 // [\\t\\]  parallelogram-alt
+    | LBRACK FSLASH nodeLabel BSLASH RBRACK                 // [/t\\]    trapezoid
+    | LBRACK BSLASH nodeLabel FSLASH RBRACK                 // [\\t/]    trapezoid-alt
     | LBRACK nodeLabel RBRACK                               // [t]      rectangle
     | LPAREN nodeLabel RPAREN                               // (t)      rounded
     | RANGLE nodeLabel RBRACK                               // >t]      asymmetric
@@ -177,6 +179,9 @@ labelText
     : LABEL_TEXT
     | ID
     | INT
+    | FSLASH      // allow / in titles: "Level 4/5"
+    | COLON       // allow : in titles
+    | AMP         // allow & in titles
     ;
 
 // ── @{ } attribute block ─────────────────────────────────────────────────
@@ -230,8 +235,12 @@ nodeGroup
 
 // A node reference in an edge chain may carry a class shorthand.
 // It may not carry a shape decorator (shapes are only in nodeStmt).
+//nodeRef
+//    : nodeId classShorthand?
+//    ;
 nodeRef
-    : nodeId classShorthand?
+    : nodeId classicShape? classShorthand?
+    | nodeId attrBlock    classShorthand?
     ;
 
 // ── Edge operator ─────────────────────────────────────────────────────────
@@ -272,18 +281,27 @@ pipeLabel
 //   subgraph                      anonymous, no title
 //   subgraph myId                 id only
 //   subgraph myId ["My Title"]    id + quoted title
+//   subgraph myId [Bracket Title] id + bracket title (most common in practice)
 //   subgraph "My Title"           title only (id inferred)
 // ═══════════════════════════════════════════════════════════════════════════
 
 subgraphBlock
     : KW_SUBGRAPH subgraphHeader? NEWLINE+
           statement*
-      KW_END NEWLINE+
+      KW_END NEWLINE*
     ;
 
 subgraphHeader
-    : ID QUOTED_STRING?
+    : ID subgraphTitle?
     | QUOTED_STRING
+    ;
+
+// Title forms:
+//   "Quoted Title"        — double-quoted string
+//   [Bracket Title]       — bracket-delimited (most common in practice)
+subgraphTitle
+    : QUOTED_STRING
+    | LBRACK nodeLabel RBRACK
     ;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -327,7 +345,7 @@ nodeStyleStmt
 // CSS is free-form text to the end of the line / semicolon.
 // The visitor concatenates the CSS_TEXT tokens.
 cssString
-    : CSS_TEXT+
+    : CSS_VALUE_START+
     ;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -365,199 +383,4 @@ clickTarget
 
 edgePropStmt
     : ID attrBlock
-    ;
-
-
-// ═══════════════════════════════════════════════════════════════════════════
-// LEXER RULES
-// ═══════════════════════════════════════════════════════════════════════════
-//
-// Token ordering rules (ANTLR4):
-//   1. Keywords are declared before ID — keywords win for exact matches.
-//   2. Edge tokens are declared before single-character punctuation so that
-//      "-->" is one EDGE_SOLID token, not three separate tokens.
-//   3. Longer patterns beat shorter patterns within the same declaration order
-//      (ANTLR4 always takes the longest match).
-//   4. Equal-length tie-breaks are resolved by declaration order (first wins).
-
-// ── Keywords ──────────────────────────────────────────────────────────────
-
-KW_FLOWCHART  : 'flowchart' ;
-KW_GRAPH      : 'graph' ;
-KW_SUBGRAPH   : 'subgraph' ;
-KW_END        : 'end' ;
-KW_DIRECTION  : 'direction' ;
-KW_CLASSDEF   : 'classDef' ;
-KW_CLASS      : 'class' ;
-KW_LINKSTYLE  : 'linkStyle' ;
-KW_STYLE      : 'style' ;
-KW_CLICK      : 'click' ;
-KW_CALL       : 'call' ;
-KW_HREF       : 'href' ;
-KW_DEFAULT    : 'default' ;
-
-// ── Direction tokens ──────────────────────────────────────────────────────
-
-DIR_TB : 'TB' ;
-DIR_TD : 'TD' ;
-DIR_BT : 'BT' ;
-DIR_LR : 'LR' ;
-DIR_RL : 'RL' ;
-
-// ── Edge operator tokens ──────────────────────────────────────────────────
-//
-// Design rationale
-// ────────────────
-// Mermaid's edge syntax has four line-style families (solid, dotted, thick,
-// invisible) each with optional left/right terminators (arrow, circle, cross)
-// and an optional embedded text label.  The number of repeated characters
-// sets the minimum rank span.  All of this is most cleanly handled at the
-// lexer level — one token per edge string — rather than at the parser level.
-//
-// Fragment helpers
-// ────────────────
-
-// Shaft fragments — the repeating core of each line style
-fragment F_DASH   : '-' '-'+ ;                 // --  ---  ---- ...
-fragment F_DOT    : '-' '.'+ '-'? ;            // -.-  -..-  -...- ...
-fragment F_EQ     : '=' '='+ ;                 // ==  ===  ==== ...
-fragment F_TILDE  : '~' '~'+ ;                 // ~~  ~~~  ...
-
-// Terminal fragments — head characters at either end of the shaft
-fragment F_LARROW : '<' ;
-fragment F_RARROW : '>' ;
-fragment F_CIRC   : 'o' ;
-fragment F_CROSS  : 'x' ;
-
-fragment F_LEFT  : F_LARROW | F_CIRC | F_CROSS ;
-fragment F_RIGHT : F_RARROW | F_CIRC | F_CROSS ;
-
-// Embedded label fragment — text between dashes: --label-->
-// Matches any sequence of non-dash, non-newline characters surrounded by dashes.
-// The leading '-' is part of the shaft; label chars then the shaft continues.
-fragment F_EMBEDDED_LABEL : '-' ~[\-\r\n|>ox]+ ;
-
-// ── EDGE_SOLID ─────────────────────────────────────────────────────────────
-// Matches:  --   -->  <--  <-->  o--o  x--x  o-->  x-->  etc.
-// Also matches embedded-label forms: --label-->
-//
-// Pattern: optional-left-head  shaft  optional-embedded-label  optional-right-head
-// The embedded label is part of the shaft segment so it is expressed inside.
-
-EDGE_SOLID
-    : F_LEFT? F_DASH F_EMBEDDED_LABEL? F_RIGHT?
-    ;
-
-// ── EDGE_DOTTED ────────────────────────────────────────────────────────────
-// Matches:  -.-   -.->   <-.-  <-.->  o-.-o  etc.
-
-EDGE_DOTTED
-    : F_LEFT? F_DOT F_RIGHT?
-    ;
-
-// ── EDGE_THICK ─────────────────────────────────────────────────────────────
-// Matches:  ==   ==>  <==  <==>  etc.
-
-EDGE_THICK
-    : F_LEFT? F_EQ F_RIGHT?
-    ;
-
-// ── EDGE_INVIS ─────────────────────────────────────────────────────────────
-// Invisible links have no head characters.
-
-EDGE_INVIS
-    : F_TILDE
-    ;
-
-// ── Pipe-delimited edge label ─────────────────────────────────────────────
-// |text|  — appears after the edge operator, before the target node.
-// Captured as one token; the visitor strips the surrounding pipes.
-
-PIPE_LABEL
-    : '|' ~['|' '\r' '\n']+ '|'
-    ;
-
-// ── Quoted and markdown strings ───────────────────────────────────────────
-
-QUOTED_STRING
-    : '"' ( '\\' '"' | ~["\r\n] )* '"'
-    ;
-
-// "`markdown`" — double-quote wrapping around backtick-fenced content
-MARKDOWN_STRING
-    : '"' '`' ~[`]* '`' '"'
-    ;
-
-// ── Triple colon — class shorthand operator ───────────────────────────────
-// Must be declared before COLON so that ::: is not lexed as three COLONs.
-
-TRIPLE_COLON : ':::' ;
-
-// ── AT sign ───────────────────────────────────────────────────────────────
-// Used for @{} attribute blocks on both nodes and edge IDs.
-
-AT : '@' ;
-
-// ── Punctuation ───────────────────────────────────────────────────────────
-
-LPAREN  : '(' ;
-RPAREN  : ')' ;
-LBRACK  : '[' ;
-RBRACK  : ']' ;
-LBRACE  : '{' ;
-RBRACE  : '}' ;
-RANGLE  : '>' ;    // asymmetric shape:  >text]
-FSLASH  : '/' ;    // parallelogram:     [/text/]
-BSLASH  : '\\' ;   // parallelogram-alt: [\text\]
-COLON   : ':' ;
-SEMI    : ';' ;
-COMMA   : ',' ;
-AMP     : '&' ;    // multi-target node separator
-
-// ── Integer ───────────────────────────────────────────────────────────────
-
-INT : [0-9]+ ;
-
-// ── Identifier ────────────────────────────────────────────────────────────
-// Node ids, class names, attribute keys, callback names, shape names.
-// Declared AFTER all keyword tokens so keywords win for exact matches.
-// Allows hyphens and dots (common in real-world node ids: "my-node", "api.v2").
-
-ID
-    : [a-zA-Z_] [a-zA-Z0-9_\-.]*
-    ;
-
-// ── CSS property string ───────────────────────────────────────────────────
-// Free-form CSS content inside classDef / linkStyle / style statements.
-// Captured as raw text up to the end of line or semicolon.
-// WS -> skip fires first, so CSS_TEXT will not start with whitespace.
-
-CSS_TEXT
-    : ~[\r\n;%%]+
-    ;
-
-// ── Unquoted label text (fallback for plain node labels) ─────────────────
-// Matches inside classic shape brackets when neither QUOTED_STRING nor
-// MARKDOWN_STRING applied.  Stops at closing bracket characters and newlines.
-
-LABEL_TEXT
-    : ~[\[\](){}<>/\\\r\n@|"`:;,&%%]+
-    ;
-
-// ── Comment ───────────────────────────────────────────────────────────────
-
-COMMENT
-    : '%%' ~[\r\n]*
-    ;
-
-// ── Newline ───────────────────────────────────────────────────────────────
-
-NEWLINE
-    : [\r\n]+
-    ;
-
-// ── Whitespace ────────────────────────────────────────────────────────────
-
-WS
-    : [ \t]+ -> skip
     ;

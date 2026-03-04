@@ -113,13 +113,7 @@ RPAREN : ')' ;
 LBRACE : '{' ;
 RBRACE : '}' ;
 
-// ---- Color literals ---------------------------------------------------------
 
-RGB_COLOR  : 'rgb('  INT ',' SPACES? INT ',' SPACES? INT ')' ;
-RGBA_COLOR : 'rgba(' INT ',' SPACES? INT ',' SPACES? INT ',' SPACES? FLOAT ')' ;
-// COLOR_NAME is declared after all keyword tokens so that keywords ('end',
-// 'alt', 'par', etc.) are not shadowed.
-COLOR_NAME : [a-zA-Z]+ ;
 
 // ---- Numbers ----------------------------------------------------------------
 
@@ -135,6 +129,14 @@ QUOTED_STRING : '"' ( ~["\\\r\n] | '\\"' )* '"' ;
 // (maximal munch), leaving '>>+account' with no matching ARROW rule.
 // Participant names with hyphens must be written as QUOTED_STRING.
 ID : [a-zA-Z_] [a-zA-Z0-9_]* ;
+
+// ---- Color literals ---------------------------------------------------------
+
+RGB_COLOR  : 'rgb('  INT ',' SPACES? INT ',' SPACES? INT ')' ;
+RGBA_COLOR : 'rgba(' INT ',' SPACES? INT ',' SPACES? INT ',' SPACES? FLOAT ')' ;
+// COLOR_NAME is declared after all keyword tokens so that keywords ('end',
+// 'alt', 'par', etc.) are not shadowed.
+COLOR_NAME : [a-zA-Z]+ ;
 
 // ---- Comments ---------------------------------------------------------------
 

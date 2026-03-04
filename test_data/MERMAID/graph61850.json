@@ -1,0 +1,3206 @@
+{
+  "version": "draft-1",
+  "image": {
+    "width": 762,
+    "height": 1428
+  },
+  "annotations": [
+    {
+      "id": "m000001",
+      "kind": "rect",
+      "geom": {
+        "x": 149.63,
+        "y": 33.0,
+        "w": 260.0,
+        "h": 78.0
+      },
+      "meta": {
+        "label": "Corporate WAN / Office Network",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "Corporate",
+            "shape": "rectangle"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000002",
+      "kind": "rect",
+      "geom": {
+        "x": 459.63,
+        "y": 33.0,
+        "w": 260.0,
+        "h": 78.0
+      },
+      "meta": {
+        "label": "Remote Control Center / Cloud",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "Remote",
+            "shape": "rectangle"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000003",
+      "kind": "rect",
+      "geom": {
+        "x": 343.52,
+        "y": 211.0,
+        "w": 182.22,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "External Firewall",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "ExtFW",
+            "shape": "rectangle"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000004",
+      "kind": "rect",
+      "geom": {
+        "x": 304.63,
+        "y": 315.0,
+        "w": 260.0,
+        "h": 78.0
+      },
+      "meta": {
+        "label": "Data Historian / Jump Host / Patch Server",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "Proxy",
+            "shape": "rectangle"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000005",
+      "kind": "rect",
+      "geom": {
+        "x": 345.22,
+        "y": 443.0,
+        "w": 178.83,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "Internal Firewall",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "IntFW",
+            "shape": "rectangle"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000006",
+      "kind": "rect",
+      "geom": {
+        "x": 206.59,
+        "y": 597.0,
+        "w": 192.81,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "Local HMI / SCADA",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "HMI",
+            "shape": "rectangle"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000007",
+      "kind": "rect",
+      "geom": {
+        "x": 449.41,
+        "y": 597.0,
+        "w": 233.72,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "Engineering Workstation",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "Eng",
+            "shape": "rectangle"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000008",
+      "kind": "rect",
+      "geom": {
+        "x": 101.83,
+        "y": 751.0,
+        "w": 176.05,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "Station Switch A",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "SWA",
+            "shape": "rectangle"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000009",
+      "kind": "rect",
+      "geom": {
+        "x": 327.88,
+        "y": 751.0,
+        "w": 176.55,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "Station Switch B",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "SWB",
+            "shape": "rectangle"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000010",
+      "kind": "rect",
+      "geom": {
+        "x": 98.92,
+        "y": 905.0,
+        "w": 161.86,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "Protection IED",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "IED_Prot",
+            "shape": "rectangle"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000011",
+      "kind": "rect",
+      "geom": {
+        "x": 355.94,
+        "y": 905.0,
+        "w": 140.42,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "Control IED",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "IED_Ctrl",
+            "shape": "rectangle"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000012",
+      "kind": "rect",
+      "geom": {
+        "x": 80.88,
+        "y": 1059.0,
+        "w": 177.95,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "Process Switch A",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "PBA",
+            "shape": "rectangle"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000013",
+      "kind": "rect",
+      "geom": {
+        "x": 346.92,
+        "y": 1059.0,
+        "w": 178.45,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "Process Switch B",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "PBB",
+            "shape": "rectangle"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000014",
+      "kind": "rect",
+      "geom": {
+        "x": 56.15,
+        "y": 1213.0,
+        "w": 207.41,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "Merging Unit / SAMU",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "MU",
+            "shape": "rectangle"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000015",
+      "kind": "rect",
+      "geom": {
+        "x": 346.12,
+        "y": 1213.0,
+        "w": 200.05,
+        "h": 54.0
+      },
+      "meta": {
+        "label": "Intelligent Actuator",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "IntAct",
+            "shape": "rectangle"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000016",
+      "kind": "rect",
+      "geom": {
+        "x": 173.0,
+        "y": 1317.0,
+        "w": 260.0,
+        "h": 78.0
+      },
+      "meta": {
+        "label": "Breakers / Transformers / Sensors",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "Primary",
+            "shape": "rectangle"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      }
+    },
+    {
+      "id": "m000017",
+      "kind": "curve",
+      "geom": {
+        "x": 279.63,
+        "y": 115.0,
+        "w": 70.73,
+        "h": 94.73,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.0,
+            "y": 0.0369
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.2287,
+            "c1x": 0.0,
+            "c1y": 0.0739,
+            "c2x": 0.0,
+            "c2y": 0.1478
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.4856,
+            "c1x": 0.0,
+            "c1y": 0.3097,
+            "c2x": 0.0,
+            "c2y": 0.3976
+          },
+          {
+            "cmd": "C",
+            "x": 0.1667,
+            "y": 0.7473,
+            "c1x": 0.0,
+            "c1y": 0.5736,
+            "c2x": 0.0,
+            "c2y": 0.6615
+          },
+          {
+            "cmd": "C",
+            "x": 0.8333,
+            "y": 0.9582,
+            "c1x": 0.3333,
+            "c1y": 0.833,
+            "c2x": 0.6667,
+            "c2y": 0.9165
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "Corporate",
+            "to": "ExtFW",
+            "line_style": "solid",
+            "left_head": "arrow",
+            "right_head": "arrow"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "both"
+      }
+    },
+    {
+      "id": "m000018",
+      "kind": "curve",
+      "geom": {
+        "x": 518.91,
+        "y": 115.0,
+        "w": 70.73,
+        "h": 94.73,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 0.0369
+          },
+          {
+            "cmd": "C",
+            "x": 1.0,
+            "y": 0.2287,
+            "c1x": 1.0,
+            "c1y": 0.0739,
+            "c2x": 1.0,
+            "c2y": 0.1478
+          },
+          {
+            "cmd": "C",
+            "x": 1.0,
+            "y": 0.4856,
+            "c1x": 1.0,
+            "c1y": 0.3097,
+            "c2x": 1.0,
+            "c2y": 0.3976
+          },
+          {
+            "cmd": "C",
+            "x": 0.8333,
+            "y": 0.7473,
+            "c1x": 1.0,
+            "c1y": 0.5736,
+            "c2x": 1.0,
+            "c2y": 0.6615
+          },
+          {
+            "cmd": "C",
+            "x": 0.1667,
+            "y": 0.9582,
+            "c1x": 0.6667,
+            "c1y": 0.833,
+            "c2x": 0.3333,
+            "c2y": 0.9165
+          },
+          {
+            "cmd": "L",
+            "x": 0.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "Remote",
+            "to": "ExtFW",
+            "line_style": "solid",
+            "left_head": "arrow",
+            "right_head": "arrow"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "both"
+      }
+    },
+    {
+      "id": "m000019",
+      "kind": "line",
+      "geom": {
+        "x1": 434.63,
+        "y1": 269.0,
+        "x2": 434.63,
+        "y2": 311.0
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "ExtFW",
+            "to": "Proxy",
+            "line_style": "solid",
+            "left_head": "arrow",
+            "right_head": "arrow"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "both"
+      }
+    },
+    {
+      "id": "m000020",
+      "kind": "line",
+      "geom": {
+        "x1": 434.63,
+        "y1": 397.0,
+        "x2": 434.63,
+        "y2": 439.0
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "Proxy",
+            "to": "IntFW",
+            "line_style": "solid",
+            "left_head": "arrow",
+            "right_head": "arrow"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "both"
+      }
+    },
+    {
+      "id": "m000021",
+      "kind": "curve",
+      "geom": {
+        "x": 303.0,
+        "y": 498.47,
+        "w": 59.56,
+        "h": 94.53,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.8333,
+            "y": 0.0415
+          },
+          {
+            "cmd": "C",
+            "x": 0.1667,
+            "y": 0.2515,
+            "c1x": 0.6667,
+            "c1y": 0.083,
+            "c2x": 0.3333,
+            "c2y": 0.1659
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.5134,
+            "c1x": 0.0,
+            "c1y": 0.3371,
+            "c2x": 0.0,
+            "c2y": 0.4252
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.7708,
+            "c1x": 0.0,
+            "c1y": 0.6015,
+            "c2x": 0.0,
+            "c2y": 0.6897
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.963,
+            "c1x": 0.0,
+            "c1y": 0.8519,
+            "c2x": 0.0,
+            "c2y": 0.9259
+          },
+          {
+            "cmd": "L",
+            "x": 0.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "IntFW",
+            "to": "HMI",
+            "line_style": "solid",
+            "left_head": "arrow",
+            "right_head": "arrow"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "both"
+      }
+    },
+    {
+      "id": "m000022",
+      "kind": "curve",
+      "geom": {
+        "x": 506.7,
+        "y": 498.47,
+        "w": 59.56,
+        "h": 94.53,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.1667,
+            "y": 0.0415
+          },
+          {
+            "cmd": "C",
+            "x": 0.8333,
+            "y": 0.2515,
+            "c1x": 0.3333,
+            "c1y": 0.083,
+            "c2x": 0.6667,
+            "c2y": 0.1659
+          },
+          {
+            "cmd": "C",
+            "x": 1.0,
+            "y": 0.5134,
+            "c1x": 1.0,
+            "c1y": 0.3371,
+            "c2x": 1.0,
+            "c2y": 0.4252
+          },
+          {
+            "cmd": "C",
+            "x": 1.0,
+            "y": 0.7708,
+            "c1x": 1.0,
+            "c1y": 0.6015,
+            "c2x": 1.0,
+            "c2y": 0.6897
+          },
+          {
+            "cmd": "C",
+            "x": 1.0,
+            "y": 0.963,
+            "c1x": 1.0,
+            "c1y": 0.8519,
+            "c2x": 1.0,
+            "c2y": 0.9259
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "IntFW",
+            "to": "Eng",
+            "line_style": "solid",
+            "left_head": "arrow",
+            "right_head": "arrow"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "both"
+      }
+    },
+    {
+      "id": "m000023",
+      "kind": "curve",
+      "geom": {
+        "x": 189.85,
+        "y": 651.0,
+        "w": 54.4,
+        "h": 100.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.8333,
+            "y": 0.0417
+          },
+          {
+            "cmd": "C",
+            "x": 0.1667,
+            "y": 0.25,
+            "c1x": 0.6667,
+            "c1y": 0.0833,
+            "c2x": 0.3333,
+            "c2y": 0.1667
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.5,
+            "c1x": 0.0,
+            "c1y": 0.3333,
+            "c2x": 0.0,
+            "c2y": 0.4167
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.75,
+            "c1x": 0.0,
+            "c1y": 0.5833,
+            "c2x": 0.0,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.9583,
+            "c1x": 0.0,
+            "c1y": 0.8333,
+            "c2x": 0.0,
+            "c2y": 0.9167
+          },
+          {
+            "cmd": "L",
+            "x": 0.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "HMI",
+            "to": "HMI",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "none"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "none"
+      }
+    },
+    {
+      "id": "m000024",
+      "kind": "curve",
+      "geom": {
+        "x": 361.75,
+        "y": 651.0,
+        "w": 54.4,
+        "h": 100.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.1667,
+            "y": 0.0417
+          },
+          {
+            "cmd": "C",
+            "x": 0.8333,
+            "y": 0.25,
+            "c1x": 0.3333,
+            "c1y": 0.0833,
+            "c2x": 0.6667,
+            "c2y": 0.1667
+          },
+          {
+            "cmd": "C",
+            "x": 1.0,
+            "y": 0.5,
+            "c1x": 1.0,
+            "c1y": 0.3333,
+            "c2x": 1.0,
+            "c2y": 0.4167
+          },
+          {
+            "cmd": "C",
+            "x": 1.0,
+            "y": 0.75,
+            "c1x": 1.0,
+            "c1y": 0.5833,
+            "c2x": 1.0,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "C",
+            "x": 1.0,
+            "y": 0.9583,
+            "c1x": 1.0,
+            "c1y": 0.8333,
+            "c2x": 1.0,
+            "c2y": 0.9167
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "SWA",
+            "to": "t",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "circle"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "none"
+      }
+    },
+    {
+      "id": "m000025",
+      "kind": "curve",
+      "geom": {
+        "x": 148.34,
+        "y": 805.0,
+        "w": 19.96,
+        "h": 100.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.8333,
+            "y": 0.0417
+          },
+          {
+            "cmd": "C",
+            "x": 0.1667,
+            "y": 0.25,
+            "c1x": 0.6667,
+            "c1y": 0.0833,
+            "c2x": 0.3333,
+            "c2y": 0.1667
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.5,
+            "c1x": 0.0,
+            "c1y": 0.3333,
+            "c2x": 0.0,
+            "c2y": 0.4167
+          },
+          {
+            "cmd": "C",
+            "x": 0.1265,
+            "y": 0.75,
+            "c1x": 0.0,
+            "c1y": 0.5833,
+            "c2x": 0.0,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "C",
+            "x": 0.6326,
+            "y": 0.9583,
+            "c1x": 0.253,
+            "c1y": 0.8333,
+            "c2x": 0.5061,
+            "c2y": 0.9167
+          },
+          {
+            "cmd": "L",
+            "x": 0.7591,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "SWB",
+            "to": "t",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "circle"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "none"
+      }
+    },
+    {
+      "id": "m000026",
+      "kind": "curve",
+      "geom": {
+        "x": 238.6,
+        "y": 805.0,
+        "w": 113.6,
+        "h": 100.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.9131,
+            "y": 0.0417
+          },
+          {
+            "cmd": "C",
+            "x": 0.5657,
+            "y": 0.25,
+            "c1x": 0.8263,
+            "c1y": 0.0833,
+            "c2x": 0.6526,
+            "c2y": 0.1667
+          },
+          {
+            "cmd": "C",
+            "x": 0.4788,
+            "y": 0.5,
+            "c1x": 0.4788,
+            "c1y": 0.3333,
+            "c2x": 0.4788,
+            "c2y": 0.4167
+          },
+          {
+            "cmd": "C",
+            "x": 0.399,
+            "y": 0.75,
+            "c1x": 0.4788,
+            "c1y": 0.5833,
+            "c2x": 0.4788,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "C",
+            "x": 0.0798,
+            "y": 0.9583,
+            "c1x": 0.3192,
+            "c1y": 0.8333,
+            "c2x": 0.1596,
+            "c2y": 0.9167
+          },
+          {
+            "cmd": "L",
+            "x": 0.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "SWA",
+            "to": "SWB",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "none"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "none"
+      }
+    },
+    {
+      "id": "m000027",
+      "kind": "curve",
+      "geom": {
+        "x": 253.79,
+        "y": 805.0,
+        "w": 113.6,
+        "h": 100.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.0869,
+            "y": 0.0417
+          },
+          {
+            "cmd": "C",
+            "x": 0.4343,
+            "y": 0.25,
+            "c1x": 0.1737,
+            "c1y": 0.0833,
+            "c2x": 0.3474,
+            "c2y": 0.1667
+          },
+          {
+            "cmd": "C",
+            "x": 0.5212,
+            "y": 0.5,
+            "c1x": 0.5212,
+            "c1y": 0.3333,
+            "c2x": 0.5212,
+            "c2y": 0.4167
+          },
+          {
+            "cmd": "C",
+            "x": 0.601,
+            "y": 0.75,
+            "c1x": 0.5212,
+            "c1y": 0.5833,
+            "c2x": 0.5212,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "C",
+            "x": 0.9202,
+            "y": 0.9583,
+            "c1x": 0.6808,
+            "c1y": 0.8333,
+            "c2x": 0.8404,
+            "c2y": 0.9167
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "IED_Prot",
+            "to": "IED_Prot",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "none"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "none"
+      }
+    },
+    {
+      "id": "m000028",
+      "kind": "curve",
+      "geom": {
+        "x": 442.96,
+        "y": 805.0,
+        "w": 24.83,
+        "h": 100.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.1666,
+            "y": 0.0417
+          },
+          {
+            "cmd": "C",
+            "x": 0.8334,
+            "y": 0.25,
+            "c1x": 0.3333,
+            "c1y": 0.0833,
+            "c2x": 0.6667,
+            "c2y": 0.1667
+          },
+          {
+            "cmd": "C",
+            "x": 1.0,
+            "y": 0.5,
+            "c1x": 1.0,
+            "c1y": 0.3333,
+            "c2x": 1.0,
+            "c2y": 0.4167
+          },
+          {
+            "cmd": "C",
+            "x": 0.8656,
+            "y": 0.75,
+            "c1x": 1.0,
+            "c1y": 0.5833,
+            "c2x": 1.0,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "C",
+            "x": 0.3281,
+            "y": 0.9583,
+            "c1x": 0.7312,
+            "c1y": 0.8333,
+            "c2x": 0.4624,
+            "c2y": 0.9167
+          },
+          {
+            "cmd": "L",
+            "x": 0.1937,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "IED_Prot",
+            "to": "IED_Ctrl",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "none"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "none"
+      }
+    },
+    {
+      "id": "m000029",
+      "kind": "curve",
+      "geom": {
+        "x": 141.89,
+        "y": 959.0,
+        "w": 18.25,
+        "h": 100.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.8333,
+            "y": 0.0417
+          },
+          {
+            "cmd": "C",
+            "x": 0.1667,
+            "y": 0.25,
+            "c1x": 0.6667,
+            "c1y": 0.0833,
+            "c2x": 0.3333,
+            "c2y": 0.1667
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.5,
+            "c1x": 0.0,
+            "c1y": 0.3333,
+            "c2x": 0.0,
+            "c2y": 0.4167
+          },
+          {
+            "cmd": "C",
+            "x": 0.1227,
+            "y": 0.75,
+            "c1x": 0.0,
+            "c1y": 0.5833,
+            "c2x": 0.0,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "C",
+            "x": 0.6139,
+            "y": 0.9583,
+            "c1x": 0.2455,
+            "c1y": 0.8333,
+            "c2x": 0.4911,
+            "c2y": 0.9167
+          },
+          {
+            "cmd": "L",
+            "x": 0.7366,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "IED_Ctrl",
+            "to": "IED_Ctrl",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "none"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "none"
+      }
+    },
+    {
+      "id": "m000030",
+      "kind": "curve",
+      "geom": {
+        "x": 248.99,
+        "y": 959.0,
+        "w": 123.22,
+        "h": 100.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.0866,
+            "y": 0.0417
+          },
+          {
+            "cmd": "C",
+            "x": 0.4329,
+            "y": 0.25,
+            "c1x": 0.1732,
+            "c1y": 0.0833,
+            "c2x": 0.3463,
+            "c2y": 0.1667
+          },
+          {
+            "cmd": "C",
+            "x": 0.5195,
+            "y": 0.5,
+            "c1x": 0.5195,
+            "c1y": 0.3333,
+            "c2x": 0.5195,
+            "c2y": 0.4167
+          },
+          {
+            "cmd": "C",
+            "x": 0.5996,
+            "y": 0.75,
+            "c1x": 0.5195,
+            "c1y": 0.5833,
+            "c2x": 0.5195,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "C",
+            "x": 0.9199,
+            "y": 0.9583,
+            "c1x": 0.6797,
+            "c1y": 0.8333,
+            "c2x": 0.8398,
+            "c2y": 0.9167
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "PBA",
+            "to": "PBB",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "none"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "none"
+      }
+    },
+    {
+      "id": "m000031",
+      "kind": "curve",
+      "geom": {
+        "x": 233.79,
+        "y": 959.0,
+        "w": 123.22,
+        "h": 100.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.9134,
+            "y": 0.0417
+          },
+          {
+            "cmd": "C",
+            "x": 0.5671,
+            "y": 0.25,
+            "c1x": 0.8268,
+            "c1y": 0.0833,
+            "c2x": 0.6537,
+            "c2y": 0.1667
+          },
+          {
+            "cmd": "C",
+            "x": 0.4805,
+            "y": 0.5,
+            "c1x": 0.4805,
+            "c1y": 0.3333,
+            "c2x": 0.4805,
+            "c2y": 0.4167
+          },
+          {
+            "cmd": "C",
+            "x": 0.4004,
+            "y": 0.75,
+            "c1x": 0.4805,
+            "c1y": 0.5833,
+            "c2x": 0.4805,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "C",
+            "x": 0.0801,
+            "y": 0.9583,
+            "c1x": 0.3203,
+            "c1y": 0.8333,
+            "c2x": 0.1602,
+            "c2y": 0.9167
+          },
+          {
+            "cmd": "L",
+            "x": 0.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "PBB",
+            "to": "PBA",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "none"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "none"
+      }
+    },
+    {
+      "id": "m000032",
+      "kind": "curve",
+      "geom": {
+        "x": 448.27,
+        "y": 959.0,
+        "w": 20.48,
+        "h": 100.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.1666,
+            "y": 0.0417
+          },
+          {
+            "cmd": "C",
+            "x": 0.8333,
+            "y": 0.25,
+            "c1x": 0.3333,
+            "c1y": 0.0833,
+            "c2x": 0.6667,
+            "c2y": 0.1667
+          },
+          {
+            "cmd": "C",
+            "x": 1.0,
+            "y": 0.5,
+            "c1x": 1.0,
+            "c1y": 0.3333,
+            "c2x": 1.0,
+            "c2y": 0.4167
+          },
+          {
+            "cmd": "C",
+            "x": 0.8724,
+            "y": 0.75,
+            "c1x": 1.0,
+            "c1y": 0.5833,
+            "c2x": 1.0,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "C",
+            "x": 0.3623,
+            "y": 0.9583,
+            "c1x": 0.7449,
+            "c1y": 0.8333,
+            "c2x": 0.4898,
+            "c2y": 0.9167
+          },
+          {
+            "cmd": "L",
+            "x": 0.2347,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "PBA",
+            "to": "PBB",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "none"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "none"
+      }
+    },
+    {
+      "id": "m000033",
+      "kind": "curve",
+      "geom": {
+        "x": 127.86,
+        "y": 1113.0,
+        "w": 20.19,
+        "h": 100.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.8334,
+            "y": 0.0417
+          },
+          {
+            "cmd": "C",
+            "x": 0.1667,
+            "y": 0.25,
+            "c1x": 0.6667,
+            "c1y": 0.0833,
+            "c2x": 0.3333,
+            "c2y": 0.1667
+          },
+          {
+            "cmd": "C",
+            "x": 0.0,
+            "y": 0.5,
+            "c1x": 0.0,
+            "c1y": 0.3333,
+            "c2x": 0.0,
+            "c2y": 0.4167
+          },
+          {
+            "cmd": "C",
+            "x": 0.127,
+            "y": 0.75,
+            "c1x": 0.0,
+            "c1y": 0.5833,
+            "c2x": 0.0,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "C",
+            "x": 0.6349,
+            "y": 0.9583,
+            "c1x": 0.254,
+            "c1y": 0.8333,
+            "c2x": 0.5079,
+            "c2y": 0.9167
+          },
+          {
+            "cmd": "L",
+            "x": 0.7618,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "MU",
+            "to": "IntAct",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "none"
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "none"
+      }
+    },
+    {
+      "id": "m000034",
+      "kind": "curve",
+      "geom": {
+        "x": 228.99,
+        "y": 1113.0,
+        "w": 132.84,
+        "h": 100.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.9137,
+            "y": 0.0417
+          },
+          {
+            "cmd": "C",
+            "x": 0.5683,
+            "y": 0.25,
+            "c1x": 0.8273,
+            "c1y": 0.0833,
+            "c2x": 0.6546,
+            "c2y": 0.1667
+          },
+          {
+            "cmd": "C",
+            "x": 0.4819,
+            "y": 0.5,
+            "c1x": 0.4819,
+            "c1y": 0.3333,
+            "c2x": 0.4819,
+            "c2y": 0.4167
+          },
+          {
+            "cmd": "C",
+            "x": 0.4016,
+            "y": 0.75,
+            "c1x": 0.4819,
+            "c1y": 0.5833,
+            "c2x": 0.4819,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "C",
+            "x": 0.0803,
+            "y": 0.9583,
+            "c1x": 0.3213,
+            "c1y": 0.8333,
+            "c2x": 0.1606,
+            "c2y": 0.9167
+          },
+          {
+            "cmd": "L",
+            "x": 0.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "none"
+      }
+    },
+    {
+      "id": "m000035",
+      "kind": "curve",
+      "geom": {
+        "x": 244.18,
+        "y": 1113.0,
+        "w": 132.84,
+        "h": 100.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.0863,
+            "y": 0.0417
+          },
+          {
+            "cmd": "C",
+            "x": 0.4317,
+            "y": 0.25,
+            "c1x": 0.1727,
+            "c1y": 0.0833,
+            "c2x": 0.3454,
+            "c2y": 0.1667
+          },
+          {
+            "cmd": "C",
+            "x": 0.5181,
+            "y": 0.5,
+            "c1x": 0.5181,
+            "c1y": 0.3333,
+            "c2x": 0.5181,
+            "c2y": 0.4167
+          },
+          {
+            "cmd": "C",
+            "x": 0.5984,
+            "y": 0.75,
+            "c1x": 0.5181,
+            "c1y": 0.5833,
+            "c2x": 0.5181,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "C",
+            "x": 0.9197,
+            "y": 0.9583,
+            "c1x": 0.6787,
+            "c1y": 0.8333,
+            "c2x": 0.8394,
+            "c2y": 0.9167
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "none"
+      }
+    },
+    {
+      "id": "m000036",
+      "kind": "curve",
+      "geom": {
+        "x": 463.21,
+        "y": 1113.0,
+        "w": 25.06,
+        "h": 100.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.1667,
+            "y": 0.0417
+          },
+          {
+            "cmd": "C",
+            "x": 0.8333,
+            "y": 0.25,
+            "c1x": 0.3333,
+            "c1y": 0.0833,
+            "c2x": 0.6667,
+            "c2y": 0.1667
+          },
+          {
+            "cmd": "C",
+            "x": 1.0,
+            "y": 0.5,
+            "c1x": 1.0,
+            "c1y": 0.3333,
+            "c2x": 1.0,
+            "c2y": 0.4167
+          },
+          {
+            "cmd": "C",
+            "x": 0.8653,
+            "y": 0.75,
+            "c1x": 1.0,
+            "c1y": 0.5833,
+            "c2x": 1.0,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "C",
+            "x": 0.3266,
+            "y": 0.9583,
+            "c1x": 0.7306,
+            "c1y": 0.8333,
+            "c2x": 0.4613,
+            "c2y": 0.9167
+          },
+          {
+            "cmd": "L",
+            "x": 0.1919,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "none"
+      }
+    },
+    {
+      "id": "m000037",
+      "kind": "curve",
+      "geom": {
+        "x": 159.85,
+        "y": 1267.0,
+        "w": 55.92,
+        "h": 50.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.0,
+            "y": 0.0833
+          },
+          {
+            "cmd": "C",
+            "x": 0.1667,
+            "y": 0.5,
+            "c1x": 0.0,
+            "c1y": 0.1667,
+            "c2x": 0.0,
+            "c2y": 0.3333
+          },
+          {
+            "cmd": "C",
+            "x": 0.8333,
+            "y": 0.9167,
+            "c1x": 0.3333,
+            "c1y": 0.6667,
+            "c2x": 0.6667,
+            "c2y": 0.8333
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "none"
+      }
+    },
+    {
+      "id": "m000038",
+      "kind": "curve",
+      "geom": {
+        "x": 390.23,
+        "y": 1267.0,
+        "w": 55.92,
+        "h": 50.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 0.0833
+          },
+          {
+            "cmd": "C",
+            "x": 0.8333,
+            "y": 0.5,
+            "c1x": 1.0,
+            "c1y": 0.1667,
+            "c2x": 1.0,
+            "c2y": 0.3333
+          },
+          {
+            "cmd": "C",
+            "x": 0.1667,
+            "y": 0.9167,
+            "c1x": 0.6667,
+            "c1y": 0.6667,
+            "c2x": 0.3333,
+            "c2y": 0.8333
+          },
+          {
+            "cmd": "L",
+            "x": 0.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "meta": {
+        "label": "",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 2,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "none"
+      }
+    },
+    {
+      "id": "m000039",
+      "kind": "rect",
+      "geom": {
+        "x": 8.0,
+        "y": 1188.0,
+        "w": 588.16,
+        "h": 232.0
+      },
+      "meta": {
+        "label": "Level 0 : Physical Process",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "subgraph",
+            "subgraph_id": "L0",
+            "children": [
+              "MU",
+              "IntAct",
+              "Primary"
+            ]
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#212121",
+          "width": 1.5,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "#f5f5f5"
+        },
+        "text": {
+          "color": "#333333"
+        }
+      }
+    },
+    {
+      "id": "m000040",
+      "kind": "rect",
+      "geom": {
+        "x": 45.88,
+        "y": 1034.0,
+        "w": 514.5,
+        "h": 104.0
+      },
+      "meta": {
+        "label": "Level 1 : Process Bus - SV / GOOSE",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "subgraph",
+            "subgraph_id": "L1_PB",
+            "children": [
+              "PBA",
+              "PBB"
+            ]
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#01579b",
+          "width": 1.5,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "#e1f5fe"
+        },
+        "text": {
+          "color": "#333333"
+        }
+      }
+    },
+    {
+      "id": "m000041",
+      "kind": "rect",
+      "geom": {
+        "x": 63.92,
+        "y": 880.0,
+        "w": 467.44,
+        "h": 104.0
+      },
+      "meta": {
+        "label": "Level 1 : IEDs & Protection",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "subgraph",
+            "subgraph_id": "L1",
+            "children": [
+              "IED_Prot",
+              "IED_Ctrl",
+              "t"
+            ]
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#AAAA33",
+          "width": 1.5,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "#FFFFDE"
+        },
+        "text": {
+          "color": "#333333"
+        }
+      }
+    },
+    {
+      "id": "m000042",
+      "kind": "rect",
+      "geom": {
+        "x": 66.83,
+        "y": 726.0,
+        "w": 472.59,
+        "h": 104.0
+      },
+      "meta": {
+        "label": "Level 2 : Station Bus - IEC 61850 MMS",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "subgraph",
+            "subgraph_id": "L2",
+            "children": [
+              "SWA",
+              "SWB"
+            ]
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#01579b",
+          "width": 1.5,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "#e1f5fe"
+        },
+        "text": {
+          "color": "#333333"
+        }
+      }
+    },
+    {
+      "id": "m000043",
+      "kind": "rect",
+      "geom": {
+        "x": 104.15,
+        "y": 572.0,
+        "w": 613.98,
+        "h": 104.0
+      },
+      "meta": {
+        "label": "Level 3 : Site Operations",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "subgraph",
+            "subgraph_id": "L3",
+            "children": [
+              "HMI",
+              "Eng"
+            ]
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#AAAA33",
+          "width": 1.5,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "#FFFFDE"
+        },
+        "text": {
+          "color": "#333333"
+        }
+      }
+    },
+    {
+      "id": "m000044",
+      "kind": "rect",
+      "geom": {
+        "x": 177.13,
+        "y": 186.0,
+        "w": 505.0,
+        "h": 336.0
+      },
+      "meta": {
+        "label": "Level 3.5 : Security DMZ",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "subgraph",
+            "subgraph_id": "L3_5",
+            "children": [
+              "ExtFW",
+              "Proxy",
+              "IntFW"
+            ]
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#bf360c",
+          "width": 1.5,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "#ffccbc"
+        },
+        "text": {
+          "color": "#333333"
+        }
+      }
+    },
+    {
+      "id": "m000045",
+      "kind": "rect",
+      "geom": {
+        "x": 114.63,
+        "y": 8.0,
+        "w": 640.0,
+        "h": 128.0
+      },
+      "meta": {
+        "label": "Level 4 / 5 : Enterprise & External",
+        "label_align": "center",
+        "label_size": 12,
+        "tech_align": "center",
+        "tech_size": 10,
+        "note_align": "center",
+        "note_size": 10,
+        "text_valign": "top",
+        "text_spacing": 0.0,
+        "text_box_width": 0.0,
+        "text_box_height": 0.0,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "subgraph",
+            "subgraph_id": "L4_5",
+            "children": [
+              "Corporate",
+              "Remote"
+            ]
+          }
+        }
+      },
+      "style": {
+        "pen": {
+          "color": "#AAAA33",
+          "width": 1.5,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "#FFFFDE"
+        },
+        "text": {
+          "color": "#333333"
+        }
+      }
+    }
+  ]
+}

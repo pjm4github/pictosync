@@ -1,7 +1,7 @@
 """Detect the Mermaid diagram type from source text."""
 from __future__ import annotations
 
-from registry import REGISTRY
+from mermaid.grammar.registry import REGISTRY
 
 
 def detect_mermaid_source_type(source: str) -> str | None:

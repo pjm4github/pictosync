@@ -845,13 +845,15 @@ def _parse_cluster(
 
     x, y, w, h = _extract_rect_geom(rect_el)
     text = _extract_text(cluster_g, ns)
+    fill_color = _get_fill(rect_el) or "#FFFFDE"
+    stroke_color = _get_stroke(rect_el) or "#AAAA33"
 
     return {
         "id": ann_id,
         "kind": "group",
         "geom": {"x": x, "y": y, "w": w, "h": h},
         "meta": {"label": text},
-        "style": _make_shape_style("#FFFFDE", "#AAAA33"),
+        "style": _make_shape_style(fill_color, stroke_color),
     }
 
 
@@ -885,6 +887,10 @@ def _parse_graph_diagram(
                 continue
             ann = _parse_node(node_g, ns, next_id())
             if ann is not None:
+                # Extract Mermaid source node ID from SVG element id
+                src_id = _extract_node_id(node_g, node_id_re)
+                if src_id:
+                    ann["meta"]["src_id"] = src_id
                 annotations.append(ann)
 
     # ── Edge labels ──
@@ -929,6 +935,10 @@ def _parse_graph_diagram(
                 continue
             ann = _parse_cluster(cluster_g, ns, next_id(), annotations)
             if ann is not None:
+                # Extract subgraph ID from SVG element id
+                svg_id = cluster_g.get("id", "")
+                if svg_id:
+                    ann["meta"]["src_id"] = svg_id
                 annotations.append(ann)
 
     return annotations

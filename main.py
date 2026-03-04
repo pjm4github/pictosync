@@ -1415,7 +1415,16 @@ class MainWindow(QMainWindow):
                     from mermaid.sequence_source_parser import parse_sequence_source_file
                     seq_source = parse_sequence_source_file(mmd_path)
                 except (ValueError, OSError):
-                    pass  # Not a sequence diagram — fall through to generic
+                    pass  # Not a sequence diagram — fall through
+
+            # ── Try flowchart source parse (step 1) ──
+            flow_source = None
+            if c4_source is None and seq_source is None:
+                try:
+                    from mermaid.flowchart_source_parser import parse_flowchart_source_file
+                    flow_source = parse_flowchart_source_file(mmd_path)
+                except (ValueError, OSError):
+                    pass  # Not a flowchart diagram — fall through to generic
 
             # ── Render to PNG for canvas background (non-fatal) ──
             try:
@@ -1447,6 +1456,10 @@ class MainWindow(QMainWindow):
                     # Two-step sequence pipeline: source semantics + SVG geometry
                     from mermaid.sequence_merger import merge_sequence_source_with_svg
                     data = merge_sequence_source_with_svg(seq_source, svg_path)
+                elif flow_source is not None:
+                    # Two-step flowchart pipeline: source semantics + SVG geometry
+                    from mermaid.flowchart_merger import merge_flowchart_source_with_svg
+                    data = merge_flowchart_source_with_svg(flow_source, svg_path)
                 else:
                     # Generic Mermaid SVG parser
                     data = parse_mermaid_svg_to_annotations(svg_path)
@@ -1473,6 +1486,7 @@ class MainWindow(QMainWindow):
 
             pipeline = ("C4 two-step" if c4_source is not None
                         else "Sequence two-step" if seq_source is not None
+                        else "Flowchart two-step" if flow_source is not None
                         else "SVG")
             self._set_draft_text_programmatically(
                 pretty,

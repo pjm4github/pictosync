@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from detector import detect_mermaid_source_type
-from registry import REGISTRY
+from mermaid.grammar.detector import detect_mermaid_source_type
+from mermaid.grammar.registry import REGISTRY
 
 
 def parse_mermaid_source(source: str) -> Any:
