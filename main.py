@@ -1394,7 +1394,7 @@ class MainWindow(QMainWindow):
         Args:
             mmd_path: Path to the .mmd or .mermaid source file.
         """
-        from mermaid.renderer import render_mmd_to_png, render_mmd_to_svg
+        from mermaid.renderer import render_mmd_to_svg
         from mermaid.parser import parse_mermaid_svg_to_annotations
         from mermaid.c4_source_parser import parse_c4_source_file
         from mermaid.c4_merger import merge_c4_source_with_svg
@@ -1426,17 +1426,6 @@ class MainWindow(QMainWindow):
                 except (ValueError, OSError):
                     pass  # Not a flowchart diagram — fall through to generic
 
-            # ── Render to PNG for canvas background (non-fatal) ──
-            try:
-                png_path = render_mmd_to_png(mmd_path)
-                self.load_background_png(png_path)
-            except RuntimeError as e:
-                QMessageBox.warning(
-                    self, "Mermaid Rendering",
-                    f"Could not render PNG background (mmdc issue).\n"
-                    f"Annotations will still be parsed from SVG.\n\n{e}",
-                )
-
             # ── Render to SVG (fatal — no annotations without SVG) ──
             try:
                 svg_path = render_mmd_to_svg(mmd_path)
@@ -1446,6 +1435,50 @@ class MainWindow(QMainWindow):
                     f"Could not render SVG for annotation parsing.\n\n{e}",
                 )
                 return
+
+            # ── Render to PNG for canvas background (non-fatal) ──
+            # Tell mmdc to use a viewport matching the SVG viewBox so the
+            # PNG pixel grid maps 1:1 to annotation coordinates (× scale).
+            # A CSS reset removes the default 8px body margin that would
+            # otherwise shift diagram content within the browser viewport.
+            try:
+                import xml.etree.ElementTree as _ET
+                _vb = _ET.parse(svg_path).getroot().get("viewBox", "").split()
+                vb_w = round(float(_vb[2])) if len(_vb) >= 3 else None
+                vb_h = round(float(_vb[3])) if len(_vb) >= 4 else None
+
+                from mermaid.renderer import render_mmd_to_png
+                png_path = render_mmd_to_png(
+                    mmd_path,
+                    viewport_width=vb_w,
+                    viewport_height=vb_h,
+                )
+
+                from debug_trace import trace
+                pm = QPixmap(png_path)
+                trace(f"PNG from mmdc: {pm.width()}x{pm.height()} (viewport={vb_w}x{vb_h})", "IMPORT")
+
+                # Rescale to viewBox dimensions so coordinates are 1:1
+                if vb_w and vb_h and not pm.isNull() and (pm.width() != vb_w or pm.height() != vb_h):
+                    pm = pm.scaled(
+                        vb_w, vb_h,
+                        Qt.AspectRatioMode.IgnoreAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    import tempfile
+                    tmp_png = tempfile.mktemp(suffix=".png", prefix="pictosync_bg_")
+                    ok = pm.save(tmp_png, "PNG")
+                    trace(f"PNG rescaled: {pm.width()}x{pm.height()} ok={ok}", "IMPORT")
+                    if ok:
+                        png_path = tmp_png
+
+                self.load_background_png(png_path)
+            except RuntimeError as e:
+                QMessageBox.warning(
+                    self, "Mermaid Rendering",
+                    f"Could not render PNG background (mmdc issue).\n"
+                    f"Annotations will still be parsed from SVG.\n\n{e}",
+                )
 
             # ── Parse annotations ──
             try:
@@ -1469,6 +1502,11 @@ class MainWindow(QMainWindow):
                     f"Could not parse Mermaid SVG:\n{e}",
                 )
                 return
+
+            # Apply classDef styles from the source file — handles cases
+            # where mmdc doesn't render :::className in the SVG output.
+            from mermaid.parser import apply_classdef_styles
+            apply_classdef_styles(data.get("annotations", []), mmd_path)
 
             num_annotations = len(data.get("annotations", []))
             pretty = json.dumps(data, indent=2)

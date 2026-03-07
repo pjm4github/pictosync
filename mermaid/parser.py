@@ -125,8 +125,8 @@ def parse_mermaid_svg_to_annotations(svg_path: str) -> Dict[str, Any]:
     viewbox = root.get("viewBox", "").split()
     vb_x = float(viewbox[0]) if len(viewbox) >= 1 else 0.0
     vb_y = float(viewbox[1]) if len(viewbox) >= 2 else 0.0
-    canvas_w = int(float(viewbox[2])) if len(viewbox) >= 3 else 800
-    canvas_h = int(float(viewbox[3])) if len(viewbox) >= 4 else 600
+    canvas_w = round(float(viewbox[2])) if len(viewbox) >= 3 else 800
+    canvas_h = round(float(viewbox[3])) if len(viewbox) >= 4 else 600
 
     # ── Detect diagram type ──
     role = root.get("aria-roledescription", "")
@@ -434,11 +434,13 @@ def _make_shape_style(
     fill: str = "#ECECFF",
     stroke: str = "#9370DB",
     text_color: str = "#333333",
+    stroke_width: float = 1,
+    dash: str = "solid",
 ) -> Dict[str, Any]:
     """Return a standard shape style dict."""
     return {
         "pen": {
-            "color": stroke, "width": 1, "dash": "solid",
+            "color": stroke, "width": stroke_width, "dash": dash,
             "dash_pattern_length": 30, "dash_solid_percent": 50,
         },
         "fill": {"color": fill},
@@ -476,12 +478,50 @@ def _get_fill(el: ET.Element) -> Optional[str]:
 def _get_stroke(el: ET.Element) -> Optional[str]:
     """Extract stroke colour from an element's ``style`` or ``stroke`` attribute."""
     style = el.get("style", "")
-    m = re.search(r"stroke:\s*(#[0-9a-fA-F]{3,8}|rgb[^)]+\)|hsl[^)]+\))", style)
+    m = re.search(r"stroke:\s*(#[0-9a-fA-F]{3,8}|rgb[^)]+\)|hsl[^)]+\)|[a-zA-Z]+)", style)
     if m:
-        return m.group(1)
+        v = m.group(1)
+        if v not in ("none", "inherit"):
+            return v
     stroke = el.get("stroke", "")
     if stroke and stroke != "none":
         return stroke
+    return None
+
+
+def _get_stroke_width(el: ET.Element) -> Optional[float]:
+    """Extract stroke width from an element's ``style`` or ``stroke-width`` attribute."""
+    style = el.get("style", "")
+    m = re.search(r"stroke-width:\s*([\d.]+)", style)
+    if m:
+        return float(m.group(1))
+    sw = el.get("stroke-width", "")
+    if sw:
+        try:
+            return float(sw)
+        except ValueError:
+            pass
+    return None
+
+
+def _get_text_color(node_g: ET.Element, ns: str) -> Optional[str]:
+    """Extract text colour from a node's label group style or XHTML span."""
+    xhtml = "http://www.w3.org/1999/xhtml"
+    for g in node_g:
+        tag = _strip_ns(g.tag, ns)
+        cls = g.get("class", "")
+        if tag == "g" and "label" in cls and "label-container" not in cls:
+            # Check the label <g> style attribute
+            style = g.get("style", "")
+            m = re.search(r"color:\s*(#[0-9a-fA-F]{3,8}|rgb[^)]+\)|hsl[^)]+\)|[a-zA-Z]+)", style)
+            if m and m.group(1) not in ("inherit",):
+                return m.group(1)
+            # Check XHTML span style
+            for span in g.iter(f"{{{xhtml}}}span"):
+                style = span.get("style", "")
+                m = re.search(r"color:\s*(#[0-9a-fA-F]{3,8}|rgb[^)]+\)|hsl[^)]+\)|[a-zA-Z]+)", style)
+                if m and m.group(1) not in ("inherit",):
+                    return m.group(1)
     return None
 
 
@@ -621,14 +661,31 @@ def _parse_node(
     circle_el = node_g.find(f"{{{ns}}}circle")
     ellipse_el = node_g.find(f"{{{ns}}}ellipse")
     path_el = None
+    # Secondary path for extracting fill when Mermaid uses a two-path
+    # pattern: one path for the filled background (stroke-width=0) and
+    # a separate path for the visible border (fill=none).
+    fill_path_el = None
     for g_child in node_g:
         tag = _strip_ns(g_child.tag, ns)
         if tag == "g" and "label-container" in g_child.get("class", ""):
             for p in g_child.iter(f"{{{ns}}}path"):
                 d = p.get("d", "")
-                if d and p.get("fill", "") != "none" and p.get("stroke-width", "") != "0":
+                if not d:
+                    continue
+                p_fill = p.get("fill", "")
+                p_sw = p.get("stroke-width", "")
+                if p_fill and p_fill != "none" and p_sw != "0":
+                    # Single path with both fill and stroke
                     path_el = p
                     break
+                if p_fill and p_fill != "none" and p_sw == "0":
+                    # Fill-only path (background shape)
+                    fill_path_el = p
+                elif p_fill == "none" and p_sw != "0":
+                    # Stroke-only path (border)
+                    path_el = p
+            if path_el is None and fill_path_el is not None:
+                path_el = fill_path_el
             if path_el is None:
                 paths = list(g_child.iter(f"{{{ns}}}path"))
                 if paths:
@@ -642,6 +699,7 @@ def _parse_node(
     h: float
     fill_color = "#ECECFF"
     stroke_color = "#9370DB"
+    stroke_width: Optional[float] = None
     rel_points: List[List[float]] = []
 
     if rect_el is not None and poly_el is None:
@@ -655,6 +713,7 @@ def _parse_node(
         kind = "roundedrect" if rx > 0 else "rect"
         fill_color = _get_fill(rect_el) or fill_color
         stroke_color = _get_stroke(rect_el) or stroke_color
+        stroke_width = _get_stroke_width(rect_el)
 
     elif poly_el is not None:
         points_str = poly_el.get("points", "")
@@ -680,6 +739,7 @@ def _parse_node(
         kind = "polygon"
         fill_color = _get_fill(poly_el) or fill_color
         stroke_color = _get_stroke(poly_el) or stroke_color
+        stroke_width = _get_stroke_width(poly_el)
 
     elif circle_el is not None:
         cx = float(circle_el.get("cx", "0"))
@@ -691,6 +751,7 @@ def _parse_node(
         kind = "ellipse"
         fill_color = _get_fill(circle_el) or fill_color
         stroke_color = _get_stroke(circle_el) or stroke_color
+        stroke_width = _get_stroke_width(circle_el)
 
     elif ellipse_el is not None:
         cx = float(ellipse_el.get("cx", "0"))
@@ -704,6 +765,7 @@ def _parse_node(
         kind = "ellipse"
         fill_color = _get_fill(ellipse_el) or fill_color
         stroke_color = _get_stroke(ellipse_el) or stroke_color
+        stroke_width = _get_stroke_width(ellipse_el)
 
     elif path_el is not None:
         d = path_el.get("d", "")
@@ -713,8 +775,14 @@ def _parse_node(
         w = bw
         h = bh
         kind = "roundedrect"
-        fill_color = _get_fill(path_el) or fill_color
+        # When Mermaid uses a two-path pattern (fill_path_el for background,
+        # path_el for border), prefer fill from fill_path_el.
+        if fill_path_el is not None:
+            fill_color = _get_fill(fill_path_el) or fill_color
+        else:
+            fill_color = _get_fill(path_el) or fill_color
         stroke_color = _get_stroke(path_el) or stroke_color
+        stroke_width = _get_stroke_width(path_el)
 
     else:
         # Last resort: any <path> with a visible fill in the node group
@@ -744,12 +812,15 @@ def _parse_node(
     if kind == "polygon":
         geom["points"] = rel_points
 
+    text_color = _get_text_color(node_g, ns) or "#333333"
+    sw = stroke_width if stroke_width is not None else 1
+
     return {
         "id": ann_id,
         "kind": kind,
         "geom": geom,
         "meta": {"label": text},
-        "style": _make_shape_style(fill_color, stroke_color),
+        "style": _make_shape_style(fill_color, stroke_color, text_color, sw),
     }
 
 
@@ -783,15 +854,34 @@ def _parse_edge_path(
 
     style_attr = path_el.get("style", "")
     cls = path_el.get("class", "")
-    dashed = "dashed" in style_attr or "dashed" in cls or "dotted" in cls
+    stroke_dasharray = path_el.get("stroke-dasharray", "")
+    dashed = (
+        "dashed" in style_attr
+        or "dashed" in cls
+        or "dotted" in cls
+        or "note-edge" in cls
+        or "stroke-dasharray" in style_attr
+        or (stroke_dasharray and stroke_dasharray != "0")
+    )
+
+    # Edge stroke colour: inline attribute > style > CSS default
+    pen_color = _get_stroke(path_el) or "#333333"
+
+    # Edge thickness: CSS classes or inline attribute
+    pen_width = 1
+    if "edge-thickness-thick" in cls:
+        pen_width = 3.5
+    sw = _get_stroke_width(path_el)
+    if sw is not None:
+        pen_width = sw
 
     label = ""
     if 0 <= edge_idx < len(edge_labels):
         label = edge_labels[edge_idx][0]
 
     style = _make_line_style(
-        pen_color="#333333",
-        pen_width=2,
+        pen_color=pen_color,
+        pen_width=pen_width,
         dashed=dashed,
         arrow=arrow,
     )
@@ -841,19 +931,77 @@ def _parse_cluster(
     """Parse a ``<g class="cluster">`` into a group annotation."""
     rect_el = cluster_g.find(f"{{{ns}}}rect")
     if rect_el is None:
+        # Divider/alt clusters nest the rect inside an unnamed <g>
+        for r in cluster_g.iter(f"{{{ns}}}rect"):
+            rect_el = r
+            break
+    if rect_el is None:
         return None
 
     x, y, w, h = _extract_rect_geom(rect_el)
     text = _extract_text(cluster_g, ns)
-    fill_color = _get_fill(rect_el) or "#FFFFDE"
-    stroke_color = _get_stroke(rect_el) or "#AAAA33"
+
+    # Determine fill/stroke — try inline attributes first, then infer
+    # from CSS classes applied by Mermaid's themed stylesheets.
+    fill_color = _get_fill(rect_el)
+    stroke_color = _get_stroke(rect_el)
+    stroke_width = _get_stroke_width(rect_el)
+
+    if fill_color is None or stroke_color is None:
+        cls = cluster_g.get("class", "")
+        # State diagrams: cluster has two rects — outer (border) and inner
+        # (body).  CSS sets fill:white on .inner and stroke:#9370DB on the
+        # outer rect.  The rect elements have empty fill/stroke attributes.
+        if "statediagram-cluster" in cls:
+            # Check for inner rect with CSS-derived fill
+            inner_rect = None
+            outer_rect = None
+            for r in cluster_g.iter(f"{{{ns}}}rect"):
+                rc = r.get("class", "")
+                if "inner" in rc:
+                    inner_rect = r
+                elif "outer" in rc:
+                    outer_rect = r
+            if fill_color is None:
+                if inner_rect is not None:
+                    fill_color = _get_fill(inner_rect)
+                if fill_color is None:
+                    # CSS default: .inner → white, .alt .inner → #f0f0f0
+                    if "statediagram-cluster-alt" in cls:
+                        fill_color = "#f0f0f0"
+                    else:
+                        fill_color = "white"
+            if stroke_color is None:
+                if outer_rect is not None:
+                    stroke_color = _get_stroke(outer_rect)
+                if stroke_color is None:
+                    stroke_color = "#9370DB"
+            if stroke_width is None:
+                if outer_rect is not None:
+                    stroke_width = _get_stroke_width(outer_rect)
+        else:
+            # Non-state-diagram clusters (flowchart subgraphs, etc.)
+            fill_color = fill_color or "#FFFFDE"
+            stroke_color = stroke_color or "#AAAA33"
+
+    sw = stroke_width if stroke_width is not None else 1
+
+    # Detect dashed border from CSS class (e.g. rect.divider has
+    # stroke-dasharray:10,10 in the Mermaid state diagram stylesheet)
+    dash = "solid"
+    rect_cls = rect_el.get("class", "")
+    if "divider" in rect_cls:
+        dash = "dashed"
+    sd = rect_el.get("stroke-dasharray", "")
+    if sd and sd != "0":
+        dash = "dashed"
 
     return {
         "id": ann_id,
         "kind": "group",
         "geom": {"x": x, "y": y, "w": w, "h": h},
         "meta": {"label": text},
-        "style": _make_shape_style(fill_color, stroke_color),
+        "style": _make_shape_style(fill_color, stroke_color, stroke_width=sw, dash=dash),
     }
 
 
@@ -867,7 +1015,11 @@ def _parse_graph_diagram(
     ns: str,
     node_id_re: str = r"flowchart-(.+)-\d+$",
 ) -> List[Dict[str, Any]]:
-    """Generic parser for diagrams that use nodes/edgePaths/edgeLabels/clusters groups."""
+    """Generic parser for diagrams that use nodes/edgePaths/edgeLabels/clusters groups.
+
+    Z-values mirror the SVG painting order (clusters → edges → nodes)
+    so that later-painted items appear on top on the PictoSync canvas.
+    """
     nodes_g = _find_group_by_class(root, ns, "nodes")
     edge_paths_g = _find_group_by_class(root, ns, "edgePaths")
     edge_labels_g = _find_group_by_class(root, ns, "edgeLabels")
@@ -876,24 +1028,30 @@ def _parse_graph_diagram(
     annotations: List[Dict[str, Any]] = []
     next_id = _make_id_gen()
 
-    # ── Nodes ──
-    if nodes_g is not None:
-        for node_g in nodes_g:
-            tag = _strip_ns(node_g.tag, ns)
+    # Z-value tiers matching SVG painting order:
+    #   clusters (background)  → edges (middle)  → nodes (foreground)
+    # Within each tier, document order determines stacking.
+    z_cluster_base = 0
+    z_edge_base = 1000
+    z_node_base = 2000
+
+    # ── Clusters (lowest z — painted first in SVG) ──
+    if clusters_g is not None:
+        cluster_z = z_cluster_base
+        for cluster_g in clusters_g:
+            tag = _strip_ns(cluster_g.tag, ns)
             if tag != "g":
                 continue
-            cls = node_g.get("class", "")
-            if "node" not in cls:
-                continue
-            ann = _parse_node(node_g, ns, next_id())
+            ann = _parse_cluster(cluster_g, ns, next_id(), annotations)
             if ann is not None:
-                # Extract Mermaid source node ID from SVG element id
-                src_id = _extract_node_id(node_g, node_id_re)
-                if src_id:
-                    ann["meta"]["src_id"] = src_id
+                svg_id = cluster_g.get("id", "")
+                if svg_id:
+                    ann["meta"]["src_id"] = svg_id
+                ann["z"] = cluster_z
+                cluster_z += 1
                 annotations.append(ann)
 
-    # ── Edge labels ──
+    # ── Edge labels (collected for pairing with paths) ──
     edge_labels: List[Tuple[str, float, float]] = []
     if edge_labels_g is not None:
         for label_g in edge_labels_g:
@@ -904,14 +1062,17 @@ def _parse_graph_diagram(
             text = _extract_text(label_g, ns)
             edge_labels.append((text, tx, ty))
 
-    # ── Edge paths ──
+    # ── Edge paths (middle z) ──
     if edge_paths_g is not None:
         edge_idx = 0
+        edge_z = z_edge_base
         for child in edge_paths_g:
             tag = _strip_ns(child.tag, ns)
             if tag == "path":
                 ann = _parse_edge_path(child, ns, next_id(), edge_labels, edge_idx)
                 if ann is not None:
+                    ann["z"] = edge_z
+                    edge_z += 1
                     annotations.append(ann)
                 edge_idx += 1
             elif tag == "g":
@@ -924,21 +1085,28 @@ def _parse_graph_diagram(
                 if path_el is not None:
                     ann = _parse_edge_path(path_el, ns, next_id(), edge_labels, edge_idx)
                     if ann is not None:
+                        ann["z"] = edge_z
+                        edge_z += 1
                         annotations.append(ann)
                 edge_idx += 1
 
-    # ── Clusters ──
-    if clusters_g is not None:
-        for cluster_g in clusters_g:
-            tag = _strip_ns(cluster_g.tag, ns)
+    # ── Nodes (highest z — painted last in SVG) ──
+    if nodes_g is not None:
+        node_z = z_node_base
+        for node_g in nodes_g:
+            tag = _strip_ns(node_g.tag, ns)
             if tag != "g":
                 continue
-            ann = _parse_cluster(cluster_g, ns, next_id(), annotations)
+            cls = node_g.get("class", "")
+            if "node" not in cls:
+                continue
+            ann = _parse_node(node_g, ns, next_id())
             if ann is not None:
-                # Extract subgraph ID from SVG element id
-                svg_id = cluster_g.get("id", "")
-                if svg_id:
-                    ann["meta"]["src_id"] = svg_id
+                src_id = _extract_node_id(node_g, node_id_re)
+                if src_id:
+                    ann["meta"]["src_id"] = src_id
+                ann["z"] = node_z
+                node_z += 1
                 annotations.append(ann)
 
     return annotations
@@ -960,8 +1128,116 @@ def _parse_flowchart(root: ET.Element, ns: str) -> List[Dict[str, Any]]:
 
 
 def _parse_state(root: ET.Element, ns: str) -> List[Dict[str, Any]]:
-    """Parse a Mermaid state diagram SVG."""
-    return _parse_graph_diagram(root, ns, r"state-(.+)-\d+$")
+    """Parse a Mermaid state diagram SVG.
+
+    Composite / concurrent states are emitted as clusters (``kind: "group"``)
+    by the generic graph parser.  State diagrams render these as visible
+    rounded rectangles, so we convert labeled groups to ``"roundedrect"``.
+    Unlabeled groups (e.g. note parent containers) remain invisible.
+    """
+    annotations = _parse_graph_diagram(root, ns, r"state-(.+)-\d+$")
+    for ann in annotations:
+        if ann["kind"] != "group":
+            continue
+        if ann.get("meta", {}).get("label"):
+            # Labeled composites → visible rounded rectangles
+            ann["kind"] = "roundedrect"
+        else:
+            # Unlabeled groups with a visible fill (e.g. concurrent region
+            # dividers with fill:#f0f0f0) → plain rectangles so they
+            # appear on the canvas instead of being invisible containers.
+            fill = ann.get("style", {}).get("fill", {}).get("color", "")
+            if fill and fill not in ("#00000000", "none", "transparent", ""):
+                ann["kind"] = "rect"
+    return annotations
+
+
+def apply_classdef_styles(annotations: List[Dict[str, Any]], mmd_path: str) -> None:
+    """Apply ``classDef`` styles from a Mermaid source file to annotations.
+
+    Mermaid's ``classDef`` declarations define named style classes.  Nodes
+    are assigned to a class via ``class NodeId className`` statements or
+    the ``NodeId:::className`` shorthand.  Some renderers (notably mmdc for
+    state diagrams) do not apply the ``:::`` shorthand to the SVG output,
+    so this function patches the annotation styles from the source.
+
+    Args:
+        annotations: Annotation list (modified in-place).
+        mmd_path: Path to the ``.mmd`` / ``.mermaid`` source file.
+    """
+    try:
+        with open(mmd_path, encoding="utf-8") as f:
+            source = f.read()
+    except OSError:
+        return
+
+    # ── Parse classDef declarations ──
+    # classDef name fill:#f00,color:white,stroke:yellow,stroke-width:2px
+    class_defs: Dict[str, Dict[str, str]] = {}
+    for m in re.finditer(
+        r"classDef\s+(\S+)\s+(.+?)(?:\n|$)", source
+    ):
+        name = m.group(1)
+        props_str = m.group(2).strip().rstrip(";")
+        props: Dict[str, str] = {}
+        for prop in props_str.split(","):
+            prop = prop.strip()
+            if ":" in prop:
+                k, v = prop.split(":", 1)
+                props[k.strip()] = v.strip()
+        class_defs[name] = props
+
+    if not class_defs:
+        return
+
+    # ── Parse class assignments ──
+    # "class StateC error"  and  "class A,B error"
+    node_class: Dict[str, str] = {}
+    for m in re.finditer(r"class\s+([\w,\s-]+?)\s+(\w+)\s*$", source, re.MULTILINE):
+        class_name = m.group(2)
+        if class_name in class_defs:
+            for node_id in m.group(1).split(","):
+                node_id = node_id.strip()
+                if node_id:
+                    node_class[node_id] = class_name
+
+    # "StateG:::special"
+    for m in re.finditer(r"(\w[\w-]*):::(\w+)", source):
+        node_id = m.group(1)
+        class_name = m.group(2)
+        if class_name in class_defs:
+            node_class[node_id] = class_name
+
+    if not node_class:
+        return
+
+    # ── Apply styles to annotations ──
+    for ann in annotations:
+        src_id = ann.get("meta", {}).get("src_id", "")
+        if not src_id or src_id not in node_class:
+            continue
+        props = class_defs[node_class[src_id]]
+        style = ann.get("style", {})
+        pen = style.get("pen", {})
+        fill_d = style.get("fill", {})
+        text = style.get("text", {})
+
+        if "fill" in props:
+            fill_d["color"] = props["fill"]
+        if "stroke" in props:
+            pen["color"] = props["stroke"]
+        if "stroke-width" in props:
+            try:
+                pen["width"] = float(props["stroke-width"].replace("px", ""))
+            except ValueError:
+                pass
+        if "color" in props:
+            text["color"] = props["color"]
+
+        style["pen"] = pen
+        style["fill"] = fill_d
+        style["text"] = text
+        ann["style"] = style
 
 
 def _parse_class(root: ET.Element, ns: str) -> List[Dict[str, Any]]:

@@ -101,7 +101,7 @@ def show_about_dialog(parent=None):
         parent,
         "About PictoSync",
         "<h2>PictoSync</h2>"
-        "<p><b>v1.7</b> &mdash; Diagram Annotation &amp; Sync Tool</p>"
+        "<p><b>v1.8</b> &mdash; Diagram Annotation &amp; Sync Tool</p>"
         "<p>Create diagram overlays with manual drawing tools, "
         "Gemini AI auto-extraction, and bidirectional JSON synchronization.</p>"
         "<p>Supports PlantUML import, Mermaid import (SVG &amp; source), "

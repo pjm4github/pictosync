@@ -173,19 +173,29 @@ def hex_to_qcolor(s: str, fallback: QColor) -> QColor:
         if not s:
             return QColor(fallback)
         s = s.strip()
+        # Manual hex parsing first — our codebase uses #RRGGBBAA (alpha
+        # last), but Qt's QColor("#RRGGBBAA") interprets it as #AARRGGBB
+        # (alpha first).  Always parse hex ourselves to avoid that clash.
         if s.startswith("#"):
-            s = s[1:]
-        if len(s) == 6:
-            r = int(s[0:2], 16)
-            g = int(s[2:4], 16)
-            b = int(s[4:6], 16)
-            return QColor(r, g, b)
-        if len(s) == 8:
-            r = int(s[0:2], 16)
-            g = int(s[2:4], 16)
-            b = int(s[4:6], 16)
-            a = int(s[6:8], 16)
-            return QColor(r, g, b, a)
+            h = s[1:]
+            if len(h) == 3:
+                h = h[0]*2 + h[1]*2 + h[2]*2
+            if len(h) == 6:
+                r = int(h[0:2], 16)
+                g = int(h[2:4], 16)
+                b = int(h[4:6], 16)
+                return QColor(r, g, b)
+            if len(h) == 8:
+                r = int(h[0:2], 16)
+                g = int(h[2:4], 16)
+                b = int(h[4:6], 16)
+                a = int(h[6:8], 16)
+                return QColor(r, g, b, a)
+        # Non-hex strings: use Qt's parser for named CSS colors (yellow,
+        # white, red, transparent, …).
+        c = QColor(s)
+        if c.isValid():
+            return c
     except Exception:
         pass
     return QColor(fallback)

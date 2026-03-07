@@ -153,7 +153,13 @@ def _maybe_inject_layout_config(mmd: Path, tmp_dir: str) -> tuple[Path, bool]:
     return patched_path, True
 
 
-def _render_mmd(mmd_path: str, fmt: str, output_path: str | None = None) -> str:
+def _render_mmd(
+    mmd_path: str,
+    fmt: str,
+    output_path: str | None = None,
+    viewport_width: int | None = None,
+    viewport_height: int | None = None,
+) -> str:
     """Render a .mmd/.mermaid file to the specified format using mmdc.
 
     Args:
@@ -161,6 +167,10 @@ def _render_mmd(mmd_path: str, fmt: str, output_path: str | None = None) -> str:
         fmt: Output format (``png`` or ``svg``).
         output_path: Optional explicit output path.  If None, the output is
             placed next to the source file using the file stem as name.
+        viewport_width: Browser viewport width for mmdc (``-w`` flag).
+            When set the PNG pixel grid maps directly to SVG viewBox
+            coordinates (multiplied by the scale factor).
+        viewport_height: Browser viewport height for mmdc (``-H`` flag).
 
     Returns:
         Path to the generated output file.
@@ -191,6 +201,15 @@ def _render_mmd(mmd_path: str, fmt: str, output_path: str | None = None) -> str:
         from settings import get_settings
         scale = get_settings().settings.external_tools.mmdc_png_scale
         cmd += ["-s", str(scale)]
+        if viewport_width is not None:
+            cmd += ["-w", str(viewport_width)]
+        if viewport_height is not None:
+            cmd += ["-H", str(viewport_height)]
+        # Reset body margin so the SVG fills the full viewport —
+        # otherwise the default 8px margin shifts the diagram content.
+        css_reset = Path(tmp_dir) / "reset.css"
+        css_reset.write_text("body { margin: 0; padding: 0; }\n", encoding="utf-8")
+        cmd += ["-C", str(css_reset)]
 
     # Workaround for mermaid-cli bug: C4 UpdateLayoutConfig and
     # c4ShapeInRow are ignored in headless Puppeteer mode.
@@ -247,13 +266,20 @@ def _render_mmd(mmd_path: str, fmt: str, output_path: str | None = None) -> str:
     return str(final)
 
 
-def render_mmd_to_png(mmd_path: str, output_png: str | None = None) -> str:
+def render_mmd_to_png(
+    mmd_path: str,
+    output_png: str | None = None,
+    viewport_width: int | None = None,
+    viewport_height: int | None = None,
+) -> str:
     """Render a .mmd/.mermaid file to PNG using mmdc.
 
     Args:
         mmd_path: Path to the Mermaid source file.
         output_png: Optional explicit output path.  If None, the PNG is
             placed next to the source file using the file stem as name.
+        viewport_width: Browser viewport width matching the SVG viewBox.
+        viewport_height: Browser viewport height matching the SVG viewBox.
 
     Returns:
         Path to the generated PNG file.
@@ -261,7 +287,7 @@ def render_mmd_to_png(mmd_path: str, output_png: str | None = None) -> str:
     Raises:
         RuntimeError: If mmdc cannot be found or rendering fails.
     """
-    return _render_mmd(mmd_path, "png", output_png)
+    return _render_mmd(mmd_path, "png", output_png, viewport_width, viewport_height)
 
 
 def render_mmd_to_svg(mmd_path: str, output_svg: str | None = None) -> str:

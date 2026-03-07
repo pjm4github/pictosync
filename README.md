@@ -4,7 +4,7 @@
 
 # PictoSync
 
-**v1.7** | PNG Image Canvas Tool for Object Synchronization
+**v1.8** | PNG Image Canvas Tool for Object Synchronization
 
 Diagram annotation tool with AI-powered extraction and bidirectional sync.
 
@@ -61,8 +61,9 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 
 ### Mermaid Import
 - **Pre-Rendered SVG**: Import Mermaid SVG files (from Mermaid Live Editor, VS Code, or mermaid.ink) via drag-and-drop or File > Open
-- **SVG-to-PNG Rendering**: Qt-based SVG renderer converts Mermaid SVGs to temporary PNG for canvas background; `<foreignObject>` text replaced with native SVG `<text>` for Qt compatibility
+- **SVG-to-PNG Rendering**: mmdc renders PNG at user-selected scale; viewport is set to match SVG viewBox with CSS margin reset for pixel-perfect coordinate alignment
 - **Flowchart Parser**: Parses nodes (rect, roundedrect, polygon/diamond), edge paths (curves and lines), edge labels, and cluster subgraphs from Mermaid flowchart SVGs
+- **State Diagram Parser**: Full state diagram support — composite/concurrent states, `classDef` styling (fill, stroke, text color, stroke-width), `:::` class shorthand, notes, fork/join bars, dashed dividers, and correct SVG z-order
 - **Mermaid Detection**: Automatic identification via `aria-roledescription` attribute on the root `<svg>` element
 - **Mermaid Source Import**: Import `.mmd`/`.mermaid` files via drag-and-drop or File > Open; renders via mmdc CLI to PNG background + SVG for annotation parsing
 - **C4 Two-Step Pipeline**: C4 diagrams (Context, Container, Component, Dynamic, Deployment) use a source parser for semantic data (aliases, types, tech, boundaries, relationships) merged with SVG geometry for enriched annotations
@@ -323,7 +324,7 @@ See `schemas/annotation_schema.json` for the full specification.
 |-------------|----------------------|:-----:|:------:|:---------:|---------------|
 | **Flow & Logic** | | | | | |
 | Flowchart | `flowchart-v2` | Y | Y | `flowchart1.svg` | `nodes`/`edgePaths`/`edgeLabels` groups |
-| State Diagram | `stateDiagram` | — | — | `state1.svg` | Same groups; `state-*` IDs; circle + path shapes |
+| State Diagram | `stateDiagram` | Y | Y | `stateDiagram.svg` | Composite/concurrent states, `classDef` styles, notes, fork/join |
 | Block Diagram | `block` | — | — | `block1.svg` | Flat `<g class="block">` — nodes + edges as siblings |
 | Packet Diagram | `packet` | — | — | `packet1.svg` | Grid of `<rect class="packetBlock">` + `<text>` labels |
 | Kanban | `kanban` | — | — | `kanban1.svg` | `sections` clusters + `items` cards; no edges |
@@ -355,6 +356,15 @@ See `schemas/annotation_schema.json` for the full specification.
 **Y** = implemented, **—** = test data collected, parser not yet implemented
 
 ## Version History
+
+### v1.8 (2026-03-07)
+- **State diagram import**: Full Mermaid state diagram parsing — composite states, concurrent regions, fork/join bars, notes, choice pseudostates
+- **classDef style extraction**: `classDef` fill, stroke, stroke-width, and text color parsed from SVG and source; `:::className` shorthand patched from source when mmdc omits it
+- **Pixel-perfect PNG alignment**: mmdc viewport width/height set to SVG viewBox dimensions with CSS body margin reset, eliminating coordinate drift between PNG background and SVG annotations
+- **SVG z-order**: Annotations assigned z-values matching SVG painting order (clusters → edges → nodes) for correct visual stacking
+- **CSS color support**: `hex_to_qcolor` now handles named CSS colors (yellow, white, red), short hex (#f00), and `transparent` alongside existing #RRGGBB/#RRGGBBAA formats
+- **Edge styling**: Dashed/dotted detection from CSS classes (`edge-pattern-dashed`, `edge-pattern-dotted`, `note-edge`), stroke color and width extracted from SVG
+- **Two-path fill extraction**: Mermaid's split fill-path/stroke-path pattern correctly parsed for notes and styled states
 
 ### v1.7 (2026-02-27)
 - Dynamic title bar shows currently loaded file name after import (PlantUML, Mermaid SVG, Mermaid source, or standalone PNG)
