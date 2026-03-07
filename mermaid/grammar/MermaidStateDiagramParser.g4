@@ -1,5 +1,5 @@
-// MermaidStateDiagram.g4
-// ANTLR4 grammar for Mermaid State Diagrams
+// MermaidStateDiagramParser.g4
+// ANTLR4 *parser* grammar for Mermaid State Diagrams
 // Reference: https://mermaid.ai/open-source/syntax/stateDiagram.html  (v11.12)
 //
 // Diagram types:
@@ -60,24 +60,17 @@
 //
 // ── Comments ──────────────────────────────────────────────────────────────
 //   %% anything to end of line
-//
-// ── Key lexer ordering notes ──────────────────────────────────────────────
-//   1. KW_STATE_DIAGRAM_V2  before KW_STATE_DIAGRAM  (longer literal wins)
-//   2. START_END  '[*]'     before LBRACK  '[' (so [*] is one token)
-//   3. STEREOTYPE '<<...>>' before LT '<'  (so <<choice>> is one token)
-//   4. TRANSITION '-->'     before CONCURRENCY '--' before MINUS '-'
-//   5. TRIPLE_COLON ':::'   before COLON ':'
-//   6. KW_END_NOTE uses inline [ \t]* fragment (WS is skip-channel, unreferenceable)
-//   7. All keyword tokens   before ID
 
-grammar MermaidStateDiagram;
+parser grammar MermaidStateDiagramParser;
+
+options { tokenVocab = MermaidStateDiagramLexer; }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PARSER RULES
 // ═══════════════════════════════════════════════════════════════════════════
 
 diagram
-    : NEWLINE* diagramType NEWLINE+
+    : NEWLINE* diagramType NEWLINE*
       statement*
       EOF
     ;
@@ -90,15 +83,15 @@ diagramType
 // ── Top-level statement dispatcher ────────────────────────────────────────
 
 statement
-    : stateDecl       NEWLINE+
-    | transitionStmt  NEWLINE+
+    : stateDecl       NEWLINE*
+    | transitionStmt  NEWLINE*
     | compositeBlock           // self-terminating (ends with '}' NEWLINE)
     | noteBlock                // self-terminating (ends with 'end note' NEWLINE)
-    | concurrencyDiv  NEWLINE+ // -- divider between parallel regions
-    | directionStmt   NEWLINE+
-    | classDefStmt    NEWLINE+
-    | classAssignStmt NEWLINE+
-    | COMMENT         NEWLINE+
+    | concurrencyDiv  NEWLINE* // -- divider between parallel regions
+    | directionStmt   NEWLINE*
+    | classDefStmt    NEWLINE*
+    | classAssignStmt NEWLINE*
+    | COMMENT         NEWLINE*
     | NEWLINE+
     ;
 
@@ -116,11 +109,15 @@ statement
 stateDecl
     // Form 2 — most specific, check first (has both QUOTED_STRING and KW_AS)
     : KW_STATE QUOTED_STRING KW_AS stateId classShorthand?
-    // Form 3 — id followed by colon and description
+    // Form 3 — id followed by colon and description (with 'state' keyword)
     | KW_STATE stateId COLON descriptionText classShorthand?
     // Form 4 — stereotype (choice / fork / join)
     | KW_STATE stateId STEREOTYPE
-    // Form 1 — bare id (with optional class shorthand)
+    // Form 5 — bare id with inline colon description, no 'state' keyword
+    //   NamedComposite: Another Composite
+    //   namedSimple: Another simple
+    | stateId COLON descriptionText
+    // Form 1 — bare id (with optional class shorthand), must be last
     | stateId classShorthand?
     ;
 
@@ -218,12 +215,15 @@ concurrencyDiv
 // ─────────────────────────────────────────────────────────────────────────
 
 noteBlock
-    // Single-line: colon separates header from text content
-    : KW_NOTE noteSide KW_OF stateId COLON noteLineContent NEWLINE+
-    // Multi-line: header on its own line, body lines, terminated by "end note"
-    | KW_NOTE noteSide KW_OF stateId NEWLINE+
+    // Single-line: KW_NOTE pushes NOTE_HDR_MODE; COLON inside NOTE_HDR_MODE
+    // pushes FREE_TEXT_MODE; FREE_TEXT_NL popModes back through both.
+    : KW_NOTE noteSide KW_OF stateId COLON noteLineContent NEWLINE*
+    // Multi-line: KW_NOTE pushes NOTE_HDR_MODE; NOTE_HDR_NL inside that mode
+    // transitions to NOTE_BODY_MODE. Body lines arrive as FREE_TEXT + NEWLINE
+    // until KW_END_NOTE returns to DEFAULT_MODE.
+    | KW_NOTE noteSide KW_OF stateId NEWLINE
           noteBodyLine+
-      KW_END_NOTE NEWLINE+
+      KW_END_NOTE NEWLINE*
     ;
 
 noteSide
@@ -282,169 +282,7 @@ stateIdList
     ;
 
 // CSS string: free-form to end of line, optional trailing semicolon.
+// CSS_VALUE_START tokens are produced by the CSS lexer mode.
 cssString
-    : CSS_TEXT+ SEMI?
-    ;
-
-
-// ═══════════════════════════════════════════════════════════════════════════
-// LEXER RULES
-// ═══════════════════════════════════════════════════════════════════════════
-//
-// Ordering:
-//   1.  KW_STATE_DIAGRAM_V2  before KW_STATE_DIAGRAM  (longer literal wins)
-//   2.  START_END  '[*]'     before LBRACK '['
-//   3.  STEREOTYPE '<<...>>' before any single-char token
-//   4.  TRANSITION '-->'     before CONCURRENCY '--'
-//   5.  TRIPLE_COLON ':::'   before COLON ':'
-//   6.  All keyword tokens   before ID
-
-// ── Diagram type ──────────────────────────────────────────────────────────
-// v2 must be declared first — it is longer and would otherwise partially
-// match KW_STATE_DIAGRAM leaving "-v2" to cause a lex error.
-
-KW_STATE_DIAGRAM_V2 : 'stateDiagram-v2' ;
-KW_STATE_DIAGRAM    : 'stateDiagram' ;
-
-// ── Statement keywords ────────────────────────────────────────────────────
-
-KW_STATE     : 'state' ;
-KW_AS        : 'as' ;
-KW_DIRECTION : 'direction' ;
-KW_CLASSDEF  : 'classDef' ;
-KW_CLASS     : 'class' ;
-KW_NOTE      : 'note' ;
-KW_OF        : 'of' ;
-KW_RIGHT     : 'right' ;
-KW_LEFT      : 'left' ;
-
-// "end note" is two words but functions as a single terminator token.
-// We inline the inter-word whitespace with [ \t]+ because WS is declared
-// as -> skip and therefore cannot be referenced inside other lexer rules.
-KW_END_NOTE  : 'end' [ \t]+ 'note' ;
-
-// ── Direction values ──────────────────────────────────────────────────────
-
-DIR_TB : 'TB' ;
-DIR_TD : 'TD' ;
-DIR_BT : 'BT' ;
-DIR_LR : 'LR' ;
-DIR_RL : 'RL' ;
-
-// ── [*] start / end pseudo-state ─────────────────────────────────────────
-// Must be declared before LBRACK so the full three-character sequence is
-// consumed as a single token.
-
-START_END : '[*]' ;
-
-// ── Stereotype <<choice>> <<fork>> <<join>> ───────────────────────────────
-// Must be declared before any single '<' token.
-// Whitespace inside the angle brackets is consumed here (not by WS -> skip).
-
-STEREOTYPE
-    : '<<' [ \t]* ( 'choice' | 'fork' | 'join' ) [ \t]* '>>'
-    ;
-
-// ── Transition arrow ──────────────────────────────────────────────────────
-// --> must be declared before CONCURRENCY (--) so that the full arrow is
-// consumed atomically rather than as "--" followed by ">".
-
-TRANSITION : '-->' ;
-
-// ── Concurrency divider ───────────────────────────────────────────────────
-// -- separates parallel regions inside a composite state body.
-// Must be declared before any lone MINUS token (if one is ever needed).
-
-CONCURRENCY : '--' ;
-
-// ── Quoted string ─────────────────────────────────────────────────────────
-// Used for state labels in: state "label" as id
-
-QUOTED_STRING
-    : '"' ( '\\' '"' | ~["\r\n] )* '"'
-    ;
-
-// ── Triple colon ──────────────────────────────────────────────────────────
-// Class shorthand operator :::className.
-// Must be declared before COLON so that ::: is one token, not three COLONs.
-
-TRIPLE_COLON : ':::' ;
-
-// ── Punctuation ───────────────────────────────────────────────────────────
-
-LBRACK : '[' ;
-RBRACK : ']' ;
-LBRACE : '{' ;
-RBRACE : '}' ;
-COLON  : ':' ;
-SEMI   : ';' ;
-COMMA  : ',' ;
-
-// ── Integer ───────────────────────────────────────────────────────────────
-
-INT : [0-9]+ ;
-
-// ── Identifier ────────────────────────────────────────────────────────────
-// State ids, class names, direction values (when not exact keywords), etc.
-// Allows hyphens and dots so state ids like "my-state" or "app.idle" work.
-// Declared after all keyword tokens — keywords win on exact-length match
-// by declaration order.
-
-ID
-    : [a-zA-Z_] [a-zA-Z0-9_\-.]*
-    ;
-
-// ── CSS text ──────────────────────────────────────────────────────────────
-// Content of classDef statements.  Same stop conditions as FREE_TEXT but
-// also stops at semicolon (which is an explicit terminator for CSS lists).
-// Because both CSS_TEXT and FREE_TEXT match the same character class, and
-// ANTLR picks the first-declared rule on a tie, CSS_TEXT must be declared
-// BEFORE FREE_TEXT.
-
-CSS_TEXT
-    : ~[\r\n;%%]+
-    ;
-
-// ── Free-form text ────────────────────────────────────────────────────────
-// Used for: state descriptions (after id :), transition labels (after -->:),
-// and note content (single-line and multi-line body).
-//
-// Design: rather than three separate identically-patterned tokens (which would
-// all match the same input and make ANTLR pick the first-declared one
-// regardless of context), we use a single FREE_TEXT token.  The parser rules
-// (descriptionText, transitionLabel, noteLineContent, noteBodyLine) all
-// reference FREE_TEXT, relying on the same token type in each context.
-// The visitor knows from the rule context what kind of text it is reading.
-//
-// FREE_TEXT matches any sequence of non-newline, non-comment-start characters
-// that is not solely whitespace (WS -> skip handles whitespace between tokens,
-// but FREE_TEXT starts after a non-whitespace character is found).
-//
-// Note: FREE_TEXT is intentionally broad.  It may match things like "end" or
-// "note" when they appear in the middle of a note body.  This is correct
-// because keyword tokens (KW_END_NOTE, etc.) are declared first and will
-// consume those sequences when they appear at the start of a line.
-//
-// Stops at: end-of-line (\r \n) and comment-start (%%).
-
-FREE_TEXT
-    : ~[\r\n%%]+
-    ;
-
-// ── Comment ───────────────────────────────────────────────────────────────
-
-COMMENT
-    : '%%' ~[\r\n]*
-    ;
-
-// ── Newline ───────────────────────────────────────────────────────────────
-
-NEWLINE
-    : [\r\n]+
-    ;
-
-// ── Whitespace ────────────────────────────────────────────────────────────
-
-WS
-    : [ \t]+ -> skip
+    : CSS_VALUE_START+ SEMI?
     ;

@@ -1,0 +1,82 @@
+stateDiagram-v2
+    direction TB
+
+    %% Define custom styles
+    classDef error fill:#f00,color:white,font-weight:bold,stroke-width:2px,stroke:yellow
+    classDef success fill:#0f0,stroke:#333,stroke-width:2px
+    classDef special fill:#add8e6,stroke:#333,stroke-width:2px,font-style:italic
+
+    %% Initial state transition
+    [*] --> StateA : Start
+
+    %% Main states and transitions
+    StateA : First primary state
+    StateA --> StateB : Transition to B
+
+    StateB --> StateC : Condition Met
+    StateC --> StateA : Back to A
+    StateC --> Choice : Evaluate
+
+    %% Choice/Decision point — must use 'state id <<choice>>' syntax
+    state Choice <<choice>>
+    Choice --> StateD : Option 1
+    Choice --> StateE : Option 2
+
+    %% Composite state with sub-states and a note
+    CompositeF : Composite State F
+    state CompositeF {
+        direction LR
+        StateD : Sub-state D
+        StateE : Sub-state E
+        StateD --> StateE : Data Processed
+        note right of StateE
+            This is a multi-line note
+            within the composite state.
+        end note
+        StateE --> ExitPoint : Done
+    }
+    ExitPoint : Exit Point
+    CompositeF --> StateG : Exit transition
+
+    %% Fork pseudo-state — must use 'state id <<fork>>' syntax
+    state Fork <<fork>>
+    state Join <<join>>
+
+    StateG --> Fork : Parallel task start
+    Fork --> StateH : Async H
+    Fork --> StateI : Async I
+
+    %% Concurrent regions inside a composite state
+    state "Concurrent Activities" as Concurrent {
+        state "Region H" as H {
+            direction TB
+            StateH : Task H
+            StateH --> Join : H Complete
+        }
+        --
+        state "Region I" as I {
+            direction TB
+            StateI : Task I
+            StateI --> Join : I Complete
+        }
+    }
+
+    Join --> FinalState : All tasks complete
+
+    %% State G description
+    StateG : State G
+
+    %% Final state
+    FinalState : System Halted
+    FinalState --> [*] : End Process
+
+    %% Long name alias
+    state "State with a long description and alias" as LongDesc
+    StateE --> LongDesc : To long desc
+
+    %% Applying styles
+    class StateC error
+    class FinalState success
+    StateG:::special
+
+    %% This is a comment and will be ignored by the renderer

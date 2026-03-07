@@ -1,0 +1,113 @@
+graph TB
+    subgraph PHI["🔵 Microsoft Phi-4-mini — 3.8B Dense"]
+        direction TB
+        P_IN["📝 Text Input"]
+        P_TOK["🔤 Tokenizer\no200k_base TikToken · Vocab 200,064 · 23 languages\nShared input/output embedding matrix"]
+        P_EMB["📐 Embedding\nToken Embed 200,064×3072\n+ Fractional LongRoPE  75% rotary · 25% pos-agnostic"]
+
+        subgraph P_STACK["32 × Dense Decoder Layer"]
+            direction TB
+            P_N1["RMSNorm  pre-attn"]
+            P_GQA["🔍 GQA  Grouped Query Attention\n24 Q heads · 8 K/V heads · 3:1 KV ratio\nHidden 3072 · Flash Attn 2"]
+            P_R1["➕ residual"]
+            P_N2["RMSNorm  post-attn"]
+            P_FFN["⚙️ FFN  Dense\nGate · Up · Down projection\nSwiGLU · ALL tokens processed"]
+            P_R2["➕ residual → next layer"]
+            P_N1 --> P_GQA --> P_R1 --> P_N2 --> P_FFN --> P_R2
+        end
+
+        P_NORM["RMSNorm  final"]
+        P_HEAD["🎯 LM Head  200,064 logits\nTied to input embedding"]
+        P_OUT["💬 Output"]
+        P_IN --> P_TOK --> P_EMB --> P_STACK --> P_NORM --> P_HEAD --> P_OUT
+
+        subgraph P_META["Training · Quant · Hardware"]
+            PM1["SFT + DPO + RLHF\n5T token pre-train · Synthetic math/code"]
+            PM2["BF16 7.6GB · Q4 2.4GB · ONNX NPU/CPU"]
+            PM3["✅ CPU-capable · Jetson · Air-gap · MIT License"]
+            PM1 ~~~ PM2 ~~~ PM3
+        end
+    end
+
+    subgraph OSS["🟣 OpenAI gpt-oss-20b — 21B MoE  3.6B active"]
+        direction TB
+        O_IN["📝 Text Input"]
+        O_TOK["🔤 Tokenizer\no200k_harmony TikToken  open-sourced\nHarmony prompt format · STEM+code optimized"]
+        O_EMB["📐 Embedding\nSeparate input/output matrices\n+ Standard RoPE · Learned attention sinks"]
+
+        subgraph O_STACK["24 × MoE Decoder Layer  alternating"]
+            direction TB
+            O_N1["RMSNorm  pre-attn"]
+
+            subgraph O_ATT["Alternating Attention Pattern"]
+                direction LR
+                O_A1["Dense global attn\neven layers\n64 Q · 8 K/V · GQA group=8"]
+                O_A2["Locally banded sparse\nodd layers\nReduced bandwidth"]
+                O_A1 ~~~ O_A2
+            end
+
+            O_R1["➕ residual"]
+            O_N2["RMSNorm  pre-FFN"]
+
+            subgraph O_MOE["Mixture-of-Experts FFN"]
+                direction TB
+                O_RT["🔀 Router  Top-4 of 32 experts per token"]
+                O_E1["Expert 1\nSwiGLU\nMXFP4"] & O_E2["Expert 2\nSwiGLU\nMXFP4"] & O_E3["Expert 3\nSwiGLU\nMXFP4"] & O_E4["…32 total\nSwiGLU\nMXFP4"]
+                O_MG["Weighted sum  3.6B active · 17.4B skipped"]
+                O_RT --> O_E1 & O_E2 & O_E3 & O_E4 --> O_MG
+            end
+
+            O_R2["➕ residual → next layer"]
+            O_N1 --> O_ATT --> O_R1 --> O_N2 --> O_MOE --> O_R2
+        end
+
+        O_NORM["RMSNorm  final"]
+        O_HEAD["🎯 LM Head  harmony vocab\nSeparate unembedding matrix"]
+
+        subgraph O_RSN["Configurable Reasoning"]
+            direction LR
+            OR1["Low\nfast"] & OR2["Medium\nbalanced"] & OR3["High\nfull CoT"]
+            OR1 ~~~ OR2 ~~~ OR3
+        end
+
+        O_OUT["💬 Output + Chain-of-Thought"]
+        O_IN --> O_TOK --> O_EMB --> O_STACK --> O_NORM --> O_HEAD --> O_RSN --> O_OUT
+
+        subgraph O_META["Training · Quant · Hardware"]
+            OM1["RL from o3/o4 · Instruction Hierarchy\nScalable Preparedness eval"]
+            OM2["MXFP4 4.25b · BF16 activations · 16 GB VRAM\nOllama GGUF compat"]
+            OM3["⚠️ GPU required · Edge server · vLLM · Apache 2.0"]
+            OM1 ~~~ OM2 ~~~ OM3
+        end
+    end
+
+    subgraph DIFF["📊 Architecture Differences"]
+        direction LR
+        D1["Arch\nPhi: Dense 32L\nOSS: MoE 24L"]
+        D2["Active Params\nPhi: 3.8B all\nOSS: 3.6B of 21B"]
+        D3["Attention\nPhi: GQA uniform\nOSS: Alternating D+S"]
+        D4["Memory\nPhi: 2.4GB Q4\nOSS: 16GB MXFP4"]
+        D5["OT Edge\nPhi: CPU/Jetson\nOSS: GPU server"]
+        D1 ~~~ D2 ~~~ D3 ~~~ D4 ~~~ D5
+    end
+
+    PHI ~~~ OSS
+    OSS ~~~ DIFF
+
+    style PHI fill:#0d1f35,stroke:#1e3a5f,color:#93c5fd
+    style OSS fill:#0d0d1a,stroke:#2d1b4e,color:#d8b4fe
+    style DIFF fill:#0f1117,stroke:#334155,color:#94a3b8
+    style P_STACK fill:#0a1628,stroke:#1d4ed8,color:#7dd3fc
+    style P_GQA fill:#0f2030,stroke:#1d4ed8,color:#bfdbfe
+    style P_FFN fill:#0f2030,stroke:#1d4ed8,color:#bfdbfe
+    style P_META fill:#0d2020,stroke:#134e4a,color:#6ee7b7
+    style O_STACK fill:#0a0a18,stroke:#6d28d9,color:#c4b5fd
+    style O_ATT fill:#1a0f2e,stroke:#5b21b6,color:#ddd6fe
+    style O_MOE fill:#120d20,stroke:#7c3aed,color:#a78bfa
+    style O_RSN fill:#120d20,stroke:#7c3aed,color:#e9d5ff
+    style O_META fill:#150d25,stroke:#2d1b4e,color:#c4b5fd
+    style O_RT fill:#2d1b4e,stroke:#7c3aed,color:#ddd6fe
+    style P_IN fill:#1e3a5f,stroke:#3b82f6,color:#dbeafe
+    style P_OUT fill:#1e3a5f,stroke:#3b82f6,color:#dbeafe
+    style O_IN fill:#2d1b4e,stroke:#7c3aed,color:#ede9fe
+    style O_OUT fill:#2d1b4e,stroke:#7c3aed,color:#ede9fe

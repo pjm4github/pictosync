@@ -1,0 +1,175 @@
+graph TB
+
+    subgraph VOICE_IN["🎙️ Voice Input Pipeline"]
+        direction TB
+        MIC["🎤 Microphone / Audio Stream\nPCM · WAV · streaming chunks"]
+
+        subgraph VAD["Voice Activity Detection  VAD"]
+            direction LR
+            VAD1["Silero VAD\nor WebRTC VAD\nor pyannote"]
+            VAD2["Detects speech onset/offset\nFilters silence · Segments utterances"]
+            VAD1 ~~~ VAD2
+        end
+
+        subgraph FEAT["Audio Feature Extraction"]
+            direction LR
+            FEAT1["80-dim log-Mel\nFilterbank\n10ms frame rate"]
+            FEAT2["Sample rate: 16kHz\nWindow: 25ms\nHop: 10ms"]
+            FEAT1 ~~~ FEAT2
+        end
+
+        MIC --> VAD --> FEAT
+    end
+
+    Note["The two key decision points for your context: \nPath A (standalone ASR → LLM) is the right choice for both Phi-4-mini and gpt-oss-20b today. \nwhisper.cpp runs fully CPU-bound, ships as a single binary, \nneeds no GPU, and is air-gap safe — meaning it fits naturally in front of a Phi-4-mini deployment on a substation gateway. \nThe transcript arrives at the tokenizer as plain text and nothing in the LLM chain changes at all.\nPath B (Phi-4-multimodal) skips the ASR stage entirely — audio tokens flow directly\n into the model's embedding layer via a built-in audio encoder and a LoRA adapter.\nThe tradeoff is the model grows from 3.8B to 5.6B params and you lose model-swappability. For an OT environment where you want a single compact binary that handles operator voice commands,\n equipment alarms, and text queries all in one pass, it's compelling. For your OT/NERC CIP stack specifically,\n I'd lean toward faster-whisper (CTranslate2 INT8 backend, ~200MB, ~4x faster than stock Whisper) \nfeeding into Phi-4-mini via plain text — it keeps the ASR and inference concerns cleanly separated,\nboth components run offline, and you can swap either without touching the other."]
+
+    subgraph ROUTE["🔀 Architecture Choice"]
+        direction LR
+        PATH_A["Path A\nStandalone ASR\n+ LLM pipeline\nMax model flexibility"]
+        PATH_B["Path B\nNative multimodal LLM\naudio processed inline\nPhi-4-multimodal only"]
+        PATH_A ~~~ PATH_B
+    end
+
+    subgraph PATH_A_DETAIL["PATH A — Standalone ASR Pipeline"]
+        direction TB
+
+        subgraph ASR["Speech Recognition  ASR"]
+            direction TB
+
+            subgraph WHISPER["Whisper  OpenAI  recommended"]
+                direction LR
+                W1["Whisper encoder\nConv1D + Transformer\n1500 audio frames → 1500 embeddings"]
+                W2["Whisper decoder\nCross-attn over audio\n→ token sequence"]
+                W3["Models: tiny 39M\nbase 74M · small 244M\nmedium 769M · large 1.5B"]
+                W1 ~~~ W2 ~~~ W3
+            end
+
+            subgraph ALTERNATIVES["Alternatives"]
+                direction LR
+                A1["faster-whisper\nCTranslate2 backend\n4x faster · lower VRAM"]
+                A2["whisper.cpp\nC++ · CPU-only\nair-gap friendly"]
+                A3["moonshine\nUseful Models\nstreaming · tiny footprint"]
+                A1 ~~~ A2 ~~~ A3
+            end
+
+            WHISPER ~~~ ALTERNATIVES
+        end
+
+        subgraph POST["Text Post-Processing"]
+            direction LR
+            PP1["Punctuation\nrestoration"]
+            PP2["Speaker\ndiarization\npyannote.audio"]
+            PP3["Confidence\nfiltering\nword timestamps"]
+            PP1 ~~~ PP2 ~~~ PP3
+        end
+
+        ASR --> POST
+    end
+
+    subgraph PATH_B_DETAIL["PATH B — Phi-4-multimodal  Native Audio"]
+        direction TB
+
+        subgraph AUDIO_ENC["Audio Encoder  built-in"]
+            direction LR
+            AE1["3 Conv layers\n+ 24 Conformer blocks\n1024 attn dims · 1536 FF dims\n16 attn heads"]
+            AE2["Input: 80-dim log-Mel\n10ms frame rate\n~750 tokens per minute"]
+            AE1 ~~~ AE2
+        end
+
+        subgraph AUDIO_ADAPT["Audio Adapter  LoRA"]
+            direction LR
+            AD1["LoRA on all\nattn + MLP layers\nrank 320 · 460M params"]
+            AD2["Mixture-of-LoRAs\naudio LoRA active\nvision LoRA frozen"]
+            AD1 ~~~ AD2
+        end
+
+        AUDIO_ENC --> AUDIO_ADAPT
+    end
+
+    subgraph LLM_INJECT["💉 Injection Point into LLM Chain"]
+        direction TB
+
+        subgraph PROMPT["Prompt Assembly"]
+            direction LR
+            PR1["System prompt\noperator context\nNERC role"]
+            PR2["Audio transcript\nor audio tokens\nas user turn"]
+            PR3["Tool schema\nfunction defs\nDNP3 actions"]
+            PR1 ~~~ PR2 ~~~ PR3
+        end
+
+        subgraph TOKEN["Tokenizer  same as before"]
+            TK1["Path A: text transcript\n→ standard tokenize\nno model changes needed"]
+            TK2["Path B: audio tokens\n→ special audio tokens\nPhi-4-multimodal only"]
+            TK1 ~~~ TK2
+        end
+
+        PROMPT --> TOKEN
+    end
+
+    subgraph PHI_CORE["🔵 Phi-4-mini Transformer Stack  unchanged"]
+        direction LR
+        PC1["32 × GQA + FFN layers\nprocesses text tokens\nas normal"]
+        PC2["No modification needed\nfor Path A\nDrop-in replacement"]
+        PC1 ~~~ PC2
+    end
+
+    subgraph OSS_CORE["🟣 gpt-oss-20b Transformer Stack  unchanged"]
+        direction LR
+        OC1["24 × MoE layers\nprocesses text tokens\nas normal"]
+        OC2["No modification needed\nfor Path A\nText-only model stays text-only"]
+        OC1 ~~~ OC2
+    end
+
+    subgraph OUT["💬 LLM Output"]
+        direction LR
+        O1["Structured response\nfunction call\noperator action"]
+        O2["TTS optional\npiper-tts · kokoro\noffline capable"]
+        O1 ~~~ O2
+    end
+
+    subgraph OT_NOTE["⚡ OT / Grid Deployment Notes"]
+        direction LR
+        N1["whisper.cpp\nCPU-only · no GPU\nair-gap safe\nworks on Jetson"]
+        N2["faster-whisper\nCTranslate2 · INT8\n~200MB · low latency\nworks with Phi-4-mini"]
+        N3["Phi-4-multimodal\naudio + vision + text\nsingle model\n5.6B params total"]
+        N4["Streaming VAD\n+ chunked Whisper\nreal-time operator\nvoice commands"]
+        N1 ~~~ N2 ~~~ N3 ~~~ N4
+    end
+
+    VOICE_IN --> ROUTE
+    ROUTE --> PATH_A_DETAIL
+    ROUTE --> PATH_B_DETAIL
+    PATH_A_DETAIL --> LLM_INJECT
+    PATH_B_DETAIL --> LLM_INJECT
+    LLM_INJECT --> PHI_CORE
+    LLM_INJECT --> OSS_CORE
+    PHI_CORE --> OUT
+    OSS_CORE --> OUT
+    OUT ~~~ OT_NOTE
+
+subgraph NOTES["📋 Architecture Decision Notes"]
+    direction TB
+    NA["Path A — Standalone ASR + LLM\nwhisper.cpp: CPU-only · single binary · no GPU · air-gap safe\nTranscript → tokenizer as plain text · Zero LLM chain changes"]
+    NB["Path B — Phi-4-multimodal Native Audio\nSkips ASR entirely · Audio tokens → embedding layer directly\nModel: 3.8B → 5.6B · Loses model-swappability\nBest for: single binary handling voice + vision + text"]
+    NC["OT / NERC CIP Recommendation\nfaster-whisper CTranslate2 INT8 · ~200MB · ~4x faster than Whisper\nFeeds Phi-4-mini via plain text · Both fully offline\nASR and inference cleanly separated · Either component swappable"]
+    NA --> NB --> NC
+end
+    style VOICE_IN fill:#fd1f1a,stroke:#965f46,color:#6ee7b7
+    style VAD fill:#fa1a14,stroke:#947857,color:#34d399
+    style FEAT fill:#fa1a14,stroke:#947857,color:#34d399
+    style ROUTE fill:#1a1a0d,stroke:#713f12,color:#fcd34d
+    style PATH_A_DETAIL fill:#1a1209,stroke:#92400e,color:#fbbf24
+    style ASR fill:#950e05,stroke:#78350f,color:#f59e0b
+    style WHISPER fill:#ff0a03,stroke:#92400e,color:#fde68a
+    style ALTERNATIVES fill:#ff0a03,stroke:#78350f,color:#fde68a
+    style POST fill:#950e05,stroke:#78350f,color:#f59e0b
+    style PATH_B_DETAIL fill:#fd1f35,stroke:#1e3a5f,color:#93c5fd
+    style AUDIO_ENC fill:#fa1628,stroke:#1d4ed8,color:#7dd3fc
+    style AUDIO_ADAPT fill:#fa1628,stroke:#1d4ed8,color:#7dd3fc
+    style LLM_INJECT fill:#9a0d1a,stroke:#8b21a8,color:#f8b4fe
+    style PROMPT fill:#620a18,stroke:#5b21b6,color:#c4b5fd
+    style TOKEN fill:#620a18,stroke:#5b21b6,color:#c4b5fd
+    style PHI_CORE fill:#fd1f35,stroke:#1e3a5f,color:#60a5fa
+    style OSS_CORE fill:#fd0d1a,stroke:#2d1b4e,color:#c084fc
+    style OUT fill:#fd1a0d,stroke:#14532d,color:#86efac
+    style OT_NOTE fill:#ff1117,stroke:#334155,color:#94a3b8
