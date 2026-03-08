@@ -506,7 +506,7 @@ CONCURRENT_V : '||' ;
 // Declared before a standalone HASH '#' so the full color spec wins.
 
 COLOR_STYLE
-    : '#' [a-zA-Z0-9\-|;:.#\[\]]*
+    : '#' [a-zA-Z0-9\-|;:.#[\]]*
     ;
 
 // ── Declaration keywords ──────────────────────────────────────────────────

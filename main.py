@@ -141,7 +141,7 @@ from undo_commands import (
     GroupItemsCommand, UngroupItemsCommand,
     MoveItemCommand, ItemGeometryCommand, TextEditCommand,
 )
-from canvas.mixins import LinkedMixin
+from canvas.mixins import LinkedMixin, MetaMixin
 from domains import scan_domains, DomainInfo, DomainTool
 
 
@@ -246,6 +246,7 @@ class MainWindow(QMainWindow):
         # Build UI (menus first since toolbar references menu actions)
         self._build_menus()
         self._build_toolbar()
+        self._build_dsl_toolbar()
         self._build_left_toolbar()
 
         # Connect signals
@@ -714,6 +715,19 @@ class MainWindow(QMainWindow):
             lambda checked: self._update_focus_mode_icon(checked)
         )
 
+    def _build_dsl_toolbar(self):
+        """Build the second-row DSL tools toolbar (initially empty)."""
+        self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
+        self._dsl_tb = QToolBar("DSL Tools")
+        self._dsl_tb.setIconSize(QSize(18, 18))
+        self._dsl_tb.setMovable(True)
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self._dsl_tb)
+        # Placeholder label shown when no DSL tools are loaded
+        self._dsl_placeholder = QLabel("Domain Specific Tools Will Appear Here")
+        self._dsl_placeholder.setStyleSheet("font-style: italic; color: gray; padding: 2px 6px;")
+        self._dsl_tb.addWidget(self._dsl_placeholder)
+        self._dsl_tb.setVisible(False)
+
     def _build_left_toolbar(self):
         """Build the left-side domain tools toolbar."""
         self._left_tb = QToolBar("Domain Tools")
@@ -734,11 +748,15 @@ class MainWindow(QMainWindow):
             if act in self._icon_actions:
                 del self._icon_actions[act]
         self._domain_tool_actions.clear()
-        self._left_tb.clear()
+        # Clear DSL toolbar but keep the placeholder widget
+        for act in self._dsl_tb.actions():
+            w = self._dsl_tb.widgetForAction(act)
+            if w is not self._dsl_placeholder:
+                self._dsl_tb.removeAction(act)
 
         if domain is None:
             self._active_domain = None
-            self._left_tb.setVisible(False)
+            self._dsl_tb.setVisible(False)
             return
 
         self._active_domain = domain
@@ -755,10 +773,13 @@ class MainWindow(QMainWindow):
             act.triggered.connect(
                 lambda checked, t=tool: self._on_domain_tool_clicked(t)
             )
-            self._left_tb.addAction(act)
+            self._dsl_tb.addAction(act)
             self._domain_tool_actions.append(act)
 
-        self._left_tb.setVisible(True)
+        # Hide placeholder when tools are present, show otherwise
+        self._dsl_placeholder.setVisible(not domain.tools)
+
+        self._dsl_tb.setVisible(True)
 
     def _on_domain_tool_clicked(self, tool: DomainTool):
         """Create a canvas item from a DSL tool definition.
@@ -921,6 +942,9 @@ class MainWindow(QMainWindow):
         MetaSeqBlockItem.on_adjust1_changed = self.props.update_adjust1_display
         MetaSeqBlockItem.on_adjust2_changed = self.props.update_adjust2_display
         MetaSeqBlockItem.on_adjust3_changed = self.props.update_adjust3_display
+
+        # Set up rotation callback (class-level, applies to all rotatable items)
+        MetaMixin.on_rotation_changed = self.props.update_angle_display
 
         # Set initial default text color based on current theme
         self._update_default_text_color(DEFAULT_STYLE)
@@ -2880,6 +2904,13 @@ class MainWindow(QMainWindow):
                     it.add_member(child_item)
             if z_index:
                 it.setZValue(z_index)
+
+        # Restore rotation angle from geom if present
+        if it is not None and hasattr(it, 'set_rotation_angle'):
+            g = rec.get("geom") or {}
+            angle = g.get("angle", 0)
+            if angle:
+                it.set_rotation_angle(float(angle))
 
         return it
 

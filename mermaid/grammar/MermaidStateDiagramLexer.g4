@@ -182,11 +182,16 @@ NOTE_HDR_CMT     : '%%' ~[\r\n]*                -> type(COMMENT), mode(DEFAULT_M
 
 mode NOTE_BODY_MODE;
 
-NOTE_BODY_TEXT : ~[\r\n%]+                  -> type(FREE_TEXT)                ;
-NOTE_BODY_NL   : ('\r\n' | '\r' | '\n')  -> type(NEWLINE)                  ;
-NOTE_BODY_CMT  : '%%' ~[\r\n]*              -> type(COMMENT)                  ;
-NOTE_BODY_END  : 'end' [ \t]+ 'note'         -> type(KW_END_NOTE), mode(DEFAULT_MODE) ;
-NOTE_BODY_WS   : [ \t]+                      -> skip                           ;
+// NOTE_BODY_END must be declared FIRST — on a line like "    end note",
+// both NOTE_BODY_END and NOTE_BODY_TEXT match the same length (the full
+// line up to the newline).  ANTLR4 breaks equal-length ties by declaration
+// order, so declaring NOTE_BODY_END first ensures the note terminates.
+// The [ \t]* prefix is essential because "end note" typically has leading
+// indentation — without it, the token can't start matching at column 0.
+NOTE_BODY_END  : [ \t]* 'end' [ \t]+ 'note'  -> type(KW_END_NOTE), mode(DEFAULT_MODE) ;
+NOTE_BODY_TEXT : ~[\r\n%]+                    -> type(FREE_TEXT)                ;
+NOTE_BODY_NL   : ('\r\n' | '\r' | '\n')      -> type(NEWLINE)                  ;
+NOTE_BODY_CMT  : '%%' ~[\r\n]*               -> type(COMMENT)                  ;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CSS_READY_MODE  — entered right after a classDef keyword

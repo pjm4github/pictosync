@@ -1,43 +1,75 @@
-# SVGNodeRegistry — Specification
+# SVGNodeRegistry — Specification v2
 # Mermaid Sequence Diagram Renderer
 # ============================================================
-# This file is the single source of truth consumed by the
-# SVGNodeRegistry implementation.  It defines:
+# VERSION NOTES (v2 vs v1)
+# ─────────────────────────
+# v1 assumed hand-written parse-tree traversal.
+# v2 assumes the ANTLR4 tool-chain generates the recognizer:
 #
-#   1. The AST node class hierarchy (Python dataclasses)
-#   2. The SVG attribute / data- conventions
-#   3. The complete grammar-element → SVG group mapping
-#   4. The SVGNodeRegistry API contract
-#   5. The LayoutModel contract
-#   6. Worked usage examples
+#   antlr4 MermaidSequence.g4 -Dlanguage=Python3 -visitor -no-listener
 #
-# Target language : Python 3.11+
+# This produces:
+#   MermaidSequenceLexer.py
+#   MermaidSequenceParser.py          ← context classes live here
+#   MermaidSequenceVisitor.py         ← abstract base with visitXxx stubs
+#
+# Consequences for the architecture:
+#   • ASTNode gains a ctx field holding the originating parser context.
+#     source_start / source_stop are read FROM ctx, not stored manually.
+#   • The hand-written visitor in ast_visitor.py SUBCLASSES the generated
+#     MermaidSequenceVisitor and overrides visitXxx methods to build AST nodes.
+#   • The visitor is the ONLY place that touches parser context objects.
+#     Everything downstream (layout, renderer, registry) works only with
+#     AST node objects — no parser context leaks past the visitor boundary.
+#   • The generated context class name for each rule is documented in
+#     Section 2 so Claude Code knows which visitXxx method to implement.
+#
+# Target language : Python 3.13+
 # SVG library     : xml.etree.ElementTree (stdlib)
-# ANTLR4 runtime  : antlr4-python3-runtime
+# ANTLR4 runtime  : antlr4-python3-runtime >= 4.13
 # PyQt version    : PyQt6
+# Grammar file    : MermaidSequence.g4  (already written)
 # ============================================================
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# SECTION 1 — PIPELINE OVERVIEW
+# SECTION 1 — PIPELINE
 # ──────────────────────────────────────────────────────────────────────────────
 #
 #  Source text  (mermaid sequenceDiagram string)
 #       │
-#       ▼  Stage 1 — ANTLR4 parse
-#  Parse Tree   (MermaidSequenceParser context objects)
+#       ▼  Stage 1 — ANTLR4 tool  [one-time build step, not runtime]
+#  MermaidSequenceLexer.py          ← generated
+#  MermaidSequenceParser.py         ← generated  (contains *Context classes)
+#  MermaidSequenceVisitor.py        ← generated  (abstract visitXxx stubs)
 #       │
-#       ▼  Stage 2 — Visitor → AST construction
-#  AST          (Python dataclasses defined in Section 2)
+#       ▼  Stage 2 — Runtime parse  (parse_diagram() in parser_runner.py)
+#  antlr4.CommonTokenStream
+#  antlr4.tree.ParseTree
+#  MermaidSequenceParser.DiagramContext   ← root context object
 #       │
-#       ▼  Stage 3 — Layout engine
-#  LayoutModel  (pixel geometry, defined in Section 4)
+#       ▼  Stage 3 — AST construction  (ASTBuildingVisitor in ast_visitor.py)
+#  DiagramNode  (root of hand-written AST dataclass tree)
 #       │
-#       ▼  Stage 4 — SVG renderer
-#  SVG DOM      (xml.etree.ElementTree; groups carry data- attributes)
+#       ▼  Stage 4 — Layout engine  (layout_engine.py)
+#  LayoutModel  (pixel geometry)
 #       │
-#       ▼  Stage 5 — Registry population (happens during Stage 4)
-#  SVGNodeRegistry  (bidirectional index, defined in Section 5)
+#       ▼  Stage 5 — SVG renderer  (svg_renderer.py)
+#  SVG DOM  (xml.etree.ElementTree)
+#       │
+#       ▼  Stage 6 — Registry population  [happens inside Stage 5]
+#  SVGNodeRegistry  (bidirectional index)
+#
+#
+# KEY BOUNDARY RULE
+# ─────────────────
+# Parser context objects (MermaidSequenceParser.*Context) MUST NOT cross
+# the visitor boundary.  The visitor reads ctx fields, constructs AST nodes,
+# and returns them.  All downstream code receives only ASTNode subclasses.
+#
+# The only exception is ASTNode.ctx which stores the originating context for
+# error reporting and source-location queries.  It is typed as Any and must
+# not be used for data extraction outside of ast_visitor.py.
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -46,17 +78,60 @@
 #
 # FILE: ast_nodes.py
 #
-# Rules:
-#   • Every node inherits ASTNode.
-#   • node_id is a UUID string assigned at construction and NEVER changed.
-#   • source_start / source_stop are the ANTLR4 token interval indices
-#     (set by the visitor; default -1 means "synthetic / not from source").
-#   • All list fields default to empty list via field(default_factory=list).
+# Changes from v1:
+#   • ASTNode gains  ctx: Any = None   (originating parser context)
+#   • source_start / source_stop are PROPERTIES that read from ctx when set,
+#     falling back to stored values for synthetic nodes.
+#   • Each class documents the generated context class it is built from
+#     and the visitXxx method name that constructs it.
+#
+# ANTLR4 context → AST node mapping
+# ───────────────────────────────────
+#  Parser rule          Generated context class              visitXxx method
+#  ─────────────────    ─────────────────────────────────    ──────────────────────────
+#  diagram              DiagramContext                        visitDiagram
+#  participantDecl      ParticipantDeclContext                visitParticipantDecl
+#  actorDecl            ActorDeclContext                      visitActorDecl
+#  boxBlock             BoxBlockContext                       visitBoxBlock
+#  createDirective      CreateDirectiveContext                visitCreateDirective
+#  destroyDirective     DestroyDirectiveContext               visitDestroyDirective
+#  messageStatement     MessageStatementContext               visitMessageStatement
+#  activateStatement    ActivateStatementContext              visitActivateStatement
+#  deactivateStatement  DeactivateStatementContext            visitDeactivateStatement
+#  noteStatement        NoteStatementContext                  visitNoteStatement
+#  autonumberStatement  AutonumberStatementContext            visitAutonumberStatement
+#  loopBlock            LoopBlockContext                      visitLoopBlock
+#  altBlock             AltBlockContext                       visitAltBlock
+#  optBlock             OptBlockContext                       visitOptBlock
+#  parBlock             ParBlockContext                       visitParBlock
+#  criticalBlock        CriticalBlockContext                  visitCriticalBlock
+#  breakBlock           BreakBlockContext                     visitBreakBlock
+#  rectBlock            RectBlockContext                      visitRectBlock
+#
+# Helper sub-rule contexts (visited inline, not mapped to top-level AST nodes):
+#  participantId        ParticipantIdContext      → str via .getText()
+#  participantType      ParticipantTypeContext    → ParticipantKind enum
+#  notePosition         NotePositionContext       → NotePosition enum
+#  iconSpec / label     (inline text extraction)
+#
+# CONTEXT TEXT EXTRACTION PATTERN
+# ────────────────────────────────
+# In the generated visitor the standard pattern for reading a token value is:
+#
+#   ctx.participantId().getText().strip('"')   # strips quotes from QUOTED_STRING
+#   ctx.ARROW().getText()                      # raw arrow string e.g. '->>'
+#   ctx.messageText().getText().strip()        # free-form text after ':'
+#
+# The visitor helper _text(ctx) normalises quoted strings:
+#   def _text(node) -> str:
+#       t = node.getText()
+#       return t[1:-1] if t.startswith('"') else t
 
 """
+# ast_nodes.py
 import uuid
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Any, Optional, List
 from enum import Enum, auto
 
 
@@ -66,9 +141,23 @@ def make_id() -> str:
 
 @dataclass
 class ASTNode:
-    node_id:      str = field(default_factory=make_id)
-    source_start: int = -1
-    source_stop:  int = -1
+    node_id: str = field(default_factory=make_id)
+    ctx:     Any = field(default=None, repr=False, compare=False)
+    # ctx holds the originating MermaidSequenceParser.*Context object.
+    # Use ONLY in ast_visitor.py.  Typed as Any to avoid importing
+    # generated parser code into downstream modules.
+
+    @property
+    def source_start(self) -> int:
+        if self.ctx is not None:
+            return self.ctx.start.tokenIndex
+        return -1
+
+    @property
+    def source_stop(self) -> int:
+        if self.ctx is not None:
+            return self.ctx.stop.tokenIndex
+        return -1
 
 
 # ── Enumerations ──────────────────────────────────────────────────────────────
@@ -84,102 +173,121 @@ class ParticipantKind(Enum):
     QUEUE       = auto()
 
 class ArrowStyle(Enum):
-    SOLID_OPEN   = "->"    # solid line, no arrowhead
-    DOTTED_OPEN  = "-->"   # dotted line, no arrowhead
-    SOLID_ARROW  = "->>"   # solid line, filled arrowhead
-    DOTTED_ARROW = "-->>"  # dotted line, filled arrowhead
-    SOLID_CROSS  = "-x"    # solid line, cross terminus
-    DOTTED_CROSS = "--x"   # dotted line, cross terminus
-    SOLID_ASYNC  = "-)"    # solid line, open async arrow
-    DOTTED_ASYNC = "--)"   # dotted line, open async arrow
+    SOLID_OPEN   = "->"
+    DOTTED_OPEN  = "-->"
+    SOLID_ARROW  = "->>"
+    DOTTED_ARROW = "-->>"
+    SOLID_CROSS  = "-x"
+    DOTTED_CROSS = "--x"
+    SOLID_ASYNC  = "-)"
+    DOTTED_ASYNC = "--)"
 
 class NotePosition(Enum):
     RIGHT_OF = auto()
     LEFT_OF  = auto()
     OVER     = auto()
 
-# ── Core leaf nodes ───────────────────────────────────────────────────────────
+# ── Core nodes ────────────────────────────────────────────────────────────────
+# Built by: visitParticipantDecl, visitActorDecl, visitCreateDirective
 
 @dataclass
 class ParticipantNode(ASTNode):
+    # ctx type: ParticipantDeclContext | ActorDeclContext | CreateDirectiveContext
     kind:              ParticipantKind = ParticipantKind.PARTICIPANT
-    name:              str = ""          # internal identifier (used in message refs)
-    label:             str = ""          # display label / alias
-    created_at_step:   Optional[int] = None   # set when 'create' directive precedes first message
-    destroyed_at_step: Optional[int] = None   # set when 'destroy' directive fires
+    name:              str = ""
+    label:             str = ""
+    created_at_step:   Optional[int] = None
+    destroyed_at_step: Optional[int] = None
 
+# Built by: visitBoxBlock
 @dataclass
 class BoxNode(ASTNode):
+    # ctx type: BoxBlockContext
     color:        Optional[str]         = None
     label:        Optional[str]         = None
     participants: List[ParticipantNode] = field(default_factory=list)
 
+# Built by: visitMessageStatement
 @dataclass
 class MessageNode(ASTNode):
+    # ctx type: MessageStatementContext
     step:          int        = 0
     sender_name:   str        = ""
     receiver_name: str        = ""
     arrow:         ArrowStyle = ArrowStyle.SOLID_ARROW
-    activate:      bool       = False   # '+' suffix activates receiver
-    deactivate:    bool       = False   # '-' suffix deactivates receiver
-    central_src:   bool       = False   # sender uses () central-connection syntax
-    central_dst:   bool       = False   # receiver uses () central-connection syntax
+    activate:      bool       = False
+    deactivate:    bool       = False
+    central_src:   bool       = False
+    central_dst:   bool       = False
     text:          str        = ""
 
+# Built by: visitActivateStatement, visitDeactivateStatement
 @dataclass
 class ActivationNode(ASTNode):
+    # ctx type: ActivateStatementContext | DeactivateStatementContext
     step:             int  = 0
     participant_name: str  = ""
-    is_activate:      bool = True   # False → deactivate statement
+    is_activate:      bool = True
 
+# Built by: visitNoteStatement
 @dataclass
 class NoteNode(ASTNode):
+    # ctx type: NoteStatementContext
     step:              int          = 0
     position:          NotePosition = NotePosition.RIGHT_OF
-    participant_names: List[str]    = field(default_factory=list)   # 1 or 2 names
+    participant_names: List[str]    = field(default_factory=list)
     text:              str          = ""
 
+# Built by: visitAutonumberStatement
 @dataclass
 class AutonumberNode(ASTNode):
+    # ctx type: AutonumberStatementContext
     start: Optional[int] = None
     step:  Optional[int] = None
 
-# ── Control-structure nodes (all have a body list of child statements) ─────────
-
+# Built by: visitLoopBlock
 @dataclass
 class LoopNode(ASTNode):
+    # ctx type: LoopBlockContext
     step:  int           = 0
     label: str           = ""
     body:  List[ASTNode] = field(default_factory=list)
 
+# Built by: visitAltBlock  (branches[0] = alt clause, [1..] = else clauses)
 @dataclass
 class AltBranch(ASTNode):
-    """One branch of an alt/else block."""
+    # ctx type: slice of AltBlockContext
     condition: str           = ""
     body:      List[ASTNode] = field(default_factory=list)
 
 @dataclass
 class AltNode(ASTNode):
+    # ctx type: AltBlockContext
     step:     int             = 0
-    branches: List[AltBranch] = field(default_factory=list)  # [0]=alt, [1..]=else
+    branches: List[AltBranch] = field(default_factory=list)
 
+# Built by: visitOptBlock
 @dataclass
 class OptNode(ASTNode):
+    # ctx type: OptBlockContext
     step:      int           = 0
     condition: str           = ""
     body:      List[ASTNode] = field(default_factory=list)
 
+# Built by: visitParBlock
 @dataclass
 class ParBranch(ASTNode):
-    """One branch of a par/and block."""
+    # ctx type: slice of ParBlockContext
     label: str           = ""
     body:  List[ASTNode] = field(default_factory=list)
 
 @dataclass
 class ParNode(ASTNode):
+    # ctx type: ParBlockContext
     step:     int             = 0
     branches: List[ParBranch] = field(default_factory=list)
 
+# Built by: visitCriticalBlock
 @dataclass
 class CriticalOption(ASTNode):
     condition: str           = ""
@@ -187,27 +295,32 @@ class CriticalOption(ASTNode):
 
 @dataclass
 class CriticalNode(ASTNode):
+    # ctx type: CriticalBlockContext
     step:    int                  = 0
     action:  str                  = ""
     body:    List[ASTNode]        = field(default_factory=list)
     options: List[CriticalOption] = field(default_factory=list)
 
+# Built by: visitBreakBlock
 @dataclass
 class BreakNode(ASTNode):
+    # ctx type: BreakBlockContext
     step:      int           = 0
     condition: str           = ""
     body:      List[ASTNode] = field(default_factory=list)
 
+# Built by: visitRectBlock
 @dataclass
 class RectNode(ASTNode):
+    # ctx type: RectBlockContext
     step:  int           = 0
     color: str           = ""
     body:  List[ASTNode] = field(default_factory=list)
 
-# ── Root ─────────────────────────────────────────────────────────────────────
-
+# Root — built by: visitDiagram
 @dataclass
 class DiagramNode(ASTNode):
+    # ctx type: DiagramContext
     participants: List[ParticipantNode]    = field(default_factory=list)
     boxes:        List[BoxNode]            = field(default_factory=list)
     statements:   List[ASTNode]            = field(default_factory=list)
@@ -216,195 +329,254 @@ class DiagramNode(ASTNode):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# SECTION 3 — SVG ATTRIBUTE CONVENTIONS
+# SECTION 3 — ANTLR4 VISITOR IMPLEMENTATION CONTRACT
 # ──────────────────────────────────────────────────────────────────────────────
 #
-# Every logical AST node is rendered as a PRIMARY <g> element.
-# Child SVG primitives live inside that group.
+# FILE: ast_visitor.py
+#
+# This is NEW in v2.  The visitor is the bridge between the generated
+# parser context tree and the hand-written AST dataclass tree.
+#
+# CLASS HIERARCHY
+# ───────────────
+#   MermaidSequenceVisitor          ← generated (do not edit)
+#       └── ASTBuildingVisitor      ← hand-written (ast_visitor.py)
+#
+# VISITOR RULES
+# ─────────────
+#  1. Every visitXxx method returns an ASTNode subclass (or a list for helpers).
+#  2. Store ctx on the returned node: node.ctx = ctx
+#  3. Never store ctx on nodes that are not the primary result of that visit
+#     (e.g. AltBranch nodes constructed inside visitAltBlock get their own ctx
+#     set to None because there is no single sub-context for a branch).
+#  4. Call self.visitChildren(ctx) only for nodes whose body is a list of
+#     heterogeneous statements; use the specific visitXxx for typed children.
+#  5. The step counter is maintained as self._step: int, incremented once per
+#     MessageNode, ActivationNode, NoteNode, and fragment-opening node.
+#  6. Quote stripping: use the module-level helper _strip(text) -> str which
+#     removes surrounding double-quotes if present.
+#
+# ENTRY POINT
+# ───────────
+#   def parse_diagram(source: str) -> DiagramNode:
+#       input_stream  = antlr4.InputStream(source)
+#       lexer         = MermaidSequenceLexer(input_stream)
+#       token_stream  = antlr4.CommonTokenStream(lexer)
+#       parser        = MermaidSequenceParser(token_stream)
+#       tree          = parser.diagram()          # root rule
+#       visitor       = ASTBuildingVisitor()
+#       return visitor.visit(tree)               # returns DiagramNode
+
+"""
+# ast_visitor.py  (contract / skeleton — Claude Code fills in the bodies)
+
+import antlr4
+from MermaidSequenceLexer   import MermaidSequenceLexer
+from MermaidSequenceParser  import MermaidSequenceParser
+from MermaidSequenceVisitor import MermaidSequenceVisitor
+from ast_nodes import (
+    DiagramNode, ParticipantNode, ParticipantKind, BoxNode,
+    MessageNode, ArrowStyle, ActivationNode, NoteNode, NotePosition,
+    AutonumberNode, LoopNode, AltNode, AltBranch, OptNode,
+    ParNode, ParBranch, CriticalNode, CriticalOption,
+    BreakNode, RectNode, ASTNode,
+)
+
+
+def _strip(text: str) -> str:
+    return text[1:-1] if len(text) >= 2 and text[0] == '"' else text
+
+
+def parse_diagram(source: str) -> DiagramNode:
+    input_stream = antlr4.InputStream(source)
+    lexer        = MermaidSequenceLexer(input_stream)
+    tokens       = antlr4.CommonTokenStream(lexer)
+    parser       = MermaidSequenceParser(tokens)
+    tree         = parser.diagram()
+    return ASTBuildingVisitor().visit(tree)
+
+
+class ASTBuildingVisitor(MermaidSequenceVisitor):
+
+    def __init__(self):
+        self._step = 0          # monotonic counter across all ordered statements
+
+    # ── Root ─────────────────────────────────────────────────────────────────
+
+    def visitDiagram(self, ctx: MermaidSequenceParser.DiagramContext) -> DiagramNode:
+        ...  # Claude Code implements: collect participants, boxes, statements
+
+    # ── Participants ──────────────────────────────────────────────────────────
+
+    def visitParticipantDecl(self, ctx) -> ParticipantNode:
+        ...  # read participantType → ParticipantKind, participantId, optional AS label
+
+    def visitActorDecl(self, ctx) -> ParticipantNode:
+        ...  # always kind=ACTOR
+
+    def visitCreateDirective(self, ctx) -> ParticipantNode:
+        ...  # same as participantDecl but sets created_at_step = self._step
+
+    def visitDestroyDirective(self, ctx) -> str:
+        ...  # returns the participant name string; caller sets destroyed_at_step
+
+    # ── Box ───────────────────────────────────────────────────────────────────
+
+    def visitBoxBlock(self, ctx) -> BoxNode:
+        ...  # optional color, optional label, then visit inner participant decls
+
+    # ── Messages ──────────────────────────────────────────────────────────────
+
+    def visitMessageStatement(self, ctx) -> MessageNode:
+        ...  # parse sender/receiver (check LPAREN for central_src/dst),
+             # ARROW token → ArrowStyle + activate/deactivate bools,
+             # messageText, then increment self._step
+
+    # ── Activate / Deactivate ─────────────────────────────────────────────────
+
+    def visitActivateStatement(self, ctx) -> ActivationNode:
+        ...
+
+    def visitDeactivateStatement(self, ctx) -> ActivationNode:
+        ...  # is_activate=False
+
+    # ── Notes ─────────────────────────────────────────────────────────────────
+
+    def visitNoteStatement(self, ctx) -> NoteNode:
+        ...  # notePosition → NotePosition enum, 1 or 2 participant names
+
+    # ── Autonumber ────────────────────────────────────────────────────────────
+
+    def visitAutonumberStatement(self, ctx) -> AutonumberNode:
+        ...
+
+    # ── Control structures ────────────────────────────────────────────────────
+
+    def visitLoopBlock(self, ctx) -> LoopNode:
+        ...
+
+    def visitAltBlock(self, ctx) -> AltNode:
+        ...  # build one AltBranch per alt/else clause
+
+    def visitOptBlock(self, ctx) -> OptNode:
+        ...
+
+    def visitParBlock(self, ctx) -> ParNode:
+        ...
+
+    def visitCriticalBlock(self, ctx) -> CriticalNode:
+        ...
+
+    def visitBreakBlock(self, ctx) -> BreakNode:
+        ...
+
+    def visitRectBlock(self, ctx) -> RectNode:
+        ...
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _participant_kind(self, ctx) -> ParticipantKind:
+        ...  # map participantType context token to ParticipantKind enum
+
+    def _arrow_style(self, arrow_text: str) -> tuple[ArrowStyle, bool, bool]:
+        ...  # returns (ArrowStyle, activate_flag, deactivate_flag)
+             # activate_flag  = arrow_text ends with '+'
+             # deactivate_flag= arrow_text ends with '-'
+
+    def _visit_body(self, ctx) -> list:
+        ...  # visit each statement() child and collect returned ASTNode objects
+"""
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SECTION 4 — SVG ATTRIBUTE / data- CONVENTIONS
+# ──────────────────────────────────────────────────────────────────────────────
+# (unchanged from v1 — reproduced here for completeness)
 #
 # PRIMARY <g> attributes
 # ──────────────────────
-#   id              "ast-{node_id}"          CSS/JS/PyQt addressable primary key
-#   data-ast-type   string (see table below) node kind for type-based queries
-#   data-ast-ref    "{node_id}"              back-pointer to AST; inherited by
-#                                            all descendants via DOM walk-up
-#   data-step       integer string           sequence order (messages, fragments)
+#   id              "ast-{node_id}"
+#   data-ast-type   see mapping table in Section 5
+#   data-ast-ref    "{node_id}"    (inherited by descendants via DOM walk-up)
+#   data-step       str(int)       on MessageNode and all fragment nodes
 #
-# SUB-ELEMENT attributes (on children inside the primary <g>)
-# ───────────────────────────────────────────────────────────
-#   data-role       string  identifies the visual part within the group
-#                           (see mapping table in Section 4)
-#   data-branch     integer branch index within alt / par / critical groups
-#
-# SVG TREE SHAPE
-# ──────────────
-# Fragment body children (loop body, alt branches, etc.) are rendered as
-# nested <g> elements INSIDE the fragment's primary <g>.  This mirrors
-# the AST containment and gives correct z-ordering automatically.
-#
-# EXAMPLE — participant
-# ─────────────────────
-#   <g id="ast-{node_id}"
-#      data-ast-type="participant"
-#      data-ast-ref="{node_id}"
-#      data-participant-name="Alice">
-#
-#     <g data-role="header">
-#       <rect  data-role="header-box"   x=… y=… width=… height=… rx="6"/>
-#       <text  data-role="header-label" x=… y=…>Alice</text>
-#     </g>
-#
-#     <line  data-role="lifeline"
-#            x1="{cx}" y1="{y1}" x2="{cx}" y2="{y2}"
-#            stroke-dasharray="6,3"/>
-#
-#     <g data-role="footer">
-#       <rect  data-role="footer-box"   x=… y=… width=… height=… rx="6"/>
-#       <text  data-role="footer-label" x=… y=…>Alice</text>
-#     </g>
-#   </g>
-#
-# EXAMPLE — message
-# ─────────────────
-#   <g id="ast-{node_id}"
-#      data-ast-type="message"
-#      data-ast-ref="{node_id}"
-#      data-step="3"
-#      data-sender="Alice"
-#      data-receiver="Bob">
-#
-#     <line  data-role="shaft"     x1=… y1=… x2=… y2=…/>
-#     <path  data-role="arrowhead" marker-end="url(#arrow-solid-filled)"/>
-#     <text  data-role="label"     x=… y=…>Login request</text>
-#     <g     data-role="seqnum">        <!-- only when autonumber active -->
-#       <circle cx=… cy=… r="10"/>
-#       <text   x=… y=…>3</text>
-#     </g>
-#   </g>
-#
-# EXAMPLE — loop fragment
-# ───────────────────────
-#   <g id="ast-{node_id}"
-#      data-ast-type="loop"
-#      data-ast-ref="{node_id}"
-#      data-step="5">
-#
-#     <rect  data-role="frame"     x=… y=… width=… height=…/>
-#     <rect  data-role="label-box" x=… y=… width="40" height="18"/>
-#     <text  data-role="kind-text" x=… y=…>loop</text>
-#     <text  data-role="cond-text" x=… y=…>Retry up to 3 times</text>
-#
-#     <!-- body children nested here -->
-#     <g id="ast-{child_id}" data-ast-type="message" …> … </g>
-#   </g>
-#
-# EXAMPLE — alt fragment
+# SUB-ELEMENT attributes
 # ──────────────────────
-#   <g id="ast-{node_id}" data-ast-type="alt" …>
-#     <rect  data-role="frame"     …/>
-#     <rect  data-role="label-box" …/>
-#     <text  data-role="kind-text" …>alt</text>
-#     <text  data-role="cond-text" …>is sick</text>
-#     <!-- branch-0 body children -->
-#     <line  data-role="branch-divider" data-branch="1" …/>
-#     <text  data-role="branch-label"   data-branch="1" …>else is well</text>
-#     <!-- branch-1 body children -->
-#   </g>
+#   data-role       identifies the visual part within the group
+#   data-branch     int string     on branch-divider / branch-label elements
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# SECTION 4 — GRAMMAR ELEMENT → SVG MAPPING TABLE
+# SECTION 5 — GRAMMAR ELEMENT → SVG MAPPING TABLE
 # ──────────────────────────────────────────────────────────────────────────────
+# (unchanged from v1)
 #
-# This is the authoritative lookup table used when building and querying the
-# SVGNodeRegistry.  Every row maps one grammar construct to its AST class,
-# its data-ast-type string, and the exhaustive set of data-role sub-elements
-# the renderer will emit inside the primary <g>.
+# ┌─────────────────────────┬──────────────────┬─────────────────┬──────────────────────────────────────────────────────────────────┐
+# │ Grammar Element         │ AST Class        │ data-ast-type   │ data-role sub-elements                                           │
+# ├─────────────────────────┼──────────────────┼─────────────────┼──────────────────────────────────────────────────────────────────┤
+# │ participant / actor /   │ ParticipantNode  │ participant      │ header  header-box  header-label                                 │
+# │ boundary / control /    │                  │                 │ lifeline                                                         │
+# │ entity / database /     │                  │                 │ footer  footer-box  footer-label                                 │
+# │ collections / queue     │                  │                 │ destroy-marker  (only when destroyed_at_step set)                │
+# ├─────────────────────────┼──────────────────┼─────────────────┼──────────────────────────────────────────────────────────────────┤
+# │ box … end               │ BoxNode          │ box             │ background  label                                                │
+# ├─────────────────────────┼──────────────────┼─────────────────┼──────────────────────────────────────────────────────────────────┤
+# │ A->>B: text  (all arrow │ MessageNode      │ message         │ shaft  arrowhead  label  seqnum(conditional)                     │
+# │ variants)               │                  │                 │                                                                  │
+# ├─────────────────────────┼──────────────────┼─────────────────┼──────────────────────────────────────────────────────────────────┤
+# │ activate / deactivate   │ ActivationNode   │ activation      │ bar                                                              │
+# ├─────────────────────────┼──────────────────┼─────────────────┼──────────────────────────────────────────────────────────────────┤
+# │ Note right/left/over    │ NoteNode         │ note            │ box  text                                                        │
+# ├─────────────────────────┼──────────────────┼─────────────────┼──────────────────────────────────────────────────────────────────┤
+# │ loop … end              │ LoopNode         │ loop            │ frame  label-box  kind-text  cond-text                           │
+# ├─────────────────────────┼──────────────────┼─────────────────┼──────────────────────────────────────────────────────────────────┤
+# │ alt … else … end        │ AltNode          │ alt             │ frame  label-box  kind-text  cond-text                           │
+# │                         │                  │                 │ branch-divider(×N-1)  branch-label(×N-1)                        │
+# ├─────────────────────────┼──────────────────┼─────────────────┼──────────────────────────────────────────────────────────────────┤
+# │ opt … end               │ OptNode          │ opt             │ frame  label-box  kind-text  cond-text                           │
+# ├─────────────────────────┼──────────────────┼─────────────────┼──────────────────────────────────────────────────────────────────┤
+# │ par … and … end         │ ParNode          │ par             │ frame  label-box  kind-text                                      │
+# │                         │                  │                 │ branch-divider(×N-1)  branch-label(×N-1)                        │
+# ├─────────────────────────┼──────────────────┼─────────────────┼──────────────────────────────────────────────────────────────────┤
+# │ critical … option … end │ CriticalNode     │ critical        │ frame  label-box  kind-text  cond-text                           │
+# │                         │                  │                 │ branch-divider(×N)  branch-label(×N)                            │
+# ├─────────────────────────┼──────────────────┼─────────────────┼──────────────────────────────────────────────────────────────────┤
+# │ break … end             │ BreakNode        │ break           │ frame  label-box  kind-text  cond-text                           │
+# ├─────────────────────────┼──────────────────┼─────────────────┼──────────────────────────────────────────────────────────────────┤
+# │ rect color … end        │ RectNode         │ rect            │ background                                                       │
+# └─────────────────────────┴──────────────────┴─────────────────┴──────────────────────────────────────────────────────────────────┘
 #
-# ┌─────────────────────────┬──────────────────┬─────────────────┬────────────────────────────────────────────────────────────────────────────────────────┐
-# │ Grammar Element         │ AST Class        │ data-ast-type   │ data-role sub-elements (in emission order)                                             │
-# ├─────────────────────────┼──────────────────┼─────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
-# │ participant / actor /   │ ParticipantNode  │ participant      │ header  header-box  header-label                                                       │
-# │ boundary / control /    │                  │                 │ lifeline                                                                               │
-# │ entity / database /     │                  │                 │ footer  footer-box  footer-label                                                       │
-# │ collections / queue     │                  │                 │ destroy-marker  (only when destroyed_at_step is set)                                   │
-# ├─────────────────────────┼──────────────────┼─────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
-# │ box … end               │ BoxNode          │ box             │ background  label                                                                      │
-# ├─────────────────────────┼──────────────────┼─────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
-# │ A -> B: text            │ MessageNode      │ message         │ shaft  arrowhead  label                                                                │
-# │ A --> B: text           │                  │                 │ seqnum  (only when autonumber active)                                                  │
-# │ A ->> B: text           │                  │                 │                                                                                        │
-# │ A -->> B: text          │                  │                 │                                                                                        │
-# │ A -x B: text            │                  │                 │                                                                                        │
-# │ A --x B: text           │                  │                 │                                                                                        │
-# │ A -) B: text            │                  │                 │                                                                                        │
-# │ A --) B: text           │                  │                 │                                                                                        │
-# ├─────────────────────────┼──────────────────┼─────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
-# │ activate A              │ ActivationNode   │ activation      │ bar                                                                                    │
-# │ deactivate A            │ (is_activate=F)  │                 │                                                                                        │
-# │ A->>+B: text  (+suffix) │                  │                 │                                                                                        │
-# │ A->>-B: text  (-suffix) │                  │                 │                                                                                        │
-# ├─────────────────────────┼──────────────────┼─────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
-# │ Note right of A: txt    │ NoteNode         │ note            │ box  text                                                                              │
-# │ Note left of A: txt     │                  │                 │                                                                                        │
-# │ Note over A,B: txt      │                  │                 │                                                                                        │
-# ├─────────────────────────┼──────────────────┼─────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
-# │ loop label … end        │ LoopNode         │ loop            │ frame  label-box  kind-text  cond-text                                                 │
-# ├─────────────────────────┼──────────────────┼─────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
-# │ alt cond … else … end   │ AltNode          │ alt             │ frame  label-box  kind-text  cond-text                                                 │
-# │                         │ → AltBranch[]    │                 │ branch-divider(×N-1)  branch-label(×N-1)                                              │
-# ├─────────────────────────┼──────────────────┼─────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
-# │ opt cond … end          │ OptNode          │ opt             │ frame  label-box  kind-text  cond-text                                                 │
-# ├─────────────────────────┼──────────────────┼─────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
-# │ par label … and … end   │ ParNode          │ par             │ frame  label-box  kind-text                                                            │
-# │                         │ → ParBranch[]    │                 │ branch-divider(×N-1)  branch-label(×N-1)                                              │
-# ├─────────────────────────┼──────────────────┼─────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
-# │ critical act …          │ CriticalNode     │ critical        │ frame  label-box  kind-text  cond-text                                                 │
-# │   option cond … end     │ → CriticalOption │                 │ branch-divider(×N options)  branch-label(×N options)                                  │
-# ├─────────────────────────┼──────────────────┼─────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
-# │ break cond … end        │ BreakNode        │ break           │ frame  label-box  kind-text  cond-text                                                 │
-# ├─────────────────────────┼──────────────────┼─────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
-# │ rect color … end        │ RectNode         │ rect            │ background                                                                             │
-# ├─────────────────────────┼──────────────────┼─────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
-# │ create participant A    │ ParticipantNode  │ participant      │ same as participant row above; created_at_step is non-None                             │
-# ├─────────────────────────┼──────────────────┼─────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
-# │ destroy A               │ ParticipantNode  │ participant      │ same as participant row above; destroy-marker role element added at destroyed_at_step  │
-# └─────────────────────────┴──────────────────┴─────────────────┴────────────────────────────────────────────────────────────────────────────────────────┘
-#
-# data-role vocabulary (exhaustive list)
-# ──────────────────────────────────────
-#   header           <g>    wrapper group for top lifeline box
-#   header-box       <rect> top box shape
-#   header-label     <text> text inside top box
-#   lifeline         <line> dashed vertical line
-#   footer           <g>    wrapper group for bottom lifeline box
-#   footer-box       <rect> bottom box shape (mirror of header)
-#   footer-label     <text> text inside bottom box
-#   destroy-marker   <path> X marker drawn at destroyed_at_step y-coord
-#   background       <rect> filled rectangle for box or rect blocks
-#   label            <text> display label for box block header; also message label
-#   shaft            <line> horizontal line of a message arrow
-#   arrowhead        <path> arrowhead / cross / open-arrow glyph
-#   seqnum           <g>    sequence number badge (circle + text)
-#   bar              <rect> activation box on a lifeline
-#   box              <rect> note background rectangle
-#   text             <text> note text content
-#   frame            <rect> outer border of a fragment (loop/alt/par/etc.)
-#   label-box        <rect> small filled rectangle in top-left of frame
-#   kind-text        <text> keyword inside label-box (loop / alt / par / etc.)
-#   cond-text        <text> condition/label text beside label-box
-#   branch-divider   <line> horizontal dividing line between branches
-#   branch-label     <text> condition text at start of an else/and/option branch
+# data-role vocabulary (exhaustive)
+# ──────────────────────────────────
+#   header           <g>     top lifeline box wrapper
+#   header-box       <rect>  top box shape
+#   header-label     <text>  top box text
+#   lifeline         <line>  dashed vertical line
+#   footer           <g>     bottom lifeline box wrapper
+#   footer-box       <rect>  bottom box shape
+#   footer-label     <text>  bottom box text
+#   destroy-marker   <path>  X at destroyed_at_step y-coord
+#   background       <rect>  box/rect block fill
+#   label            <text>  box block header label; also message label text
+#   shaft            <line>  horizontal message arrow line
+#   arrowhead        <path>  arrowhead / cross / open-arrow glyph
+#   seqnum           <g>     autonumber badge (circle + text)
+#   bar              <rect>  activation box on lifeline
+#   box              <rect>  note background
+#   text             <text>  note text
+#   frame            <rect>  fragment outer border
+#   label-box        <rect>  fragment keyword badge (top-left)
+#   kind-text        <text>  keyword inside label-box
+#   cond-text        <text>  condition/label beside label-box
+#   branch-divider   <line>  horizontal line between branches
+#   branch-label     <text>  condition at start of else/and/option branch
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# SECTION 5 — LAYOUT MODEL CONTRACT
+# SECTION 6 — LAYOUT MODEL  (unchanged from v1)
 # ──────────────────────────────────────────────────────────────────────────────
 #
 # FILE: layout_model.py
-#
-# The layout engine populates a LayoutModel before rendering.
-# Every entry is keyed by the AST node's node_id.
 
 """
 from dataclasses import dataclass, field
@@ -414,24 +586,22 @@ from typing import Dict, List
 @dataclass
 class ParticipantLayout:
     node_id:     str
-    col:         int     # 0-based column index
-    center_x:    float   # SVG x of the lifeline centerline
-    top_box_y:   float   # top edge of header box
-    top_box_h:   float   # height of header box
-    lifeline_y1: float   # top of lifeline segment
-    lifeline_y2: float   # bottom of lifeline segment (grows with diagram)
-    bot_box_y:   float   # top edge of footer box
-    bot_box_h:   float   # height of footer box
-
+    col:         int
+    center_x:    float
+    top_box_y:   float
+    top_box_h:   float
+    lifeline_y1: float
+    lifeline_y2: float
+    bot_box_y:   float
+    bot_box_h:   float
 
 @dataclass
 class MessageLayout:
     node_id: str
     step:    int
-    y:       float   # vertical midpoint of the arrow
-    x1:      float   # x at sender lifeline
-    x2:      float   # x at receiver lifeline
-
+    y:       float
+    x1:      float
+    x2:      float
 
 @dataclass
 class ActivationLayout:
@@ -439,9 +609,8 @@ class ActivationLayout:
     participant_node_id: str
     y_top:               float
     y_bottom:            float
-    x:                   float   # left edge of bar
+    x:                   float
     width:               float = 10.0
-
 
 @dataclass
 class NoteLayout:
@@ -451,18 +620,14 @@ class NoteLayout:
     width:   float
     height:  float
 
-
 @dataclass
 class FragmentLayout:
-    \"\"\"Covers loop, alt, opt, par, critical, break, rect.\"\"\"
     node_id:   str
     y_top:     float
     y_bottom:  float
     x_left:    float
     x_right:   float
     branch_ys: List[float] = field(default_factory=list)
-    # branch_ys[i] is the y of the dividing line before branch i+1
-
 
 @dataclass
 class LayoutModel:
@@ -475,67 +640,35 @@ class LayoutModel:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# SECTION 6 — SVGNodeRegistry API CONTRACT
+# SECTION 7 — SVGNodeRegistry API CONTRACT
 # ──────────────────────────────────────────────────────────────────────────────
 #
 # FILE: svg_node_registry.py
 #
-# The registry is populated incrementally by the renderer as each primary <g>
-# is emitted.  It maintains four O(1) indexes.
+# Changes from v1:
+#   • SVGNodeEntry gains  ctx_type: str  — the generated context class name
+#     (e.g. "ParticipantDeclContext") stored as a plain string so downstream
+#     code never imports generated parser modules.
+#   • No other changes to the registry API.
 #
-# INTERNAL INDEXES
-# ────────────────
-#   _by_node_id   : Dict[str, SVGNodeEntry]        keyed by node_id (UUID)
-#   _by_svg_id    : Dict[str, SVGNodeEntry]         keyed by "ast-{node_id}"
-#   _by_ast_type  : Dict[str, List[SVGNodeEntry]]   keyed by data-ast-type string
-#   _by_step      : Dict[int, SVGNodeEntry]         keyed by step int (messages only)
+# INTERNAL INDEXES (all O(1) lookup)
+# ───────────────────────────────────
+#   _by_node_id   : Dict[str, SVGNodeEntry]
+#   _by_svg_id    : Dict[str, SVGNodeEntry]        keyed "ast-{node_id}"
+#   _by_ast_type  : Dict[str, List[SVGNodeEntry]]  keyed data-ast-type string
+#   _by_step      : Dict[int,  SVGNodeEntry]        messages + fragments only
 #
 # SVGNodeEntry FIELDS
 # ───────────────────
-#   node_id       str                    mirrors ast_node.node_id
-#   ast_node      ASTNode                live reference to the AST node object
-#   svg_group     Element                live reference to the primary <g>
-#   ast_type      str                    data-ast-type value
-#   sub_elements  Dict[str, List[Element]]  keyed by data-role value
-#
-# REGISTRATION
-# ────────────
-#   register(ast_node, svg_group, ast_type) -> SVGNodeEntry
-#     Called by the renderer immediately after creating each primary <g>.
-#     Scans all descendants of svg_group for data-role attributes and
-#     populates sub_elements automatically.
-#     Adds the entry to all four indexes.
-#
-# FORWARD LOOKUPS  (AST → SVG)
-# ─────────────────────────────
-#   svg_group_for(node_id)              -> Optional[Element]
-#   svg_subelement(node_id, role)       -> Optional[Element]   first match
-#   svg_subelements(node_id, role)      -> List[Element]        all matches
-#   all_of_type(ast_type)              -> List[SVGNodeEntry]
-#   entry_for_step(step)               -> Optional[SVGNodeEntry]
-#
-# REVERSE LOOKUPS  (SVG → AST)
-# ─────────────────────────────
-#   ast_node_for_svg_id(svg_id)        -> Optional[ASTNode]
-#     svg_id is the element's 'id' attribute, e.g. "ast-<uuid>"
-#
-#   ast_node_for_element(element)      -> Optional[ASTNode]
-#     Reads data-ast-ref from any SVG element (not necessarily the group)
-#     and resolves it to an AST node.  Use this in click-event handlers
-#     after calling element.closest('[data-ast-ref]') in JS.
-#
-# MUTATION HELPERS
-# ────────────────
-#   invalidate(node_id)
-#     Removes an entry from all indexes.  Call before re-registering a node
-#     after an incremental re-render of its <g>.
-#
-#   update_sub_elements(node_id)
-#     Re-scans the existing svg_group's descendants and refreshes
-#     sub_elements.  Call after modifying the group's children in-place
-#     (e.g. adding a seqnum badge when autonumber is toggled on).
+#   node_id       str
+#   ast_node      ASTNode
+#   svg_group     Element
+#   ast_type      str
+#   ctx_type      str        generated context class name (informational)
+#   sub_elements  Dict[str, List[Element]]   keyed by data-role
 
 """
+# svg_node_registry.py
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 from xml.etree.ElementTree import Element
@@ -548,6 +681,7 @@ class SVGNodeEntry:
     ast_node:     ASTNode
     svg_group:    Element
     ast_type:     str
+    ctx_type:     str = ""          # e.g. "ParticipantDeclContext"
     sub_elements: Dict[str, List[Element]] = field(default_factory=dict)
 
 
@@ -564,20 +698,20 @@ class SVGNodeRegistry:
     def register(self,
                  ast_node:  ASTNode,
                  svg_group: Element,
-                 ast_type:  str) -> SVGNodeEntry:
+                 ast_type:  str,
+                 ctx_type:  str = "") -> SVGNodeEntry:
         entry = SVGNodeEntry(
-            node_id  = ast_node.node_id,
-            ast_node = ast_node,
+            node_id   = ast_node.node_id,
+            ast_node  = ast_node,
             svg_group = svg_group,
             ast_type  = ast_type,
+            ctx_type  = ctx_type or type(ast_node.ctx).__name__,
         )
         self._index_sub_elements(entry)
-        svg_id = f'ast-{ast_node.node_id}'
-        self._by_node_id[ast_node.node_id] = entry
-        self._by_svg_id[svg_id]            = entry
+        self._by_node_id[ast_node.node_id]          = entry
+        self._by_svg_id[f"ast-{ast_node.node_id}"]  = entry
         self._by_ast_type.setdefault(ast_type, []).append(entry)
-        # index step for messages
-        step = getattr(ast_node, 'step', None)
+        step = getattr(ast_node, "step", None)
         if step is not None:
             self._by_step[step] = entry
         return entry
@@ -586,10 +720,11 @@ class SVGNodeRegistry:
         entry = self._by_node_id.pop(node_id, None)
         if entry is None:
             return
-        self._by_svg_id.pop(f'ast-{node_id}', None)
+        self._by_svg_id.pop(f"ast-{node_id}", None)
         bucket = self._by_ast_type.get(entry.ast_type, [])
-        self._by_ast_type[entry.ast_type] = [e for e in bucket if e.node_id != node_id]
-        step = getattr(entry.ast_node, 'step', None)
+        self._by_ast_type[entry.ast_type] = [e for e in bucket
+                                              if e.node_id != node_id]
+        step = getattr(entry.ast_node, "step", None)
         if step is not None and self._by_step.get(step) is entry:
             self._by_step.pop(step, None)
 
@@ -601,11 +736,11 @@ class SVGNodeRegistry:
 
     def _index_sub_elements(self, entry: SVGNodeEntry) -> None:
         for elem in entry.svg_group.iter():
-            role = elem.get('data-role')
+            role = elem.get("data-role")
             if role:
                 entry.sub_elements.setdefault(role, []).append(elem)
 
-    # ── Forward lookups ───────────────────────────────────────────────────────
+    # ── Forward lookups (AST → SVG) ───────────────────────────────────────────
 
     def svg_group_for(self, node_id: str) -> Optional[Element]:
         e = self._by_node_id.get(node_id)
@@ -625,17 +760,17 @@ class SVGNodeRegistry:
     def all_of_type(self, ast_type: str) -> List[SVGNodeEntry]:
         return list(self._by_ast_type.get(ast_type, []))
 
-    def entry_for_step(self, step: int) -> Optional['SVGNodeEntry']:
+    def entry_for_step(self, step: int) -> Optional[SVGNodeEntry]:
         return self._by_step.get(step)
 
-    # ── Reverse lookups ───────────────────────────────────────────────────────
+    # ── Reverse lookups (SVG → AST) ───────────────────────────────────────────
 
     def ast_node_for_svg_id(self, svg_id: str) -> Optional[ASTNode]:
         e = self._by_svg_id.get(svg_id)
         return e.ast_node if e else None
 
     def ast_node_for_element(self, element: Element) -> Optional[ASTNode]:
-        ref = element.get('data-ast-ref')
+        ref = element.get("data-ast-ref")
         if ref:
             e = self._by_node_id.get(ref)
             return e.ast_node if e else None
@@ -644,76 +779,64 @@ class SVGNodeRegistry:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# SECTION 7 — USAGE EXAMPLES
+# SECTION 8 — USAGE EXAMPLES
 # ──────────────────────────────────────────────────────────────────────────────
 
-# ── Forward: AST → SVG — highlight Alice's lifeline ──────────────────────────
+# ── Parse + build AST ─────────────────────────────────────────────────────────
 """
-diagram_ast, layout = build_ast_and_layout(source_text)
-svg_root, registry  = SequenceDiagramRenderer(diagram_ast, layout).render()
+from ast_visitor import parse_diagram
 
-alice    = next(p for p in diagram_ast.participants if p.name == 'Alice')
-lifeline = registry.svg_subelement(alice.node_id, 'lifeline')
-lifeline.set('stroke', 'red')
-lifeline.set('stroke-width', '3')
+source = '''
+sequenceDiagram
+    participant Alice
+    participant Bob
+    Alice->>Bob: Hello
+    Bob-->>Alice: Hi back
+'''
+diagram = parse_diagram(source)
+# diagram.participants[0].name  → "Alice"
+# diagram.participants[0].ctx   → ParticipantDeclContext object
+# diagram.participants[0].source_start → token index from ctx
 """
 
-# ── Reverse: SVG → AST — PyQt QWebEngineView click handler ───────────────────
-#
-# JavaScript injected into the WebView:
-#   document.addEventListener('click', e => {
-#       const g = e.target.closest('[data-ast-ref]');
-#       if (g) bridge.elementClicked(g.id);
-#   });
+# ── Parse error: access originating token via ctx ────────────────────────────
+"""
+msg_node = diagram.statements[0]          # MessageNode
+if msg_node.ctx is not None:
+    tok = msg_node.ctx.start              # antlr4.Token
+    print(f"Line {tok.line}, col {tok.column}: {msg_node.sender_name}")
+"""
+
+# ── Render and populate registry ─────────────────────────────────────────────
+"""
+from layout_engine import LayoutEngine
+from svg_renderer  import SequenceDiagramRenderer
+
+layout          = LayoutEngine(diagram).compute()
+svg_root, registry = SequenceDiagramRenderer(diagram, layout).render()
+"""
+
+# ── Forward: AST → SVG ───────────────────────────────────────────────────────
+"""
+alice    = next(p for p in diagram.participants if p.name == "Alice")
+lifeline = registry.svg_subelement(alice.node_id, "lifeline")
+lifeline.set("stroke", "red")
+"""
+
+# ── Reverse: SVG → AST (PyQt QWebEngineView click) ───────────────────────────
 """
 def on_element_clicked(self, svg_id: str):
     node = self.registry.ast_node_for_svg_id(svg_id)
-    if isinstance(node, MessageNode):
-        self.property_panel.show_message(node)
-    elif isinstance(node, ParticipantNode):
-        self.property_panel.show_participant(node)
-    elif isinstance(node, LoopNode):
-        self.property_panel.show_fragment(node)
+    match node:
+        case MessageNode():    self.props.show_message(node)
+        case ParticipantNode():self.props.show_participant(node)
+        case LoopNode():       self.props.show_fragment(node)
 """
 
-# ── All messages in step order ────────────────────────────────────────────────
+# ── ctx_type for diagnostics ─────────────────────────────────────────────────
 """
-entries = registry.all_of_type('message')
-for entry in sorted(entries, key=lambda e: e.ast_node.step):
-    msg = entry.ast_node
-    print(f"[{msg.step}] {msg.sender_name} --{msg.arrow.value}--> "
-          f"{msg.receiver_name}: {msg.text}")
-"""
-
-# ── Incremental label update (no full re-render) ──────────────────────────────
-"""
-alice.label = 'Alice (Client)'
-for role in ('header-label', 'footer-label'):
-    elem = registry.svg_subelement(alice.node_id, role)
-    if elem is not None:
-        elem.text = alice.label
-# serialize / push updated SVG to QWebEngineView
-"""
-
-# ── Toggle autonumber badges on / off ─────────────────────────────────────────
-"""
-def toggle_seqnum(registry: SVGNodeRegistry, show: bool):
-    for entry in registry.all_of_type('message'):
-        badges = registry.svg_subelements(entry.node_id, 'seqnum')
-        for badge in badges:
-            badge.set('visibility', 'visible' if show else 'hidden')
-"""
-
-# ── Find all activation bars for a given participant ──────────────────────────
-"""
-def activation_bars_for(registry: SVGNodeRegistry,
-                         participant_name: str) -> list:
-    bars = []
-    for entry in registry.all_of_type('activation'):
-        node = entry.ast_node          # ActivationNode
-        if node.participant_name == participant_name:
-            bar = registry.svg_subelement(node.node_id, 'bar')
-            if bar is not None:
-                bars.append(bar)
-    return bars
+for entry in registry.all_of_type("participant"):
+    print(entry.ctx_type, entry.ast_node.name)
+# ParticipantDeclContext Alice
+# ParticipantDeclContext Bob
 """

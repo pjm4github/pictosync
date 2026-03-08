@@ -175,6 +175,18 @@ def _apply_fill_style(fill, style: Dict[str, Any]):
             alpha_el.set("val", str(pptx_alpha))
 
 
+def _apply_rotation(shape, geom: Dict[str, Any]):
+    """Apply rotation angle from geom dict to a PPTX shape.
+
+    Args:
+        shape: A python-pptx shape object.
+        geom: The annotation's geom dict (may contain 'angle' in degrees).
+    """
+    angle = geom.get("angle", 0)
+    if angle:
+        shape.rotation = float(angle)
+
+
 def _add_text_to_shape(shape, meta: Dict[str, Any], text_style: Dict[str, Any]):
     """
     Add text content (label, tech, note) to a shape's text frame.
@@ -266,6 +278,7 @@ def _add_rectangle(slide, record: Dict[str, Any], scale_x: float, scale_y: float
 
     meta = record.get("meta", {})
     _add_text_to_shape(shape, meta, style.get("text", {}))
+    _apply_rotation(shape, geom)
 
 
 def _add_rounded_rectangle(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -298,6 +311,7 @@ def _add_rounded_rectangle(slide, record: Dict[str, Any], scale_x: float, scale_
 
     meta = record.get("meta", {})
     _add_text_to_shape(shape, meta, style.get("text", {}))
+    _apply_rotation(shape, geom)
 
 
 def _add_ellipse(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -316,6 +330,7 @@ def _add_ellipse(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
 
     meta = record.get("meta", {})
     _add_text_to_shape(shape, meta, style.get("text", {}))
+    _apply_rotation(shape, geom)
 
 
 def _add_line(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -501,6 +516,7 @@ def _add_hexagon(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
 
     meta = record.get("meta", {})
     _add_text_to_shape(shape, meta, style.get("text", {}))
+    _apply_rotation(shape, geom)
 
 
 def _add_cylinder(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -526,6 +542,7 @@ def _add_cylinder(slide, record: Dict[str, Any], scale_x: float, scale_y: float)
 
     meta = record.get("meta", {})
     _add_text_to_shape(shape, meta, style.get("text", {}))
+    _apply_rotation(shape, geom)
 
 
 def _add_blockarrow(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -556,6 +573,7 @@ def _add_blockarrow(slide, record: Dict[str, Any], scale_x: float, scale_y: floa
 
     meta = record.get("meta", {})
     _add_text_to_shape(shape, meta, style.get("text", {}))
+    _apply_rotation(shape, geom)
 
 
 def _add_polygon(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -593,6 +611,7 @@ def _add_polygon(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
 
     meta = record.get("meta", {})
     _add_text_to_shape(shape, meta, style.get("text", {}))
+    _apply_rotation(shape, geom)
 
 
 def _add_curve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -696,6 +715,8 @@ def _add_curve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
 
             elif cmd == "Z":
                 etree.SubElement(path_el, qn("a:close"))
+
+    _apply_rotation(shape, geom)
 
     style = record.get("style", {})
     _apply_line_style(shape.line, style)
@@ -816,6 +837,185 @@ def _add_curve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
             p.alignment = PP_ALIGN.CENTER
 
 
+def _add_seqblock(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
+    """Add a UML sequence-diagram combined fragment (alt/loop/opt/par/…).
+
+    Built as a grouped compound shape: outer rectangle, pentagon type-tab,
+    dashed divider lines, and section text labels.
+
+    Args:
+        slide: The PowerPoint slide
+        record: Annotation record dict
+        scale_x: Horizontal scale factor
+        scale_y: Vertical scale factor
+    """
+    from pptx.enum.dml import MSO_LINE_DASH_STYLE
+
+    geom = record.get("geom", {})
+    meta = record.get("meta", {})
+    style = record.get("style", {})
+
+    gx = geom.get("x", 0) * scale_x
+    gy = geom.get("y", 0) * scale_y
+    gw = geom.get("w", 100) * scale_x
+    gh = geom.get("h", 100) * scale_y
+
+    # Determine block type from DSL metadata or label
+    dsl = meta.get("extras", {}).get("dsl", {}) if isinstance(meta.get("extras"), dict) else {}
+    block_type = dsl.get("sequence", {}).get("block_type", meta.get("label", "alt"))
+
+    # Collect divider positions (ratios 0–1)
+    dividers: List[float] = []
+    for key in ("adjust1", "adjust2", "adjust3"):
+        val = geom.get(key)
+        if val is not None:
+            dividers.append(float(val))
+
+    # Pen / fill colours
+    pen_style = style.get("pen", {})
+    pen_color_hex = pen_style.get("color", "#9370DB")
+    pen_rgb = hex_to_rgb(pen_color_hex)
+    fill_style = style.get("fill", {})
+    fill_color_hex = fill_style.get("color", "#ECECFF")
+    fill_rgb = hex_to_rgb(fill_color_hex)
+    text_style = style.get("text", {})
+    text_color_hex = text_style.get("color", "#333333")
+    text_rgb = hex_to_rgb(text_color_hex)
+
+    # Convert to EMU
+    ex = px_to_emu(gx)
+    ey = px_to_emu(gy)
+    ew = px_to_emu(gw)
+    eh = px_to_emu(gh)
+
+    # ── Build grouped shape ──
+    grp = slide.shapes.add_group_shape()
+
+    # 1) Outer rectangle — border + semi-transparent fill
+    outer = grp.shapes.add_shape(MSO_SHAPE.RECTANGLE, ex, ey, ew, eh)
+    if fill_rgb:
+        outer.fill.solid()
+        outer.fill.fore_color.rgb = RGBColor(*fill_rgb)
+        # Apply alpha if present in the hex colour
+        fill_hex_raw = fill_color_hex.lstrip("#")
+        if len(fill_hex_raw) == 8:
+            alpha_byte = int(fill_hex_raw[6:8], 16)
+            alpha_pct = int(alpha_byte / 255 * 100000)
+            from lxml import etree
+            from pptx.oxml.ns import qn
+            sf_el = outer._element.find(f'.//{qn("a:solidFill")}')
+            if sf_el is not None and len(sf_el):
+                alpha_el = etree.SubElement(sf_el[0], qn("a:alpha"))
+                alpha_el.set("val", str(alpha_pct))
+    else:
+        outer.fill.background()
+    if pen_rgb:
+        outer.line.color.rgb = RGBColor(*pen_rgb)
+    pen_width = pen_style.get("width", 2)
+    outer.line.width = Pt(pen_width)
+
+    # 2) Type tab — pentagon-like shape in top-left
+    tab_text = block_type.upper()
+    tab_font_size = 8
+    tab_padding = 4
+    # Approximate tab width from text length
+    tab_w_px = len(tab_text) * tab_font_size * 0.7 + 2 * tab_padding + 8
+    tab_h_px = 20
+    tab_w = px_to_emu(tab_w_px * scale_x)
+    tab_h = px_to_emu(tab_h_px * scale_y)
+
+    # Use a freeform pentagon for the tab
+    notch = px_to_emu(6 * scale_y)  # bottom-right notch
+    builder = grp.shapes.build_freeform(ex, ey)
+    builder.add_line_segments([
+        (ex + tab_w, ey),
+        (ex + tab_w, ey + tab_h - notch),
+        (ex + tab_w - notch, ey + tab_h),
+        (ex, ey + tab_h),
+        (ex, ey),
+    ], close=True)
+    tab_shape = builder.convert_to_shape()
+    if pen_rgb:
+        tab_shape.fill.solid()
+        tab_shape.fill.fore_color.rgb = RGBColor(*pen_rgb)
+        # Semi-transparent tab fill
+        from lxml import etree
+        from pptx.oxml.ns import qn
+        solid_fill = tab_shape._element.find(f'.//{qn("a:solidFill")}')
+        if solid_fill is not None and len(solid_fill):
+            alpha_el = etree.SubElement(solid_fill[0], qn("a:alpha"))
+            alpha_el.set("val", "60000")  # 60% opaque
+    tab_shape.line.color.rgb = RGBColor(*(pen_rgb or (0x93, 0x70, 0xDB)))
+    tab_shape.line.width = Pt(pen_width)
+
+    # Tab label text
+    tab_label = grp.shapes.add_textbox(
+        ex + px_to_emu(tab_padding * scale_x),
+        ey,
+        tab_w - px_to_emu(tab_padding * 2 * scale_x),
+        tab_h,
+    )
+    tf = tab_label.text_frame
+    tf.word_wrap = False
+    tf.paragraphs[0].text = tab_text
+    tf.paragraphs[0].font.size = Pt(tab_font_size)
+    tf.paragraphs[0].font.bold = True
+    if text_rgb:
+        tf.paragraphs[0].font.color.rgb = RGBColor(*text_rgb)
+    from pptx.enum.text import MSO_ANCHOR
+    tf.paragraphs[0].alignment = PP_ALIGN.LEFT
+
+    # 3) Dashed divider lines
+    for div_ratio in dividers:
+        div_y = ey + int(eh * div_ratio)
+        conn = grp.shapes.add_connector(
+            MSO_CONNECTOR.STRAIGHT,
+            ex, div_y,
+            ex + ew, div_y,
+        )
+        if pen_rgb:
+            conn.line.color.rgb = RGBColor(*pen_rgb)
+        conn.line.width = Pt(1)
+        conn.line.dash_style = MSO_LINE_DASH_STYLE.DASH
+
+    # 4) Section labels (from meta.tech, pipe-separated)
+    tech = meta.get("tech", "")
+    sections = [s.strip() for s in tech.split("|")] if tech else []
+
+    # Region top-Y values: section 0 starts below tab, others below dividers
+    region_tops = [ey + tab_h + px_to_emu(4 * scale_y)]
+    for div_ratio in dividers:
+        region_tops.append(ey + int(eh * div_ratio) + px_to_emu(4 * scale_y))
+
+    tech_size = meta.get("tech_size", 10)
+    for i, sec_text in enumerate(sections):
+        if not sec_text or i >= len(region_tops):
+            continue
+        sec_y = region_tops[i]
+        sec_h = px_to_emu(tech_size * 2 * scale_y)
+        sec_box = grp.shapes.add_textbox(
+            ex + px_to_emu(4 * scale_x),
+            sec_y,
+            ew - px_to_emu(8 * scale_x),
+            sec_h,
+        )
+        stf = sec_box.text_frame
+        stf.word_wrap = True
+        stf.paragraphs[0].text = f"[{sec_text}]"
+        stf.paragraphs[0].font.size = Pt(tech_size)
+        stf.paragraphs[0].font.italic = True
+        if text_rgb:
+            stf.paragraphs[0].font.color.rgb = RGBColor(*text_rgb)
+        stf.paragraphs[0].alignment = PP_ALIGN.CENTER
+
+    # 5) Set group extents and apply rotation
+    grp.left = ex
+    grp.top = ey
+    grp.width = ew
+    grp.height = eh
+    _apply_rotation(grp, geom)
+
+
 def _add_isocube(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
     """Add an isometric cube shape to the slide.
 
@@ -886,6 +1086,7 @@ def _add_isocube(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
 
     meta = record.get("meta", {})
     _add_text_to_shape(shape, meta, style.get("text", {}))
+    _apply_rotation(shape, geom)
 
 
 def _add_orthocurve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -943,6 +1144,8 @@ def _add_orthocurve(slide, record: Dict[str, Any], scale_x: float, scale_y: floa
     builder = slide.shapes.build_freeform(start_x, start_y)
     builder.add_line_segments(emu_points[1:], close=False)
     shape = builder.convert_to_shape()
+
+    _apply_rotation(shape, geom)
 
     # ── Styles ──
     style = record.get("style", {})
@@ -1118,5 +1321,7 @@ def export_to_pptx(
             _add_isocube(slide, record, scale_x, scale_y)
         elif kind == "orthocurve":
             _add_orthocurve(slide, record, scale_x, scale_y)
+        elif kind == "seqblock":
+            _add_seqblock(slide, record, scale_x, scale_y)
 
     prs.save(output_path)

@@ -296,23 +296,7 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
     def setRect(self, r: QRectF):
         super().setRect(r)
         self._update_label_position()
-
-    def _handle_points_scene(self) -> Dict[str, QPointF]:
-        """Return handle positions in scene coordinates (corners and sides)."""
-        r = self.rect()
-        p = self.pos()
-        cx = p.x() + r.left() + r.width() / 2
-        cy = p.y() + r.top() + r.height() / 2
-        return {
-            "tl": QPointF(p.x() + r.left(),  p.y() + r.top()),
-            "tr": QPointF(p.x() + r.right(), p.y() + r.top()),
-            "bl": QPointF(p.x() + r.left(),  p.y() + r.bottom()),
-            "br": QPointF(p.x() + r.right(), p.y() + r.bottom()),
-            "t":  QPointF(cx, p.y() + r.top()),
-            "b":  QPointF(cx, p.y() + r.bottom()),
-            "l":  QPointF(p.x() + r.left(), cy),
-            "r":  QPointF(p.x() + r.right(), cy),
-        }
+        self._update_transform_origin()
 
     def _handle_points_local(self) -> Dict[str, QPointF]:
         """Return handle positions in local coordinates for painting."""
@@ -330,27 +314,12 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
             "r":  QPointF(r.right(), cy),
         }
 
-    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
-        if not self._should_paint_handles():
-            return None
-        handles = self._handle_points_scene()
-        # Hit distance from settings. Default: 10.0 pixels
-        hit_dist = _get_hit_distance()
-        for k, hp in handles.items():
-            if QLineF(scene_pt, hp).length() <= hit_dist:
-                return k
-        return None
-
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
-        if h in ("tl", "br"):
-            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-        elif h in ("tr", "bl"):
-            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-        elif h in ("t", "b"):
-            self.setCursor(Qt.CursorShape.SizeVerCursor)
-        elif h in ("l", "r"):
-            self.setCursor(Qt.CursorShape.SizeHorCursor)
+        if h == "rotate":
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        elif h:
+            self.setCursor(self._cursor_for_handle(h))
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
         super().hoverMoveEvent(event)
@@ -358,10 +327,15 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             h = self._hit_test_handle(event.scenePos())
+            if h == "rotate":
+                self._begin_rotation()
+                event.accept()
+                return
             if h:
                 self._begin_resize_tracking()
                 self._active_handle = h
                 self._resizing = True
+                self._store_resize_anchor(h)
                 self._press_scene = event.scenePos()
                 self._start_pos = QPointF(self.pos())
                 self._start_rect = QRectF(self.rect())
@@ -370,61 +344,22 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if self._rotating:
+            self._handle_rotation_move(event)
+            return
         if self._resizing and self._active_handle and self._press_scene and self._start_pos and self._start_rect:
             cur = event.scenePos()
-            dx = cur.x() - self._press_scene.x()
-            dy = cur.y() - self._press_scene.y()
+            dx, dy = self._scene_delta_to_local(
+                cur.x() - self._press_scene.x(),
+                cur.y() - self._press_scene.y())
 
-            x0 = self._start_pos.x()
-            y0 = self._start_pos.y()
             w0 = self._start_rect.width()
             h0 = self._start_rect.height()
-
-            left = x0
-            top = y0
-            right = x0 + w0
-            bottom = y0 + h0
-
-            if self._active_handle == "tl":
-                left += dx
-                top += dy
-            elif self._active_handle == "tr":
-                right += dx
-                top += dy
-            elif self._active_handle == "bl":
-                left += dx
-                bottom += dy
-            elif self._active_handle == "br":
-                right += dx
-                bottom += dy
-            elif self._active_handle == "t":
-                top += dy
-            elif self._active_handle == "b":
-                bottom += dy
-            elif self._active_handle == "l":
-                left += dx
-            elif self._active_handle == "r":
-                right += dx
-
-            # Minimum size from settings. Default: 5.0 pixels
-            min_size = _get_min_size()
-            if (right - left) < min_size:
-                if self._active_handle in ("tl", "bl", "l"):
-                    left = right - min_size
-                else:
-                    right = left + min_size
-
-            if (bottom - top) < min_size:
-                if self._active_handle in ("tl", "tr", "t"):
-                    top = bottom - min_size
-                else:
-                    bottom = top + min_size
-
-            new_w = right - left
-            new_h = bottom - top
-
-            self.setPos(QPointF(left, top))
+            new_w, new_h, anchor_after = self._compute_resize(
+                self._active_handle, dx, dy, w0, h0)
             self.setRect(QRectF(0, 0, new_w, new_h))
+            self._update_transform_origin()
+            self._fixup_resize_pos(anchor_after)
 
             self._notify_changed()
             event.accept()
@@ -461,8 +396,13 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
             painter.drawRect(self.rect())
             # Draw resize handles
             draw_handles(painter, self._handle_points_local())
+            self._draw_rotation_knob(painter)
 
     def mouseReleaseEvent(self, event):
+        if self._rotating:
+            self._end_rotation()
+            event.accept()
+            return
         if self._resizing:
             self._end_resize_tracking()
             self._resizing = False
@@ -504,6 +444,7 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
         z = self.zValue()
         if z != 0:
             rec["z"] = int(z)
+        self._add_angle_to_geom(rec.get("geom", {}))
         return rec
 
 
@@ -631,6 +572,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._height = r.height()
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
 
     def adjust1(self) -> float:
         return self._adjust1
@@ -638,23 +580,6 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def set_adjust1(self, value: float):
         self._adjust1 = max(0, value)
         self._update_path()
-
-    def _handle_points_scene(self) -> Dict[str, QPointF]:
-        """Return handle positions in scene coordinates (corners and sides)."""
-        p = self.pos()
-        cx = p.x() + self._width / 2
-        cy = p.y() + self._height / 2
-        return {
-            "tl": QPointF(p.x(), p.y()),
-            "tr": QPointF(p.x() + self._width, p.y()),
-            "bl": QPointF(p.x(), p.y() + self._height),
-            "br": QPointF(p.x() + self._width, p.y() + self._height),
-            "t":  QPointF(cx, p.y()),
-            "b":  QPointF(cx, p.y() + self._height),
-            "l":  QPointF(p.x(), cy),
-            "r":  QPointF(p.x() + self._width, cy),
-            "adjust1": QPointF(p.x() + self._adjust1, p.y()),  # Adjust1 (radius) control handle
-        }
 
     def _handle_points_local(self) -> Dict[str, QPointF]:
         """Return handle positions in local coordinates for painting."""
@@ -672,27 +597,14 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             "adjust1": QPointF(self._adjust1, 0),  # Adjust1 (radius) control handle
         }
 
-    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
-        if not self._should_paint_handles():
-            return None
-        handles = self._handle_points_scene()
-        # Hit distance from settings. Default: 10.0 pixels
-        hit_dist = _get_hit_distance()
-        for k, hp in handles.items():
-            if QLineF(scene_pt, hp).length() <= hit_dist:
-                return k
-        return None
-
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
-        if h in ("tl", "br"):
-            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-        elif h in ("tr", "bl"):
-            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-        elif h in ("t", "b"):
-            self.setCursor(Qt.CursorShape.SizeVerCursor)
-        elif h in ("l", "r", "adjust1"):
+        if h == "rotate":
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        elif h == "adjust1":
             self.setCursor(Qt.CursorShape.SizeHorCursor)
+        elif h:
+            self.setCursor(self._cursor_for_handle(h))
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
         super().hoverMoveEvent(event)
@@ -700,10 +612,15 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             h = self._hit_test_handle(event.scenePos())
+            if h == "rotate":
+                self._begin_rotation()
+                event.accept()
+                return
             if h:
                 self._begin_resize_tracking()
                 self._active_handle = h
                 self._resizing = True
+                self._store_resize_anchor(h)
                 self._press_scene = event.scenePos()
                 self._start_pos = QPointF(self.pos())
                 self._start_size = (self._width, self._height)
@@ -713,10 +630,14 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if self._rotating:
+            self._handle_rotation_move(event)
+            return
         if self._resizing and self._active_handle and self._press_scene and self._start_pos and self._start_size:
             cur = event.scenePos()
-            dx = cur.x() - self._press_scene.x()
-            dy = cur.y() - self._press_scene.y()
+            dx, dy = self._scene_delta_to_local(
+                cur.x() - self._press_scene.x(),
+                cur.y() - self._press_scene.y())
 
             # Handle adjust1 (corner radius) adjustment separately
             if self._active_handle == "adjust1" and self._start_adjust1 is not None:
@@ -727,6 +648,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 self._adjust1 = new_adjust1
                 self._update_path()
                 self._update_label_position()
+                self._update_transform_origin()
                 self._notify_changed()
                 # Notify property panel of adjust1 change
                 if MetaRoundedRectItem.on_adjust1_changed:
@@ -734,58 +656,15 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 event.accept()
                 return
 
-            x0 = self._start_pos.x()
-            y0 = self._start_pos.y()
             w0, h0 = self._start_size
-
-            left = x0
-            top = y0
-            right = x0 + w0
-            bottom = y0 + h0
-
-            if self._active_handle == "tl":
-                left += dx
-                top += dy
-            elif self._active_handle == "tr":
-                right += dx
-                top += dy
-            elif self._active_handle == "bl":
-                left += dx
-                bottom += dy
-            elif self._active_handle == "br":
-                right += dx
-                bottom += dy
-            elif self._active_handle == "t":
-                top += dy
-            elif self._active_handle == "b":
-                bottom += dy
-            elif self._active_handle == "l":
-                left += dx
-            elif self._active_handle == "r":
-                right += dx
-
-            # Minimum size from settings. Default: 5.0 pixels
-            min_size = _get_min_size()
-            if (right - left) < min_size:
-                if self._active_handle in ("tl", "bl", "l"):
-                    left = right - min_size
-                else:
-                    right = left + min_size
-
-            if (bottom - top) < min_size:
-                if self._active_handle in ("tl", "tr", "t"):
-                    top = bottom - min_size
-                else:
-                    bottom = top + min_size
-
-            new_w = right - left
-            new_h = bottom - top
-
-            self.setPos(QPointF(left, top))
+            new_w, new_h, anchor_after = self._compute_resize(
+                self._active_handle, dx, dy, w0, h0)
             self._width = new_w
             self._height = new_h
             self._update_path()
             self._update_label_position()
+            self._update_transform_origin()
+            self._fixup_resize_pos(anchor_after)
 
             self._notify_changed()
             event.accept()
@@ -825,6 +704,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             handles = self._handle_points_local()
             adjust1_handle_pos = handles.pop("adjust1")  # Remove adjust1 handle from regular handles
             draw_handles(painter, handles)
+            self._draw_rotation_knob(painter)
 
             # Draw adjust1 handle in yellow
             # Handle size from settings. Default: 8.0 pixels
@@ -836,6 +716,10 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                                        handle_size, handle_size))
 
     def mouseReleaseEvent(self, event):
+        if self._rotating:
+            self._end_rotation()
+            event.accept()
+            return
         if self._resizing:
             self._end_resize_tracking()
             self._resizing = False
@@ -877,6 +761,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         z = self.zValue()
         if z != 0:
             rec["z"] = int(z)
+        self._add_angle_to_geom(rec.get("geom", {}))
         return rec
 
 
@@ -986,23 +871,7 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
     def setRect(self, r: QRectF):
         super().setRect(r)
         self._update_label_position()
-
-    def _handle_points_scene(self) -> Dict[str, QPointF]:
-        """Return handle positions in scene coordinates (corners and sides)."""
-        r = self.rect()
-        p = self.pos()
-        cx = p.x() + r.left() + r.width() / 2
-        cy = p.y() + r.top() + r.height() / 2
-        return {
-            "tl": QPointF(p.x() + r.left(),  p.y() + r.top()),
-            "tr": QPointF(p.x() + r.right(), p.y() + r.top()),
-            "bl": QPointF(p.x() + r.left(),  p.y() + r.bottom()),
-            "br": QPointF(p.x() + r.right(), p.y() + r.bottom()),
-            "t":  QPointF(cx, p.y() + r.top()),
-            "b":  QPointF(cx, p.y() + r.bottom()),
-            "l":  QPointF(p.x() + r.left(), cy),
-            "r":  QPointF(p.x() + r.right(), cy),
-        }
+        self._update_transform_origin()
 
     def _handle_points_local(self) -> Dict[str, QPointF]:
         """Return handle positions in local coordinates for painting."""
@@ -1020,27 +889,12 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
             "r":  QPointF(r.right(), cy),
         }
 
-    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
-        if not self._should_paint_handles():
-            return None
-        handles = self._handle_points_scene()
-        # Hit distance from settings. Default: 10.0 pixels
-        hit_dist = _get_hit_distance()
-        for k, hp in handles.items():
-            if QLineF(scene_pt, hp).length() <= hit_dist:
-                return k
-        return None
-
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
-        if h in ("tl", "br"):
-            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-        elif h in ("tr", "bl"):
-            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-        elif h in ("t", "b"):
-            self.setCursor(Qt.CursorShape.SizeVerCursor)
-        elif h in ("l", "r"):
-            self.setCursor(Qt.CursorShape.SizeHorCursor)
+        if h == "rotate":
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        elif h:
+            self.setCursor(self._cursor_for_handle(h))
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
         super().hoverMoveEvent(event)
@@ -1048,10 +902,15 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             h = self._hit_test_handle(event.scenePos())
+            if h == "rotate":
+                self._begin_rotation()
+                event.accept()
+                return
             if h:
                 self._begin_resize_tracking()
                 self._active_handle = h
                 self._resizing = True
+                self._store_resize_anchor(h)
                 self._press_scene = event.scenePos()
                 self._start_pos = QPointF(self.pos())
                 self._start_rect = QRectF(self.rect())
@@ -1060,61 +919,22 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if self._rotating:
+            self._handle_rotation_move(event)
+            return
         if self._resizing and self._active_handle and self._press_scene and self._start_pos and self._start_rect:
             cur = event.scenePos()
-            dx = cur.x() - self._press_scene.x()
-            dy = cur.y() - self._press_scene.y()
+            dx, dy = self._scene_delta_to_local(
+                cur.x() - self._press_scene.x(),
+                cur.y() - self._press_scene.y())
 
-            x0 = self._start_pos.x()
-            y0 = self._start_pos.y()
             w0 = self._start_rect.width()
             h0 = self._start_rect.height()
-
-            left = x0
-            top = y0
-            right = x0 + w0
-            bottom = y0 + h0
-
-            if self._active_handle == "tl":
-                left += dx
-                top += dy
-            elif self._active_handle == "tr":
-                right += dx
-                top += dy
-            elif self._active_handle == "bl":
-                left += dx
-                bottom += dy
-            elif self._active_handle == "br":
-                right += dx
-                bottom += dy
-            elif self._active_handle == "t":
-                top += dy
-            elif self._active_handle == "b":
-                bottom += dy
-            elif self._active_handle == "l":
-                left += dx
-            elif self._active_handle == "r":
-                right += dx
-
-            # Minimum size from settings. Default: 5.0 pixels
-            min_size = _get_min_size()
-            if (right - left) < min_size:
-                if self._active_handle in ("tl", "bl", "l"):
-                    left = right - min_size
-                else:
-                    right = left + min_size
-
-            if (bottom - top) < min_size:
-                if self._active_handle in ("tl", "tr", "t"):
-                    top = bottom - min_size
-                else:
-                    bottom = top + min_size
-
-            new_w = right - left
-            new_h = bottom - top
-
-            self.setPos(QPointF(left, top))
+            new_w, new_h, anchor_after = self._compute_resize(
+                self._active_handle, dx, dy, w0, h0)
             self.setRect(QRectF(0, 0, new_w, new_h))
+            self._update_transform_origin()
+            self._fixup_resize_pos(anchor_after)
 
             self._notify_changed()
             event.accept()
@@ -1151,8 +971,13 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
             painter.drawEllipse(self.rect())
             # Draw resize handles
             draw_handles(painter, self._handle_points_local())
+            self._draw_rotation_knob(painter)
 
     def mouseReleaseEvent(self, event):
+        if self._rotating:
+            self._end_rotation()
+            event.accept()
+            return
         if self._resizing:
             self._end_resize_tracking()
             self._resizing = False
@@ -1193,6 +1018,7 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         z = self.zValue()
         if z != 0:
             rec["z"] = int(z)
+        self._add_angle_to_geom(rec.get("geom", {}))
         return rec
 
 
@@ -1200,6 +1026,9 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
     """Line item with draggable endpoints and optional arrowheads."""
 
     KIND = "line"
+
+    def _is_rotatable(self) -> bool:
+        return False
     KIND_ALIASES = frozenset()
 
     ARROW_NONE = "none"
@@ -1767,6 +1596,7 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
         z = self.zValue()
         if z != 0:
             rec["z"] = int(z)
+        self._add_angle_to_geom(rec.get("geom", {}))
         return rec
 
 
@@ -1774,6 +1604,9 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
     """Text item with inline editing and configurable font."""
 
     KIND = "text"
+
+    def _is_rotatable(self) -> bool:
+        return False
     KIND_ALIASES = frozenset(k for k, v in KIND_ALIAS_MAP.items() if v == "text")
 
     # Class-level callbacks for focus events (set by MainWindow)
@@ -1921,6 +1754,7 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
         z = self.zValue()
         if z != 0:
             rec["z"] = int(z)
+        self._add_angle_to_geom(rec.get("geom", {}))
         return rec
 
 
@@ -2064,6 +1898,7 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._height = r.height()
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
 
     def adjust1(self) -> float:
         return self._adjust1
@@ -2071,22 +1906,6 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def set_adjust1(self, value: float):
         self._adjust1 = max(0.0, min(0.5, value))
         self._update_path()
-
-    def _handle_points_scene(self) -> Dict[str, QPointF]:
-        p = self.pos()
-        cx = p.x() + self._width / 2
-        cy = p.y() + self._height / 2
-        return {
-            "tl": QPointF(p.x(), p.y()),
-            "tr": QPointF(p.x() + self._width, p.y()),
-            "bl": QPointF(p.x(), p.y() + self._height),
-            "br": QPointF(p.x() + self._width, p.y() + self._height),
-            "t":  QPointF(cx, p.y()),
-            "b":  QPointF(cx, p.y() + self._height),
-            "l":  QPointF(p.x(), cy),
-            "r":  QPointF(p.x() + self._width, cy),
-            "adjust1": QPointF(p.x() + self._width * self._adjust1, p.y()),  # Upper left vertex
-        }
 
     def _handle_points_local(self) -> Dict[str, QPointF]:
         cx = self._width / 2
@@ -2103,26 +1922,14 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             "adjust1": QPointF(self._width * self._adjust1, 0),  # Upper left vertex for indent control
         }
 
-    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
-        if not self._should_paint_handles():
-            return None
-        handles = self._handle_points_scene()
-        hit_dist = _get_hit_distance()
-        for k, hp in handles.items():
-            if QLineF(scene_pt, hp).length() <= hit_dist:
-                return k
-        return None
-
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
-        if h in ("tl", "br"):
-            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-        elif h in ("tr", "bl"):
-            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-        elif h in ("t", "b"):
-            self.setCursor(Qt.CursorShape.SizeVerCursor)
-        elif h in ("l", "r", "adjust1"):
+        if h == "rotate":
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        elif h == "adjust1":
             self.setCursor(Qt.CursorShape.SizeHorCursor)
+        elif h:
+            self.setCursor(self._cursor_for_handle(h))
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
         super().hoverMoveEvent(event)
@@ -2130,10 +1937,15 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             h = self._hit_test_handle(event.scenePos())
+            if h == "rotate":
+                self._begin_rotation()
+                event.accept()
+                return
             if h:
                 self._begin_resize_tracking()
                 self._active_handle = h
                 self._resizing = True
+                self._store_resize_anchor(h)
                 self._press_scene = event.scenePos()
                 self._start_pos = QPointF(self.pos())
                 self._start_size = (self._width, self._height)
@@ -2143,10 +1955,14 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if self._rotating:
+            self._handle_rotation_move(event)
+            return
         if self._resizing and self._active_handle and self._press_scene and self._start_pos and self._start_size:
             cur = event.scenePos()
-            dx = cur.x() - self._press_scene.x()
-            dy = cur.y() - self._press_scene.y()
+            dx, dy = self._scene_delta_to_local(
+                cur.x() - self._press_scene.x(),
+                cur.y() - self._press_scene.y())
 
             # Handle adjust1 (indent) adjustment
             if self._active_handle == "adjust1" and self._start_adjust1 is not None:
@@ -2157,63 +1973,22 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 self._adjust1 = new_adjust1
                 self._update_path()
                 self._update_label_position()
+                self._update_transform_origin()
                 self._notify_changed()
                 if MetaHexagonItem.on_adjust1_changed:
                     MetaHexagonItem.on_adjust1_changed(self, new_adjust1)
                 event.accept()
                 return
 
-            x0 = self._start_pos.x()
-            y0 = self._start_pos.y()
             w0, h0 = self._start_size
-
-            left = x0
-            top = y0
-            right = x0 + w0
-            bottom = y0 + h0
-
-            if self._active_handle == "tl":
-                left += dx
-                top += dy
-            elif self._active_handle == "tr":
-                right += dx
-                top += dy
-            elif self._active_handle == "bl":
-                left += dx
-                bottom += dy
-            elif self._active_handle == "br":
-                right += dx
-                bottom += dy
-            elif self._active_handle == "t":
-                top += dy
-            elif self._active_handle == "b":
-                bottom += dy
-            elif self._active_handle == "l":
-                left += dx
-            elif self._active_handle == "r":
-                right += dx
-
-            min_size = _get_min_size()
-            if (right - left) < min_size:
-                if self._active_handle in ("tl", "bl", "l"):
-                    left = right - min_size
-                else:
-                    right = left + min_size
-
-            if (bottom - top) < min_size:
-                if self._active_handle in ("tl", "tr", "t"):
-                    top = bottom - min_size
-                else:
-                    bottom = top + min_size
-
-            new_w = right - left
-            new_h = bottom - top
-
-            self.setPos(QPointF(left, top))
+            new_w, new_h, anchor_after = self._compute_resize(
+                self._active_handle, dx, dy, w0, h0)
             self._width = new_w
             self._height = new_h
             self._update_path()
             self._update_label_position()
+            self._update_transform_origin()
+            self._fixup_resize_pos(anchor_after)
 
             self._notify_changed()
             event.accept()
@@ -2246,6 +2021,7 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             handles = self._handle_points_local()
             adjust1_handle_pos = handles.pop("adjust1")
             draw_handles(painter, handles)
+            self._draw_rotation_knob(painter)
 
             # Draw adjust1 handle in yellow
             handle_size = _get_handle_size()
@@ -2256,6 +2032,10 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                                        handle_size, handle_size))
 
     def mouseReleaseEvent(self, event):
+        if self._rotating:
+            self._end_rotation()
+            event.accept()
+            return
         if self._resizing:
             self._end_resize_tracking()
             self._resizing = False
@@ -2296,6 +2076,7 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         z = self.zValue()
         if z != 0:
             rec["z"] = int(z)
+        self._add_angle_to_geom(rec.get("geom", {}))
         return rec
 
 
@@ -2443,6 +2224,7 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._height = r.height()
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
 
     def adjust1(self) -> float:
         return self._adjust1
@@ -2451,23 +2233,7 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._adjust1 = max(0.1, min(0.5, value))
         self._update_path()
         self._update_label_position()
-
-    def _handle_points_scene(self) -> Dict[str, QPointF]:
-        p = self.pos()
-        cx = p.x() + self._width / 2
-        cy = p.y() + self._height / 2
-        cap_h = self._height * self._adjust1
-        return {
-            "tl": QPointF(p.x(), p.y()),
-            "tr": QPointF(p.x() + self._width, p.y()),
-            "bl": QPointF(p.x(), p.y() + self._height),
-            "br": QPointF(p.x() + self._width, p.y() + self._height),
-            "t":  QPointF(cx, p.y()),
-            "b":  QPointF(cx, p.y() + self._height),
-            "l":  QPointF(p.x(), cy),
-            "r":  QPointF(p.x() + self._width, cy),
-            "adjust1": QPointF(p.x() + self._width, p.y() + cap_h),  # Right side of top ellipse
-        }
+        self._update_transform_origin()
 
     def _handle_points_local(self) -> Dict[str, QPointF]:
         cx = self._width / 2
@@ -2485,26 +2251,14 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             "adjust1": QPointF(self._width, cap_h),
         }
 
-    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
-        if not self._should_paint_handles():
-            return None
-        handles = self._handle_points_scene()
-        hit_dist = _get_hit_distance()
-        for k, hp in handles.items():
-            if QLineF(scene_pt, hp).length() <= hit_dist:
-                return k
-        return None
-
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
-        if h in ("tl", "br"):
-            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-        elif h in ("tr", "bl"):
-            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-        elif h in ("t", "b", "adjust1"):
+        if h == "rotate":
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        elif h == "adjust1":
             self.setCursor(Qt.CursorShape.SizeVerCursor)
-        elif h in ("l", "r"):
-            self.setCursor(Qt.CursorShape.SizeHorCursor)
+        elif h:
+            self.setCursor(self._cursor_for_handle(h))
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
         super().hoverMoveEvent(event)
@@ -2512,10 +2266,15 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             h = self._hit_test_handle(event.scenePos())
+            if h == "rotate":
+                self._begin_rotation()
+                event.accept()
+                return
             if h:
                 self._begin_resize_tracking()
                 self._active_handle = h
                 self._resizing = True
+                self._store_resize_anchor(h)
                 self._press_scene = event.scenePos()
                 self._start_pos = QPointF(self.pos())
                 self._start_size = (self._width, self._height)
@@ -2525,10 +2284,14 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if self._rotating:
+            self._handle_rotation_move(event)
+            return
         if self._resizing and self._active_handle and self._press_scene and self._start_pos and self._start_size:
             cur = event.scenePos()
-            dx = cur.x() - self._press_scene.x()
-            dy = cur.y() - self._press_scene.y()
+            dx, dy = self._scene_delta_to_local(
+                cur.x() - self._press_scene.x(),
+                cur.y() - self._press_scene.y())
 
             # Handle adjust1 (cap ratio) adjustment
             if self._active_handle == "adjust1" and self._start_adjust1 is not None:
@@ -2538,63 +2301,22 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 self._adjust1 = new_ratio
                 self._update_path()
                 self._update_label_position()
+                self._update_transform_origin()
                 self._notify_changed()
                 if MetaCylinderItem.on_adjust1_changed:
                     MetaCylinderItem.on_adjust1_changed(self, new_ratio)
                 event.accept()
                 return
 
-            x0 = self._start_pos.x()
-            y0 = self._start_pos.y()
             w0, h0 = self._start_size
-
-            left = x0
-            top = y0
-            right = x0 + w0
-            bottom = y0 + h0
-
-            if self._active_handle == "tl":
-                left += dx
-                top += dy
-            elif self._active_handle == "tr":
-                right += dx
-                top += dy
-            elif self._active_handle == "bl":
-                left += dx
-                bottom += dy
-            elif self._active_handle == "br":
-                right += dx
-                bottom += dy
-            elif self._active_handle == "t":
-                top += dy
-            elif self._active_handle == "b":
-                bottom += dy
-            elif self._active_handle == "l":
-                left += dx
-            elif self._active_handle == "r":
-                right += dx
-
-            min_size = _get_min_size()
-            if (right - left) < min_size:
-                if self._active_handle in ("tl", "bl", "l"):
-                    left = right - min_size
-                else:
-                    right = left + min_size
-
-            if (bottom - top) < min_size:
-                if self._active_handle in ("tl", "tr", "t"):
-                    top = bottom - min_size
-                else:
-                    bottom = top + min_size
-
-            new_w = right - left
-            new_h = bottom - top
-
-            self.setPos(QPointF(left, top))
+            new_w, new_h, anchor_after = self._compute_resize(
+                self._active_handle, dx, dy, w0, h0)
             self._width = new_w
             self._height = new_h
             self._update_path()
             self._update_label_position()
+            self._update_transform_origin()
+            self._fixup_resize_pos(anchor_after)
 
             self._notify_changed()
             event.accept()
@@ -2660,6 +2382,7 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             handles = self._handle_points_local()
             adjust1_handle_pos = handles.pop("adjust1")
             draw_handles(painter, handles)
+            self._draw_rotation_knob(painter)
 
             # Draw adjust1 handle in yellow
             handle_size = _get_handle_size()
@@ -2670,6 +2393,10 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                                        handle_size, handle_size))
 
     def mouseReleaseEvent(self, event):
+        if self._rotating:
+            self._end_rotation()
+            event.accept()
+            return
         if self._resizing:
             self._end_resize_tracking()
             self._resizing = False
@@ -2710,6 +2437,7 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         z = self.zValue()
         if z != 0:
             rec["z"] = int(z)
+        self._add_angle_to_geom(rec.get("geom", {}))
         return rec
 
 
@@ -2865,6 +2593,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._adjust2 = min(self._adjust2, self._width * 0.8)
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
 
     def adjust2(self) -> float:
         return self._adjust2
@@ -2873,6 +2602,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._adjust2 = max(10, min(self._width * 0.8, value))
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
 
     def adjust1(self) -> float:
         return self._adjust1
@@ -2881,25 +2611,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._adjust1 = max(0.2, min(0.9, value))
         self._update_path()
         self._update_label_position()
-
-    def _handle_points_scene(self) -> Dict[str, QPointF]:
-        p = self.pos()
-        cx = p.x() + self._width / 2
-        cy = p.y() + self._height / 2
-        head_x = self._width - self._adjust2
-        shaft_margin = self._height * (1 - self._adjust1) / 2
-        return {
-            "tl": QPointF(p.x(), p.y()),
-            "tr": QPointF(p.x() + self._width, p.y()),
-            "bl": QPointF(p.x(), p.y() + self._height),
-            "br": QPointF(p.x() + self._width, p.y() + self._height),
-            "t":  QPointF(cx, p.y()),
-            "b":  QPointF(cx, p.y() + self._height),
-            "l":  QPointF(p.x(), cy),
-            "r":  QPointF(p.x() + self._width, cy),
-            "adjust2": QPointF(p.x() + head_x, p.y() + shaft_margin),  # Junction of head and shaft
-            "adjust1": QPointF(p.x(), p.y() + shaft_margin),  # Left edge at shaft top
-        }
+        self._update_transform_origin()
 
     def _handle_points_local(self) -> Dict[str, QPointF]:
         cx = self._width / 2
@@ -2919,26 +2631,16 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             "adjust1": QPointF(0, shaft_margin),
         }
 
-    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
-        if not self._should_paint_handles():
-            return None
-        handles = self._handle_points_scene()
-        hit_dist = _get_hit_distance()
-        for k, hp in handles.items():
-            if QLineF(scene_pt, hp).length() <= hit_dist:
-                return k
-        return None
-
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
-        if h in ("tl", "br"):
-            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-        elif h in ("tr", "bl"):
-            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-        elif h in ("t", "b", "adjust1"):
+        if h == "rotate":
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        elif h == "adjust1":
             self.setCursor(Qt.CursorShape.SizeVerCursor)
-        elif h in ("l", "r", "adjust2"):
+        elif h == "adjust2":
             self.setCursor(Qt.CursorShape.SizeHorCursor)
+        elif h:
+            self.setCursor(self._cursor_for_handle(h))
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
         super().hoverMoveEvent(event)
@@ -2946,10 +2648,15 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             h = self._hit_test_handle(event.scenePos())
+            if h == "rotate":
+                self._begin_rotation()
+                event.accept()
+                return
             if h:
                 self._begin_resize_tracking()
                 self._active_handle = h
                 self._resizing = True
+                self._store_resize_anchor(h)
                 self._press_scene = event.scenePos()
                 self._start_pos = QPointF(self.pos())
                 self._start_size = (self._width, self._height)
@@ -2960,10 +2667,14 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if self._rotating:
+            self._handle_rotation_move(event)
+            return
         if self._resizing and self._active_handle and self._press_scene and self._start_pos and self._start_size:
             cur = event.scenePos()
-            dx = cur.x() - self._press_scene.x()
-            dy = cur.y() - self._press_scene.y()
+            dx, dy = self._scene_delta_to_local(
+                cur.x() - self._press_scene.x(),
+                cur.y() - self._press_scene.y())
 
             # Handle adjust2 (head length) adjustment
             if self._active_handle == "adjust2" and self._start_adjust2 is not None:
@@ -2972,6 +2683,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 self._adjust2 = new_adjust2
                 self._update_path()
                 self._update_label_position()
+                self._update_transform_origin()
                 self._notify_changed()
                 if MetaBlockArrowItem.on_adjust2_changed:
                     MetaBlockArrowItem.on_adjust2_changed(self, new_adjust2)
@@ -2988,64 +2700,23 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 self._adjust1 = new_adjust1
                 self._update_path()
                 self._update_label_position()
+                self._update_transform_origin()
                 self._notify_changed()
                 if MetaBlockArrowItem.on_adjust1_changed:
                     MetaBlockArrowItem.on_adjust1_changed(self, new_adjust1)
                 event.accept()
                 return
 
-            x0 = self._start_pos.x()
-            y0 = self._start_pos.y()
             w0, h0 = self._start_size
-
-            left = x0
-            top = y0
-            right = x0 + w0
-            bottom = y0 + h0
-
-            if self._active_handle == "tl":
-                left += dx
-                top += dy
-            elif self._active_handle == "tr":
-                right += dx
-                top += dy
-            elif self._active_handle == "bl":
-                left += dx
-                bottom += dy
-            elif self._active_handle == "br":
-                right += dx
-                bottom += dy
-            elif self._active_handle == "t":
-                top += dy
-            elif self._active_handle == "b":
-                bottom += dy
-            elif self._active_handle == "l":
-                left += dx
-            elif self._active_handle == "r":
-                right += dx
-
-            min_size = _get_min_size()
-            if (right - left) < min_size:
-                if self._active_handle in ("tl", "bl", "l"):
-                    left = right - min_size
-                else:
-                    right = left + min_size
-
-            if (bottom - top) < min_size:
-                if self._active_handle in ("tl", "tr", "t"):
-                    top = bottom - min_size
-                else:
-                    bottom = top + min_size
-
-            new_w = right - left
-            new_h = bottom - top
-
-            self.setPos(QPointF(left, top))
+            new_w, new_h, anchor_after = self._compute_resize(
+                self._active_handle, dx, dy, w0, h0)
             self._width = new_w
             self._height = new_h
             self._adjust2 = min(self._adjust2, new_w * 0.8)
             self._update_path()
             self._update_label_position()
+            self._update_transform_origin()
+            self._fixup_resize_pos(anchor_after)
 
             self._notify_changed()
             event.accept()
@@ -3079,6 +2750,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             adjust2_handle = handles.pop("adjust2")
             adjust1_handle = handles.pop("adjust1")
             draw_handles(painter, handles)
+            self._draw_rotation_knob(painter)
 
             # Draw custom handles in yellow
             handle_size = _get_handle_size()
@@ -3091,6 +2763,10 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                                        handle_size, handle_size))
 
     def mouseReleaseEvent(self, event):
+        if self._rotating:
+            self._end_rotation()
+            event.accept()
+            return
         if self._resizing:
             self._end_resize_tracking()
             self._resizing = False
@@ -3133,6 +2809,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         z = self.zValue()
         if z != 0:
             rec["z"] = int(z)
+        self._add_angle_to_geom(rec.get("geom", {}))
         return rec
 
 
@@ -3263,6 +2940,7 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._height = new_h
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
 
     def _apply_pen_brush(self):
         pen = QPen(self.pen_color, self.pen_width)
@@ -3324,23 +3002,9 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._height = r.height()
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
 
     # ---- Bounding-box handles ----
-
-    def _handle_points_scene(self) -> Dict[str, QPointF]:
-        p = self.pos()
-        cx = p.x() + self._width / 2
-        cy = p.y() + self._height / 2
-        return {
-            "tl": QPointF(p.x(), p.y()),
-            "tr": QPointF(p.x() + self._width, p.y()),
-            "bl": QPointF(p.x(), p.y() + self._height),
-            "br": QPointF(p.x() + self._width, p.y() + self._height),
-            "t":  QPointF(cx, p.y()),
-            "b":  QPointF(cx, p.y() + self._height),
-            "l":  QPointF(p.x(), cy),
-            "r":  QPointF(p.x() + self._width, cy),
-        }
 
     def _handle_points_local(self) -> Dict[str, QPointF]:
         cx = self._width / 2
@@ -3356,23 +3020,12 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             "r":  QPointF(self._width, cy),
         }
 
-    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
-        if not self._should_paint_handles():
-            return None
-        handles = self._handle_points_scene()
-        hit_dist = _get_hit_distance()
-        for k, hp in handles.items():
-            if QLineF(scene_pt, hp).length() <= hit_dist:
-                return k
-        return None
-
     # ---- Vertex editing helpers ----
 
     def _vertex_points_scene(self) -> list:
-        """Return absolute scene positions of all vertices."""
-        p = self.pos()
+        """Return absolute scene positions of all vertices (rotation-aware)."""
         return [
-            QPointF(p.x() + rx * self._width, p.y() + ry * self._height)
+            self.mapToScene(QPointF(rx * self._width, ry * self._height))
             for rx, ry in self._rel_points
         ]
 
@@ -3429,14 +3082,10 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 self.setCursor(Qt.CursorShape.ArrowCursor)
         else:
             h = self._hit_test_handle(event.scenePos())
-            if h in ("tl", "br"):
-                self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-            elif h in ("tr", "bl"):
-                self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-            elif h in ("t", "b"):
-                self.setCursor(Qt.CursorShape.SizeVerCursor)
-            elif h in ("l", "r"):
-                self.setCursor(Qt.CursorShape.SizeHorCursor)
+            if h == "rotate":
+                self.setCursor(Qt.CursorShape.CrossCursor)
+            elif h:
+                self.setCursor(self._cursor_for_handle(h))
             else:
                 self.setCursor(Qt.CursorShape.ArrowCursor)
         super().hoverMoveEvent(event)
@@ -3466,13 +3115,14 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             # Right-click on edge: insert a new vertex
             edge_idx = self._hit_test_edge(scene_pt)
             if edge_idx is not None:
-                p = self.pos()
-                rx = (scene_pt.x() - p.x()) / self._width if self._width > 0 else 0.5
-                ry = (scene_pt.y() - p.y()) / self._height if self._height > 0 else 0.5
+                local_pt = self.mapFromScene(scene_pt)
+                rx = local_pt.x() / self._width if self._width > 0 else 0.5
+                ry = local_pt.y() / self._height if self._height > 0 else 0.5
                 self.prepareGeometryChange()
                 self._rel_points.insert(edge_idx + 1, [rx, ry])
                 self._update_path()
                 self._update_label_position()
+                self._update_transform_origin()
                 self._notify_changed()
                 event.accept()
                 return
@@ -3491,10 +3141,15 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
             # Bounding-box handle resize
             h = self._hit_test_handle(event.scenePos())
+            if h == "rotate":
+                self._begin_rotation()
+                event.accept()
+                return
             if h:
                 self._begin_resize_tracking()
                 self._active_handle = h
                 self._resizing = True
+                self._store_resize_anchor(h)
                 self._press_scene = event.scenePos()
                 self._start_pos = QPointF(self.pos())
                 self._start_size = (self._width, self._height)
@@ -3503,17 +3158,21 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if self._rotating:
+            self._handle_rotation_move(event)
+            return
         # Vertex dragging — allow dragging outside the current bounding box
         if self._vertex_dragging and self._active_vertex is not None:
-            cur = event.scenePos()
-            p = self.pos()
+            # Map scene position to local coordinates (rotation-aware)
+            local_pt = self.mapFromScene(event.scenePos())
             # Compute unclamped relative position (can exceed 0-1 range)
-            rx = (cur.x() - p.x()) / self._width if self._width > 0 else 0.5
-            ry = (cur.y() - p.y()) / self._height if self._height > 0 else 0.5
+            rx = local_pt.x() / self._width if self._width > 0 else 0.5
+            ry = local_pt.y() / self._height if self._height > 0 else 0.5
             self._rel_points[self._active_vertex] = [rx, ry]
             self.prepareGeometryChange()
             self._update_path()
             self._update_label_position()
+            self._update_transform_origin()
             self._notify_changed()
             event.accept()
             return
@@ -3521,52 +3180,19 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         # Bounding-box handle resize
         if self._resizing and self._active_handle and self._press_scene and self._start_pos and self._start_size:
             cur = event.scenePos()
-            dx = cur.x() - self._press_scene.x()
-            dy = cur.y() - self._press_scene.y()
+            dx, dy = self._scene_delta_to_local(
+                cur.x() - self._press_scene.x(),
+                cur.y() - self._press_scene.y())
 
-            x0 = self._start_pos.x()
-            y0 = self._start_pos.y()
             w0, h0 = self._start_size
-
-            left = x0
-            top = y0
-            right = x0 + w0
-            bottom = y0 + h0
-
-            if self._active_handle == "tl":
-                left += dx; top += dy
-            elif self._active_handle == "tr":
-                right += dx; top += dy
-            elif self._active_handle == "bl":
-                left += dx; bottom += dy
-            elif self._active_handle == "br":
-                right += dx; bottom += dy
-            elif self._active_handle == "t":
-                top += dy
-            elif self._active_handle == "b":
-                bottom += dy
-            elif self._active_handle == "l":
-                left += dx
-            elif self._active_handle == "r":
-                right += dx
-
-            min_size = _get_min_size()
-            if (right - left) < min_size:
-                if self._active_handle in ("tl", "bl", "l"):
-                    left = right - min_size
-                else:
-                    right = left + min_size
-            if (bottom - top) < min_size:
-                if self._active_handle in ("tl", "tr", "t"):
-                    top = bottom - min_size
-                else:
-                    bottom = top + min_size
-
-            self.setPos(QPointF(left, top))
-            self._width = right - left
-            self._height = bottom - top
+            new_w, new_h, anchor_after = self._compute_resize(
+                self._active_handle, dx, dy, w0, h0)
+            self._width = new_w
+            self._height = new_h
             self._update_path()
             self._update_label_position()
+            self._update_transform_origin()
+            self._fixup_resize_pos(anchor_after)
             self._notify_changed()
             event.accept()
             return
@@ -3580,6 +3206,10 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             self._active_vertex = None
             self._recalculate_bbox()
             self._notify_changed()
+            event.accept()
+            return
+        if self._rotating:
+            self._end_rotation()
             event.accept()
             return
         if self._resizing:
@@ -3641,6 +3271,7 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             painter.drawPath(self.path())
 
             draw_handles(painter, self._handle_points_local())
+            self._draw_rotation_knob(painter)
 
     def itemChange(self, change, value):
         out = super().itemChange(change, value)
@@ -3671,6 +3302,7 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         z = self.zValue()
         if z != 0:
             rec["z"] = int(z)
+        self._add_angle_to_geom(rec.get("geom", {}))
         return rec
 
 
@@ -3759,6 +3391,7 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
 
     # ---- Path / geometry ----
 
@@ -4121,6 +3754,7 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._height = new_h
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
 
     def _apply_pen_brush(self):
         """Apply pen and brush (no fill for curves)."""
@@ -4182,6 +3816,7 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._height = r.height()
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
 
     @property
     def adjust1(self) -> float:
@@ -4197,6 +3832,7 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.prepareGeometryChange()
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
 
     def _has_hv_corners(self) -> bool:
         """Return True if this curve has any H->V or V->H transitions."""
@@ -4245,25 +3881,6 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         handle_y = corner_y * h - in_uy * self._adjust1
         return QPointF(handle_x, handle_y)
 
-    def _handle_points_scene(self) -> Dict[str, QPointF]:
-        p = self.pos()
-        cx = p.x() + self._width / 2
-        cy = p.y() + self._height / 2
-        handles = {
-            "tl": QPointF(p.x(), p.y()),
-            "tr": QPointF(p.x() + self._width, p.y()),
-            "bl": QPointF(p.x(), p.y() + self._height),
-            "br": QPointF(p.x() + self._width, p.y() + self._height),
-            "t":  QPointF(cx, p.y()),
-            "b":  QPointF(cx, p.y() + self._height),
-            "l":  QPointF(p.x(), cy),
-            "r":  QPointF(p.x() + self._width, cy),
-        }
-        br_local = self._bend_radius_handle_local()
-        if br_local is not None:
-            handles["adjust1"] = QPointF(p.x() + br_local.x(), p.y() + br_local.y())
-        return handles
-
     def _handle_points_local(self) -> Dict[str, QPointF]:
         cx = self._width / 2
         cy = self._height / 2
@@ -4282,27 +3899,10 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             handles["adjust1"] = br_local
         return handles
 
-    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
-        if not self._should_paint_handles():
-            return None
-        handles = self._handle_points_scene()
-        hit_dist = _get_hit_distance()
-        # Test adjust1 first (it may overlap with other handles)
-        if "adjust1" in handles:
-            if QLineF(scene_pt, handles["adjust1"]).length() <= hit_dist:
-                return "adjust1"
-        for k, hp in handles.items():
-            if k == "adjust1":
-                continue
-            if QLineF(scene_pt, hp).length() <= hit_dist:
-                return k
-        return None
-
     # ---- Node editing helpers ----
 
     def _node_points_scene(self) -> list:
-        """Return list of (scene_point, node_index, handle_type) for all hit-testable points."""
-        p = self.pos()
+        """Return list of (scene_point, node_index, handle_type) for all hit-testable points (rotation-aware)."""
         w, h = self._width, self._height
         result = []
         for i, node in enumerate(self._nodes):
@@ -4310,18 +3910,18 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             if cmd == "Z":
                 continue
             ax, ay = self._get_node_anchor(i)
-            result.append((QPointF(p.x() + ax * w, p.y() + ay * h), i, "anchor"))
+            result.append((self.mapToScene(QPointF(ax * w, ay * h)), i, "anchor"))
             if cmd == "C":
                 c1x, c1y = node.get("c1x", ax), node.get("c1y", ay)
                 c2x, c2y = node.get("c2x", ax), node.get("c2y", ay)
-                result.append((QPointF(p.x() + c1x * w, p.y() + c1y * h), i, "c1"))
-                result.append((QPointF(p.x() + c2x * w, p.y() + c2y * h), i, "c2"))
+                result.append((self.mapToScene(QPointF(c1x * w, c1y * h)), i, "c1"))
+                result.append((self.mapToScene(QPointF(c2x * w, c2y * h)), i, "c2"))
             elif cmd == "S":
                 c2x, c2y = node.get("c2x", ax), node.get("c2y", ay)
-                result.append((QPointF(p.x() + c2x * w, p.y() + c2y * h), i, "c2"))
+                result.append((self.mapToScene(QPointF(c2x * w, c2y * h)), i, "c2"))
             elif cmd == "Q":
                 cx, cy = node.get("cx", ax), node.get("cy", ay)
-                result.append((QPointF(p.x() + cx * w, p.y() + cy * h), i, "cx"))
+                result.append((self.mapToScene(QPointF(cx * w, cy * h)), i, "cx"))
         return result
 
     def _hit_test_node(self, scene_pt: QPointF) -> Optional[Tuple[int, str]]:
@@ -4384,14 +3984,8 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             h = self._hit_test_handle(event.scenePos())
             if h == "adjust1":
                 self.setCursor(Qt.CursorShape.CrossCursor)
-            elif h in ("tl", "br"):
-                self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-            elif h in ("tr", "bl"):
-                self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-            elif h in ("t", "b"):
-                self.setCursor(Qt.CursorShape.SizeVerCursor)
-            elif h in ("l", "r"):
-                self.setCursor(Qt.CursorShape.SizeHorCursor)
+            elif h:
+                self.setCursor(self._cursor_for_handle(h))
             else:
                 self.setCursor(Qt.CursorShape.ArrowCursor)
         super().hoverMoveEvent(event)
@@ -4418,13 +4012,14 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             # Right-click on edge: insert new L node
             edge_idx = self._hit_test_edge(scene_pt)
             if edge_idx is not None:
-                p = self.pos()
-                rx = (scene_pt.x() - p.x()) / self._width if self._width > 0 else 0.5
-                ry = (scene_pt.y() - p.y()) / self._height if self._height > 0 else 0.5
+                local_pt = self.mapFromScene(scene_pt)
+                rx = local_pt.x() / self._width if self._width > 0 else 0.5
+                ry = local_pt.y() / self._height if self._height > 0 else 0.5
                 self.prepareGeometryChange()
                 self._nodes.insert(edge_idx + 1, {"cmd": "L", "x": rx, "y": ry})
                 self._update_path()
                 self._update_label_position()
+                self._update_transform_origin()
                 self._notify_changed()
                 event.accept()
                 return
@@ -4444,12 +4039,17 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
             # Bounding-box handle resize (or adjust1)
             h = self._hit_test_handle(event.scenePos())
+            if h == "rotate":
+                self._begin_rotation()
+                event.accept()
+                return
             if h:
                 self._begin_resize_tracking()
                 self._active_handle = h
                 if h == "adjust1":
                     self._start_adjust1 = self._adjust1
                 self._resizing = True
+                self._store_resize_anchor(h)
                 self._press_scene = event.scenePos()
                 self._start_pos = QPointF(self.pos())
                 self._start_size = (self._width, self._height)
@@ -4459,6 +4059,9 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def mouseMoveEvent(self, event):
         # Adjust1 (bend radius) handle drag
+        if self._rotating:
+            self._handle_rotation_move(event)
+            return
         if self._resizing and self._active_handle == "adjust1":
             corner_idx = self._find_first_hv_corner()
             if corner_idx is not None:
@@ -4475,6 +4078,7 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 self.prepareGeometryChange()
                 self._update_path()
                 self._update_label_position()
+                self._update_transform_origin()
                 if MetaCurveItem.on_adjust1_changed:
                     MetaCurveItem.on_adjust1_changed(self, new_r)
                 self._notify_changed()
@@ -4483,10 +4087,10 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
         # Node dragging
         if self._node_dragging and self._active_node is not None:
-            cur = event.scenePos()
-            p = self.pos()
-            rx = (cur.x() - p.x()) / self._width if self._width > 0 else 0.5
-            ry = (cur.y() - p.y()) / self._height if self._height > 0 else 0.5
+            # Map scene position to local coordinates (rotation-aware)
+            local_pt = self.mapFromScene(event.scenePos())
+            rx = local_pt.x() / self._width if self._width > 0 else 0.5
+            ry = local_pt.y() / self._height if self._height > 0 else 0.5
 
             node = self._nodes[self._active_node]
             htype = self._active_handle_type
@@ -4513,6 +4117,7 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             self.prepareGeometryChange()
             self._update_path()
             self._update_label_position()
+            self._update_transform_origin()
             self._notify_changed()
             event.accept()
             return
@@ -4520,52 +4125,19 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         # Bounding-box handle resize
         if self._resizing and self._active_handle and self._press_scene and self._start_pos and self._start_size:
             cur = event.scenePos()
-            dx = cur.x() - self._press_scene.x()
-            dy = cur.y() - self._press_scene.y()
+            dx, dy = self._scene_delta_to_local(
+                cur.x() - self._press_scene.x(),
+                cur.y() - self._press_scene.y())
 
-            x0 = self._start_pos.x()
-            y0 = self._start_pos.y()
             w0, h0 = self._start_size
-
-            left = x0
-            top = y0
-            right = x0 + w0
-            bottom = y0 + h0
-
-            if self._active_handle == "tl":
-                left += dx; top += dy
-            elif self._active_handle == "tr":
-                right += dx; top += dy
-            elif self._active_handle == "bl":
-                left += dx; bottom += dy
-            elif self._active_handle == "br":
-                right += dx; bottom += dy
-            elif self._active_handle == "t":
-                top += dy
-            elif self._active_handle == "b":
-                bottom += dy
-            elif self._active_handle == "l":
-                left += dx
-            elif self._active_handle == "r":
-                right += dx
-
-            min_size = _get_min_size()
-            if (right - left) < min_size:
-                if self._active_handle in ("tl", "bl", "l"):
-                    left = right - min_size
-                else:
-                    right = left + min_size
-            if (bottom - top) < min_size:
-                if self._active_handle in ("tl", "tr", "t"):
-                    top = bottom - min_size
-                else:
-                    bottom = top + min_size
-
-            self.setPos(QPointF(left, top))
-            self._width = right - left
-            self._height = bottom - top
+            new_w, new_h, anchor_after = self._compute_resize(
+                self._active_handle, dx, dy, w0, h0)
+            self._width = new_w
+            self._height = new_h
             self._update_path()
             self._update_label_position()
+            self._update_transform_origin()
+            self._fixup_resize_pos(anchor_after)
             self._notify_changed()
             event.accept()
             return
@@ -4573,6 +4145,10 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if self._rotating:
+            self._end_rotation()
+            event.accept()
+            return
         if self._node_dragging:
             self._end_resize_tracking()
             self._node_dragging = False
@@ -4699,6 +4275,7 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.prepareGeometryChange()
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
         self._notify_changed()
 
     def _toggle_close_path(self):
@@ -4735,6 +4312,7 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._nodes.insert(idx + 1, {"cmd": "L", "x": mx, "y": my})
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
         self._notify_changed()
 
     # ---- Shape / bounds / paint ----
@@ -4806,6 +4384,7 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 if k.startswith("ortho_"):
                     handles.pop(k)
             draw_handles(painter, handles)
+            self._draw_rotation_knob(painter)
 
             # Draw adjust1 handle in yellow
             if adjust1_handle_pos is not None:
@@ -4984,6 +4563,7 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         z = self.zValue()
         if z != 0:
             rec["z"] = int(z)
+        self._add_angle_to_geom(rec.get("geom", {}))
         return rec
 
 
@@ -5156,6 +4736,7 @@ class MetaOrthoCurveItem(MetaCurveItem):
         self._flip_subsequent_hv(idx + 2)
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
         self._notify_changed()
 
     def _insert_ortho_node_on_edge(self, edge_idx: int, scene_pt: QPointF):
@@ -5179,41 +4760,15 @@ class MetaOrthoCurveItem(MetaCurveItem):
         self._flip_subsequent_hv(edge_idx + 2)
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
         self._notify_changed()
 
     # ---- Handle overrides ----
-
-    def _handle_points_scene(self) -> Dict[str, QPointF]:
-        handles = super()._handle_points_scene()
-        p = self.pos()
-        for k, lp in self._ortho_handle_points_local().items():
-            handles[k] = QPointF(p.x() + lp.x(), p.y() + lp.y())
-        return handles
 
     def _handle_points_local(self) -> Dict[str, QPointF]:
         handles = super()._handle_points_local()
         handles.update(self._ortho_handle_points_local())
         return handles
-
-    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
-        if not self._should_paint_handles():
-            return None
-        handles = self._handle_points_scene()
-        hit_dist = _get_hit_distance()
-        # Test adjust1 first (it may overlap with other handles)
-        if "adjust1" in handles:
-            if QLineF(scene_pt, handles["adjust1"]).length() <= hit_dist:
-                return "adjust1"
-        # Test ortho handles next (priority over bbox handles)
-        for k, hp in handles.items():
-            if k.startswith("ortho_") and QLineF(scene_pt, hp).length() <= hit_dist:
-                return k
-        for k, hp in handles.items():
-            if k == "adjust1" or k.startswith("ortho_"):
-                continue
-            if QLineF(scene_pt, hp).length() <= hit_dist:
-                return k
-        return None
 
     # ---- Mouse interaction overrides ----
 
@@ -5276,6 +4831,7 @@ class MetaOrthoCurveItem(MetaCurveItem):
             self.prepareGeometryChange()
             self._update_path()
             self._update_label_position()
+            self._update_transform_origin()
             self._notify_changed()
             event.accept()
             return
@@ -5353,6 +4909,7 @@ class MetaOrthoCurveItem(MetaCurveItem):
         """Serialize orthocurve to JSON record."""
         rec = super().to_record()
         rec["kind"] = "orthocurve"
+        self._add_angle_to_geom(rec.get("geom", {}))
         return rec
 
 
@@ -5589,6 +5146,7 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._height = r.height()
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
 
     def adjust1(self) -> float:
         """Return current depth (px)."""
@@ -5599,6 +5157,7 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._adjust1 = max(0, min(self._max_depth(), value))
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
 
     def adjust2(self) -> float:
         """Return current angle (degrees)."""
@@ -5609,32 +5168,9 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._adjust2 = max(0, min(360, value))
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
 
     # ----- handles ------------------------------------------------------------
-
-    def _handle_points_scene(self) -> Dict[str, QPointF]:
-        """Return handle positions in scene coordinates."""
-        p = self.pos()
-        cx = p.x() + self._width / 2
-        cy = p.y() + self._height / 2
-        fx, fy, fw, fh = self._front_rect()
-        # Depth handle on the front face center (drag away from back to increase depth)
-        front_cx = fx + fw / 2
-        front_cy = fy + fh / 2
-        return {
-            "tl": QPointF(p.x(), p.y()),
-            "tr": QPointF(p.x() + self._width, p.y()),
-            "bl": QPointF(p.x(), p.y() + self._height),
-            "br": QPointF(p.x() + self._width, p.y() + self._height),
-            "t":  QPointF(cx, p.y()),
-            "b":  QPointF(cx, p.y() + self._height),
-            "l":  QPointF(p.x(), cy),
-            "r":  QPointF(p.x() + self._width, cy),
-            "adjust1": QPointF(p.x() + front_cx, p.y() + front_cy),
-            # Angle handle at bbox center (stable — doesn't shift with angle/depth)
-            "adjust2": QPointF(cx + 20 * math.sin(math.radians(self._adjust2)),
-                               cy - 20 * math.cos(math.radians(self._adjust2))),
-        }
 
     def _handle_points_local(self) -> Dict[str, QPointF]:
         """Return handle positions in local coordinates."""
@@ -5658,30 +5194,15 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                                cy - 20 * math.cos(math.radians(self._adjust2))),
         }
 
-    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
-        """Hit-test against all handles."""
-        if not self._should_paint_handles():
-            return None
-        handles = self._handle_points_scene()
-        hit_dist = _get_hit_distance()
-        for k, hp in handles.items():
-            if QLineF(scene_pt, hp).length() <= hit_dist:
-                return k
-        return None
-
     def hoverMoveEvent(self, event):
         """Update cursor based on handle under mouse."""
         h = self._hit_test_handle(event.scenePos())
-        if h in ("tl", "br"):
-            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-        elif h in ("tr", "bl"):
-            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-        elif h in ("t", "b"):
-            self.setCursor(Qt.CursorShape.SizeVerCursor)
-        elif h in ("l", "r"):
-            self.setCursor(Qt.CursorShape.SizeHorCursor)
+        if h == "rotate":
+            self.setCursor(Qt.CursorShape.CrossCursor)
         elif h in ("adjust1", "adjust2"):
             self.setCursor(Qt.CursorShape.CrossCursor)
+        elif h:
+            self.setCursor(self._cursor_for_handle(h))
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
         super().hoverMoveEvent(event)
@@ -5690,10 +5211,15 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         """Begin resize/adjust tracking on handle press."""
         if event.button() == Qt.MouseButton.LeftButton:
             h = self._hit_test_handle(event.scenePos())
+            if h == "rotate":
+                self._begin_rotation()
+                event.accept()
+                return
             if h:
                 self._begin_resize_tracking()
                 self._active_handle = h
                 self._resizing = True
+                self._store_resize_anchor(h)
                 self._press_scene = event.scenePos()
                 self._start_pos = QPointF(self.pos())
                 self._start_size = (self._width, self._height)
@@ -5705,10 +5231,14 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def mouseMoveEvent(self, event):
         """Handle drag for resize and adjust handles."""
+        if self._rotating:
+            self._handle_rotation_move(event)
+            return
         if self._resizing and self._active_handle and self._press_scene and self._start_pos and self._start_size:
             cur = event.scenePos()
-            d_x = cur.x() - self._press_scene.x()
-            d_y = cur.y() - self._press_scene.y()
+            d_x, d_y = self._scene_delta_to_local(
+                cur.x() - self._press_scene.x(),
+                cur.y() - self._press_scene.y())
 
             # adjust1 (depth): drag front face away from back to increase depth
             if self._active_handle == "adjust1" and self._start_adjust1 is not None:
@@ -5725,6 +5255,7 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 self._adjust1 = new_depth
                 self._update_path()
                 self._update_label_position()
+                self._update_transform_origin()
                 self._notify_changed()
                 if MetaIsoCubeItem.on_adjust1_changed:
                     MetaIsoCubeItem.on_adjust1_changed(self, new_depth)
@@ -5742,6 +5273,7 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 self._adjust2 = angle_deg
                 self._update_path()
                 self._update_label_position()
+                self._update_transform_origin()
                 self._notify_changed()
                 if MetaIsoCubeItem.on_adjust2_changed:
                     MetaIsoCubeItem.on_adjust2_changed(self, angle_deg)
@@ -5749,51 +5281,15 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 return
 
             # Standard bbox resize handles
-            x0 = self._start_pos.x()
-            y0 = self._start_pos.y()
             w0, h0 = self._start_size
-
-            left = x0
-            top = y0
-            right = x0 + w0
-            bottom = y0 + h0
-
-            if self._active_handle == "tl":
-                left += d_x; top += d_y
-            elif self._active_handle == "tr":
-                right += d_x; top += d_y
-            elif self._active_handle == "bl":
-                left += d_x; bottom += d_y
-            elif self._active_handle == "br":
-                right += d_x; bottom += d_y
-            elif self._active_handle == "t":
-                top += d_y
-            elif self._active_handle == "b":
-                bottom += d_y
-            elif self._active_handle == "l":
-                left += d_x
-            elif self._active_handle == "r":
-                right += d_x
-
-            min_size = _get_min_size()
-            if (right - left) < min_size:
-                if self._active_handle in ("tl", "bl", "l"):
-                    left = right - min_size
-                else:
-                    right = left + min_size
-            if (bottom - top) < min_size:
-                if self._active_handle in ("tl", "tr", "t"):
-                    top = bottom - min_size
-                else:
-                    bottom = top + min_size
-
-            new_w = right - left
-            new_h = bottom - top
-            self.setPos(QPointF(left, top))
+            new_w, new_h, anchor_after = self._compute_resize(
+                self._active_handle, d_x, d_y, w0, h0)
             self._width = new_w
             self._height = new_h
             self._update_path()
             self._update_label_position()
+            self._update_transform_origin()
+            self._fixup_resize_pos(anchor_after)
             self._notify_changed()
             event.accept()
             return
@@ -5849,6 +5345,7 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             adjust1_handle = handles.pop("adjust1")
             adjust2_handle = handles.pop("adjust2")
             draw_handles(painter, handles)
+            self._draw_rotation_knob(painter)
 
             # Yellow depth handle (circle)
             handle_size = _get_handle_size()
@@ -5888,6 +5385,10 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def mouseReleaseEvent(self, event):
         """End resize tracking on mouse release."""
+        if self._rotating:
+            self._end_rotation()
+            event.accept()
+            return
         if self._resizing:
             self._end_resize_tracking()
             self._resizing = False
@@ -5932,6 +5433,7 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         z = self.zValue()
         if z != 0:
             rec["z"] = int(z)
+        self._add_angle_to_geom(rec.get("geom", {}))
         return rec
 
 
@@ -5939,6 +5441,9 @@ class MetaGroupItem(QGraphicsItemGroup, MetaMixin, LinkedMixin):
     """Group item that contains multiple annotation items as a single unit."""
 
     KIND = "group"
+
+    def _is_rotatable(self) -> bool:
+        return False
     KIND_ALIASES = frozenset(k for k, v in KIND_ALIAS_MAP.items() if v == "group")
 
     def __init__(self, ann_id: str, on_change=None):
@@ -6027,6 +5532,7 @@ class MetaGroupItem(QGraphicsItemGroup, MetaMixin, LinkedMixin):
         z = self.zValue()
         if z != 0:
             rec["z"] = int(z)
+        self._add_angle_to_geom(rec.get("geom", {}))
         return rec
 
     # ---- Group resize helpers ----
@@ -6158,14 +5664,8 @@ class MetaGroupItem(QGraphicsItemGroup, MetaMixin, LinkedMixin):
     def hoverMoveEvent(self, event):
         """Update cursor shape when hovering over resize handles."""
         h = self._hit_test_handle(event.scenePos())
-        if h in ("tl", "br"):
-            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-        elif h in ("tr", "bl"):
-            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-        elif h in ("t", "b"):
-            self.setCursor(Qt.CursorShape.SizeVerCursor)
-        elif h in ("l", "r"):
-            self.setCursor(Qt.CursorShape.SizeHorCursor)
+        if h:
+            self.setCursor(self._cursor_for_handle(h))
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
         super().hoverMoveEvent(event)
@@ -6178,6 +5678,7 @@ class MetaGroupItem(QGraphicsItemGroup, MetaMixin, LinkedMixin):
                 self._begin_resize_tracking()
                 self._active_handle = h
                 self._resizing = True
+                self._store_resize_anchor(h)
                 self._press_scene = event.scenePos()
                 self._start_cbr = QRectF(self.childrenBoundingRect())
                 self._child_start_states = self._capture_child_states()
@@ -6189,8 +5690,9 @@ class MetaGroupItem(QGraphicsItemGroup, MetaMixin, LinkedMixin):
         """Scale group children proportionally during handle drag."""
         if self._resizing and self._active_handle and self._press_scene and self._start_cbr:
             cur = event.scenePos()
-            dx = cur.x() - self._press_scene.x()
-            dy = cur.y() - self._press_scene.y()
+            dx, dy = self._scene_delta_to_local(
+                cur.x() - self._press_scene.x(),
+                cur.y() - self._press_scene.y())
 
             s = self._start_cbr
             left = s.left()
@@ -6497,6 +5999,7 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._height = r.height()
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
 
     @property
     def block_type(self) -> str:
@@ -6530,6 +6033,7 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._divider_count = count
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
         self.update()
 
     def add_divider(self) -> bool:
@@ -6549,6 +6053,7 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._divider_count = new_count
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
         self.update()
         return True
 
@@ -6560,6 +6065,7 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._divider_count -= 1
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
         self.update()
         return True
 
@@ -6572,6 +6078,7 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._adjust1 = value
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
         self.update()
 
     def set_adjust2(self, value: float):
@@ -6584,6 +6091,7 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._adjust2 = value
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
         self.update()
 
     def set_adjust3(self, value: float):
@@ -6594,6 +6102,7 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._adjust3 = value
         self._update_path()
         self._update_label_position()
+        self._update_transform_origin()
         self.update()
 
     # ---- handle points ----
@@ -6620,38 +6129,16 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             pts["adjust3"] = QPointF(cx, self._adjust3 * self._height)
         return pts
 
-    def _handle_points_scene(self) -> Dict[str, QPointF]:
-        """Handle positions in scene coordinates."""
-        p = self.pos()
-        return {
-            k: QPointF(pt.x() + p.x(), pt.y() + p.y())
-            for k, pt in self._handle_points_local().items()
-        }
-
-    def _hit_test_handle(self, scene_pt: QPointF) -> Optional[str]:
-        if not self._should_paint_handles():
-            return None
-        handles = self._handle_points_scene()
-        hit_dist = _get_hit_distance()
-        for k, hp in handles.items():
-            if QLineF(scene_pt, hp).length() <= hit_dist:
-                return k
-        return None
-
     # ---- mouse events ----
 
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
-        if h in ("tl", "br"):
-            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-        elif h in ("tr", "bl"):
-            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-        elif h in ("t", "b"):
-            self.setCursor(Qt.CursorShape.SizeVerCursor)
-        elif h in ("l", "r"):
-            self.setCursor(Qt.CursorShape.SizeHorCursor)
+        if h == "rotate":
+            self.setCursor(Qt.CursorShape.CrossCursor)
         elif h in ("adjust1", "adjust2", "adjust3"):
             self.setCursor(Qt.CursorShape.SizeVerCursor)
+        elif h:
+            self.setCursor(self._cursor_for_handle(h))
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
         super().hoverMoveEvent(event)
@@ -6659,10 +6146,15 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             h = self._hit_test_handle(event.scenePos())
+            if h == "rotate":
+                self._begin_rotation()
+                event.accept()
+                return
             if h:
                 self._begin_resize_tracking()
                 self._active_handle = h
                 self._resizing = True
+                self._store_resize_anchor(h)
                 self._press_scene = event.scenePos()
                 self._start_pos = QPointF(self.pos())
                 self._start_size = (self._width, self._height)
@@ -6674,10 +6166,14 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if self._rotating:
+            self._handle_rotation_move(event)
+            return
         if self._resizing and self._active_handle and self._press_scene and self._start_pos and self._start_size:
             cur = event.scenePos()
-            dx = cur.x() - self._press_scene.x()
-            dy = cur.y() - self._press_scene.y()
+            dx, dy = self._scene_delta_to_local(
+                cur.x() - self._press_scene.x(),
+                cur.y() - self._press_scene.y())
 
             # Divider handle: vertical-only drag
             if self._active_handle == "adjust1" and self._start_adjust1 is not None:
@@ -6708,48 +6204,15 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 return
 
             # Standard resize handles
-            x0 = self._start_pos.x()
-            y0 = self._start_pos.y()
             w0, h0 = self._start_size
-
-            left, top = x0, y0
-            right, bottom = x0 + w0, y0 + h0
-
-            h = self._active_handle
-            if h == "tl":
-                left += dx; top += dy
-            elif h == "tr":
-                right += dx; top += dy
-            elif h == "bl":
-                left += dx; bottom += dy
-            elif h == "br":
-                right += dx; bottom += dy
-            elif h == "t":
-                top += dy
-            elif h == "b":
-                bottom += dy
-            elif h == "l":
-                left += dx
-            elif h == "r":
-                right += dx
-
-            min_size = _get_min_size()
-            if (right - left) < min_size:
-                if h in ("tl", "bl", "l"):
-                    left = right - min_size
-                else:
-                    right = left + min_size
-            if (bottom - top) < min_size:
-                if h in ("tl", "tr", "t"):
-                    top = bottom - min_size
-                else:
-                    bottom = top + min_size
-
-            self.setPos(QPointF(left, top))
-            self._width = right - left
-            self._height = bottom - top
+            new_w, new_h, anchor_after = self._compute_resize(
+                self._active_handle, dx, dy, w0, h0)
+            self._width = new_w
+            self._height = new_h
             self._update_path()
             self._update_label_position()
+            self._update_transform_origin()
+            self._fixup_resize_pos(anchor_after)
             self._notify_changed()
             event.accept()
             return
@@ -6757,6 +6220,10 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if self._rotating:
+            self._end_rotation()
+            event.accept()
+            return
         if self._resizing:
             self._end_resize_tracking()
             self._resizing = False
@@ -6836,6 +6303,7 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 if key in handles:
                     adjust_handles[key] = handles.pop(key)
             draw_handles(painter, handles)
+            self._draw_rotation_knob(painter)
 
             # Yellow adjust handles
             if adjust_handles:
@@ -6895,6 +6363,7 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         z = self.zValue()
         if z != 0:
             rec["z"] = int(z)
+        self._add_angle_to_geom(rec.get("geom", {}))
         return rec
 
 

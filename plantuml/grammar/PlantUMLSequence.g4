@@ -934,13 +934,14 @@ ID
 // ── Comments ──────────────────────────────────────────────────────────────
 // Single-line: '   — apostrophe starts a comment to end of line
 // Multi-line:  /'  ...  '/
-
+// Single-line comment: starts with apostrophe
 COMMENT_SINGLE
-    : '\'' ~[\r\n]*
+    : ['] ~[\r\n]*      // ['] matches literal apostrophe
     ;
 
+// Multi-line comment: delimiters are /' and '/
 COMMENT_MULTI
-    : '/\'' .*? '\''/'
+    : '/' ['] .*? ['] '/'   // builds /'+content+'/ from parts
     ;
 
 // ── Free text (label, title, note body, etc.) ────────────────────────────

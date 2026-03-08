@@ -196,7 +196,7 @@ class PropertyPanel(QWidget):
         self.adjust2_label = self.ui.label_adjust2
         self.radius_spin = self.adjust1_spin  # compat alias
         # adjust3 + divider count — created dynamically (not in .ui)
-        from PyQt6.QtWidgets import QLabel as _QLabel, QSpinBox as _QSpinBox
+        from PyQt6.QtWidgets import QHBoxLayout as _QHBoxLayout, QLabel as _QLabel, QSpinBox as _QSpinBox, QWidget as _QWidget
         self.divider_count_label = _QLabel("Dividers")
         self.divider_count_spin = _QSpinBox()
         self.divider_count_spin.setRange(0, 3)
@@ -217,6 +217,26 @@ class PropertyPanel(QWidget):
         self.divider_count_spin.setVisible(False)
         self.adjust3_label.setVisible(False)
         self.adjust3_spin.setVisible(False)
+
+        # Rotation angle — created dynamically (not in .ui)
+        self.angle_row = _QWidget()
+        angle_l = _QHBoxLayout(self.angle_row)
+        angle_l.setContentsMargins(0, 0, 0, 0)
+        angle_l.addWidget(_QLabel("Angle:"))
+        self.angle_spin = _QSpinBox()
+        self.angle_spin.setRange(0, 359)
+        self.angle_spin.setValue(0)
+        self.angle_spin.setSuffix("°")
+        self.angle_spin.setWrapping(True)
+        angle_l.addWidget(self.angle_spin)
+        self.angle_row.setVisible(False)
+        # Insert into the properties grid layout (after adjust row)
+        props_form = self.adjust_row.parentWidget()
+        if props_form and props_form.layout():
+            gl = props_form.layout()
+            row_count = gl.rowCount() if hasattr(gl, 'rowCount') else 0
+            gl.addWidget(_QLabel("Rotation:"), row_count, 0)
+            gl.addWidget(self.angle_row, row_count, 1)
 
         # Properties tab - Extra controls
         self.line_width_spin = self.ui.spin_line_width
@@ -450,6 +470,19 @@ class PropertyPanel(QWidget):
         adjust_l.addStretch(1)
         self.radius_spin = self.adjust1_spin  # compat alias
 
+        # Rotation angle control
+        self.angle_row = QWidget()
+        angle_l = QHBoxLayout(self.angle_row)
+        angle_l.setContentsMargins(0, 0, 0, 0)
+        angle_l.addWidget(QLabel("Angle:"))
+        self.angle_spin = QSpinBox()
+        self.angle_spin.setRange(0, 359)
+        self.angle_spin.setValue(0)
+        self.angle_spin.setSuffix("°")
+        self.angle_spin.setWrapping(True)
+        angle_l.addWidget(self.angle_spin)
+        angle_l.addStretch(1)
+
         # Line width control with text spacing and valign
         self.line_width_row = QWidget()
         line_width_l = QHBoxLayout(self.line_width_row)
@@ -543,6 +576,7 @@ class PropertyPanel(QWidget):
         form.addRow("Fill color:", self.fill_row)
         form.addRow("Text color:", self.text_row)
         form.addRow("Adjust:", self.adjust_row)
+        form.addRow("Rotation:", self.angle_row)
         form.addRow("Line width:", self.line_width_row)
         form.addRow("Line style:", self.dash_row)
         form.addRow("Dash pattern:", self.dash_pattern_row)
@@ -585,6 +619,7 @@ class PropertyPanel(QWidget):
         self.adjust3_spin.valueChanged.connect(self._on_adjust3_changed)
         self.divider_count_spin.valueChanged.connect(self._on_divider_count_changed)
         self.text_box_width_spin.valueChanged.connect(self._on_text_box_width_changed)
+        self.angle_spin.valueChanged.connect(self._on_angle_changed)
 
         # Text layout controls
         self.text_spacing_combo.currentIndexChanged.connect(self._on_text_spacing_changed)
@@ -630,6 +665,7 @@ class PropertyPanel(QWidget):
         self.text_box_width_spin.setEnabled(enabled)
         self.text_spacing_combo.setEnabled(enabled)
         self.text_valign_combo.setEnabled(enabled)
+        self.angle_spin.setEnabled(enabled)
 
     def _set_extra_rows_visible(self, adjust: bool, line_width: bool, dash: bool, arrow: bool, arrow_size: bool, text_box_width: bool = False, text_layout: bool = False, adjust2: bool = False, adjust3: bool = False, divider_count: bool = False):
         """Show or hide extra control rows."""
@@ -724,6 +760,7 @@ class PropertyPanel(QWidget):
             self._set_color_rows_visible(False, False, False)
             self._set_extra_rows_visible(False, False, False, False, False, text_box_width=False, text_layout=False)
             self._set_dash_pattern_visible(False)
+            self.angle_row.setVisible(False)
             return
 
         # Switch to Properties tab when an item is selected
@@ -786,6 +823,14 @@ class PropertyPanel(QWidget):
             self._set_color_rows_visible(False, False, False)
             self._set_extra_rows_visible(False, False, False, False, False, text_box_width=False, text_layout=False)
             self._set_dash_pattern_visible(False)
+
+        # Rotation angle — show for rotatable items
+        is_rotatable = hasattr(item, '_is_rotatable') and item._is_rotatable()
+        self.angle_row.setVisible(is_rotatable)
+        if is_rotatable:
+            self.angle_spin.blockSignals(True)
+            self.angle_spin.setValue(int(item.rotation()) % 360)
+            self.angle_spin.blockSignals(False)
 
     def _setup_rect_controls(self, item, pen_color):
         """Configure controls for rect items."""
@@ -1059,6 +1104,15 @@ class PropertyPanel(QWidget):
                 self._set_preview(self.text_color_preview, item.text_color)
             cmd = ChangeStyleCommand(item, "text_color", old_color, c, apply)
             self.undo_stack.push(cmd)
+
+    def _on_angle_changed(self, value: int):
+        """Handle rotation angle change from spinner."""
+        item = self._current_item
+        if item is None or not hasattr(item, 'set_rotation_angle'):
+            return
+        if not item._is_rotatable():
+            return
+        item.set_rotation_angle(float(value))
 
     def _on_adjust1_changed(self, value: int):
         """Handle adjust1 change (radius, indent, cap, shaft, bend radius depending on kind)."""
@@ -1480,6 +1534,14 @@ class PropertyPanel(QWidget):
         self._set_color_rows_visible(False, False, False)
         self._set_extra_rows_visible(False, False, False, False, False, text_box_width=False, text_layout=False)
         self._set_dash_pattern_visible(False)
+
+    def update_angle_display(self, item, angle: float):
+        """Update the angle spinbox display when rotation changes via canvas knob."""
+        if self._current_item is not item:
+            return
+        self.angle_spin.blockSignals(True)
+        self.angle_spin.setValue(int(angle) % 360)
+        self.angle_spin.blockSignals(False)
 
     def update_adjust1_display(self, item, value: float):
         """Update the adjust1 spinbox display when it changes via canvas handle."""

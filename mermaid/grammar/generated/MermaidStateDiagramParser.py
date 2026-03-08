@@ -10,7 +10,7 @@ else:
 
 def serializedATN():
     return [
-        4,1,41,326,2,0,7,0,2,1,7,1,2,2,7,2,2,3,7,3,2,4,7,4,2,5,7,5,2,6,7,
+        4,1,40,326,2,0,7,0,2,1,7,1,2,2,7,2,2,3,7,3,2,4,7,4,2,5,7,5,2,6,7,
         6,2,7,7,7,2,8,7,8,2,9,7,9,2,10,7,10,2,11,7,11,2,12,7,12,2,13,7,13,
         2,14,7,14,2,15,7,15,2,16,7,16,2,17,7,17,2,18,7,18,2,19,7,19,2,20,
         7,20,2,21,7,21,2,22,7,22,1,0,5,0,48,8,0,10,0,12,0,51,9,0,1,0,1,0,
@@ -123,7 +123,7 @@ def serializedATN():
         0,0,305,306,5,7,0,0,306,307,3,42,21,0,307,308,5,31,0,0,308,41,1,
         0,0,0,309,314,5,31,0,0,310,311,5,29,0,0,311,313,5,31,0,0,312,310,
         1,0,0,0,313,316,1,0,0,0,314,312,1,0,0,0,314,315,1,0,0,0,315,43,1,
-        0,0,0,316,314,1,0,0,0,317,319,5,40,0,0,318,317,1,0,0,0,319,320,1,
+        0,0,0,316,314,1,0,0,0,317,319,5,39,0,0,318,317,1,0,0,0,319,320,1,
         0,0,0,320,318,1,0,0,0,320,321,1,0,0,0,321,323,1,0,0,0,322,324,5,
         28,0,0,323,322,1,0,0,0,323,324,1,0,0,0,324,45,1,0,0,0,42,49,56,62,
         73,80,89,96,103,110,117,123,125,132,139,151,153,160,170,174,178,
@@ -157,7 +157,7 @@ class MermaidStateDiagramParser ( Parser ):
                       "CONCURRENCY", "QUOTED_STRING", "TRIPLE_COLON", "LBRACK", 
                       "RBRACK", "LBRACE", "RBRACE", "SEMI", "COMMA", "INT", 
                       "ID", "COLON", "COMMENT", "NEWLINE", "WS", "FREE_TEXT", 
-                      "NOTE_HDR_WS", "NOTE_BODY_WS", "CSS_READY_WS", "CSS_VALUE_START", 
+                      "NOTE_HDR_WS", "CSS_READY_WS", "CSS_VALUE_START", 
                       "CSS_WS" ]
 
     RULE_diagram = 0
@@ -229,10 +229,9 @@ class MermaidStateDiagramParser ( Parser ):
     WS=35
     FREE_TEXT=36
     NOTE_HDR_WS=37
-    NOTE_BODY_WS=38
-    CSS_READY_WS=39
-    CSS_VALUE_START=40
-    CSS_WS=41
+    CSS_READY_WS=38
+    CSS_VALUE_START=39
+    CSS_WS=40
 
     def __init__(self, input:TokenStream, output:TextIO = sys.stdout):
         super().__init__(input, output)
@@ -2003,7 +2002,7 @@ class MermaidStateDiagramParser ( Parser ):
                 self.state = 320 
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if not (_la==40):
+                if not (_la==39):
                     break
 
             self.state = 323

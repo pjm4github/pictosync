@@ -34,7 +34,11 @@ def capture_geometry(item) -> dict:
 
     # Rect/Ellipse (have both setRect and rect)
     if hasattr(item, 'setRect') and hasattr(item, 'rect') and not hasattr(item, '_update_path'):
-        return {"pos": pos, "rect": QRectF(item.rect())}
+        state = {"pos": pos, "rect": QRectF(item.rect())}
+        angle = item.rotation() if hasattr(item, 'rotation') else 0
+        if angle != 0:
+            state["angle"] = angle
+        return state
 
     # Path-based items with _width/_height (RoundedRect, Hexagon, Cylinder, BlockArrow, Polygon)
     if hasattr(item, '_width') and hasattr(item, '_update_path'):
@@ -49,6 +53,9 @@ def capture_geometry(item) -> dict:
             state["rel_points"] = [list(p) for p in item._rel_points]
         if hasattr(item, '_nodes'):
             state["nodes"] = [dict(n) for n in item._nodes]
+        angle = item.rotation() if hasattr(item, 'rotation') else 0
+        if angle != 0:
+            state["angle"] = angle
         return state
 
     # Line (has setLine and line)
@@ -75,6 +82,10 @@ def apply_geometry(item, state: dict) -> None:
     # Rect/Ellipse
     if "rect" in state:
         item.setRect(state["rect"])
+        if "angle" in state and hasattr(item, 'set_rotation_angle'):
+            item.set_rotation_angle(state["angle"])
+        elif hasattr(item, 'setRotation'):
+            item.setRotation(0)
         item.setPos(state["pos"])
         return
 
@@ -95,6 +106,10 @@ def apply_geometry(item, state: dict) -> None:
         item._update_path()
         if hasattr(item, '_update_label_position'):
             item._update_label_position()
+        if "angle" in state and hasattr(item, 'set_rotation_angle'):
+            item.set_rotation_angle(state["angle"])
+        elif hasattr(item, 'setRotation'):
+            item.setRotation(0)
         item.setPos(state["pos"])
         return
 

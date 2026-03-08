@@ -4,7 +4,7 @@
 
 # PictoSync
 
-**v1.8** | PNG Image Canvas Tool for Object Synchronization
+**v1.9** | PNG Image Canvas Tool for Object Synchronization
 
 Diagram annotation tool with AI-powered extraction and bidirectional sync.
 
@@ -25,6 +25,7 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 - **Polygon Tool**: Multi-click vertex placement with right-click to close; double-click to enter vertex editing mode with draggable control knobs; right-click vertices to delete, right-click edges to add vertices
 - **Text Labels**: All shapes support label, tech, and note text with customizable formatting
 - **Text Alignment**: Vertical alignment (top/middle/bottom) and line spacing controls
+- **Rotation**: All shapes support rotation via drag handle (green knob) or property panel angle spinner (0–359°); rotation-aware resize handles follow the rotated axis; cursor shapes rotate with the item
 - **Pen Styles**: Solid or dashed lines with configurable dash pattern (length, solid percent)
 - **Z-Order Control**: Right-click context menu to "Bring to Front" or "Send to Back"
 - **Auto-Stacking**: New shapes automatically appear on top of existing items
@@ -74,12 +75,15 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 
 ### Domain-Specific Language (DSL)
 - **Domain Plugin System**: Extensible `domains/` folder; each domain provides a `tools.json` defining drawing tools that map to base annotation kinds with custom defaults
+- **DSL Toolbar**: Second toolbar row appears when a domain is activated (Domain menu); domain tools are placed in this dedicated row and hidden when the domain is deactivated
 - **Schema-Documented DSL Metadata**: `meta.dsl` structure defined in `annotation_schema.json`; domain-first hierarchy (`dsl.tool` + `dsl.c4.*`) extensible to PlantUML, D2, SysML, ArchiMate
 - **NS3 Example Domain**: Reference implementation under `domains/ns3/` with network node tool
 
 ### PowerPoint Export
 - **Slide Export**: Export annotations as native PowerPoint shapes via File > Export PPTX
-- **Shape Support**: Rectangles, rounded rectangles, ellipses, hexagons, cylinders, block arrows, isometric cubes, polygons, curves, orthogonal curves, lines, and text
+- **Shape Support**: Rectangles, rounded rectangles, ellipses, hexagons, cylinders, block arrows, isometric cubes, polygons, curves, orthogonal curves, lines, text, and sequence blocks
+- **Sequence Block Export**: Seqblocks exported as grouped compound shapes (outer rectangle, pentagon type-tab, dashed divider lines, section text labels)
+- **Rotation Export**: All rotatable shapes export with their rotation angle preserved
 - **Native Bezier Curves**: Curves export as OOXML `a:cubicBezTo` and `a:quadBezTo` elements preserving control points
 - **Isometric Cube**: Exported as PowerPoint CUBE auto-shape with depth adjustment and flipH/flipV for angle mapping
 - **Orthogonal Curve**: Exported as freeform polyline from M/H/V nodes with arrowhead support
@@ -356,6 +360,14 @@ See `schemas/annotation_schema.json` for the full specification.
 **Y** = implemented, **—** = test data collected, parser not yet implemented
 
 ## Version History
+
+### v1.9 (2026-03-07)
+- **Shape rotation**: All canvas items support rotation via interactive drag handle (green knob inside item boundary) or property panel angle spinner (0–359°)
+- **Rotation-aware resize**: Resize handles move along the rotated axis; anchor-based tracking prevents corner drift; cursor shapes rotate with the item orientation
+- **Rotation-aware editing**: Polygon vertex and curve node hit-testing and dragging work correctly when items are rotated
+- **PPTX rotation export**: All rotatable shapes export with their rotation angle to PowerPoint
+- **Seqblock PPTX export**: Sequence blocks exported as grouped compound shapes (outer rectangle, pentagon type-tab, dashed dividers, section labels)
+- **DSL toolbar row**: Second toolbar row for domain-specific tools; appears when a domain is activated from the Domain menu; hidden when deactivated
 
 ### v1.8 (2026-03-07)
 - **State diagram import**: Full Mermaid state diagram parsing — composite states, concurrent regions, fork/join bars, notes, choice pseudostates
