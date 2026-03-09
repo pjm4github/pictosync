@@ -260,6 +260,12 @@ ICONS = {
   <line x1="3" y1="12" x2="21" y2="12" stroke="{stroke}" stroke-width="1" stroke-dasharray="3,2"/>
   <text x="5" y="11" font-family="Arial,sans-serif" font-size="14" font-weight="bold" fill="{stroke}">P</text>
 </svg>''',
+
+    "port": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <rect x="3" y="5" width="14" height="14" stroke="{stroke}" stroke-width="1.5" fill="none" rx="2"/>
+  <circle cx="17" cy="12" r="3.5" stroke="{accent}" stroke-width="1.5" fill="{fill}"/>
+  <line x1="14" y1="12" x2="20.5" y2="12" stroke="{accent}" stroke-width="1.2"/>
+</svg>''',
 }
 
 

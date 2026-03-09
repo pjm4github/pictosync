@@ -4,7 +4,7 @@
 
 # PictoSync
 
-**v1.9** | PNG Image Canvas Tool for Object Synchronization
+**v1.10** | PNG Image Canvas Tool for Object Synchronization
 
 Diagram annotation tool with AI-powered extraction and bidirectional sync.
 
@@ -18,7 +18,7 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 **For a comparison to other tools and their features see this file:  [Round Tripping PNG Tools](png_json_comparison.md)**
 
 ### Drawing & Annotation
-- **Manual Drawing Tools**: Rectangle, rounded rectangle, ellipse, hexagon, cylinder, block arrow, isometric cube, polygon, curve, orthogonal curve, line, and text annotations
+- **Manual Drawing Tools**: Rectangle, rounded rectangle, ellipse, hexagon, cylinder, block arrow, isometric cube, polygon, curve, orthogonal curve, line, text, and port annotations
 - **Isometric Cube**: Container shape with configurable extrusion depth and angle (0–360°); drag control handles to adjust depth and direction interactively
 - **Curve Tool**: Click-click placement of SVG path-like curves with node editing; supports cubic bezier (`C`), quadratic bezier (`Q`), arc (`A`), and line (`L`) segments; right-click nodes to change type; arrowhead support (none, start, end, both)
 - **Orthogonal Curve**: Curve variant restricted to horizontal/vertical segments (M/H/V nodes) with optional corner bend radius; Ctrl+click to extend; arrowhead support
@@ -26,6 +26,7 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 - **Text Labels**: All shapes support label, tech, and note text with customizable formatting
 - **Text Alignment**: Vertical alignment (top/middle/bottom) and line spacing controls
 - **Rotation**: All shapes support rotation via drag handle (green knob) or property panel angle spinner (0–359°); rotation-aware resize handles follow the rotated axis; cursor shapes rotate with the item
+- **Port Connections**: Attach port connectors to any shape's perimeter; ports track a parametric position (t) and move with their parent; drag ports along the perimeter to reposition; support In/Out/InOut direction indicators with protocol labels; unparent ports via JSON editor to free-place them on the canvas; connected lines/curves follow port positions automatically
 - **Pen Styles**: Solid or dashed lines with configurable dash pattern (length, solid percent)
 - **Z-Order Control**: Right-click context menu to "Bring to Front" or "Send to Back"
 - **Auto-Stacking**: New shapes automatically appear on top of existing items
@@ -81,7 +82,7 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 
 ### PowerPoint Export
 - **Slide Export**: Export annotations as native PowerPoint shapes via File > Export PPTX
-- **Shape Support**: Rectangles, rounded rectangles, ellipses, hexagons, cylinders, block arrows, isometric cubes, polygons, curves, orthogonal curves, lines, text, and sequence blocks
+- **Shape Support**: Rectangles, rounded rectangles, ellipses, hexagons, cylinders, block arrows, isometric cubes, polygons, curves, orthogonal curves, lines, text, ports, and sequence blocks
 - **Sequence Block Export**: Seqblocks exported as grouped compound shapes (outer rectangle, pentagon type-tab, dashed divider lines, section text labels)
 - **Rotation Export**: All rotatable shapes export with their rotation angle preserved
 - **Native Bezier Curves**: Curves export as OOXML `a:cubicBezTo` and `a:quadBezTo` elements preserving control points
@@ -188,7 +189,7 @@ python -m pytest tests/test_scroll_preservation.py -v
 
 | Test Module | What It Covers |
 |-------------|---------------|
-| `test_item_kinds.py` | All 12 item kinds end-to-end: creation/JSON field correctness, property panel meta editing (label, tech, note), pen color changes, and no duplicate IDs |
+| `test_item_kinds.py` | All 13 item kinds end-to-end: creation/JSON field correctness, property panel meta editing (label, tech, note), pen color changes, and no duplicate IDs |
 | `test_adjust_roundtrip.py` | Schema-driven adjust control labels, suffixes, ranges; adjust value round-trips through panel/JSON/canvas; no duplicate IDs after adjust changes |
 | `test_scroll_preservation.py` | Editor scroll stays frozen during canvas drag; JSON geometry values update live during drag; PUML import produces correct annotations with full meta fields; re-import works after drag |
 | `test_ungroup_drag.py` | Ungroup preserves index integrity; no duplicate IDs after ungroup; children retain `on_change` callbacks; geometry updates during drag after ungroup; move-then-ungroup-then-drag scenario |
@@ -196,7 +197,7 @@ python -m pytest tests/test_scroll_preservation.py -v
 
 ### Basic Workflow
 1. **Load an image**: Drag and drop a PNG/PUML file or use File > Open
-2. **Draw annotations**: Select a tool (R=Rect, U=RoundedRect, E=Ellipse, L=Line, V=Curve, T=Text, H=Hexagon, Y=Cylinder, A=Block Arrow, I=Iso Cube, P=Polygon, S=Select)
+2. **Draw annotations**: Select a tool (R=Rect, U=RoundedRect, E=Ellipse, L=Line, V=Curve, T=Text, H=Hexagon, Y=Cylinder, A=Block Arrow, I=Iso Cube, P=Polygon, O=Port, S=Select)
 3. **AI extraction**: Click "Auto-Extract (Gemini)" to detect diagram elements
 4. **Edit JSON**: Modify annotations in the Draft JSON panel
 5. **Link**: Click "Import & Link" to enable bidirectional JSON ↔ Canvas sync
@@ -218,6 +219,7 @@ python -m pytest tests/test_scroll_preservation.py -v
 | A | Block arrow tool |
 | I | Iso Cube tool |
 | P | Polygon tool |
+| O | Port tool |
 | Ctrl+Z | Undo |
 | Ctrl+Y | Redo |
 | Ctrl+S | Save project |
@@ -249,7 +251,8 @@ pictosync/
 ├── settings_dialog.py   # Settings dialog UI (general, themes, Gemini model list)
 ├── undo_commands.py     # Undo/redo commands for all canvas operations
 ├── canvas/              # Graphics layer
-│   ├── items.py         # Annotation items (Rect, Ellipse, Hexagon, Cylinder, BlockArrow, IsoCube, Polygon, Curve, OrthoCurve, Line, Text, Group)
+│   ├── items.py         # Annotation items (Rect, Ellipse, Hexagon, Cylinder, BlockArrow, IsoCube, Polygon, Curve, OrthoCurve, Line, Text, Port, Group)
+│   ├── perimeter.py     # Perimeter geometry for port attachment (point-on-perimeter, t↔position)
 │   ├── mixins.py        # LinkedMixin, MetaMixin for shared behavior
 │   ├── scene.py         # AnnotatorScene (drawing, context menu, z-order)
 │   └── view.py          # AnnotatorView (zoom, pan, drag-drop, rubber band selection)
@@ -275,7 +278,7 @@ pictosync/
 │   └── c4_merger.py     # Merges C4 source semantics with SVG geometry
 ├── gemini/              # AI integration
 │   └── worker.py        # Threaded Gemini API worker
-├── pptx_export.py       # PowerPoint slide export (all 12 kinds, native bezier curves, arrowheads, labels)
+├── pptx_export.py       # PowerPoint slide export (all 13 kinds, native bezier curves, arrowheads, labels)
 ├── alignment/           # OpenCV alignment
 │   ├── optimizer.py     # Shape and line alignment algorithms
 │   └── worker.py        # Threaded alignment workers
@@ -298,7 +301,7 @@ pictosync/
 ## Schema
 
 Annotations follow a JSON schema with support for:
-- **Geometry**: rect, roundedrect, ellipse, hexagon, cylinder, blockarrow, isocube, polygon, curve, orthocurve, line, text, group
+- **Geometry**: rect, roundedrect, ellipse, hexagon, cylinder, blockarrow, isocube, polygon, curve, orthocurve, line, text, port, group
 - **Curve Geometry**: Bounding box (`x, y, w, h`) plus `nodes` array with SVG path commands (`M`, `L`, `C`, `Q`, `A`, `Z`) and normalized 0–1 control point coordinates
 - **Group**: Recursive `children` array containing nested annotations
 - **Meta**: label, tech, note with alignment and sizing; `ui_label` and `ui_suffix` for schema-driven property controls; all text content lives in `meta.note` (no legacy top-level `text` field)
@@ -360,6 +363,17 @@ See `schemas/annotation_schema.json` for the full specification.
 **Y** = implemented, **—** = test data collected, parser not yet implemented
 
 ## Version History
+
+### v1.10 (2026-03-08)
+- **Port connector tool**: New drawing tool (O) for attaching connector ports to any shape's perimeter; ports track a parametric position (t=0–1) on the parent's edge and move automatically when the parent is resized or repositioned
+- **Port direction indicators**: In/Out/InOut directional arrows rendered inside the port circle, rotated to match the outward normal of the parent edge
+- **Port protocol & connections**: Optional protocol label and connections list for linking ports to lines/curves; connected endpoints follow port position automatically
+- **Perimeter geometry engine**: New `canvas/perimeter.py` module computes point-on-perimeter for all shape kinds (rect, roundedrect, ellipse, hexagon, cylinder, blockarrow, isocube, polygon, seqblock) using parametric path traversal
+- **Port unparenting**: Clear `parent_id` in the JSON editor to detach a port from its parent; the port preserves its scene position and becomes freely movable; geom x/y/w/h are filled in automatically
+- **Port reparenting**: Set `parent_id` to a shape's ID to re-attach a free port; it snaps to the nearest perimeter point
+- **Port property panel**: Context-sensitive controls for port type (In/Out/InOut), protocol, t-position, and parent ID
+- **Read-only computed fields**: JSON editor highlights computed fields (e.g. `ports` list) in gray italic to distinguish them from user-editable fields
+- **Port icon generation**: Theme-aware SVG port icons for all 7 themes
 
 ### v1.9 (2026-03-07)
 - **Shape rotation**: All canvas items support rotation via interactive drag handle (green knob inside item boundary) or property panel angle spinner (0–359°)

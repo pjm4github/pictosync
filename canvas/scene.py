@@ -28,7 +28,9 @@ from canvas.items import (
     MetaIsoCubeItem,
     MetaSeqBlockItem,
     MetaGroupItem,
+    MetaPortItem,
 )
+from canvas.perimeter import PORTEABLE_KINDS, t_from_local_point
 from settings import get_settings
 
 
@@ -181,6 +183,29 @@ class AnnotatorScene(QGraphicsScene):
                 self._on_escape_key()
                 event.accept()
                 return
+
+        # Arrow key nudge for selected items
+        arrow_keys = {
+            Qt.Key.Key_Up: (0, -1),
+            Qt.Key.Key_Down: (0, 1),
+            Qt.Key.Key_Left: (-1, 0),
+            Qt.Key.Key_Right: (1, 0),
+        }
+        if event.key() in arrow_keys:
+            selected = [i for i in self.selectedItems() if hasattr(i, 'ann_id')]
+            if selected:
+                dx, dy = arrow_keys[event.key()]
+                step = 10 if event.modifiers() & Qt.KeyboardModifier.ShiftModifier else 1
+                moved = {}
+                for item in selected:
+                    old_pos = QPointF(item.pos())
+                    item.setPos(old_pos.x() + dx * step, old_pos.y() + dy * step)
+                    moved[item] = (old_pos, QPointF(item.pos()))
+                if moved and self._on_items_moved:
+                    self._on_items_moved(moved)
+                event.accept()
+                return
+
         super().keyPressEvent(event)
 
     def mousePressEvent(self, event):
@@ -328,6 +353,35 @@ class AnnotatorScene(QGraphicsScene):
                 event.accept()
                 return
 
+            elif self.mode == Mode.PORT:
+                # Find a porteable parent shape under the click
+                item = self.itemAt(sp, self.views()[0].transform() if self.views() else None)
+                # Walk up past groups / child items to find porteable parent
+                while item and not (hasattr(item, 'kind') and item.kind in PORTEABLE_KINDS):
+                    item = item.parentItem()
+                if item and hasattr(item, 'kind') and item.kind in PORTEABLE_KINDS:
+                    ann_id = self._make_id() if self._make_id else "local"
+                    local = item.mapFromScene(sp)
+                    kind = getattr(item, 'kind', getattr(item, 'KIND', 'rect'))
+                    t = t_from_local_point(kind, item, local.x(), local.y())
+                    port = MetaPortItem(t, 6.0, item, ann_id, self._on_item_changed)
+                    # No addItem needed — setParentItem already adds to scene
+                    port.setSelected(True)
+                    if self._on_new_item:
+                        self._on_new_item(port)
+                else:
+                    # Free placement: create a parentless port at click position
+                    ann_id = self._make_id() if self._make_id else "local"
+                    port = MetaPortItem(0, 6.0, None, ann_id, self._on_item_changed)
+                    port.setPos(sp)
+                    self.addItem(port)
+                    port.setZValue(self._get_next_z_index())
+                    port.setSelected(True)
+                    if self._on_new_item:
+                        self._on_new_item(port)
+                event.accept()
+                return
+
         # In SELECT mode, ensure clicking on a group child selects the group
         if event.button() == Qt.MouseButton.LeftButton and self.mode == Mode.SELECT:
             item = self.itemAt(event.scenePos(), self.views()[0].transform() if self.views() else None)
@@ -421,7 +475,7 @@ class AnnotatorScene(QGraphicsScene):
 
     def _is_annotation_item(self, item: QGraphicsItem) -> bool:
         """Check if an item is one of our annotation items."""
-        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaLineItem, MetaTextItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaPolygonItem, MetaCurveItem, MetaOrthoCurveItem, MetaIsoCubeItem, MetaSeqBlockItem, MetaGroupItem))
+        return isinstance(item, (MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaLineItem, MetaTextItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem, MetaPolygonItem, MetaCurveItem, MetaOrthoCurveItem, MetaIsoCubeItem, MetaSeqBlockItem, MetaPortItem, MetaGroupItem))
 
     def _get_annotation_items(self) -> List[QGraphicsItem]:
         """Get all annotation items in the scene (excluding background, etc.)."""

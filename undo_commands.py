@@ -32,6 +32,10 @@ def capture_geometry(item) -> dict:
     if hasattr(item, '_capture_child_states'):
         return {"children": item._capture_child_states()}
 
+    # Port items — capture perimeter t position
+    if hasattr(item, '_t') and hasattr(item, '_parent_shape'):
+        return {"pos": pos, "port_t": item._t}
+
     # Rect/Ellipse (have both setRect and rect)
     if hasattr(item, 'setRect') and hasattr(item, 'rect') and not hasattr(item, '_update_path'):
         state = {"pos": pos, "rect": QRectF(item.rect())}
@@ -77,6 +81,13 @@ def apply_geometry(item, state: dict) -> None:
     if "children" in state:
         item._restore_child_states(state["children"])
         item._notify_changed()
+        return
+
+    # Port
+    if "port_t" in state:
+        item._t = state["port_t"]
+        item._update_position_from_t()
+        item._update_connected_lines()
         return
 
     # Rect/Ellipse

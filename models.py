@@ -213,6 +213,7 @@ class Mode:
     ORTHOCURVE = "orthocurve"
     ISOCUBE = "isocube"
     SEQBLOCK = "seqblock"
+    PORT = "port"
 
 
 # ----------------------------

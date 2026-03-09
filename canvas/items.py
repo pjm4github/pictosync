@@ -7,7 +7,7 @@ Graphics items for diagram annotation: rectangles, ellipses, lines, and text.
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import Qt, QPointF, QRectF, QLineF
 from PyQt6.QtGui import QBrush, QPen, QColor, QPainter, QPainterPath, QPolygonF
@@ -297,6 +297,7 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
         super().setRect(r)
         self._update_label_position()
         self._update_transform_origin()
+        self._update_child_ports()
 
     def _handle_points_local(self) -> Dict[str, QPointF]:
         """Return handle positions in local coordinates for painting."""
@@ -431,6 +432,7 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
         rec = {
             "id": self.ann_id,
             "kind": "rect",
+            **self._ports_dict(),
             "geom": {
                 "x": round1(p.x()),
                 "y": round1(p.y()),
@@ -573,6 +575,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._update_path()
         self._update_label_position()
         self._update_transform_origin()
+        self._update_child_ports()
 
     def adjust1(self) -> float:
         return self._adjust1
@@ -580,6 +583,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def set_adjust1(self, value: float):
         self._adjust1 = max(0, value)
         self._update_path()
+        self._update_child_ports()
 
     def _handle_points_local(self) -> Dict[str, QPointF]:
         """Return handle positions in local coordinates for painting."""
@@ -747,6 +751,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         rec = {
             "id": self.ann_id,
             "kind": "roundedrect",
+            **self._ports_dict(),
             "geom": {
                 "x": round1(p.x()),
                 "y": round1(p.y()),
@@ -872,6 +877,7 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         super().setRect(r)
         self._update_label_position()
         self._update_transform_origin()
+        self._update_child_ports()
 
     def _handle_points_local(self) -> Dict[str, QPointF]:
         """Return handle positions in local coordinates for painting."""
@@ -1005,6 +1011,7 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         rec = {
             "id": self.ann_id,
             "kind": "ellipse",
+            **self._ports_dict(),
             "geom": {
                 "x": round1(p.x()),
                 "y": round1(p.y()),
@@ -1899,6 +1906,7 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._update_path()
         self._update_label_position()
         self._update_transform_origin()
+        self._update_child_ports()
 
     def adjust1(self) -> float:
         return self._adjust1
@@ -1906,6 +1914,7 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def set_adjust1(self, value: float):
         self._adjust1 = max(0.0, min(0.5, value))
         self._update_path()
+        self._update_child_ports()
 
     def _handle_points_local(self) -> Dict[str, QPointF]:
         cx = self._width / 2
@@ -2063,6 +2072,7 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         rec = {
             "id": self.ann_id,
             "kind": "hexagon",
+            **self._ports_dict(),
             "geom": {
                 "x": round1(p.x()),
                 "y": round1(p.y()),
@@ -2225,6 +2235,7 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._update_path()
         self._update_label_position()
         self._update_transform_origin()
+        self._update_child_ports()
 
     def adjust1(self) -> float:
         return self._adjust1
@@ -2424,6 +2435,7 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         rec = {
             "id": self.ann_id,
             "kind": "cylinder",
+            **self._ports_dict(),
             "geom": {
                 "x": round1(p.x()),
                 "y": round1(p.y()),
@@ -2594,6 +2606,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._update_path()
         self._update_label_position()
         self._update_transform_origin()
+        self._update_child_ports()
 
     def adjust2(self) -> float:
         return self._adjust2
@@ -2795,6 +2808,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         rec = {
             "id": self.ann_id,
             "kind": "blockarrow",
+            **self._ports_dict(),
             "geom": {
                 "x": round1(p.x()),
                 "y": round1(p.y()),
@@ -3003,6 +3017,7 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._update_path()
         self._update_label_position()
         self._update_transform_origin()
+        self._update_child_ports()
 
     # ---- Bounding-box handles ----
 
@@ -3289,6 +3304,7 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         rec = {
             "id": self.ann_id,
             "kind": "polygon",
+            **self._ports_dict(),
             "geom": {
                 "x": round1(p.x()),
                 "y": round1(p.y()),
@@ -5147,6 +5163,7 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._update_path()
         self._update_label_position()
         self._update_transform_origin()
+        self._update_child_ports()
 
     def adjust1(self) -> float:
         """Return current depth (px)."""
@@ -5419,6 +5436,7 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         rec = {
             "id": self.ann_id,
             "kind": "isocube",
+            **self._ports_dict(),
             "geom": {
                 "x": round1(p.x()),
                 "y": round1(p.y()),
@@ -6000,6 +6018,7 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._update_path()
         self._update_label_position()
         self._update_transform_origin()
+        self._update_child_ports()
 
     @property
     def block_type(self) -> str:
@@ -6356,6 +6375,7 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         rec = {
             "id": self.ann_id,
             "kind": "seqblock",
+            **self._ports_dict(),
             "geom": geom,
             **self._meta_dict(self.meta),
             **self._style_dict(),
@@ -6368,6 +6388,497 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
 
 # ═══════════════════════════════════════════════════════════
+# MetaPortItem — connector port on parent shape perimeter
+# ═══════════════════════════════════════════════════════════
+
+class MetaPortItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
+    """Connector port that attaches to the perimeter of a parent shape.
+
+    Ports are child items of their parent shape and move/rotate
+    automatically with the parent.  Dragging a port constrains it to
+    the parent's perimeter.  Connected line/curve/orthocurve endpoints
+    update to follow the port's scene position.
+    """
+
+    KIND = "port"
+    KIND_ALIASES = frozenset()
+
+    PORT_IN = "In"
+    PORT_OUT = "Out"
+    PORT_INOUT = "InOut"
+
+    def __init__(self, t: float, radius: float,
+                 parent_shape: QGraphicsItem, ann_id: str,
+                 on_change=None):
+        """Create a port at position *t* on *parent_shape*'s perimeter.
+
+        Args:
+            t: Position on parent perimeter as fraction of path length (0.0–1.0).
+            radius: Circle radius in pixels.
+            parent_shape: The parent graphics item (must have a KIND).
+            ann_id: Annotation ID string.
+            on_change: Callback when geometry changes.
+        """
+        QGraphicsEllipseItem.__init__(
+            self, QRectF(-radius, -radius, 2 * radius, 2 * radius))
+        MetaMixin.__init__(self)
+        LinkedMixin.__init__(self, ann_id, on_change)
+
+        self.kind = "port"
+        self._t = t % 1.0  # fraction of perimeter path length
+        self._radius = radius
+        self._parent_shape = parent_shape
+        self._port_type = self.PORT_INOUT
+        self._protocol = ""
+        self._connections: List[str] = []
+
+        self.setParentItem(parent_shape)
+        self.setData(ANN_ID_KEY, ann_id)
+        self.setZValue(10000)  # Above parent's other children
+
+        self.setAcceptHoverEvents(True)
+        flags = (QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+                 | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges)
+        if parent_shape is None:
+            flags |= QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+        self.setFlags(flags)
+
+        # Visual style
+        self.pen_color = QColor("#0066CC")
+        self.pen_width = 1.5
+        self.brush_color = QColor("#CCE5FF")
+        self.text_color = QColor("#333333")
+        self._apply_pen_brush()
+
+        # Drag state
+        self._dragging = False
+        self._press_scene: Optional[QPointF] = None
+
+        # Error state — shown when JSON has validation issues
+        self._has_error = False
+
+        # Place on perimeter
+        self._update_position_from_t()
+
+    # ---- visual style ----
+
+    def _apply_pen_brush(self):
+        """Apply pen and brush from current style properties."""
+        pen = QPen(self.pen_color, self.pen_width)
+        self.setPen(pen)
+        self.setBrush(QBrush(self.brush_color))
+
+    def _is_rotatable(self) -> bool:
+        return False
+
+    # ---- perimeter positioning ----
+
+    def _update_position_from_t(self):
+        """Recompute local position from the current t on parent perimeter."""
+        from canvas.perimeter import perimeter_point
+        parent = self._parent_shape
+        if parent is None:
+            return
+        kind = getattr(parent, 'kind', getattr(parent, 'KIND', 'rect'))
+        pt = perimeter_point(kind, parent, self._t)
+        self.setPos(pt)
+
+    def _update_connected_lines(self):
+        """Move connected line/curve endpoints to follow this port."""
+        if not self._connections:
+            return
+        scene = self.scene()
+        if not scene:
+            return
+        port_scene_pos = self.mapToScene(QPointF(0, 0))
+        for item in scene.items():
+            if not hasattr(item, 'ann_id') or item.ann_id not in self._connections:
+                continue
+            self._snap_endpoint(item, port_scene_pos)
+
+    def _snap_endpoint(self, item, port_pos: QPointF):
+        """Snap the nearest endpoint of a line/curve/orthocurve to port_pos."""
+        if isinstance(item, MetaLineItem):
+            p = item.pos()
+            ln = item.line()
+            p1 = QPointF(p.x() + ln.x1(), p.y() + ln.y1())
+            p2 = QPointF(p.x() + ln.x2(), p.y() + ln.y2())
+            d1 = (p1.x() - port_pos.x()) ** 2 + (p1.y() - port_pos.y()) ** 2
+            d2 = (p2.x() - port_pos.x()) ** 2 + (p2.y() - port_pos.y()) ** 2
+            if d1 <= d2:
+                item.setLine(QLineF(
+                    port_pos.x() - p.x(), port_pos.y() - p.y(),
+                    ln.x2(), ln.y2()))
+            else:
+                item.setLine(QLineF(
+                    ln.x1(), ln.y1(),
+                    port_pos.x() - p.x(), port_pos.y() - p.y()))
+            if hasattr(item, '_notify_changed'):
+                item._notify_changed()
+
+    # ---- properties ----
+
+    @property
+    def parent_id(self) -> str:
+        """Annotation ID of the parent shape, or empty string if parentless."""
+        if self._parent_shape and hasattr(self._parent_shape, 'ann_id'):
+            return self._parent_shape.ann_id
+        return ""
+
+    @property
+    def port_type(self) -> str:
+        return self._port_type
+
+    def set_port_type(self, value: str):
+        if value in (self.PORT_IN, self.PORT_OUT, self.PORT_INOUT):
+            self._port_type = value
+            self.update()
+
+    @property
+    def protocol(self) -> str:
+        return self._protocol
+
+    def set_protocol(self, value: str):
+        self._protocol = value
+
+    @property
+    def connections(self) -> List[str]:
+        return self._connections
+
+    def add_connection(self, ann_id: str):
+        """Add a line/curve id to the connections list."""
+        if ann_id not in self._connections:
+            self._connections.append(ann_id)
+
+    def remove_connection(self, ann_id: str):
+        """Remove a line/curve id from the connections list."""
+        if ann_id in self._connections:
+            self._connections.remove(ann_id)
+
+    # ---- mouse events (perimeter drag) ----
+
+    def hoverMoveEvent(self, event):
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        super().hoverMoveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            # Select this port (clear others unless Ctrl held)
+            scene = self.scene()
+            if scene and not (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+                scene.clearSelection()
+            self.setSelected(True)
+            if self._parent_shape is not None:
+                # Parented port: start perimeter drag
+                self._dragging = True
+                self._press_scene = event.scenePos()
+                event.accept()
+                return
+        # Parentless port: use default Qt movable behavior
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._dragging and self._parent_shape:
+            from canvas.perimeter import t_from_local_point
+            parent = self._parent_shape
+            # Convert scene pos to parent local coords
+            local = parent.mapFromScene(event.scenePos())
+            kind = getattr(parent, 'kind', getattr(parent, 'KIND', 'rect'))
+            self._t = t_from_local_point(kind, parent, local.x(), local.y())
+            self._update_position_from_t()
+            self._update_connected_lines()
+            self._notify_changed()
+            event.accept()
+            return
+        # Parentless port: default Qt move
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._dragging:
+            self._dragging = False
+            self._press_scene = None
+            self._notify_changed()
+            event.accept()
+            return
+        # Parentless port: default Qt release
+        super().mouseReleaseEvent(event)
+
+    def _outward_normal_deg(self) -> float:
+        """Return the outward normal angle (degrees) at this port's perimeter position.
+
+        The outward normal points away from the parent's center, aligned
+        perpendicular to the parent edge at the port's t position.
+        """
+        from canvas.perimeter import outward_normal_angle
+        parent = self._parent_shape
+        if parent is None:
+            return 0.0
+        kind = getattr(parent, 'kind', getattr(parent, 'KIND', 'rect'))
+        return outward_normal_angle(kind, parent, self._t)
+
+    # ---- paint ----
+
+    def paint(self, painter: QPainter, option, widget=None):
+        """Draw the port circle with a direction indicator rotated to the surface normal."""
+        my_option = QStyleOptionGraphicsItem(option)
+        my_option.state &= ~QStyle.StateFlag.State_Selected
+        super().paint(painter, my_option, widget)
+
+        r = self._radius
+        # Rotate direction indicator to match outward normal
+        normal = self._outward_normal_deg()
+        painter.save()
+        painter.rotate(normal)
+
+        painter.setPen(QPen(self.pen_color, 1.5))
+        if self._port_type == self.PORT_IN:
+            # Arrow pointing inward (toward center = left in rotated frame)
+            tip_x = -r * 0.5
+            tail_x = r * 0.5
+            painter.drawLine(QPointF(tail_x, 0), QPointF(tip_x, 0))
+            painter.drawLine(QPointF(tip_x + r * 0.3, -r * 0.35), QPointF(tip_x, 0))
+            painter.drawLine(QPointF(tip_x + r * 0.3, r * 0.35), QPointF(tip_x, 0))
+        elif self._port_type == self.PORT_OUT:
+            # Arrow pointing outward (away from center = right in rotated frame)
+            tip_x = r * 0.5
+            tail_x = -r * 0.5
+            painter.drawLine(QPointF(tail_x, 0), QPointF(tip_x, 0))
+            painter.drawLine(QPointF(tip_x - r * 0.3, -r * 0.35), QPointF(tip_x, 0))
+            painter.drawLine(QPointF(tip_x - r * 0.3, r * 0.35), QPointF(tip_x, 0))
+        else:  # InOut — dash line along the normal
+            painter.drawLine(QPointF(-r * 0.5, 0), QPointF(r * 0.5, 0))
+
+        painter.restore()
+
+        # Error indicator — red dashed circle
+        if self._has_error:
+            err_pen = QPen(QColor("#FF0000"), 1.5, Qt.PenStyle.DashDotLine)
+            painter.setPen(err_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            m = r + 2
+            painter.drawEllipse(QRectF(-m, -m, 2 * m, 2 * m))
+
+        # Selection highlight — dashed circle
+        if self.isSelected():
+            sel_pen = QPen(_get_selection_color(), 1.5, Qt.PenStyle.DashLine)
+            painter.setPen(sel_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            m = r + 3
+            painter.drawEllipse(QRectF(-m, -m, 2 * m, 2 * m))
+
+    def boundingRect(self) -> QRectF:
+        m = self._radius + 4  # Include selection highlight margin
+        return QRectF(-m, -m, 2 * m, 2 * m)
+
+    # ---- serialization ----
+
+    def to_record(self) -> Dict[str, Any]:
+        """Serialize to a JSON-compatible dict."""
+        parent_id = ""
+        if self._parent_shape and hasattr(self._parent_shape, 'ann_id'):
+            parent_id = self._parent_shape.ann_id
+
+        geom: Dict[str, Any] = {
+            "t": round(self._t, 4),
+            "radius": round1(self._radius),
+            "port_type": self._port_type,
+            "protocol": self._protocol,
+        }
+        # Parentless ports: include absolute position and size
+        if not self._parent_shape:
+            p = self.pos()
+            geom["x"] = round1(p.x())
+            geom["y"] = round1(p.y())
+            geom["w"] = round1(self._radius * 2)
+            geom["h"] = round1(self._radius * 2)
+
+        rec = {
+            "id": self.ann_id,
+            "kind": "port",
+            "parent_id": parent_id,
+            "connections": list(self._connections),
+            "geom": geom,
+            **self._meta_dict(self.meta),
+            **self._style_dict(),
+        }
+        z = self.zValue()
+        if z != 0:
+            rec["z"] = int(z)
+        return rec
+
+    def apply_style_from_record(self, rec: Dict[str, Any]):
+        """Apply style properties from a JSON record."""
+        style = rec.get("style", {})
+        pen = style.get("pen", {})
+        fill = style.get("fill", {})
+        from utils import hex_to_qcolor
+        if pen.get("color"):
+            self.pen_color = hex_to_qcolor(pen["color"], self.pen_color)
+        if pen.get("width"):
+            self.pen_width = float(pen["width"])
+        if fill.get("color"):
+            self.brush_color = hex_to_qcolor(fill["color"], self.brush_color)
+        self._apply_pen_brush()
+
+    def update_from_record(self, rec: Dict[str, Any], scene):
+        """Update this port in-place from a JSON record during scene rebuild.
+
+        Keeps the port attached to its parent and visible even if some
+        fields are temporarily invalid (e.g. mid-edit in JSON editor).
+        Sets ``_has_error`` when values can't be applied cleanly.
+        """
+        from canvas.perimeter import PORTEABLE_KINDS
+        from models import AnnotationMeta
+
+        g = rec.get("geom", {})
+        had_error = False
+
+        # Snapshot scene position NOW, before any position updates can
+        # corrupt it (e.g. _update_position_from_t with a stale parent).
+        # Qt does NOT adjust pos() on setParentItem(None), so the rebuild
+        # cleanup preserves scene position explicitly; mapToScene is safe
+        # here because the port has no Qt parent at this point.
+        in_scene = self.scene() is not None
+        scene_pos = self.mapToScene(QPointF(0, 0)) if in_scene else self.pos()
+
+        # ── parent re-attachment ──
+        # Always re-resolve the parent because the parent object may have
+        # been destroyed and recreated during a scene rebuild even though
+        # the ann_id stays the same.
+        # parent_id lives at record level; fall back to geom for legacy data
+        parent_id = rec.get("parent_id", g.get("parent_id", ""))
+        new_parent = None
+        if parent_id:
+            for si in scene.items():
+                if hasattr(si, 'ann_id') and si.ann_id == parent_id:
+                    new_parent = si
+                    break
+
+        if new_parent and hasattr(new_parent, 'kind') and new_parent.kind in PORTEABLE_KINDS:
+            was_different_parent = (self._parent_shape is not new_parent)
+            if was_different_parent:
+                self._parent_shape = new_parent
+                self.setParentItem(new_parent)
+            # Ensure correct flags for parented port
+            flags = (QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+                     | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges)
+            self.setFlags(flags)
+            if was_different_parent:
+                # Newly assigned parent — find nearest perimeter point
+                # from the port's previous scene position.
+                from canvas.perimeter import t_from_local_point
+                local = new_parent.mapFromScene(scene_pos)
+                kind = getattr(new_parent, 'kind',
+                               getattr(new_parent, 'KIND', 'rect'))
+                self._t = t_from_local_point(
+                    kind, new_parent, local.x(), local.y())
+            self._update_position_from_t()
+        elif not parent_id:
+            # Parentless port — preserve scene position when detaching.
+            # Qt does NOT adjust pos() on setParentItem(None), so we
+            # must capture scene_pos before detaching and restore after.
+            was_parented = self._parent_shape is not None
+            has_qt_parent = self.parentItem() is not None
+            if has_qt_parent:
+                # Still has Qt parent — capture scene pos and detach
+                scene_pos = self.mapToScene(QPointF(0, 0))
+            if was_parented or has_qt_parent:
+                self._parent_shape = None
+                if has_qt_parent:
+                    self.setParentItem(None)
+                self._t = 0.0
+            # Ensure the port is in the scene (setParentItem(None) may
+            # have removed it if the old parent was already gone).
+            still_in_scene = self.scene() is not None
+            if not still_in_scene:
+                scene.addItem(self)
+            if was_parented or has_qt_parent:
+                self.setPos(scene_pos)
+            elif "x" in g and "y" in g:
+                # Already parentless — apply position from geom
+                try:
+                    self.setPos(QPointF(float(g["x"]), float(g["y"])))
+                except (ValueError, TypeError):
+                    had_error = True
+            # else: keep current pos (port just detached, geom not yet updated)
+            flags = (QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+                     | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
+                     | QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
+            self.setFlags(flags)
+        elif parent_id and not new_parent:
+            # Parent ID specified but parent not found — keep current attachment
+            had_error = True
+
+        # ── t position (only meaningful when parented) ──
+        if self._parent_shape is not None:
+            try:
+                if "t" in g:
+                    new_t = float(g["t"]) % 1.0
+                else:
+                    new_t = float(g.get("angle", 0)) / 360.0
+                if abs(new_t - self._t) > 1e-6:
+                    self._t = new_t
+                    self._update_position_from_t()
+            except (ValueError, TypeError):
+                had_error = True
+
+        # ── radius ──
+        try:
+            new_radius = float(g.get("radius", self._radius))
+            if new_radius >= 1 and abs(new_radius - self._radius) > 0.01:
+                self._radius = new_radius
+                self.setRect(QRectF(-new_radius, -new_radius,
+                                    2 * new_radius, 2 * new_radius))
+        except (ValueError, TypeError):
+            had_error = True
+
+        # ── port_type ──
+        pt = g.get("port_type", self._port_type)
+        if pt in (self.PORT_IN, self.PORT_OUT, self.PORT_INOUT):
+            self._port_type = pt
+        else:
+            had_error = True  # invalid value — keep old type, flag error
+
+        # ── protocol & connections ──
+        self._protocol = str(g.get("protocol", self._protocol))
+        # connections lives at record level; fall back to geom for legacy data
+        conns = rec.get("connections", g.get("connections", self._connections))
+        if isinstance(conns, list):
+            self._connections = list(conns)
+
+        # ── meta ──
+        meta_dict = rec.get("meta") or {}
+        if isinstance(meta_dict, dict):
+            meta_dict.pop("kind", None)
+            self.set_meta(AnnotationMeta.from_dict(meta_dict))
+
+        # ── style ──
+        self.apply_style_from_record(rec)
+
+        # ── z-index ──
+        z = rec.get("z", 0)
+        if z:
+            self.setZValue(z)
+
+        # ── error state ──
+        old_error = self._has_error
+        self._has_error = had_error
+        if old_error != had_error:
+            self.prepareGeometryChange()
+        self.update()
+
+    def itemChange(self, change, value):
+        out = super().itemChange(change, value)
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            self._update_connected_lines()
+            if not self._dragging:
+                self._notify_changed()
+        elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+            self.prepareGeometryChange()
+        return out
+
+
+# ═══════════════════════════════════════════════════════════
 # Kind alias registry — validates uniqueness at import time
 # ═══════════════════════════════════════════════════════════
 
@@ -6375,7 +6886,7 @@ _ALL_META_CLASSES = [
     MetaRectItem, MetaRoundedRectItem, MetaEllipseItem, MetaLineItem,
     MetaTextItem, MetaHexagonItem, MetaCylinderItem, MetaBlockArrowItem,
     MetaPolygonItem, MetaCurveItem, MetaOrthoCurveItem, MetaIsoCubeItem,
-    MetaSeqBlockItem, MetaGroupItem,
+    MetaSeqBlockItem, MetaPortItem, MetaGroupItem,
 ]
 
 # Validate: no alias appears in more than one class

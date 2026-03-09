@@ -7,7 +7,7 @@ Mixin classes for graphics items providing annotation ID linking and metadata ha
 from __future__ import annotations
 
 import math
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from PyQt6.QtCore import Qt, QPointF, QLineF
 from PyQt6.QtGui import QColor
@@ -104,6 +104,19 @@ class MetaMixin:
     def set_meta(self, meta: AnnotationMeta) -> None:
         """Set the annotation metadata."""
         self.meta = meta
+
+    @property
+    def ports(self) -> List[str]:
+        """Annotation IDs of child port items attached to this shape."""
+        if not hasattr(self, 'childItems'):
+            return []
+        return [child.ann_id for child in self.childItems()
+                if hasattr(child, 'kind') and child.kind == 'port'
+                and hasattr(child, 'ann_id')]
+
+    def _ports_dict(self) -> Dict[str, Any]:
+        """Return ``{"ports": [...]}`` for JSON serialization."""
+        return {"ports": self.ports}
 
     @staticmethod
     def _meta_dict(meta: AnnotationMeta) -> Dict[str, Any]:
@@ -216,6 +229,16 @@ class MetaMixin:
             r = self.boundingRect()
             cx, cy = r.center().x(), r.center().y()
         self.setTransformOriginPoint(QPointF(cx, cy))
+        self._update_child_ports()
+
+    def _update_child_ports(self):
+        """Reposition all child MetaPortItem instances after a geometry change."""
+        # Import here to avoid circular dependency
+        from canvas.items import MetaPortItem
+        for child in self.childItems():
+            if isinstance(child, MetaPortItem):
+                child._update_position_from_t()
+                child._update_connected_lines()
 
     def set_rotation_angle(self, angle: float):
         """Set the rotation angle (degrees, clockwise) and update the transform origin."""
@@ -441,13 +464,18 @@ class MetaMixin:
         self._rotation_start_angle = self.rotation()
 
     def _handle_rotation_move(self, event):
-        """Handle mouse move during rotation drag."""
+        """Handle mouse move during rotation drag.
+
+        Hold Shift to snap to 15° increments.
+        """
         center = self.mapToScene(self.transformOriginPoint())
         cur = event.scenePos()
         angle = math.degrees(math.atan2(
             cur.x() - center.x(), -(cur.y() - center.y())
-        ))
-        self.set_rotation_angle(angle % 360)
+        )) % 360
+        if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+            angle = round(angle / 15) * 15 % 360
+        self.set_rotation_angle(angle)
         event.accept()
 
     def _end_rotation(self):

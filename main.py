@@ -70,7 +70,7 @@ compile_ui_if_needed()
 
 from PIL import Image
 
-from PyQt6.QtCore import Qt, QRectF, QFileInfo, QSize, QTimer, QThread
+from PyQt6.QtCore import Qt, QRectF, QPointF, QFileInfo, QSize, QTimer, QThread
 from PyQt6.QtGui import QAction, QActionGroup, QBrush, QColor, QFont, QIcon, QKeySequence, QPen, QPixmap, QUndoStack
 from PyQt6.QtWidgets import (
     QApplication,
@@ -112,8 +112,10 @@ from canvas import (
     MetaOrthoCurveItem,
     MetaIsoCubeItem,
     MetaSeqBlockItem,
+    MetaPortItem,
     MetaGroupItem,
 )
+from canvas.perimeter import PORTEABLE_KINDS
 from editor import DraftDock
 from properties import PropertyPanel
 from gemini import ExtractWorker, FocusedAlignWorker
@@ -259,6 +261,10 @@ class MainWindow(QMainWindow):
         self._draft_data: Optional[dict] = None
         self._id_to_index: Dict[str, int] = {}
         self._id_counter = 1
+        # Strong Python references to parentless port items.
+        # Without this, SIP may let Python GC destroy port objects
+        # after setParentItem(None) removes Qt's ownership reference.
+        self._port_refs: Dict[str, MetaPortItem] = {}
 
         self._syncing_from_scene = False
         self._syncing_from_json = False
@@ -560,7 +566,17 @@ class MainWindow(QMainWindow):
         self._seqblock_btn.setMenu(seqblock_menu)
         tb.addWidget(self._seqblock_btn)
 
-        self.mode_actions = [self.act_select, self.act_rect, self.act_rrect, self.act_ellipse, self.act_line, self.act_text, self.act_hexagon, self.act_cylinder, self.act_blockarrow, self.act_isocube, self.act_polygon, self.act_curve, self.act_seqblock]
+        # Port connector tool
+        self.act_port = QAction("Port", self)
+        self.act_port.setCheckable(True)
+        self.act_port.setShortcut("O")
+        self.act_port.setToolTip("Place a connector port on a shape edge (O)")
+        self.act_port.setStatusTip("Place a connector port on a shape perimeter")
+        self.act_port.triggered.connect(lambda checked: self._on_mode_action_triggered(Mode.PORT))
+        self._icon_actions[self.act_port] = "port"
+        tb.addAction(self.act_port)
+
+        self.mode_actions = [self.act_select, self.act_rect, self.act_rrect, self.act_ellipse, self.act_line, self.act_text, self.act_hexagon, self.act_cylinder, self.act_blockarrow, self.act_isocube, self.act_polygon, self.act_curve, self.act_seqblock, self.act_port]
         self.act_select.setChecked(True)
 
         tb.addSeparator()
@@ -1013,6 +1029,7 @@ class MainWindow(QMainWindow):
 
     def set_mode(self, mode: str, from_item_created: bool = False):
         """Set the current drawing mode."""
+        self.scene.clearSelection()
         self.scene.set_mode(mode)
         mapping = {
             Mode.SELECT: self.act_select,
@@ -1029,6 +1046,7 @@ class MainWindow(QMainWindow):
             Mode.CURVE: self.act_curve,
             Mode.ORTHOCURVE: self.act_curve,
             Mode.SEQBLOCK: self.act_seqblock,
+            Mode.PORT: self.act_port,
         }
         for a in self.mode_actions:
             a.setChecked(False)
@@ -1079,8 +1097,46 @@ class MainWindow(QMainWindow):
         finally:
             self._handling_selection = False
 
+    def _ensure_ports_in_scene(self):
+        """Re-add any JSON-defined port items that are missing from the scene.
+
+        Ports can be silently removed from the scene when their Qt parent
+        item is destroyed during a rebuild.  This lightweight check finds
+        port records in ``_draft_data`` whose items are no longer in the
+        scene and recreates them so they remain visible.
+        """
+        if not self._draft_data:
+            return
+        anns = self._draft_data.get("annotations")
+        if not isinstance(anns, list):
+            return
+
+        # Build set of port ann_ids currently in the scene
+        scene_port_ids: set = set()
+        for si in self.scene.items():
+            if isinstance(si, MetaPortItem) and hasattr(si, 'ann_id'):
+                scene_port_ids.add(si.ann_id)
+
+        for rec in anns:
+            if rec.get("kind") != "port":
+                continue
+            ann_id = rec.get("id", "")
+            if not ann_id or ann_id in scene_port_ids:
+                continue
+            # Port exists in JSON but not in the scene — recreate it
+            trace(f"_ensure_ports_in_scene: re-adding missing port {ann_id}", "PORT")
+            item = self._add_item_from_record(rec, on_change=self._on_scene_item_changed)
+            if item is not None and item.parentItem() is None:
+                self._port_refs[ann_id] = item
+
     def _do_selection_changed(self):
         """Internal handler for selection changes."""
+        # ── Ensure all JSON-defined ports are present in the scene ──
+        # Ports can be silently lost when focus switches from the
+        # editor to the canvas (e.g. Qt reparenting side-effects).
+        # A lightweight check here re-adds any missing ports.
+        self._ensure_ports_in_scene()
+
         items = self.scene.selectedItems()
         it = items[0] if items else None
         self.props.set_item(it)
@@ -1721,20 +1777,51 @@ class MainWindow(QMainWindow):
             if self._link_enabled and self._draft_data and isinstance(ann_id, str):
                 anns = self._draft_data.get("annotations", [])
                 if isinstance(anns, list):
+                    # Collect IDs to remove: the item itself + any child ports
+                    ids_to_remove = {ann_id}
+                    for child in item.childItems() if hasattr(item, 'childItems') else []:
+                        if isinstance(child, MetaPortItem) and hasattr(child, 'ann_id'):
+                            ids_to_remove.add(child.ann_id)
                     self._draft_data["annotations"] = [
-                        a for a in anns if not (isinstance(a, dict) and a.get("id") == ann_id)
+                        a for a in anns
+                        if not (isinstance(a, dict) and a.get("id") in ids_to_remove)
                     ]
+                    # Refresh parent's ports list after port deletion
+                    if isinstance(item, MetaPortItem) and item._parent_shape:
+                        parent = item._parent_shape
+                        if hasattr(parent, 'ann_id') and hasattr(parent, 'to_record'):
+                            p_id = parent.ann_id
+                            new_anns = self._draft_data["annotations"]
+                            for i, a in enumerate(new_anns):
+                                if isinstance(a, dict) and a.get("id") == p_id:
+                                    new_anns[i]["ports"] = parent.ports
+                                    break
                     self._rebuild_id_index()
 
         def on_item_restored(item):
             """Callback when item is restored (undo)."""
-            # Re-add to JSON
+            # Re-attach port to its parent shape
+            if isinstance(item, MetaPortItem) and item._parent_shape:
+                item.setParentItem(item._parent_shape)
+                item._update_position_from_t()
+            # Re-add to JSON: the item itself + any child ports
             if self._link_enabled and self._draft_data and hasattr(item, "to_record"):
-                rec = item.to_record()
                 anns = self._draft_data.get("annotations", [])
                 if isinstance(anns, list):
-                    anns.append(rec)
+                    anns.append(item.to_record())
+                    for child in item.childItems() if hasattr(item, 'childItems') else []:
+                        if isinstance(child, MetaPortItem) and hasattr(child, 'to_record'):
+                            anns.append(child.to_record())
                     self._draft_data["annotations"] = anns
+                    # Refresh parent's ports list after port restore
+                    if isinstance(item, MetaPortItem) and item._parent_shape:
+                        parent = item._parent_shape
+                        if hasattr(parent, 'ann_id'):
+                            p_id = parent.ann_id
+                            for i, a in enumerate(anns):
+                                if isinstance(a, dict) and a.get("id") == p_id:
+                                    anns[i]["ports"] = parent.ports
+                                    break
                     self._rebuild_id_index()
 
         # Use DeleteMultipleItemsCommand for multiple items
@@ -1986,9 +2073,17 @@ class MainWindow(QMainWindow):
             if os.path.exists(bg):
                 self.load_background_png(bg)
 
+        port_recs = []
+        on_ch = self._on_scene_item_changed if self._link_enabled else None
         for rec in data.get("annotations", []):
             if isinstance(rec, dict):
-                self._add_item_from_record(rec, on_change=self._on_scene_item_changed if self._link_enabled else None)
+                if rec.get("kind") == "port":
+                    port_recs.append(rec)
+                else:
+                    self._add_item_from_record(rec, on_change=on_ch)
+        # Second pass: ports (parents must already exist in scene)
+        for rec in port_recs:
+            self._add_item_from_record(rec, on_change=on_ch)
 
     def auto_extract(self):
         """Start Gemini AI extraction."""
@@ -2217,6 +2312,10 @@ class MainWindow(QMainWindow):
 
             if changed:
                 self._push_draft_data_to_editor(status="Added missing ids; scene updated.", focus_id=None)
+            elif getattr(self, '_ports_refreshed', False):
+                self._push_draft_data_to_editor(
+                    status="Scene updated from JSON.",
+                    focus_id=None, keep_scroll=True)
             else:
                 self.draft.set_status("Scene updated from JSON.")
 
@@ -2227,7 +2326,14 @@ class MainWindow(QMainWindow):
             self.draft.set_status(f"JSON parse error: {e}")
 
     def _rebuild_scene_from_draft(self):
-        """Rebuild the scene from draft data."""
+        """Rebuild the scene from draft data.
+
+        Ports are treated as first-class persistent items: they are never
+        destroyed during a rebuild.  Instead they are updated in-place so
+        they survive mid-edit keystrokes in the JSON editor.  A port is
+        only removed when it is explicitly deleted from the annotations
+        list by the user.
+        """
         trace("_rebuild_scene_from_draft called", "REBUILD")
         if not self._draft_data:
             trace("No draft data, returning", "REBUILD")
@@ -2245,25 +2351,122 @@ class MainWindow(QMainWindow):
             trace("Clearing property panel", "REBUILD")
             self.props.set_item(None)
 
-            trace("Removing existing items from scene", "REBUILD")
+            # ── Snapshot existing ports before removal ──
+            existing_ports: dict = {}  # ann_id → MetaPortItem
+            for it in list(self.scene.items()):
+                if isinstance(it, MetaPortItem) and hasattr(it, 'ann_id'):
+                    existing_ports[it.ann_id] = it
+
+            # ── Remove non-port items ──
+            trace("Removing existing non-port items from scene", "REBUILD")
             for it in list(self.scene.items()):
                 if it is self.bg_item or it is self._png_hidden_indicator:
                     continue
                 if it.scene() is None:
                     continue  # Already removed (child of a removed group)
+                if isinstance(it, MetaPortItem):
+                    continue  # Ports survive rebuilds
                 if isinstance(it.parentItem(), MetaGroupItem):
                     continue  # Will be removed with its parent group
                 if hasattr(it, "meta"):
+                    # Detach any child ports before removing this parent.
+                    # Qt does NOT adjust pos() on setParentItem(None), so we
+                    # must manually preserve the scene position.
+                    for child in list(it.childItems()):
+                        if isinstance(child, MetaPortItem):
+                            scene_pos = child.mapToScene(QPointF(0, 0))
+                            child.setParentItem(None)
+                            child._parent_shape = None  # Clear dangling ref
+                            child.setPos(scene_pos)
+                            if child.scene() is None:
+                                self.scene.addItem(child)
+                            self._port_refs[child.ann_id] = child
                     self.scene.removeItem(it)
 
+            # ── Safety: ensure all snapshot ports survived the cleanup ──
+            # removeItem on a parent can silently take children with it
+            # if the detach loop missed them (e.g. nested children).
+            for pid, port in existing_ports.items():
+                if port.scene() is None:
+                    trace(f"Re-adding lost port {pid} to scene", "REBUILD")
+                    port.setParentItem(None)
+                    port._parent_shape = None
+                    self.scene.addItem(port)
+                    self._port_refs[pid] = port
+
+            # ── Pass 1: recreate non-port items ──
             anns = self._draft_data.get("annotations", [])
             trace(f"Adding {len(anns) if isinstance(anns, list) else 0} items to scene", "REBUILD")
+            port_recs = []
             if isinstance(anns, list):
                 for idx, rec in enumerate(anns):
                     if isinstance(rec, dict):
+                        if rec.get("kind") == "port":
+                            port_recs.append((idx, rec))
+                            continue
                         trace(f"Adding item {idx+1}/{len(anns)}: {rec.get('kind', '?')} id={rec.get('id', '?')}", "REBUILD")
                         self._add_item_from_record(rec, on_change=self._on_scene_item_changed)
                         trace(f"Item {idx+1} added successfully", "REBUILD")
+
+                # ── Pass 2: update or create ports ──
+                port_ids_in_json = set()
+                for idx, rec in port_recs:
+                    ann_id = rec.get("id", "")
+                    port_ids_in_json.add(ann_id)
+                    if ann_id in existing_ports:
+                        # Update existing port in-place
+                        trace(f"Updating port in-place: id={ann_id}", "REBUILD")
+                        existing_ports[ann_id].update_from_record(rec, self.scene)
+                    else:
+                        # New port — create it
+                        trace(f"Creating new port: id={ann_id}", "REBUILD")
+                        self._add_item_from_record(rec, on_change=self._on_scene_item_changed)
+
+                # ── Pass 3: refresh ALL port records in draft data ──
+                # After in-place updates, ports may have changed state
+                # (e.g. unparented → geom now needs x/y).  Always write
+                # the canonical to_record() back so the next rebuild sees
+                # correct values.  Also handle newly-created ports from
+                # Pass 2 that replaced lost items.
+                self._ports_refreshed = False
+                for idx, rec in port_recs:
+                    ann_id = rec.get("id", "")
+                    # Find the live port object (may be in existing_ports
+                    # or freshly created in Pass 2)
+                    port = existing_ports.get(ann_id)
+                    if port is None or port.scene() is None:
+                        # Try to find the newly created port in the scene
+                        for si in self.scene.items():
+                            if isinstance(si, MetaPortItem) and getattr(si, 'ann_id', None) == ann_id:
+                                port = si
+                                break
+                    if port is not None and hasattr(port, 'to_record'):
+                        new_rec = port.to_record()
+                        new_rec["id"] = ann_id
+                        # Merge: keep any extra keys from old record
+                        for k, v in rec.items():
+                            if k not in new_rec:
+                                new_rec[k] = v
+                        if new_rec != rec:
+                            self._ports_refreshed = True
+                        anns[idx] = new_rec
+
+                # ── Remove ports deleted from JSON ──
+                for ann_id, port in existing_ports.items():
+                    if ann_id not in port_ids_in_json:
+                        trace(f"Removing deleted port: id={ann_id}", "REBUILD")
+                        if port.scene():
+                            self.scene.removeItem(port)
+                        self._port_refs.pop(ann_id, None)
+
+                # ── Keep strong Python refs for parentless ports ──
+                # SIP may let GC destroy port objects after
+                # setParentItem(None) if no Python variable holds them.
+                self._port_refs.clear()
+                for si in self.scene.items():
+                    if isinstance(si, MetaPortItem) and hasattr(si, 'ann_id'):
+                        if si.parentItem() is None:
+                            self._port_refs[si.ann_id] = si
 
             # Restore selection if the item still exists
             restored_id = None
@@ -2337,6 +2540,26 @@ class MainWindow(QMainWindow):
             anns[existing_idx] = rec
         else:
             anns.append(rec)
+
+        # When a port is added, refresh the parent shape's record so its
+        # computed "ports" list includes the new port ID immediately.
+        if isinstance(item, MetaPortItem) and item._parent_shape:
+            parent = item._parent_shape
+            if hasattr(parent, 'ann_id') and hasattr(parent, 'to_record'):
+                parent_id = parent.ann_id
+                for i, a in enumerate(anns):
+                    if isinstance(a, dict) and a.get("id") == parent_id:
+                        parent_rec = parent.to_record()
+                        parent_rec["id"] = parent_id
+                        old = anns[i]
+                        merged = dict(parent_rec)
+                        for k, v in old.items():
+                            if k not in merged:
+                                merged[k] = v
+                        merged.pop("text", None)
+                        anns[i] = merged
+                        break
+
         self._rebuild_id_index()
         self._push_draft_data_to_editor(status="Added item from scene; draft JSON updated.", focus_id=rec["id"])
 
@@ -2382,10 +2605,16 @@ class MainWindow(QMainWindow):
         rec["id"] = ann_id
 
         if isinstance(anns[idx], dict):
-            preserved = dict(anns[idx])
-            preserved.update(rec)
-            preserved.pop("text", None)  # purge legacy top-level "text" key
-            anns[idx] = preserved
+            old = anns[idx]
+            # Start from rec's key order so new fields appear in the
+            # correct position; then carry over any extra keys from the
+            # old record that to_record() doesn't emit.
+            merged = dict(rec)
+            for k, v in old.items():
+                if k not in merged:
+                    merged[k] = v
+            merged.pop("text", None)  # purge legacy top-level "text" key
+            anns[idx] = merged
         else:
             anns[idx] = rec
 
@@ -2890,6 +3119,42 @@ class MainWindow(QMainWindow):
             it._apply_pen_brush()
             it._update_label_text()
             self.scene.addItem(it)
+            if z_index:
+                it.setZValue(z_index)
+
+        elif kind == "port":
+            g = rec.get("geom", {})
+            # parent_id at record level; fall back to geom for legacy data
+            parent_id = rec.get("parent_id", g.get("parent_id", ""))
+            # Support both new "t" and legacy "angle" fields
+            if "t" in g:
+                t_val = float(g["t"])
+            else:
+                t_val = float(g.get("angle", 0)) / 360.0
+            radius = float(g.get("radius", 6))
+            port_type = g.get("port_type", MetaPortItem.PORT_INOUT)
+            protocol = g.get("protocol", "")
+            # connections at record level; fall back to geom for legacy data
+            connections = rec.get("connections", g.get("connections", []))
+            # Find parent item in scene by ann_id
+            parent_item = None
+            if parent_id:
+                for si in self.scene.items():
+                    if hasattr(si, 'ann_id') and si.ann_id == parent_id:
+                        parent_item = si
+                        break
+            if parent_item and hasattr(parent_item, 'kind') and parent_item.kind in PORTEABLE_KINDS:
+                it = MetaPortItem(t_val, radius, parent_item, ann_id, on_change)
+            else:
+                # Parentless port (free-placed)
+                it = MetaPortItem(t_val, radius, None, ann_id, on_change)
+                it.setPos(QPointF(float(g.get("x", 0)), float(g.get("y", 0))))
+                self.scene.addItem(it)
+            it.set_port_type(port_type)
+            it.set_protocol(protocol)
+            it._connections = list(connections)
+            it.set_meta(meta)
+            it.apply_style_from_record(rec)
             if z_index:
                 it.setZValue(z_index)
 

@@ -46,6 +46,14 @@ class JsonHighlighter(QSyntaxHighlighter):
         key_fmt = fmt(syntax.key_color, bold=syntax.key_bold)
         self.rules.append((QRegularExpression(r'"[^"\\]*(?:\\.[^"\\]*)*"\s*(?=:)'), key_fmt))
 
+        # Read-only fields — light gray italic for key + all values
+        ro_fmt = QTextCharFormat()
+        ro_fmt.setForeground(QColor("#777777"))
+        ro_fmt.setFontItalic(True)
+        self._readonly_fmt = ro_fmt
+        # Set of JSON key names that are computed / read-only
+        self._readonly_keys = frozenset({"ports"})
+
         # String values (not keys) - Default: #27AE60 (green)
         str_fmt = fmt(syntax.string_color)
         self.rules.append((QRegularExpression(r'(?<!:)\s*"[^"\\]*(?:\\.[^"\\]*)*"'), str_fmt))
@@ -62,6 +70,11 @@ class JsonHighlighter(QSyntaxHighlighter):
         brace_fmt = fmt(syntax.brace_color, bold=syntax.brace_bold)
         self.rules.append((QRegularExpression(r"[\{\}\[\]]"), brace_fmt))
 
+    # Block states for read-only field tracking across lines.
+    # Positive values encode the remaining bracket depth inside a
+    # read-only field's value (1 = one unclosed '[').
+    _STATE_NORMAL = -1
+
     def highlightBlock(self, text: str) -> None:
         """Apply highlighting rules to a block of text."""
         for regex, f in self.rules:
@@ -69,3 +82,33 @@ class JsonHighlighter(QSyntaxHighlighter):
             while it.hasNext():
                 m = it.next()
                 self.setFormat(m.capturedStart(), m.capturedLength(), f)
+
+        # ── Read-only field detection (key line + multi-line values) ──
+        prev_state = self.previousBlockState()
+        is_readonly = False
+        depth = prev_state if prev_state > 0 else 0
+
+        # Check if this line starts a new read-only field
+        stripped = text.lstrip()
+        if stripped.startswith('"'):
+            colon = stripped.find('":')
+            if colon > 0 and stripped[1:colon] in self._readonly_keys:
+                is_readonly = True
+                depth = 0  # will be counted below
+
+        # If previous line was inside a read-only value, we continue
+        if not is_readonly and prev_state > 0:
+            is_readonly = True
+
+        if is_readonly:
+            self.setFormat(0, len(text), self._readonly_fmt)
+            # Count brackets on this line to track depth
+            for ch in text:
+                if ch == '[':
+                    depth += 1
+                elif ch == ']':
+                    depth -= 1
+            # Positive depth means brackets still open → next line is read-only
+            self.setCurrentBlockState(depth if depth > 0 else self._STATE_NORMAL)
+        else:
+            self.setCurrentBlockState(self._STATE_NORMAL)

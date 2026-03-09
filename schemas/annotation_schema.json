@@ -72,7 +72,7 @@
         },
         "kind": {
           "type": "string",
-          "enum": ["rect", "roundedrect", "ellipse", "line", "text", "hexagon", "cylinder", "blockarrow", "polygon", "curve", "orthocurve", "isocube", "seqblock", "group"],
+          "enum": ["rect", "roundedrect", "ellipse", "line", "text", "hexagon", "cylinder", "blockarrow", "polygon", "curve", "orthocurve", "isocube", "seqblock", "port", "group"],
           "description": "The type of annotation item"
         },
         "geom": {
@@ -95,6 +95,23 @@
           "type": "integer",
           "default": 1000,
           "description": "Z-index for stacking order (0 = default, omitted when 0)"
+        },
+        "parent_id": {
+          "type": "string",
+          "description": "Annotation ID of the parent shape this port attaches to (port items only, empty string for parentless)"
+        },
+        "connections": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Set of annotation IDs of connected line/curve/orthocurve items (port items only)"
+        },
+        "ports": {
+          "type": "array",
+          "items": { "type": "string" },
+          "readOnly": true,
+          "default": [],
+          "description": "Computed list of child port annotation IDs (read-only, derived from port parent_id relationships)"
         }
       },
       "allOf": [
@@ -283,6 +300,27 @@
           "then": {
             "properties": {
               "geom": { "$ref": "#/$defs/seqblockGeometry" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "port" } }
+          },
+          "then": {
+            "required": ["parent_id"],
+            "properties": {
+              "geom": { "$ref": "#/$defs/portGeometry" },
+              "parent_id": {
+                "type": "string",
+                "description": "Annotation ID of the parent shape this port attaches to (empty string for parentless)"
+              },
+              "connections": {
+                "type": "array",
+                "items": { "type": "string" },
+                "default": [],
+                "description": "Set of annotation IDs of connected line/curve/orthocurve items"
+              }
             }
           }
         },
@@ -733,6 +771,53 @@
           "type": "number",
           "default": 0,
           "description": "Rotation angle in degrees (clockwise, 0-360). Omitted when 0."
+        }
+      },
+      "additionalProperties": false
+    },
+    "portGeometry": {
+      "type": "object",
+      "description": "Port connector geometry — position on parent perimeter",
+      "properties": {
+        "t": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0,
+          "description": "Position on parent perimeter as fraction of path length (0.0–1.0)"
+        },
+        "radius": {
+          "type": "number",
+          "minimum": 1,
+          "default": 6,
+          "description": "Port circle radius in pixels"
+        },
+        "port_type": {
+          "type": "string",
+          "enum": ["In", "Out", "InOut"],
+          "default": "InOut",
+          "description": "Port direction type"
+        },
+        "protocol": {
+          "type": "string",
+          "default": "",
+          "description": "Protocol label for this port"
+        },
+        "x": {
+          "type": "number",
+          "description": "X position (parentless ports only)"
+        },
+        "y": {
+          "type": "number",
+          "description": "Y position (parentless ports only)"
+        },
+        "w": {
+          "type": "number",
+          "description": "Width (parentless ports only)"
+        },
+        "h": {
+          "type": "number",
+          "description": "Height (parentless ports only)"
         }
       },
       "additionalProperties": false

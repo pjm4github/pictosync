@@ -11,7 +11,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QFont, QPainter, QPen, QTextCursor
-from PyQt6.QtWidgets import QPlainTextEdit, QWidget
+from PyQt6.QtWidgets import QPlainTextEdit, QToolTip, QWidget
 
 from settings import get_settings
 
@@ -826,6 +826,85 @@ class JsonCodeEditor(QPlainTextEdit):
             # The actual scrolling is done by scroll_to_id_top in DraftDock
         finally:
             self._suppress_cursor_signal = False
+
+    # Read-only JSON keys — character input is blocked on these lines
+    _READONLY_KEYS = frozenset({"ports"})
+
+    def _is_cursor_on_readonly_field(self) -> bool:
+        """Check if the cursor is on a line belonging to a read-only field.
+
+        Handles single-line values (``"ports": []``) and multi-line arrays
+        by scanning backwards from the cursor to find the enclosing key.
+        """
+        cursor = self.textCursor()
+        block = cursor.block()
+        line = block.text()
+        stripped = line.lstrip()
+
+        # Direct hit: cursor is on the key line itself
+        if stripped.startswith('"'):
+            colon = stripped.find('":')
+            if colon > 0 and stripped[1:colon] in self._READONLY_KEYS:
+                return True
+
+        # Scan backwards from the PREVIOUS line, accumulating bracket
+        # depth.  We want to find an unclosed '[' that belongs to a
+        # read-only key.  Start depth at 0 and count brackets going
+        # upward: ']' adds 1 (a close we passed over) and '[' subtracts 1
+        # (an open that might enclose us).
+        depth = 0
+        # First, count brackets on the cursor's own line — these are
+        # brackets that are NOT above us so they adjust the baseline.
+        for ch in line:
+            if ch == ']':
+                depth += 1
+            elif ch == '[':
+                depth -= 1
+
+        scan = block.previous()
+        while scan.isValid():
+            scan_text = scan.text()
+            for ch in scan_text:
+                if ch == ']':
+                    depth += 1
+                elif ch == '[':
+                    depth -= 1
+            # depth <= 0 means we found the line with the unmatched '['
+            # that encloses the cursor.  Check if it's a read-only key.
+            if depth <= 0:
+                s = scan_text.lstrip()
+                if s.startswith('"'):
+                    c = s.find('":')
+                    if c > 0 and s[1:c] in self._READONLY_KEYS:
+                        return True
+                return False
+            scan = scan.previous()
+        return False
+
+    def keyPressEvent(self, event):
+        """Block character input on read-only field lines; allow navigation."""
+        if event.text() and self._is_cursor_on_readonly_field():
+            # Character input — block it and show tooltip
+            cursor_rect = self.cursorRect()
+            global_pos = self.mapToGlobal(cursor_rect.bottomLeft())
+            QToolTip.showText(global_pos,
+                              "These are read-only ports. To remove or change a port, edit the port ID itself.",
+                              self, self.cursorRect(), 2000)
+            event.accept()
+            return
+
+        key = event.key()
+        if key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            if self._is_cursor_on_readonly_field():
+                cursor_rect = self.cursorRect()
+                global_pos = self.mapToGlobal(cursor_rect.bottomLeft())
+                QToolTip.showText(global_pos,
+                                  "These are read-only ports. To remove or change a port, edit the port ID itself.",
+                                  self, self.cursorRect(), 2000)
+                event.accept()
+                return
+
+        super().keyPressEvent(event)
 
     def get_current_annotation(self) -> str:
         """Return the current annotation ID the cursor is in."""
