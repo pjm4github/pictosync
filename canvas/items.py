@@ -113,6 +113,33 @@ def _get_selection_color() -> QColor:
     return _CachedCanvasSettings.get().selection_color
 
 
+def _find_nearby_port(scene, scene_pt: QPointF,
+                      threshold: float = 0) -> Optional['MetaPortItem']:
+    """Return the nearest MetaPortItem within *threshold* pixels of *scene_pt*.
+
+    Args:
+        scene: The QGraphicsScene to scan.
+        scene_pt: Point in scene coordinates.
+        threshold: Snap distance in pixels (default: 1.5 * hit_distance).
+
+    Returns:
+        The nearest MetaPortItem within range, or None.
+    """
+    if threshold <= 0:
+        threshold = _get_hit_distance() * 1.5
+    best = None
+    best_d = threshold
+    for si in scene.items():
+        if not isinstance(si, MetaPortItem):
+            continue
+        port_pos = si.mapToScene(QPointF(0, 0))
+        d = QLineF(scene_pt, port_pos).length()
+        if d < best_d:
+            best_d = d
+            best = si
+    return best
+
+
 def round1(value: float) -> float:
     """Round a value to 2 decimal place precision for geometry."""
     return round(value, 2)
@@ -421,6 +448,7 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             if not self._resizing:
                 self._notify_changed()
+            self._update_child_port_connections()
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             # Update shape when selection changes to include/exclude handle areas
             self.prepareGeometryChange()
@@ -742,6 +770,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             if not self._resizing:
                 self._notify_changed()
+            self._update_child_port_connections()
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self.prepareGeometryChange()
         return out
@@ -1001,6 +1030,7 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             if not self._resizing:
                 self._notify_changed()
+            self._update_child_port_connections()
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self.prepareGeometryChange()
         return out
@@ -1067,6 +1097,9 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
 
         self._drag_end: Optional[str] = None  # "p1" or "p2"
         self._drag_text_box: Optional[str] = None  # "tl", "tr", "bl", "br" for text box corners
+        self._snap_port: Optional['MetaPortItem'] = None  # port being hovered during drag
+        self._port_ids: List[str] = []  # connected port IDs (read-only, computed)
+        self._port_endpoints: Dict[str, str] = {}  # port_id → "start"|"end"
 
         # Text box properties (local coordinates relative to line midpoint)
         self._text_box_rect: Optional[QRectF] = None  # Will be computed from meta
@@ -1512,6 +1545,15 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
             self.setPos(new_p1)
             self.setLine(QLineF(0, 0, new_p2.x() - new_p1.x(), new_p2.y() - new_p1.y()))
 
+            # Port proximity detection
+            port = _find_nearby_port(self.scene(), cur)
+            if port is not self._snap_port:
+                if self._snap_port:
+                    self._snap_port.set_snap_hover(False)
+                self._snap_port = port
+                if port:
+                    port.set_snap_hover(True)
+
             self._notify_changed()
             event.accept()
             return
@@ -1526,12 +1568,59 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
             event.accept()
             return
         if self._drag_end:
+            # Snap endpoint to port if hovering
+            if self._snap_port:
+                port = self._snap_port
+                port.set_snap_hover(False)
+                port_pos = port.mapToScene(QPointF(0, 0))
+                p1, p2 = self._endpoints_scene()
+                if self._drag_end == "p1":
+                    self.setPos(port_pos)
+                    self.setLine(QLineF(0, 0, p2.x() - port_pos.x(),
+                                        p2.y() - port_pos.y()))
+                else:
+                    self.setPos(p1)
+                    self.setLine(QLineF(0, 0, port_pos.x() - p1.x(),
+                                        port_pos.y() - p1.y()))
+                # Add bidirectional connection
+                if self.ann_id not in port._connections:
+                    port.add_connection(self.ann_id)
+                if port.ann_id not in self._port_ids:
+                    self._port_ids.append(port.ann_id)
+                which = "start" if self._drag_end == "p1" else "end"
+                self._port_endpoints[port.ann_id] = which
+                port._notify_changed()
+                self._snap_port = None
+            else:
+                # Disconnect from any port previously connected at this end
+                which = "start" if self._drag_end == "p1" else "end"
+                self._disconnect_end(which)
             self._end_resize_tracking()
             self._drag_end = None
             self._notify_changed()
             event.accept()
             return
         super().mouseReleaseEvent(event)
+
+    def _disconnect_end(self, which: str):
+        """Remove port connection for the given endpoint ('start' or 'end')."""
+        to_remove = [pid for pid, end in self._port_endpoints.items()
+                     if end == which]
+        if not to_remove:
+            return
+        scene = self.scene()
+        for pid in to_remove:
+            del self._port_endpoints[pid]
+            if pid in self._port_ids:
+                self._port_ids.remove(pid)
+            # Remove from port's connections list
+            if scene:
+                for si in scene.items():
+                    if (isinstance(si, MetaPortItem)
+                            and si.ann_id == pid):
+                        si.remove_connection(self.ann_id)
+                        si._notify_changed()
+                        break
 
     def _resize_text_box(self, handle: str, local_pt: QPointF):
         """Resize the text box based on handle being dragged."""
@@ -1590,6 +1679,7 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
         rec = {
             "id": self.ann_id,
             "kind": "line",
+            **self._ports_dict(),
             "geom": {
                 "x1": round1(p.x() + ln.x1()),
                 "y1": round1(p.y() + ln.y1()),
@@ -1599,6 +1689,9 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
             **self._meta_dict(self.meta),
             "style": style,
         }
+        # Include connected port IDs (read-only)
+        if self._port_ids:
+            rec["ports"] = list(self._port_ids)
         # Include z-index if set
         z = self.zValue()
         if z != 0:
@@ -2063,6 +2156,7 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             if not self._resizing:
                 self._notify_changed()
+            self._update_child_port_connections()
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self.prepareGeometryChange()
         return out
@@ -2426,6 +2520,7 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             if not self._resizing:
                 self._notify_changed()
+            self._update_child_port_connections()
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self.prepareGeometryChange()
         return out
@@ -2799,6 +2894,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             if not self._resizing:
                 self._notify_changed()
+            self._update_child_port_connections()
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self.prepareGeometryChange()
         return out
@@ -3293,6 +3389,7 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             if not self._resizing and not self._vertex_dragging:
                 self._notify_changed()
+            self._update_child_port_connections()
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             if not value:
                 self._vertex_editing = False
@@ -3384,6 +3481,9 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._active_node: Optional[int] = None
         self._active_handle_type: Optional[str] = None  # "anchor"/"c1"/"c2"/"cx"
         self._node_dragging = False
+        self._snap_port: Optional['MetaPortItem'] = None  # port being hovered during drag
+        self._port_ids: List[str] = []  # connected port IDs (read-only, computed)
+        self._port_endpoints: Dict[str, str] = {}  # port_id → "start"|"end"
 
         # Arrow support
         self.arrow_mode = self.ARROW_NONE
@@ -4015,6 +4115,23 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             return
         super().mouseDoubleClickEvent(event)
 
+    def _last_anchor_index(self) -> int:
+        """Return the index of the last non-Z anchor node."""
+        for i in range(len(self._nodes) - 1, -1, -1):
+            if self._nodes[i].get("cmd") != "Z":
+                return i
+        return 0
+
+    def _is_endpoint_index(self, idx: int) -> bool:
+        """Return True if *idx* is the first or last anchor node."""
+        return idx == 0 or idx == self._last_anchor_index()
+
+    def _node_scene_pos(self, idx: int) -> QPointF:
+        """Return the scene position of the anchor at *idx*."""
+        ax, ay = self._get_node_anchor(idx)
+        return QPointF(self.pos().x() + ax * self._width,
+                       self.pos().y() + ay * self._height)
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.RightButton and self._node_editing:
             scene_pt = event.scenePos()
@@ -4134,6 +4251,18 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             self._update_path()
             self._update_label_position()
             self._update_transform_origin()
+
+            # Port proximity detection for endpoint anchors
+            if htype == "anchor" and self._is_endpoint_index(self._active_node):
+                scene_pt = self._node_scene_pos(self._active_node)
+                port = _find_nearby_port(self.scene(), scene_pt)
+                if port is not self._snap_port:
+                    if self._snap_port:
+                        self._snap_port.set_snap_hover(False)
+                    self._snap_port = port
+                    if port:
+                        port.set_snap_hover(True)
+
             self._notify_changed()
             event.accept()
             return
@@ -4166,6 +4295,62 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             event.accept()
             return
         if self._node_dragging:
+            # Snap endpoint to port if hovering
+            if (self._snap_port and self._active_node is not None
+                    and self._is_endpoint_index(self._active_node)):
+                port = self._snap_port
+                port.set_snap_hover(False)
+                port_pos = port.mapToScene(QPointF(0, 0))
+                w = self._width if self._width > 0 else 1.0
+                h = self._height if self._height > 0 else 1.0
+                rx = (port_pos.x() - self.pos().x()) / w
+                ry = (port_pos.y() - self.pos().y()) / h
+                idx = self._active_node
+                node = self._nodes[idx]
+                cmd = node.get("cmd", "L")
+                if cmd == "H":
+                    node["x"] = rx
+                elif cmd == "V":
+                    node["y"] = ry
+                else:
+                    node["x"] = rx
+                    node["y"] = ry
+                # For orthocurves, adjust the second-to-last node (end only).
+                # The start (M node) moves freely; the first H/V after M is unchanged.
+                if isinstance(self, MetaOrthoCurveItem) and idx != 0 and idx >= 1:
+                    adj = self._nodes[idx - 1]
+                    adj_cmd = adj.get("cmd", "L")
+                    if cmd == "H" and adj_cmd in ("V", "M", "L"):
+                        adj["y"] = ry
+                    elif cmd == "V" and adj_cmd in ("H", "M", "L"):
+                        adj["x"] = rx
+                    elif cmd in ("M", "L"):
+                        if adj_cmd == "H":
+                            adj["x"] = rx
+                        elif adj_cmd == "V":
+                            adj["y"] = ry
+                self.prepareGeometryChange()
+                self._update_path()
+                self._update_label_position()
+                self._update_transform_origin()
+                # Add bidirectional connection
+                if self.ann_id not in port._connections:
+                    port.add_connection(self.ann_id)
+                if port.ann_id not in self._port_ids:
+                    self._port_ids.append(port.ann_id)
+                which = "start" if idx == 0 else "end"
+                self._port_endpoints[port.ann_id] = which
+                port._notify_changed()
+                self._snap_port = None
+            else:
+                if self._snap_port:
+                    self._snap_port.set_snap_hover(False)
+                    self._snap_port = None
+                # Disconnect from any port previously at this endpoint
+                if (self._active_node is not None
+                        and self._is_endpoint_index(self._active_node)):
+                    which = "start" if self._active_node == 0 else "end"
+                    self._disconnect_end(which)
             self._end_resize_tracking()
             self._node_dragging = False
             self._active_node = None
@@ -4576,11 +4761,33 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             **self._meta_dict(self.meta),
             "style": style,
         }
+        # Include connected port IDs (read-only)
+        if self._port_ids:
+            rec["ports"] = list(self._port_ids)
         z = self.zValue()
         if z != 0:
             rec["z"] = int(z)
         self._add_angle_to_geom(rec.get("geom", {}))
         return rec
+
+    def _disconnect_end(self, which: str):
+        """Remove port connection for the given endpoint ('start' or 'end')."""
+        to_remove = [pid for pid, end in self._port_endpoints.items()
+                     if end == which]
+        if not to_remove:
+            return
+        scene = self.scene()
+        for pid in to_remove:
+            del self._port_endpoints[pid]
+            if pid in self._port_ids:
+                self._port_ids.remove(pid)
+            if scene:
+                for si in scene.items():
+                    if (isinstance(si, MetaPortItem)
+                            and si.ann_id == pid):
+                        si.remove_connection(self.ann_id)
+                        si._notify_changed()
+                        break
 
 
 class MetaOrthoCurveItem(MetaCurveItem):
@@ -5426,6 +5633,7 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             if not self._resizing:
                 self._notify_changed()
+            self._update_child_port_connections()
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self.prepareGeometryChange()
         return out
@@ -6350,6 +6558,7 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             if not self._resizing:
                 self._notify_changed()
+            self._update_child_port_connections()
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self.prepareGeometryChange()
         return out
@@ -6457,6 +6666,9 @@ class MetaPortItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         # Error state — shown when JSON has validation issues
         self._has_error = False
 
+        # Snap hover state — shown when a line/curve endpoint is near this port
+        self._snap_hover = False
+
         # Place on perimeter
         self._update_position_from_t()
 
@@ -6467,6 +6679,13 @@ class MetaPortItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         pen = QPen(self.pen_color, self.pen_width)
         self.setPen(pen)
         self.setBrush(QBrush(self.brush_color))
+
+    def set_snap_hover(self, active: bool):
+        """Toggle the snap-hover glow ring shown during endpoint drag proximity."""
+        if active != self._snap_hover:
+            self._snap_hover = active
+            self.prepareGeometryChange()
+            self.update()
 
     def _is_rotatable(self) -> bool:
         return False
@@ -6494,18 +6713,51 @@ class MetaPortItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         for item in scene.items():
             if not hasattr(item, 'ann_id') or item.ann_id not in self._connections:
                 continue
+            # Ensure the line/curve knows about this port connection
+            if hasattr(item, '_port_ids') and self.ann_id not in item._port_ids:
+                item._port_ids.append(self.ann_id)
+            # Auto-detect which end if not already known
+            if hasattr(item, '_port_endpoints') and self.ann_id not in item._port_endpoints:
+                if isinstance(item, MetaLineItem):
+                    p = item.pos()
+                    ln = item.line()
+                    p1 = QPointF(p.x() + ln.x1(), p.y() + ln.y1())
+                    p2 = QPointF(p.x() + ln.x2(), p.y() + ln.y2())
+                    d1 = (p1.x() - port_scene_pos.x()) ** 2 + (p1.y() - port_scene_pos.y()) ** 2
+                    d2 = (p2.x() - port_scene_pos.x()) ** 2 + (p2.y() - port_scene_pos.y()) ** 2
+                    item._port_endpoints[self.ann_id] = "start" if d1 <= d2 else "end"
+                elif isinstance(item, MetaCurveItem):
+                    if item._nodes:
+                        p1 = item._node_scene_pos(0)
+                        p2 = item._node_scene_pos(item._last_anchor_index())
+                        d1 = (p1.x() - port_scene_pos.x()) ** 2 + (p1.y() - port_scene_pos.y()) ** 2
+                        d2 = (p2.x() - port_scene_pos.x()) ** 2 + (p2.y() - port_scene_pos.y()) ** 2
+                        item._port_endpoints[self.ann_id] = "start" if d1 <= d2 else "end"
             self._snap_endpoint(item, port_scene_pos)
 
     def _snap_endpoint(self, item, port_pos: QPointF):
-        """Snap the nearest endpoint of a line/curve/orthocurve to port_pos."""
+        """Snap the connected endpoint of a line/curve/orthocurve to port_pos.
+
+        Uses _port_endpoints mapping when available to determine which end
+        is connected, falling back to nearest-distance heuristic.
+        """
+        # Determine which end this port is connected to
+        known_end = getattr(item, '_port_endpoints', {}).get(self.ann_id)
+
         if isinstance(item, MetaLineItem):
             p = item.pos()
             ln = item.line()
-            p1 = QPointF(p.x() + ln.x1(), p.y() + ln.y1())
-            p2 = QPointF(p.x() + ln.x2(), p.y() + ln.y2())
-            d1 = (p1.x() - port_pos.x()) ** 2 + (p1.y() - port_pos.y()) ** 2
-            d2 = (p2.x() - port_pos.x()) ** 2 + (p2.y() - port_pos.y()) ** 2
-            if d1 <= d2:
+            if known_end == "start":
+                at_start = True
+            elif known_end == "end":
+                at_start = False
+            else:
+                p1 = QPointF(p.x() + ln.x1(), p.y() + ln.y1())
+                p2 = QPointF(p.x() + ln.x2(), p.y() + ln.y2())
+                d1 = (p1.x() - port_pos.x()) ** 2 + (p1.y() - port_pos.y()) ** 2
+                d2 = (p2.x() - port_pos.x()) ** 2 + (p2.y() - port_pos.y()) ** 2
+                at_start = d1 <= d2
+            if at_start:
                 item.setLine(QLineF(
                     port_pos.x() - p.x(), port_pos.y() - p.y(),
                     ln.x2(), ln.y2()))
@@ -6513,6 +6765,58 @@ class MetaPortItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
                 item.setLine(QLineF(
                     ln.x1(), ln.y1(),
                     port_pos.x() - p.x(), port_pos.y() - p.y()))
+            if hasattr(item, '_notify_changed'):
+                item._notify_changed()
+        elif isinstance(item, MetaCurveItem):
+            # Works for both MetaCurveItem and MetaOrthoCurveItem
+            if not item._nodes:
+                return
+            first_idx = 0
+            last_idx = item._last_anchor_index()
+            if known_end == "start":
+                at_start = True
+            elif known_end == "end":
+                at_start = False
+            else:
+                p1 = item._node_scene_pos(first_idx)
+                p2 = item._node_scene_pos(last_idx)
+                d1 = (p1.x() - port_pos.x()) ** 2 + (p1.y() - port_pos.y()) ** 2
+                d2 = (p2.x() - port_pos.x()) ** 2 + (p2.y() - port_pos.y()) ** 2
+                at_start = d1 <= d2
+            idx = first_idx if at_start else last_idx
+            w = item._width if item._width > 0 else 1.0
+            h = item._height if item._height > 0 else 1.0
+            rx = (port_pos.x() - item.pos().x()) / w
+            ry = (port_pos.y() - item.pos().y()) / h
+            node = item._nodes[idx]
+            cmd = node.get("cmd", "L")
+            # Move the endpoint node
+            if cmd == "H":
+                node["x"] = rx
+            elif cmd == "V":
+                node["y"] = ry
+            else:
+                node["x"] = rx
+                node["y"] = ry
+            # For orthocurves, also adjust the adjacent node so the
+            # H/V pair stays connected.  E.g. if the last two nodes
+            # are ...V, H  moving H.x also needs V.y = ry so the
+            # vertical segment reaches the new endpoint height.
+            if isinstance(item, MetaOrthoCurveItem) and not at_start and idx >= 1:
+                # Only adjust the second-to-last node for the END of the curve.
+                # The start (M node) moves freely; the first H/V after M is unchanged.
+                adj = item._nodes[idx - 1]
+                adj_cmd = adj.get("cmd", "L")
+                if cmd == "H" and adj_cmd in ("V", "M", "L"):
+                    adj["y"] = ry
+                elif cmd == "V" and adj_cmd in ("H", "M", "L"):
+                    adj["x"] = rx
+                elif cmd in ("M", "L"):
+                    if adj_cmd == "H":
+                        adj["x"] = rx
+                    elif adj_cmd == "V":
+                        adj["y"] = ry
+            item._recalculate_bbox()
             if hasattr(item, '_notify_changed'):
                 item._notify_changed()
 
@@ -6560,6 +6864,10 @@ class MetaPortItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
     def hoverMoveEvent(self, event):
         self.setCursor(Qt.CursorShape.CrossCursor)
         super().hoverMoveEvent(event)
+
+    def _handle_points_local(self) -> Dict[str, QPointF]:
+        """Return handle positions in local coordinates (center only for ports)."""
+        return {"center": QPointF(0, 0)}
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -6650,6 +6958,48 @@ class MetaPortItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
 
         painter.restore()
 
+        # External direction badge on inward side — visible when lines cover the port
+        if self._connections:
+            painter.save()
+            painter.rotate(normal)
+            d = -(r + 6)  # inward side (negative = toward parent center)
+            s = r * 0.8   # badge size
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(self.pen_color))
+            if self._port_type == self.PORT_IN:
+                # Triangle pointing inward (toward center)
+                tri = QPolygonF([
+                    QPointF(d, 0),
+                    QPointF(d + s, -s * 0.7),
+                    QPointF(d + s, s * 0.7),
+                ])
+                painter.drawPolygon(tri)
+            elif self._port_type == self.PORT_OUT:
+                # Triangle pointing outward (away from center)
+                tri = QPolygonF([
+                    QPointF(d + s, 0),
+                    QPointF(d, -s * 0.7),
+                    QPointF(d, s * 0.7),
+                ])
+                painter.drawPolygon(tri)
+            else:  # InOut — diamond
+                tri = QPolygonF([
+                    QPointF(d + s, 0),
+                    QPointF(d + s * 0.5, -s * 0.5),
+                    QPointF(d, 0),
+                    QPointF(d + s * 0.5, s * 0.5),
+                ])
+                painter.drawPolygon(tri)
+            painter.restore()
+
+        # Snap hover glow — bright cyan ring when a line endpoint is nearby
+        if self._snap_hover:
+            glow_pen = QPen(QColor(0, 200, 255, 180), 3.0)
+            painter.setPen(glow_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            m = r + 5
+            painter.drawEllipse(QRectF(-m, -m, 2 * m, 2 * m))
+
         # Error indicator — red dashed circle
         if self._has_error:
             err_pen = QPen(QColor("#FF0000"), 1.5, Qt.PenStyle.DashDotLine)
@@ -6667,7 +7017,8 @@ class MetaPortItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
             painter.drawEllipse(QRectF(-m, -m, 2 * m, 2 * m))
 
     def boundingRect(self) -> QRectF:
-        m = self._radius + 4  # Include selection highlight margin
+        extra = 9 if self._snap_hover else (8 if self._connections else 4)
+        m = self._radius + extra
         return QRectF(-m, -m, 2 * m, 2 * m)
 
     # ---- serialization ----

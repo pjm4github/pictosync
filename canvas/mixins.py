@@ -240,6 +240,18 @@ class MetaMixin:
                 child._update_position_from_t()
                 child._update_connected_lines()
 
+    def _update_child_port_connections(self):
+        """Update connected lines on child ports after a position change.
+
+        Unlike ``_update_child_ports``, this does NOT recompute port
+        positions (t hasn't changed on a move), only snaps connected
+        line/curve endpoints to follow the ports' new scene positions.
+        """
+        from canvas.items import MetaPortItem
+        for child in self.childItems():
+            if isinstance(child, MetaPortItem) and child._connections:
+                child._update_connected_lines()
+
     def set_rotation_angle(self, angle: float):
         """Set the rotation angle (degrees, clockwise) and update the transform origin."""
         angle = angle % 360

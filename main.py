@@ -265,6 +265,7 @@ class MainWindow(QMainWindow):
         # Without this, SIP may let Python GC destroy port objects
         # after setParentItem(None) removes Qt's ownership reference.
         self._port_refs: Dict[str, MetaPortItem] = {}
+        self._deleting_items = False  # Gate to prevent _ensure_ports_in_scene during delete
 
         self._syncing_from_scene = False
         self._syncing_from_json = False
@@ -1105,6 +1106,8 @@ class MainWindow(QMainWindow):
         port records in ``_draft_data`` whose items are no longer in the
         scene and recreates them so they remain visible.
         """
+        if self._deleting_items:
+            return
         if not self._draft_data:
             return
         anns = self._draft_data.get("annotations")
@@ -1774,6 +1777,43 @@ class MainWindow(QMainWindow):
         def on_item_removed(item):
             """Callback when item is removed (redo/initial delete)."""
             ann_id = item.data(ANN_ID_KEY)
+
+            # Clean up port connections when deleting a line/curve/orthocurve
+            if hasattr(item, '_port_ids') and item._port_ids:
+                for port_id in list(item._port_ids):
+                    for si in self.scene.items():
+                        if isinstance(si, MetaPortItem) and si.ann_id == port_id:
+                            si.remove_connection(ann_id)
+                            si._notify_changed()
+                            # Update port record in draft data
+                            if self._link_enabled and self._draft_data:
+                                for a in self._draft_data.get("annotations", []):
+                                    if isinstance(a, dict) and a.get("id") == port_id:
+                                        a["connections"] = list(si._connections)
+                                        break
+                            break
+                item._port_ids.clear()
+                if hasattr(item, '_port_endpoints'):
+                    item._port_endpoints.clear()
+
+            # Clean up when deleting a port — remove from connected lines' _port_ids
+            if isinstance(item, MetaPortItem) and item._connections:
+                for line_id in list(item._connections):
+                    for si in self.scene.items():
+                        if hasattr(si, '_port_ids') and si.ann_id == line_id:
+                            if ann_id in si._port_ids:
+                                si._port_ids.remove(ann_id)
+                            if hasattr(si, '_port_endpoints'):
+                                si._port_endpoints.pop(ann_id, None)
+                            si._notify_changed()
+                            # Update line record in draft data
+                            if self._link_enabled and self._draft_data:
+                                for a in self._draft_data.get("annotations", []):
+                                    if isinstance(a, dict) and a.get("id") == line_id:
+                                        a["ports"] = list(si._port_ids)
+                                        break
+                            break
+
             if self._link_enabled and self._draft_data and isinstance(ann_id, str):
                 anns = self._draft_data.get("annotations", [])
                 if isinstance(anns, list):
@@ -1800,10 +1840,27 @@ class MainWindow(QMainWindow):
 
         def on_item_restored(item):
             """Callback when item is restored (undo)."""
+            ann_id = item.data(ANN_ID_KEY)
             # Re-attach port to its parent shape
             if isinstance(item, MetaPortItem) and item._parent_shape:
-                item.setParentItem(item._parent_shape)
+                if item.parentItem() is not item._parent_shape:
+                    item.setParentItem(item._parent_shape)
                 item._update_position_from_t()
+            # Restore port→line connections when restoring a port
+            if isinstance(item, MetaPortItem) and item._connections:
+                for line_id in item._connections:
+                    for si in self.scene.items():
+                        if hasattr(si, '_port_ids') and si.ann_id == line_id:
+                            if isinstance(ann_id, str) and ann_id not in si._port_ids:
+                                si._port_ids.append(ann_id)
+                            break
+            # Restore port connections when restoring a line/curve/orthocurve
+            if hasattr(item, '_port_ids'):
+                # Rebuild _port_ids from ports that still reference this item
+                for si in self.scene.items():
+                    if isinstance(si, MetaPortItem) and isinstance(ann_id, str):
+                        if ann_id in si._connections and si.ann_id not in item._port_ids:
+                            item._port_ids.append(si.ann_id)
             # Re-add to JSON: the item itself + any child ports
             if self._link_enabled and self._draft_data and hasattr(item, "to_record"):
                 anns = self._draft_data.get("annotations", [])
@@ -1838,8 +1895,17 @@ class MainWindow(QMainWindow):
                 on_remove_callback=on_item_removed
             )
 
-        self.undo_stack.push(cmd)
-        self.props.set_item(None)
+        self._deleting_items = True
+        try:
+            self.undo_stack.push(cmd)
+            self.props.set_item(None)
+        finally:
+            self._deleting_items = False
+
+        # Also clean up _port_refs for deleted ports
+        for item in items:
+            if isinstance(item, MetaPortItem) and hasattr(item, 'ann_id'):
+                self._port_refs.pop(item.ann_id, None)
 
         # Update draft editor
         if self._link_enabled and self._draft_data:
@@ -2467,6 +2533,13 @@ class MainWindow(QMainWindow):
                     if isinstance(si, MetaPortItem) and hasattr(si, 'ann_id'):
                         if si.parentItem() is None:
                             self._port_refs[si.ann_id] = si
+
+                # ── Sync port connections → line/curve _port_ids ──
+                # After all items exist, populate _port_ids on lines/curves
+                # from port _connections lists and snap endpoints.
+                for si in self.scene.items():
+                    if isinstance(si, MetaPortItem) and si._connections:
+                        si._update_connected_lines()
 
             # Restore selection if the item still exists
             restored_id = None

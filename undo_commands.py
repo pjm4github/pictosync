@@ -279,17 +279,27 @@ class DeleteItemCommand(QUndoCommand):
         self.on_add_callback = on_add_callback
         self.on_remove_callback = on_remove_callback
         self.z_value = item.zValue()
+        # Save parent for port re-parenting on undo
+        self._saved_parent = item.parentItem()
         ann_id = getattr(item, 'ann_id', 'item')
         kind = getattr(getattr(item, 'meta', None), 'kind', 'item')
         self.setText(f"Delete {kind} {ann_id}")
 
     def undo(self):
-        self.scene.addItem(self.item)
+        if self._saved_parent and self._saved_parent.scene() is not None:
+            self.item.setParentItem(self._saved_parent)
+        else:
+            self.scene.addItem(self.item)
         self.item.setZValue(self.z_value)
         if self.on_add_callback:
             self.on_add_callback(self.item)
 
     def redo(self):
+        # Detach from parent before removing so Qt doesn't interfere
+        if self.item.parentItem() is not None:
+            self.item.setParentItem(None)
+            if self.item.scene() is None:
+                self.scene.addItem(self.item)
         self.scene.removeItem(self.item)
         if self.on_remove_callback:
             self.on_remove_callback(self.item)

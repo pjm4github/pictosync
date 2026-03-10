@@ -152,7 +152,14 @@
           "then": {
             "properties": {
               "geom": { "$ref": "#/$defs/lineGeometry" },
-              "style": { "$ref": "#/$defs/lineStyleDefinition" }
+              "style": { "$ref": "#/$defs/lineStyleDefinition" },
+              "ports": {
+                "type": "array",
+                "items": { "type": "string" },
+                "readOnly": true,
+                "default": [],
+                "description": "Connected port annotation IDs (read-only, computed)"
+              }
             }
           }
         },
@@ -254,7 +261,14 @@
           "then": {
             "properties": {
               "geom": { "$ref": "#/$defs/curveGeometry" },
-              "style": { "$ref": "#/$defs/lineStyleDefinition" }
+              "style": { "$ref": "#/$defs/lineStyleDefinition" },
+              "ports": {
+                "type": "array",
+                "items": { "type": "string" },
+                "readOnly": true,
+                "default": [],
+                "description": "Connected port annotation IDs (read-only, computed)"
+              }
             }
           }
         },
@@ -265,7 +279,14 @@
           "then": {
             "properties": {
               "geom": { "$ref": "#/$defs/orthoCurveGeometry" },
-              "style": { "$ref": "#/$defs/lineStyleDefinition" }
+              "style": { "$ref": "#/$defs/lineStyleDefinition" },
+              "ports": {
+                "type": "array",
+                "items": { "type": "string" },
+                "readOnly": true,
+                "default": [],
+                "description": "Connected port annotation IDs (read-only, computed)"
+              }
             }
           }
         },

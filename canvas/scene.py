@@ -83,6 +83,8 @@ class AnnotatorScene(QGraphicsScene):
         self._ortho_direction: Optional[str] = None
         # Sequence block type (alt/loop/opt/critical/break/par)
         self._seqblock_type: str = "alt"
+        # Alt+drag port tracking
+        self._alt_drag_port: Optional[MetaPortItem] = None
 
     @property
     def is_interacting(self) -> bool:
@@ -382,6 +384,28 @@ class AnnotatorScene(QGraphicsScene):
                 event.accept()
                 return
 
+        # Alt+click in SELECT mode: prefer port items underneath lines.
+        # Search a small area around the click to find ports that may be
+        # obscured by line endpoints on top.
+        if (event.button() == Qt.MouseButton.LeftButton
+                and self.mode == Mode.SELECT
+                and event.modifiers() & Qt.KeyboardModifier.AltModifier):
+            pos = event.scenePos()
+            hit_r = 10.0  # search radius in scene coords
+            hit_rect = QRectF(pos.x() - hit_r, pos.y() - hit_r,
+                              2 * hit_r, 2 * hit_r)
+            for candidate in self.items(hit_rect):
+                if isinstance(candidate, MetaPortItem):
+                    if not event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                        self.clearSelection()
+                    candidate.setSelected(True)
+                    # Start perimeter drag — track in scene for move/release forwarding
+                    candidate._dragging = True
+                    candidate._press_scene = pos
+                    self._alt_drag_port = candidate
+                    event.accept()
+                    return
+
         # In SELECT mode, ensure clicking on a group child selects the group
         if event.button() == Qt.MouseButton.LeftButton and self.mode == Mode.SELECT:
             item = self.itemAt(event.scenePos(), self.views()[0].transform() if self.views() else None)
@@ -400,6 +424,11 @@ class AnnotatorScene(QGraphicsScene):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        # Alt+drag port forwarding
+        if self._alt_drag_port is not None:
+            self._alt_drag_port.mouseMoveEvent(event)
+            return
+
         # Polygon preview: dashed line from last point to cursor
         if self.mode == Mode.POLYGON and self._polygon_points:
             self._update_polygon_preview(event.scenePos())
@@ -446,6 +475,12 @@ class AnnotatorScene(QGraphicsScene):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        # Alt+drag port forwarding
+        if self._alt_drag_port is not None:
+            self._alt_drag_port.mouseReleaseEvent(event)
+            self._alt_drag_port = None
+            return
+
         if self._drag_start is not None and self._temp_item is not None:
             if self._on_new_item:
                 self._on_new_item(self._temp_item)

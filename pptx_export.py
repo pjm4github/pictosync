@@ -368,19 +368,19 @@ def _add_line(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
             # Create ln element if it doesn't exist
             ln = etree.SubElement(spPr, qn("a:ln"))
 
+        # Add head (start) arrow — must come before tailEnd in OOXML
+        if arrow_mode in ("start", "both"):
+            head_end = ln.find(qn("a:headEnd"))
+            if head_end is None:
+                head_end = etree.SubElement(ln, qn("a:headEnd"))
+            head_end.set("type", "triangle")
+
         # Add tail (end) arrow
         if arrow_mode in ("end", "both"):
             tail_end = ln.find(qn("a:tailEnd"))
             if tail_end is None:
                 tail_end = etree.SubElement(ln, qn("a:tailEnd"))
             tail_end.set("type", "triangle")
-
-        # Add head (start) arrow
-        if arrow_mode in ("start", "both"):
-            head_end = ln.find(qn("a:headEnd"))
-            if head_end is None:
-                head_end = etree.SubElement(ln, qn("a:headEnd"))
-            head_end.set("type", "triangle")
 
     # Add text label as a text box at the midpoint of the line
     meta = record.get("meta", {})
@@ -730,16 +730,17 @@ def _add_curve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
         ln = spPr.find(qn("a:ln"))
         if ln is None:
             ln = etree.SubElement(spPr, qn("a:ln"))
-        if arrow_mode in ("end", "both"):
-            tail_end = ln.find(qn("a:tailEnd"))
-            if tail_end is None:
-                tail_end = etree.SubElement(ln, qn("a:tailEnd"))
-            tail_end.set("type", "triangle")
+        # headEnd must come before tailEnd in OOXML element order
         if arrow_mode in ("start", "both"):
             head_end = ln.find(qn("a:headEnd"))
             if head_end is None:
                 head_end = etree.SubElement(ln, qn("a:headEnd"))
             head_end.set("type", "triangle")
+        if arrow_mode in ("end", "both"):
+            tail_end = ln.find(qn("a:tailEnd"))
+            if tail_end is None:
+                tail_end = etree.SubElement(ln, qn("a:tailEnd"))
+            tail_end.set("type", "triangle")
 
     # ── Text label at curve midpoint ──
     meta = record.get("meta", {})
@@ -1161,16 +1162,17 @@ def _add_orthocurve(slide, record: Dict[str, Any], scale_x: float, scale_y: floa
         ln = spPr.find(qn("a:ln"))
         if ln is None:
             ln = etree.SubElement(spPr, qn("a:ln"))
-        if arrow_mode in ("end", "both"):
-            tail_end = ln.find(qn("a:tailEnd"))
-            if tail_end is None:
-                tail_end = etree.SubElement(ln, qn("a:tailEnd"))
-            tail_end.set("type", "triangle")
+        # headEnd must come before tailEnd in OOXML element order
         if arrow_mode in ("start", "both"):
             head_end = ln.find(qn("a:headEnd"))
             if head_end is None:
                 head_end = etree.SubElement(ln, qn("a:headEnd"))
             head_end.set("type", "triangle")
+        if arrow_mode in ("end", "both"):
+            tail_end = ln.find(qn("a:tailEnd"))
+            if tail_end is None:
+                tail_end = etree.SubElement(ln, qn("a:tailEnd"))
+            tail_end.set("type", "triangle")
 
     # ── Text label at polyline midpoint ──
     meta = record.get("meta", {})
