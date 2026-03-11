@@ -647,10 +647,14 @@ class AnnotatorScene(QGraphicsScene):
             if i == 0:
                 nodes.append({"cmd": "M", "x": rx, "y": ry})
             elif is_ortho and i > 0:
+                is_last = (i == len(points) - 1)
                 prev = points[i - 1]
                 prev_rx = (prev.x() - min_x) / w if w > 0 else 0.0
                 prev_ry = (prev.y() - min_y) / h if h > 0 else 0.0
-                if abs(ry - prev_ry) < 1e-6:
+                if is_last:
+                    # Last point: L node so it can be dragged freely in x+y
+                    nodes.append({"cmd": "L", "x": rx, "y": ry})
+                elif abs(ry - prev_ry) < 1e-6:
                     # Same Y → horizontal segment
                     nodes.append({"cmd": "H", "x": rx})
                 elif abs(rx - prev_rx) < 1e-6:

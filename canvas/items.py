@@ -3540,19 +3540,26 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 else:  # V
                     target_x, target_y = prev_x, ny
 
-                # Check if next node forms an H/V corner and we have a bend radius
+                # Check if next node forms a corner and we have a bend radius.
+                # Corners: H→V, V→H, or H/V→L (final endpoint).
                 next_node = self._nodes[i + 1] if i + 1 < len(self._nodes) else None
                 next_cmd = next_node.get("cmd", "") if next_node else ""
-                has_corner = (r > 0 and cmd in ("H", "V") and next_cmd in ("H", "V")
-                              and next_cmd != cmd)
+                has_hv_corner = (r > 0 and next_cmd in ("H", "V")
+                                 and next_cmd != cmd)
+                has_endpoint_corner = (r > 0 and next_cmd == "L"
+                                       and i + 1 == len(self._nodes) - 1)
+                has_corner = has_hv_corner or has_endpoint_corner
 
                 if has_corner:
                     # Compute next segment endpoint
                     if next_cmd == "H":
                         next_target_x = next_node.get("x", target_x)
                         next_target_y = target_y
-                    else:  # V
+                    elif next_cmd == "V":
                         next_target_x = target_x
+                        next_target_y = next_node.get("y", target_y)
+                    else:  # L endpoint
+                        next_target_x = next_node.get("x", target_x)
                         next_target_y = next_node.get("y", target_y)
 
                     # Incoming segment length (in pixels)
@@ -4237,6 +4244,25 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 else:
                     node["x"] = rx
                     node["y"] = ry
+                # Orthocurve: keep final edge orthogonal
+                idx = self._active_node
+                if isinstance(self, MetaOrthoCurveItem):
+                    # Last L endpoint dragged: adjust previous H/V
+                    if cmd == "L" and idx > 0:
+                        prev = self._nodes[idx - 1]
+                        prev_cmd = prev.get("cmd")
+                        if prev_cmd == "H":
+                            prev["x"] = rx
+                        elif prev_cmd == "V":
+                            prev["y"] = ry
+                    # H/V node dragged: propagate to next L endpoint
+                    if cmd in ("H", "V") and idx + 1 < len(self._nodes):
+                        nxt = self._nodes[idx + 1]
+                        if nxt.get("cmd") == "L":
+                            if cmd == "H":
+                                nxt["x"] = rx
+                            elif cmd == "V":
+                                nxt["y"] = ry
             elif htype == "c1":
                 node["c1x"] = rx
                 node["c1y"] = ry
@@ -4292,6 +4318,7 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def mouseReleaseEvent(self, event):
         if self._rotating:
             self._end_rotation()
+            self._reattach_port_endpoints()
             event.accept()
             return
         if self._node_dragging:
@@ -4770,6 +4797,66 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._add_angle_to_geom(rec.get("geom", {}))
         return rec
 
+    def _reattach_port_endpoints(self):
+        """Recalculate connected endpoint positions after rotation.
+
+        After rotation, local-to-scene mapping changes.  For each connected
+        port, convert the port's scene position into the curve's (now rotated)
+        local coordinate system and update the endpoint node so the curve
+        still visually touches the port.
+        """
+        if not self._port_endpoints:
+            return
+        scene = self.scene()
+        if not scene:
+            return
+        w = self._width if self._width > 0 else 1.0
+        h = self._height if self._height > 0 else 1.0
+        first_idx = 0
+        last_idx = self._last_anchor_index()
+
+        for port_id, which in self._port_endpoints.items():
+            # Find the port in the scene
+            port = None
+            for si in scene.items():
+                if isinstance(si, MetaPortItem) and si.ann_id == port_id:
+                    port = si
+                    break
+            if port is None:
+                continue
+
+            port_scene = port.mapToScene(QPointF(0, 0))
+            local = self.mapFromScene(port_scene)
+            rx = local.x() / w
+            ry = local.y() / h
+
+            idx = first_idx if which == "start" else last_idx
+            node = self._nodes[idx]
+            cmd = node.get("cmd", "L")
+            if cmd == "H":
+                node["x"] = rx
+            elif cmd == "V":
+                node["y"] = ry
+            else:
+                node["x"] = rx
+                node["y"] = ry
+
+            # Orthocurve: also adjust adjacent node for end
+            if (isinstance(self, MetaOrthoCurveItem)
+                    and which == "end" and idx >= 1):
+                adj = self._nodes[idx - 1]
+                adj_cmd = adj.get("cmd")
+                if adj_cmd == "H":
+                    adj["x"] = rx
+                elif adj_cmd == "V":
+                    adj["y"] = ry
+
+        self.prepareGeometryChange()
+        self._update_path()
+        self._update_label_position()
+        self._update_transform_origin()
+        self._notify_changed()
+
     def _disconnect_end(self, which: str):
         """Remove port connection for the given endpoint ('start' or 'end')."""
         to_remove = [pid for pid, end in self._port_endpoints.items()
@@ -4851,26 +4938,49 @@ class MetaOrthoCurveItem(MetaCurveItem):
         return False
 
     def _extend_ortho_end(self, scene_pt: QPointF):
-        """Append an orthogonal segment at the end of the curve."""
+        """Append an orthogonal segment at the end of the curve.
+
+        The previous last node (L endpoint) is converted to H/V, and the
+        new endpoint becomes an L node so it can be freely dragged.
+        """
         self._begin_resize_tracking()
         p = self.pos()
         rx = (scene_pt.x() - p.x()) / self._width if self._width > 0 else 0.5
         ry = (scene_pt.y() - p.y()) / self._height if self._height > 0 else 0.5
 
         last_idx = self._last_path_index()
-        last_cmd = self._nodes[last_idx].get("cmd", "L")
+        last_node = self._nodes[last_idx]
+        last_cmd = last_node.get("cmd", "L")
+        last_ax, last_ay = self._get_node_anchor(last_idx)
 
+        # Determine direction for the new segment
         if last_cmd == "H":
-            new_node = {"cmd": "V", "y": ry}
+            direction = "V"
         elif last_cmd == "V":
-            new_node = {"cmd": "H", "x": rx}
-        else:
-            last_ax, last_ay = self._get_node_anchor(last_idx)
-            if abs(rx - last_ax) >= abs(ry - last_ay):
-                new_node = {"cmd": "H", "x": rx}
+            direction = "H"
+        elif last_cmd == "L":
+            # Convert old L endpoint to H or V based on predecessor
+            prev_cmd = self._nodes[last_idx - 1].get("cmd", "M") if last_idx > 0 else "M"
+            if prev_cmd in ("H", "M", "L"):
+                # Previous was horizontal-ish → old endpoint becomes V
+                last_node["cmd"] = "V"
+                last_node["y"] = last_ay
+                last_node.pop("x", None)
+                direction = "H"
             else:
-                new_node = {"cmd": "V", "y": ry}
+                # Previous was V → old endpoint becomes H
+                last_node["cmd"] = "H"
+                last_node["x"] = last_ax
+                last_node.pop("y", None)
+                direction = "V"
+        else:
+            if abs(rx - last_ax) >= abs(ry - last_ay):
+                direction = "H"
+            else:
+                direction = "V"
 
+        # New endpoint is always L (freely draggable)
+        new_node = {"cmd": "L", "x": rx, "y": ry}
         self._nodes.insert(last_idx + 1, new_node)
         self._recalculate_bbox()
         self._notify_changed()
@@ -4910,15 +5020,18 @@ class MetaOrthoCurveItem(MetaCurveItem):
     # ---- Ortho control handle positions ----
 
     def _ortho_handle_points_local(self) -> Dict[str, QPointF]:
-        """Return local positions of ortho control handles at each H/V node."""
+        """Return local positions of ortho control handles at each H/V node.
+
+        The last L endpoint is only editable in node-editing mode (double-click),
+        matching the M start point behaviour — both show as yellow handles.
+        """
         handles: Dict[str, QPointF] = {}
         w, h = self._width, self._height
         for i in range(1, len(self._nodes)):
             cmd = self._nodes[i].get("cmd", "L")
-            if cmd not in ("H", "V"):
-                continue
-            ax, ay = self._get_node_anchor(i)
-            handles[f"ortho_{i}"] = QPointF(ax * w, ay * h)
+            if cmd in ("H", "V"):
+                ax, ay = self._get_node_anchor(i)
+                handles[f"ortho_{i}"] = QPointF(ax * w, ay * h)
         return handles
 
     # ---- Ortho node insertion ----
@@ -4981,6 +5094,18 @@ class MetaOrthoCurveItem(MetaCurveItem):
         self.prepareGeometryChange()
         self._nodes.insert(edge_idx + 1, new_node)
         self._flip_subsequent_hv(edge_idx + 2)
+
+        # Keep L endpoint orthogonal to its new predecessor
+        last_idx = self._last_path_index()
+        last_node = self._nodes[last_idx]
+        if last_node.get("cmd") == "L" and last_idx > 0:
+            before_last = self._nodes[last_idx - 1]
+            bl_cmd = before_last.get("cmd")
+            if bl_cmd == "H":
+                last_node["x"] = before_last.get("x", last_node.get("x", 0))
+            elif bl_cmd == "V":
+                last_node["y"] = before_last.get("y", last_node.get("y", 0))
+
         self._update_path()
         self._update_label_position()
         self._update_transform_origin()
@@ -5039,18 +5164,35 @@ class MetaOrthoCurveItem(MetaCurveItem):
             prev = self._nodes[idx - 1]
             cmd = node.get("cmd")
             prev_cmd = prev.get("cmd")
+            # Check if next node is the L endpoint
+            nxt = self._nodes[idx + 1] if idx + 1 < len(self._nodes) else None
+            nxt_cmd = nxt.get("cmd") if nxt else None
             if cmd == "H":
                 node["x"] = rx
                 if prev_cmd == "V":
                     prev["y"] = ry
                 elif prev_cmd in ("M", "L"):
                     prev["y"] = ry
+                # Propagate x to next L endpoint to keep final edge orthogonal
+                if nxt_cmd == "L":
+                    nxt["x"] = rx
             elif cmd == "V":
                 node["y"] = ry
                 if prev_cmd == "H":
                     prev["x"] = rx
                 elif prev_cmd in ("M", "L"):
                     prev["x"] = rx
+                # Propagate y to next L endpoint to keep final edge orthogonal
+                if nxt_cmd == "L":
+                    nxt["y"] = ry
+            elif cmd == "L":
+                # Last endpoint: move freely, adjust previous H/V
+                node["x"] = rx
+                node["y"] = ry
+                if prev_cmd == "H":
+                    prev["x"] = rx
+                elif prev_cmd == "V":
+                    prev["y"] = ry
             self.prepareGeometryChange()
             self._update_path()
             self._update_label_position()
@@ -6786,8 +6928,10 @@ class MetaPortItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
             idx = first_idx if at_start else last_idx
             w = item._width if item._width > 0 else 1.0
             h = item._height if item._height > 0 else 1.0
-            rx = (port_pos.x() - item.pos().x()) / w
-            ry = (port_pos.y() - item.pos().y()) / h
+            # Use mapFromScene for rotation-aware coordinate conversion
+            local = item.mapFromScene(port_pos)
+            rx = local.x() / w
+            ry = local.y() / h
             node = item._nodes[idx]
             cmd = node.get("cmd", "L")
             # Move the endpoint node

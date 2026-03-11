@@ -4,7 +4,7 @@
 
 # PictoSync
 
-**v1.10** | PNG Image Canvas Tool for Object Synchronization
+**v1.11** | PNG Image Canvas Tool for Object Synchronization
 
 Diagram annotation tool with AI-powered extraction and bidirectional sync.
 
@@ -21,12 +21,12 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 - **Manual Drawing Tools**: Rectangle, rounded rectangle, ellipse, hexagon, cylinder, block arrow, isometric cube, polygon, curve, orthogonal curve, line, text, and port annotations
 - **Isometric Cube**: Container shape with configurable extrusion depth and angle (0–360°); drag control handles to adjust depth and direction interactively
 - **Curve Tool**: Click-click placement of SVG path-like curves with node editing; supports cubic bezier (`C`), quadratic bezier (`Q`), arc (`A`), and line (`L`) segments; right-click nodes to change type; arrowhead support (none, start, end, both)
-- **Orthogonal Curve**: Curve variant restricted to horizontal/vertical segments (M/H/V nodes) with optional corner bend radius; Ctrl+click to extend; arrowhead support
+- **Orthogonal Curve**: Curve variant restricted to horizontal/vertical segments (M/H/V nodes) with optional corner bend radius; Ctrl+click to extend; arrowhead support; last endpoint is an L node (freely draggable in both axes, matching M start point behavior); dragging the last or second-to-last point keeps the final segment orthogonal; bend radius applies to the final corner
 - **Polygon Tool**: Multi-click vertex placement with right-click to close; double-click to enter vertex editing mode with draggable control knobs; right-click vertices to delete, right-click edges to add vertices
 - **Text Labels**: All shapes support label, tech, and note text with customizable formatting
 - **Text Alignment**: Vertical alignment (top/middle/bottom) and line spacing controls
 - **Rotation**: All shapes support rotation via drag handle (green knob) or property panel angle spinner (0–359°); rotation-aware resize handles follow the rotated axis; cursor shapes rotate with the item
-- **Port Connections**: Attach port connectors to any shape's perimeter; ports track a parametric position (t) and move with their parent; drag ports along the perimeter to reposition; support In/Out/InOut direction indicators with protocol labels; unparent ports via JSON editor to free-place them on the canvas; connected lines/curves follow port positions automatically
+- **Port Connections**: Attach port connectors to any shape's perimeter; ports track a parametric position (t) and move with their parent; drag ports along the perimeter to reposition; support In/Out/InOut direction indicators with protocol labels; unparent ports via JSON editor to free-place them on the canvas; connected lines/curves follow port positions automatically; snap-to-port with visual feedback (cyan glow) when dragging line/curve endpoints near a port; disconnect by dragging an endpoint away from a port; Alt+click/drag to select and move ports underneath overlapping lines; external direction badge shows port type even when lines obscure the port
 - **Pen Styles**: Solid or dashed lines with configurable dash pattern (length, solid percent)
 - **Z-Order Control**: Right-click context menu to "Bring to Front" or "Send to Back"
 - **Auto-Stacking**: New shapes automatically appear on top of existing items
@@ -89,7 +89,7 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 - **Isometric Cube**: Exported as PowerPoint CUBE auto-shape with depth adjustment and flipH/flipV for angle mapping
 - **Orthogonal Curve**: Exported as freeform polyline from M/H/V nodes with arrowhead support
 - **Curve Labels**: Label/tech/note text placed at the parametric midpoint (t=0.5) of the actual curve path
-- **Arrowheads**: Line, curve, and orthogonal curve arrowheads exported via `tailEnd`/`headEnd` attributes
+- **Arrowheads**: Line, curve, and orthogonal curve arrowheads exported via `headEnd`/`tailEnd` attributes; correct OOXML element ordering for dual-arrow (both) mode
 - **Semi-Transparent Fills**: Fill colors with alpha transparency export with PPTX transparency (not discarded)
 - **Fill & Text Colors**: Fill colors, border colors, text colors, font sizes, and alignment
 - **Polygon Freeforms**: Polygon shapes exported as PowerPoint freeform shapes
@@ -224,13 +224,15 @@ python -m pytest tests/test_scroll_preservation.py -v
 | Ctrl+Y | Redo |
 | Ctrl+S | Save project |
 | Ctrl+O | Open project |
+| Alt+Click | Select port underneath overlapping lines |
 | Delete | Delete selected item |
 
 ### Tips
 - **Z-Order**: Right-click a selected shape for "Bring to Front" / "Send to Back"
 - **Iso Cube**: Drag the depth handle to change extrusion depth; drag the angle handle to rotate the extrusion direction
 - **Curve Editing**: Double-click a curve to enter node editing mode; right-click a node to change its type (Line, Cubic, Quadratic, Arc)
-- **Orthogonal Curve**: Select "Ortho" from the curve dropdown; Ctrl+click to extend with new H/V segments
+- **Port Connections**: Drag a line/curve endpoint near a port to snap-connect; drag it away to disconnect; Alt+click/drag to move a port underneath an attached line
+- **Orthogonal Curve**: Select "Ortho" from the curve dropdown; Ctrl+click to extend with new H/V segments; double-click to edit start/end points (yellow handles)
 - **Focus Mode**: Click the lamp icon to collapse all annotations except the selected one
 - **Schema Check**: Enable the Schema checkbox to see missing/extra fields; right-click gray ghost fields to accept them
 - **Hide PNG**: Toggle background visibility when annotations obscure the image
@@ -363,6 +365,18 @@ See `schemas/annotation_schema.json` for the full specification.
 **Y** = implemented, **—** = test data collected, parser not yet implemented
 
 ## Version History
+
+### v1.11 (2026-03-10)
+- **Snap-to-port**: Line, curve, and orthocurve endpoints snap to ports with cyan glow visual feedback; bidirectional connection model tracks which end (start/end) is connected to which port
+- **Port disconnect**: Drag a connected endpoint away from a port to cleanly disconnect; all data structures (port connections, line port_ids, endpoint mapping) are cleaned up automatically
+- **Alt+click/drag ports**: Hold Alt and click/drag to select and move ports underneath overlapping lines; scene forwards mouse events to the port for perimeter dragging
+- **Port direction badge**: Connected ports display an external direction indicator (triangle for In/Out, diamond for InOut) on the inward side, visible even when lines obscure the port center
+- **Connected lines follow movement**: Moving a shape with ports that have connections automatically updates all connected line/curve endpoints
+- **Rotation-aware port connections**: Rotating a curve recalculates connected endpoints using `mapFromScene` so they stay attached to their ports; `_snap_endpoint` also uses rotation-aware coordinate conversion
+- **Orthocurve L endpoint**: Last point of orthocurves is now an L node (freely draggable in both axes); editable only in node-editing mode (double-click) like the M start point; final edge stays orthogonal — dragging last or second-to-last point propagates coordinates to maintain perpendicularity
+- **Orthocurve bend radius on final corner**: The H/V → L transition at the end of an orthocurve now receives the adjust1 bend radius, matching all other H/V corners
+- **Orthocurve node insertion**: Right-clicking the final edge to insert a node updates the L endpoint to maintain orthogonality with its new predecessor
+- **PPTX dual arrow fix**: Corrected OOXML element ordering (`headEnd` before `tailEnd`) for lines with arrows on both ends
 
 ### v1.10 (2026-03-08)
 - **Port connector tool**: New drawing tool (O) for attaching connector ports to any shape's perimeter; ports track a parametric position (t=0–1) on the parent's edge and move automatically when the parent is resized or repositioned
