@@ -1,0 +1,148 @@
+<svg width="100%" viewBox="0 0 680 660" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#888780" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <style>
+    .th { font-family: sans-serif; font-size: 13px; font-weight: 500; }
+    .ts { font-family: sans-serif; font-size: 11px; font-weight: 400; }
+    .tb { font-family: sans-serif; font-size: 10px; font-weight: 400; }
+    .arr { stroke: #888780; stroke-width: 0.8; fill: none; }
+    .box-gray   { fill: #F1EFE8; stroke: #888780; stroke-width: 0.5; }
+    .box-purple { fill: #EEEDFE; stroke: #534AB7; stroke-width: 0.5; }
+    .box-teal   { fill: #E1F5EE; stroke: #0F6E56; stroke-width: 0.5; }
+    .box-coral  { fill: #FAECE7; stroke: #993C1D; stroke-width: 0.5; }
+    .box-blue   { fill: #E6F1FB; stroke: #185FA5; stroke-width: 0.5; }
+    .box-amber  { fill: #FAEEDA; stroke: #854F0B; stroke-width: 0.5; }
+    .c-gray     { fill: #2C2C2A; }
+    .c-purple   { fill: #3C3489; }
+    .c-purplesub{ fill: #534AB7; }
+    .c-graymid  { fill: #5F5E5A; }
+    .c-teal     { fill: #085041; }
+    .c-coral    { fill: #712B13; }
+    .c-blue     { fill: #0C447C; }
+    .c-amber    { fill: #633806; }
+  </style>
+</defs>
+
+<!-- ═══════════════════════════════════════════════
+     V1 FOUNDATION  y=490–628
+     outer gray box: x=40 w=600 h=138
+     inner teal boxes: 4x w=130 gap=10 leftpad=20
+     ═══════════════════════════════════════════════ -->
+<rect x="40"  y="490" width="600" height="138" rx="12" class="box-gray"/>
+<text class="th c-gray" x="60" y="512">pictosync v1 — diagram foundation</text>
+
+<rect x="60"  y="524" width="130" height="88" rx="7" class="box-teal"/>
+<text class="th c-teal" x="125" y="547" text-anchor="middle">ANTLR4 grammars</text>
+<text class="ts c-teal" x="125" y="562" text-anchor="middle">Flowchart, State</text>
+<text class="ts c-teal" x="125" y="577" text-anchor="middle">Sequence, C4</text>
+
+<rect x="200" y="524" width="130" height="88" rx="7" class="box-teal"/>
+<text class="th c-teal" x="265" y="547" text-anchor="middle">SVGNodeRegistry</text>
+<text class="ts c-teal" x="265" y="562" text-anchor="middle">AST ↔ SVG</text>
+<text class="ts c-teal" x="265" y="577" text-anchor="middle">bidirectional index</text>
+
+<rect x="340" y="524" width="130" height="88" rx="7" class="box-teal"/>
+<text class="th c-teal" x="405" y="547" text-anchor="middle">PyQt6 canvas</text>
+<text class="ts c-teal" x="405" y="562" text-anchor="middle">QGraphicsScene</text>
+<text class="ts c-teal" x="405" y="577" text-anchor="middle">render + interact</text>
+
+<rect x="480" y="524" width="130" height="88" rx="7" class="box-teal"/>
+<text class="th c-teal" x="545" y="547" text-anchor="middle">mmdc pipeline</text>
+<text class="ts c-teal" x="545" y="562" text-anchor="middle">Mermaid → SVG</text>
+<text class="ts c-teal" x="545" y="577" text-anchor="middle">non-headless</text>
+
+<!-- builds-on arrow -->
+<line x1="340" y1="488" x2="340" y2="452" class="arr" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+<text class="ts c-graymid" x="350" y="473">builds on</text>
+
+<!-- ═══════════════════════════════════════════════
+     V2 IDE LAYER  y=40–442
+     outer purple: x=40 w=600 h=402
+     LEFT col: x=60–394 w=334
+       top row (coral): two boxes w=157 gap=20
+       mid row (blue):  two boxes w=157 gap=20
+       export (blue):   full width w=334 h=96
+     RIGHT col: x=414–620 w=206
+       review gate (amber): full height h=376
+     ═══════════════════════════════════════════════ -->
+<rect x="40" y="40" width="600" height="442" rx="12" class="box-purple"/>
+<text class="th c-purple" x="60" y="63">pictosync v2 — agentic specification IDE</text>
+<text class="ts c-purplesub" x="60" y="80">human-monitored agent orchestration · interconnection specifications</text>
+
+<!-- LEFT TOP ROW — coral, y=94 h=66 -->
+<rect x="60"  y="94" width="157" height="66" rx="7" class="box-coral"/>
+<text class="th c-coral" x="138" y="116" text-anchor="middle">Agent workspace</text>
+<text class="ts c-coral" x="138" y="131" text-anchor="middle">goal decomposition</text>
+<text class="ts c-coral" x="138" y="146" text-anchor="middle">spec generation loop</text>
+
+<rect x="237" y="94" width="157" height="66" rx="7" class="box-coral"/>
+<text class="th c-coral" x="315" y="116" text-anchor="middle">Diagram canvas</text>
+<text class="ts c-coral" x="315" y="131" text-anchor="middle">live spec rendering</text>
+<text class="ts c-coral" x="315" y="146" text-anchor="middle">v1 SVGNodeRegistry</text>
+
+<line x1="217" y1="127" x2="235" y2="127" class="arr" marker-end="url(#arrow)"/>
+
+<!-- LEFT MID ROW — blue, y=176 h=84 -->
+<rect x="60"  y="176" width="157" height="84" rx="7" class="box-blue"/>
+<text class="th c-blue" x="138" y="198" text-anchor="middle">Goal editor</text>
+<text class="ts c-blue" x="138" y="214" text-anchor="middle">objective hierarchy</text>
+<text class="ts c-blue" x="138" y="229" text-anchor="middle">acceptance criteria</text>
+<text class="ts c-blue" x="138" y="244" text-anchor="middle">safety bounds</text>
+
+<rect x="237" y="176" width="157" height="84" rx="7" class="box-blue"/>
+<text class="th c-blue" x="315" y="198" text-anchor="middle">Spec artifact store</text>
+<text class="ts c-blue" x="315" y="214" text-anchor="middle">versioned diagrams</text>
+<text class="ts c-blue" x="315" y="229" text-anchor="middle">decision log + diff</text>
+<text class="ts c-blue" x="315" y="244" text-anchor="middle">lineage view</text>
+
+<!-- vertical arrows top→mid -->
+<line x1="138" y1="160" x2="138" y2="174" class="arr" marker-end="url(#arrow)"/>
+<line x1="315" y1="160" x2="315" y2="174" class="arr" marker-end="url(#arrow)"/>
+
+<!-- LEFT EXPORT BAR — blue, y=276 h=190 -->
+<rect x="60" y="276" width="334" height="190" rx="7" class="box-blue"/>
+<text class="th c-blue" x="227" y="297" text-anchor="middle">Export / handoff</text>
+<text class="ts c-blue" x="227" y="313" text-anchor="middle">safety-critical systems</text>
+<line x1="72" y1="320" x2="382" y2="320" stroke="#185FA5" stroke-width="0.5" stroke-dasharray="3 3"/>
+<text class="tb c-blue" x="227" y="337" text-anchor="middle">JSON schema</text>
+<text class="tb c-blue" x="227" y="354" text-anchor="middle">SCADA descriptors</text>
+<text class="tb c-blue" x="227" y="371" text-anchor="middle">domain-specific OT formats</text>
+<text class="tb c-blue" x="227" y="388" text-anchor="middle">Mermaid source</text>
+<text class="tb c-blue" x="227" y="405" text-anchor="middle">CVE / SBOM artifacts</text>
+<text class="tb c-blue" x="227" y="422" text-anchor="middle">audit log package</text>
+
+<!-- vertical arrows mid→export -->
+<line x1="138" y1="260" x2="138" y2="274" class="arr" marker-end="url(#arrow)"/>
+<line x1="315" y1="260" x2="315" y2="274" class="arr" marker-end="url(#arrow)"/>
+
+<!-- RIGHT COLUMN — amber review gate, x=414 y=94 w=206 h=372 → bottom=466 < 482 ✓ -->
+<rect x="414" y="94" width="206" height="372" rx="7" class="box-amber"/>
+<text class="th c-amber" x="517" y="116" text-anchor="middle">Human review gate</text>
+<text class="ts c-amber" x="517" y="132" text-anchor="middle">Approve · Reject · Redirect</text>
+<text class="ts c-amber" x="517" y="147" text-anchor="middle">Annotate · Decision log</text>
+<line x1="426" y1="155" x2="608" y2="155" stroke="#854F0B" stroke-width="0.5" stroke-dasharray="3 3"/>
+
+<text class="ts c-amber" x="426" y="170" style="font-weight:600;">Safety standard checks:</text>
+
+<text class="tb c-amber" x="428" y="188">▸ Memory safety enforced</text>
+<text class="tb c-amber" x="428" y="204">▸ Injection prevention</text>
+<text class="tb c-amber" x="428" y="220">▸ No hardcoded credentials</text>
+<text class="tb c-amber" x="428" y="236">▸ MFA on privileged paths</text>
+<text class="tb c-amber" x="428" y="252">▸ No exploitable deps (KEV)</text>
+<text class="tb c-amber" x="428" y="268">▸ Audit log — safety events</text>
+<text class="tb c-amber" x="428" y="284">▸ AI output validated first</text>
+<text class="tb c-amber" x="428" y="300">▸ Goal traceability required</text>
+<text class="tb c-amber" x="428" y="316">▸ Network-facing code reviewed</text>
+<text class="tb c-amber" x="428" y="332">▸ SBOM current, CVEs assigned</text>
+<text class="tb c-amber" x="428" y="348">▸ OT/IT segmentation verified</text>
+<text class="tb c-amber" x="428" y="364">▸ Safe operating bounds set</text>
+<text class="tb c-amber" x="428" y="380">▸ Spec approved before export</text>
+
+<!-- arrow: review gate bottom → export bar right edge (L-bend) -->
+<line x1="517" y1="466" x2="517" y2="478" class="arr"/>
+<line x1="396" y1="478" x2="518" y2="478" class="arr"/>
+<line x1="396" y1="466" x2="396" y2="478" class="arr" marker-end="url(#arrow)"/>
+
+</svg>
