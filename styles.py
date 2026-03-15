@@ -488,6 +488,27 @@ QMainWindow::separator {
 QMainWindow::separator:hover {
     background-color: #1177bb;
 }
+
+/* === Radio Button & Checkbox === */
+QRadioButton { spacing: 6px; color: #d4d4d4; }
+QRadioButton::indicator {
+    width: 14px; height: 14px; border-radius: 7px;
+    border: 2px solid #666; background-color: #2d2d30;
+}
+QRadioButton::indicator:checked {
+    border: 2px solid #4da6ff; background-color: #4da6ff;
+}
+QRadioButton::indicator:hover { border: 2px solid #aaa; }
+
+QCheckBox { spacing: 6px; color: #d4d4d4; }
+QCheckBox::indicator {
+    width: 14px; height: 14px; border-radius: 3px;
+    border: 2px solid #666; background-color: #2d2d30;
+}
+QCheckBox::indicator:checked {
+    border: 2px solid #4da6ff; background-color: #4da6ff;
+}
+QCheckBox::indicator:hover { border: 2px solid #aaa; }
 """
 
 BULMA_STYLE = """
@@ -987,6 +1008,27 @@ QMainWindow::separator {
 QMainWindow::separator:hover {
     background-color: #00e5c4;
 }
+
+/* === Radio Button & Checkbox === */
+QRadioButton { spacing: 6px; color: #363636; }
+QRadioButton::indicator {
+    width: 14px; height: 14px; border-radius: 7px;
+    border: 2px solid #b5bfc8; background-color: #ffffff;
+}
+QRadioButton::indicator:checked {
+    border: 2px solid #485fc7; background-color: #485fc7;
+}
+QRadioButton::indicator:hover { border: 2px solid #485fc7; }
+
+QCheckBox { spacing: 6px; color: #363636; }
+QCheckBox::indicator {
+    width: 14px; height: 14px; border-radius: 3px;
+    border: 2px solid #b5bfc8; background-color: #ffffff;
+}
+QCheckBox::indicator:checked {
+    border: 2px solid #485fc7; background-color: #485fc7;
+}
+QCheckBox::indicator:hover { border: 2px solid #485fc7; }
 """
 
 BAUHAUS_STYLE = """
@@ -1506,6 +1548,27 @@ QMainWindow::separator {
 QMainWindow::separator:hover {
     background-color: #ff5252;
 }
+
+/* === Radio Button & Checkbox === */
+QRadioButton { spacing: 6px; color: #000000; }
+QRadioButton::indicator {
+    width: 14px; height: 14px; border-radius: 0px;
+    border: 2px solid #000000; background-color: #ffffff;
+}
+QRadioButton::indicator:checked {
+    border: 2px solid #e53935; background-color: #e53935;
+}
+QRadioButton::indicator:hover { border: 2px solid #e53935; }
+
+QCheckBox { spacing: 6px; color: #000000; }
+QCheckBox::indicator {
+    width: 14px; height: 14px; border-radius: 0px;
+    border: 2px solid #000000; background-color: #ffffff;
+}
+QCheckBox::indicator:checked {
+    border: 2px solid #e53935; background-color: #e53935;
+}
+QCheckBox::indicator:hover { border: 2px solid #e53935; }
 """
 
 NEUMORPHISM_STYLE = """
@@ -2503,6 +2566,27 @@ QMainWindow::separator {
 QMainWindow::separator:hover {
     background-color: #5c6bc0;
 }
+
+/* === Radio Button & Checkbox === */
+QRadioButton { spacing: 6px; color: #37474f; }
+QRadioButton::indicator {
+    width: 14px; height: 14px; border-radius: 7px;
+    border: 2px solid #b0bec5; background-color: #e0e5ec;
+}
+QRadioButton::indicator:checked {
+    border: 2px solid #6c5ce7; background-color: #6c5ce7;
+}
+QRadioButton::indicator:hover { border: 2px solid #6c5ce7; }
+
+QCheckBox { spacing: 6px; color: #37474f; }
+QCheckBox::indicator {
+    width: 14px; height: 14px; border-radius: 3px;
+    border: 2px solid #b0bec5; background-color: #e0e5ec;
+}
+QCheckBox::indicator:checked {
+    border: 2px solid #6c5ce7; background-color: #6c5ce7;
+}
+QCheckBox::indicator:hover { border: 2px solid #6c5ce7; }
 """
 
 TAILWIND_STYLE = """
@@ -3515,6 +3599,35 @@ QMainWindow::separator {
 QMainWindow::separator:hover {
     background-color: #3d8bfd;
 }
+
+/* === Radio Button & Checkbox === */
+QRadioButton { spacing: 6px; color: #1e293b; }
+QRadioButton::indicator {
+    width: 14px; height: 14px; border-radius: 7px;
+    border: 2px solid #475569; background-color: #f8fafc;
+}
+QRadioButton::indicator:unchecked {
+    border: 2px solid #475569; background-color: #f8fafc;
+}
+QRadioButton::indicator:checked {
+    border: 4px solid #1d4ed8; background-color: #1d4ed8;
+}
+QRadioButton::indicator:unchecked:hover { border: 2px solid #1d4ed8; }
+QRadioButton::indicator:checked:hover { border: 4px solid #1e40af; background-color: #1e40af; }
+
+QCheckBox { spacing: 6px; color: #1e293b; }
+QCheckBox::indicator {
+    width: 14px; height: 14px; border-radius: 3px;
+    border: 2px solid #475569; background-color: #f8fafc;
+}
+QCheckBox::indicator:unchecked {
+    border: 2px solid #475569; background-color: #f8fafc;
+}
+QCheckBox::indicator:checked {
+    border: 2px solid #1d4ed8; background-color: #1d4ed8;
+}
+QCheckBox::indicator:unchecked:hover { border: 2px solid #1d4ed8; }
+QCheckBox::indicator:checked:hover { border: 2px solid #1e40af; background-color: #1e40af; }
 """
 
 # Style registry for easy access

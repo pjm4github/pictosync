@@ -28,7 +28,7 @@ from schemas import (
 
 
 # Preferred key ordering for merged annotations
-KEY_ORDER = ["id", "kind", "geom", "meta", "style", "z"]
+KEY_ORDER = ["id", "kind", "geom", "contents", "style", "dsl", "z"]
 
 
 # -------------------------------------------------------------------------
@@ -141,17 +141,25 @@ def build_merged_annotation(
 
     # Dynamically populate optional schema objects that are present in
     # the actual annotation so their sub-fields get validated rather than
-    # flagged as "extra".  These are stripped from the default template
-    # by build_expected_from_schema to avoid gray noise on non-DSL items.
-    actual_meta = annotation.get("meta", {})
-    if "dsl" in actual_meta and isinstance(actual_meta["dsl"], dict):
+    # flagged as "extra".  dsl is stripped from the default template by
+    # build_expected_from_schema to avoid gray noise on non-DSL items.
+    if "dsl" in annotation and isinstance(annotation["dsl"], dict):
         schema = get_annotation_schema()
         defs = schema.get("$defs", {})
         dsl_def = defs.get("dslMetadata", {})
         if dsl_def:
-            expected.setdefault("meta", {})["dsl"] = _extract_defaults(
-                dsl_def, defs,
-            )
+            expected["dsl"] = _extract_defaults(dsl_def, defs)
+
+    # If the actual annotation's contents uses overlay-1.0 flat fields
+    # (no "blocks" key), re-add the deprecated fields to the expected template
+    # so they aren't flagged as "extra" (red).
+    actual_contents = annotation.get("contents", {})
+    if isinstance(actual_contents, dict) and "blocks" not in actual_contents:
+        from models import DEPRECATED_CONTENTS_FIELDS
+        exp_contents = expected.setdefault("contents", {})
+        for key in DEPRECATED_CONTENTS_FIELDS:
+            if key in actual_contents:
+                exp_contents[key] = actual_contents[key]
 
     diff = compute_field_diff(annotation, expected)
     merged = _ordered_merge(annotation, expected)

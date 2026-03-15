@@ -853,7 +853,7 @@ def _add_seqblock(slide, record: Dict[str, Any], scale_x: float, scale_y: float)
     from pptx.enum.dml import MSO_LINE_DASH_STYLE
 
     geom = record.get("geom", {})
-    meta = record.get("meta", {})
+    meta = record.get("contents") or record.get("meta") or {}
     style = record.get("style", {})
 
     gx = geom.get("x", 0) * scale_x
@@ -862,7 +862,10 @@ def _add_seqblock(slide, record: Dict[str, Any], scale_x: float, scale_y: float)
     gh = geom.get("h", 100) * scale_y
 
     # Determine block type from DSL metadata or label
-    dsl = meta.get("extras", {}).get("dsl", {}) if isinstance(meta.get("extras"), dict) else {}
+    dsl = record.get("dsl") or {}
+    if not dsl:
+        # Legacy: dsl may be inside meta.extras["dsl"]
+        dsl = meta.get("extras", {}).get("dsl", {}) if isinstance(meta.get("extras"), dict) else {}
     block_type = dsl.get("sequence", {}).get("block_type", meta.get("label", "alt"))
 
     # Collect divider positions (ratios 0–1)

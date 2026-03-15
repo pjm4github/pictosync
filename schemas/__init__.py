@@ -324,22 +324,23 @@ def build_expected_from_schema(kind: str) -> Dict[str, Any]:
         resolved = _resolve_ref(geom_schema["$ref"], defs)
         expected["geom"] = _extract_defaults(resolved, defs)
 
-    # Meta — base from annotationMeta
-    meta_ref = item_def.get("properties", {}).get("meta", {})
-    if "$ref" in meta_ref:
-        resolved = _resolve_ref(meta_ref["$ref"], defs)
-        expected["meta"] = _extract_defaults(resolved, defs)
+    # Contents — base from annotationContents
+    contents_ref = item_def.get("properties", {}).get("contents", {})
+    if "$ref" in contents_ref:
+        resolved = _resolve_ref(contents_ref["$ref"], defs)
+        expected["contents"] = _extract_defaults(resolved, defs)
+        # Strip deprecated overlay-1.0 flat fields so overlay-2.0 annotations
+        # don't show them as "missing" (gray).  build_merged_annotation adds
+        # them back if the actual annotation is in overlay-1.0 format.
+        from models import DEPRECATED_CONTENTS_FIELDS
+        for _dep_key in DEPRECATED_CONTENTS_FIELDS:
+            expected["contents"].pop(_dep_key, None)
 
-    # Strip optional domain objects that should only appear when the
-    # actual annotation carries them (avoids gray "missing" noise on
-    # every manually-drawn item).
-    expected.get("meta", {}).pop("dsl", None)
-
-    # Merge kind-specific meta overrides from then clause
-    then_meta = then_props.get("meta", {})
-    if then_meta.get("type") == "object" and "properties" in then_meta:
-        meta_overrides = _extract_defaults(then_meta, defs)
-        _deep_merge(expected.get("meta", {}), meta_overrides)
+    # Merge kind-specific contents overrides from then clause
+    then_contents = then_props.get("contents", {})
+    if then_contents.get("type") == "object" and "properties" in then_contents:
+        contents_overrides = _extract_defaults(then_contents, defs)
+        _deep_merge(expected.get("contents", {}), contents_overrides)
 
     # Style — always start with base styleDefinition
     base_style_ref = item_def.get("properties", {}).get("style", {})
@@ -358,7 +359,9 @@ def build_expected_from_schema(kind: str) -> Dict[str, Any]:
         _deep_merge(expected.get("style", {}), style_overrides)
 
     # Remaining top-level annotationItem properties (z, etc.)
-    _HANDLED = {"id", "kind", "geom", "meta", "style", "children"}
+    # dsl is stripped here — it should only appear when actually present
+    # (avoids gray "missing" noise on every manually-drawn item).
+    _HANDLED = {"id", "kind", "geom", "contents", "style", "children", "dsl"}
     for prop_name, prop_def in item_def.get("properties", {}).items():
         if prop_name in expected or prop_name in _HANDLED:
             continue

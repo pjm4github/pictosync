@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QEvent, QObject, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QPen
 from PyQt6.QtWidgets import (
     QColorDialog,
@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
 import json
 import os
 
-from models import AnnotationMeta
+from models import AnnotationContents, TextFrame, CharFormat, TextBlock, TextRun, hex_to_css_color
 from undo_commands import ChangeStyleCommand, ChangeMetaCommand
 from canvas.items import (
     MetaRectItem,
@@ -38,6 +38,224 @@ from canvas.items import (
     MetaSeqBlockItem,
     MetaGroupItem,
 )
+
+
+
+def _qtextdoc_to_blocks(doc, doc_default_format: Optional[CharFormat] = None) -> list:
+    """Convert a QTextDocument to a list of block dicts (overlay-2.0 format).
+
+    Compares each fragment's character format against *doc_default_format*
+    and emits only the fields that differ (sparse run formats).
+
+    Args:
+        doc: QTextDocument to traverse.
+        doc_default_format: Document-level CharFormat defaults used to suppress
+            redundant per-run format fields.
+
+    Returns:
+        List of block dicts ready to be stored in ``meta.blocks``.
+    """
+    from PyQt6.QtGui import QTextCharFormat
+    from PyQt6.QtCore import Qt
+    from utils import qcolor_to_hex
+
+    if doc_default_format is None:
+        doc_default_format = CharFormat()
+
+    blocks: list = []
+    block = doc.begin()
+    while block.isValid():
+        block_fmt = block.blockFormat()
+        alignment = block_fmt.alignment()
+        halign = ""
+        if alignment & Qt.AlignmentFlag.AlignHCenter:
+            halign = "center"
+        elif alignment & Qt.AlignmentFlag.AlignRight:
+            halign = "right"
+        elif alignment & Qt.AlignmentFlag.AlignJustify:
+            halign = "justified"
+        elif alignment & Qt.AlignmentFlag.AlignLeft:
+            halign = "left"
+
+        runs: list = []
+        it = block.begin()
+        while not it.atEnd():
+            fragment = it.fragment()
+            if fragment.isValid():
+                text = fragment.text()
+                char_fmt = fragment.charFormat()
+
+                run_fmt: dict = {}
+
+                weight = char_fmt.fontWeight()
+                if weight >= 700:
+                    run_fmt["bold"] = True
+
+                if char_fmt.fontItalic():
+                    run_fmt["italic"] = True
+
+                if char_fmt.fontUnderline():
+                    run_fmt["underline"] = True
+
+                if char_fmt.fontStrikeOut():
+                    run_fmt["strikethrough"] = True
+
+                valign_type = char_fmt.verticalAlignment()
+                if valign_type == QTextCharFormat.VerticalAlignment.AlignSuperScript:
+                    run_fmt["superscript"] = True
+                elif valign_type == QTextCharFormat.VerticalAlignment.AlignSubScript:
+                    run_fmt["subscript"] = True
+
+                pt = char_fmt.fontPointSize()
+                if pt > 0:
+                    fsize = int(round(pt))
+                    if fsize != doc_default_format.font_size:
+                        run_fmt["font_size"] = fsize
+
+                families = char_fmt.fontFamilies()
+                family = families[0] if isinstance(families, list) and families else (
+                    families if isinstance(families, str) else "")
+                if family and family != doc_default_format.font_family:
+                    run_fmt["font_family"] = family
+
+                fg = char_fmt.foreground()
+                if fg.style() != Qt.BrushStyle.NoBrush:
+                    color_hex = qcolor_to_hex(fg.color(), include_alpha=True)
+                    if color_hex != doc_default_format.color:
+                        run_fmt["color"] = color_hex
+
+                bg = char_fmt.background()
+                if bg.style() != Qt.BrushStyle.NoBrush:
+                    run_fmt["background_color"] = qcolor_to_hex(
+                        bg.color(), include_alpha=True)
+
+                run: dict = {"type": "text", "text": text}
+                if run_fmt:
+                    run["format"] = run_fmt
+                runs.append(run)
+            it += 1
+
+        if runs:
+            blk: dict = {"runs": runs}
+            if halign:
+                blk["halign"] = halign
+            top = block_fmt.topMargin()
+            bot = block_fmt.bottomMargin()
+            if top:
+                blk["space_before"] = top
+            if bot:
+                blk["space_after"] = bot
+            line_h = block_fmt.lineHeight()
+            line_t = block_fmt.lineHeightType()
+            if line_t == 2 and line_h and line_h != 100:   # ProportionalHeight
+                blk["line_spacing"] = line_h / 100.0
+            blocks.append(blk)
+
+        block = block.next()
+
+    return blocks
+
+
+def _format_dsl_label(dsl: dict) -> str:
+    """Return a compact display string for the ``dsl`` extras dict.
+
+    Examples::
+
+        {} → "Generic"
+        {"ns3": {"tool": "node", "label": "Node"}} → "ns3 / Node"
+        {"sequence": {"block_type": "alt"}} → "sequence / alt"
+        {"mermaid": {"tool": "c4", "c4": {"type": "container"}}} → "mermaid / c4"
+    """
+    if not dsl:
+        return "Generic"
+    parts = []
+    for domain, data in dsl.items():
+        if isinstance(data, dict):
+            detail = (data.get("label") or data.get("tool")
+                      or data.get("block_type") or data.get("type") or "")
+            parts.append(f"{domain} / {detail}" if detail else domain)
+        else:
+            parts.append(str(domain))
+    return "  |  ".join(parts) if parts else "Generic"
+
+
+def _blocks_to_html(
+    blocks: list,
+    default_format: Optional[CharFormat] = None,
+    frame_halign: str = "center",
+) -> str:
+    """Convert overlay-2.0 blocks to an HTML body fragment for QTextEdit.
+
+    Produces ``<p>`` elements with inline ``style`` attributes derived from
+    run format overrides.  The *default_format* is used to suppress redundant
+    inline styles (run fields that match the document default are omitted).
+
+    Args:
+        blocks: List of block dicts or TextBlock objects.
+        default_format: Document-level CharFormat used to suppress redundant styles.
+        frame_halign: Fallback alignment for blocks without an explicit ``halign``.
+
+    Returns:
+        HTML body fragment string (no ``<html>/<head>/<body>`` wrapper).
+    """
+    import html as _html
+    parts: list = []
+
+    for blk in blocks:
+        if isinstance(blk, TextBlock):
+            blk_halign = blk.halign or frame_halign
+            run_list = blk.runs
+        else:
+            blk_halign = blk.get("halign") or frame_halign
+            run_list = [
+                TextRun.from_dict(r) if isinstance(r, dict) else r
+                for r in blk.get("runs", [])
+            ]
+
+        align_css = {
+            "left": "left", "center": "center",
+            "right": "right", "justified": "justify",
+        }.get(blk_halign, "center")
+
+        runs_html = ""
+        for run in run_list:
+            if isinstance(run, dict):
+                run = TextRun.from_dict(run)
+            if run.type != "text":
+                continue
+            span = _html.escape(run.text)
+            fmt = run.format
+            if fmt:
+                if fmt.bold:
+                    span = f"<b>{span}</b>"
+                if fmt.italic:
+                    span = f"<i>{span}</i>"
+                if fmt.underline:
+                    span = f"<u>{span}</u>"
+                if fmt.strikethrough:
+                    span = f"<s>{span}</s>"
+                if fmt.superscript:
+                    span = f"<sup>{span}</sup>"
+                if fmt.subscript:
+                    span = f"<sub>{span}</sub>"
+                styles: list = []
+                if fmt.color and fmt.color != (default_format.color if default_format else ""):
+                    styles.append(f"color:{hex_to_css_color(fmt.color)}")
+                if fmt.background_color:
+                    styles.append(f"background-color:{hex_to_css_color(fmt.background_color)}")
+                def_size = default_format.font_size if default_format else 0
+                if fmt.font_size and fmt.font_size != def_size:
+                    styles.append(f"font-size:{fmt.font_size}pt")
+                def_family = default_format.font_family if default_format else ""
+                if fmt.font_family and fmt.font_family != def_family:
+                    styles.append(f"font-family:{fmt.font_family}")
+                if styles:
+                    span = f"<span style='{';'.join(styles)}'>{span}</span>"
+            runs_html += span
+
+        parts.append(f"<p style='text-align:{align_css};'>{runs_html}</p>")
+
+    return "\n".join(parts)
 
 
 def _build_adjust_config_from_schema() -> dict:
@@ -106,6 +324,64 @@ except ImportError:
     Ui_PropertyPanel = None
 
 
+class _TightItemDelegate(QObject):
+    """QStyledItemDelegate replacement that pins row height to font height + 4px.
+
+    Inherits QObject so it can be parented; acts as a delegate via duck-typing
+    by subclassing QStyledItemDelegate through a local import.
+    """
+
+    @staticmethod
+    def install(list_widget):
+        """Install a tight delegate on *list_widget* and return it."""
+        from PyQt6.QtWidgets import QStyledItemDelegate
+        from PyQt6.QtCore import QSize
+
+        class _Delegate(QStyledItemDelegate):
+            def sizeHint(self, option, index):
+                fm = option.fontMetrics
+                return QSize(super().sizeHint(option, index).width(),
+                             fm.height() + 4)
+
+        delegate = _Delegate(list_widget)
+        list_widget.setItemDelegate(delegate)
+        return delegate
+
+
+class _FocusOutFilter(QObject):
+    """Event filter that calls a callback when the watched widget loses focus."""
+
+    def __init__(self, callback, parent=None):
+        super().__init__(parent)
+        self._callback = callback
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.FocusOut:
+            self._callback()
+        return False
+
+
+def _install_persistent_selection_highlight(text_edit) -> None:
+    """Make a QTextEdit's selection stay visible when it loses focus.
+
+    Sets the Inactive palette Highlight/HighlightedText colors to match
+    the Active ones.  This keeps the Qt-native selection rendering intact
+    (character-level formatting remains visible through the highlight) while
+    the selection highlight itself doesn't vanish when focus moves to a panel
+    control.
+
+    Unlike an ExtraSelection overlay this approach does NOT override
+    per-character foreground colors, so font/color changes applied to the
+    selection while the widget lacks focus are immediately visible.
+    """
+    from PyQt6.QtGui import QPalette
+    pal = text_edit.palette()
+    for role in (QPalette.ColorRole.Highlight, QPalette.ColorRole.HighlightedText):
+        active_color = pal.color(QPalette.ColorGroup.Active, role)
+        pal.setColor(QPalette.ColorGroup.Inactive, role, active_color)
+    text_edit.setPalette(pal)
+
+
 class PropertyPanel(QWidget):
     """
     Property panel widget for editing selected item properties.
@@ -120,6 +396,9 @@ class PropertyPanel(QWidget):
     Changes are auto-applied when fields lose focus or change.
     """
 
+    # Emitted when a port ID in the ports list is clicked; carries the ann_id
+    port_selected = pyqtSignal(str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._current_item: Optional[QGraphicsItem] = None
@@ -133,134 +412,297 @@ class PropertyPanel(QWidget):
 
         self._connect_signals()
         self._set_enabled(False)
-        self._set_color_rows_visible(False, False, False)
-        self._set_extra_rows_visible(False, False, False, False, False, False)
-        self._set_dash_pattern_visible(False)
+        if not HAS_UI:
+            self._set_color_rows_visible(False, False, False)
+            self._set_extra_rows_visible(False, False, False, False, False, False)
+            self._set_dash_pattern_visible(False)
+
+    def _apply_compact_style(self):
+        """Tighten margins and spacing so the panel fits a narrow dock."""
+        from PyQt6.QtWidgets import QGroupBox, QLayout
+
+        # Compact margins on the outer widget layout
+        top = self.layout()
+        if top:
+            top.setContentsMargins(2, 2, 2, 2)
+            top.setSpacing(2)
+
+        # Tighten each tab's top-level layout
+        for i in range(self.tabs.count()):
+            tab = self.tabs.widget(i)
+            if tab and tab.layout():
+                tab.layout().setContentsMargins(2, 2, 2, 2)
+                tab.layout().setSpacing(2)
+
+        # Tighten every QGroupBox: smaller title padding, compact layout
+        for gb in self.findChildren(QGroupBox):
+            gb.setStyleSheet(
+                "QGroupBox { margin-top: 8px; padding-top: 8px; font-size: 8pt; }"
+                "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top center; padding: 0 4px; }"
+            )
+            lay = gb.layout()
+            if lay:
+                lay.setContentsMargins(3, 3, 3, 3)
+                lay.setSpacing(2)
+
+        # Tighten any remaining nested layouts that still have default 9px margins
+        for lay in self.findChildren(QLayout):
+            m = lay.contentsMargins()
+            if m.left() > 4:
+                lay.setContentsMargins(2, 2, 2, 2)
+            if lay.spacing() > 4:
+                lay.setSpacing(2)
 
     def _init_from_ui(self):
-        """Initialize from Qt Designer UI file."""
+        """Initialize from Qt Designer UI file (new two-tab Style/Contents panel)."""
+        from PyQt6.QtWidgets import (
+            QComboBox as _QComboBox,
+            QLabel as _QLabel,
+            QLineEdit as _QLineEdit,
+            QSpinBox as _QSpinBox,
+            QWidget as _QWidget,
+        )
+
         self.ui = Ui_PropertyPanel()
         self.ui.setupUi(self)
 
-        # Create convenience references to widgets using naming convention
-        # Tabs
+        # ── Direct schema-matched widget references ──────────────────
+        # Widget names in the .ui file now mirror the annotation schema
+        # so most are accessed as self.ui.<schema_field>.
+
         self.tabs = self.ui.tabs
 
-        # Image tab widgets
-        self.img_path = self.ui.lbl_img_path
-        self.path_scroll = self.ui.scroll_img_path
-        self.img_size = self.ui.lbl_img_size
-        self.img_mode = self.ui.lbl_img_mode
-        self.img_depth = self.ui.lbl_img_depth
-        self.img_filesize = self.ui.lbl_img_filesize
+        # -- Image tab stubs (image info not in this panel) --
+        self.img_path = _QLabel("-")
+        self.path_scroll = _QWidget()
+        self.img_size = _QLabel("-")
+        self.img_mode = _QLabel("-")
+        self.img_depth = _QLabel("-")
+        self.img_filesize = _QLabel("-")
 
-        # Properties tab - Kind
-        self.kind_label = self.ui.lbl_kind
+        # -- annotationItem top-level --
+        #   schema: id, kind, parent_id, z, dsl
+        self.edit_id = self.ui.id               # QLineEdit (read-only)
+        self.kind_label = self.ui.kind           # QLineEdit (read-only)
+        self.dsl_label = self.ui.dsl             # QLabel for DSL type summary
+        self.edit_parent_id = self.ui.parent_id  # QLineEdit
+        self.spin_z = self.ui.z                  # QSpinBox
 
-        # Properties tab - Label row
-        self.label_edit = self.ui.edit_label
-        self.label_align = self.ui.combo_label_align
-        self.label_size = self.ui.spin_label_size
-        self.label_row = self.ui.row_label
-
-        # Properties tab - Tech row
-        self.tech_edit = self.ui.edit_tech
-        self.tech_align = self.ui.combo_tech_align
-        self.tech_size = self.ui.spin_tech_size
-        self.tech_row = self.ui.row_tech
-
-        # Properties tab - Note row
-        self.note_edit = self.ui.edit_note
-        self.note_align = self.ui.combo_note_align
-        self.note_size = self.ui.spin_note_size
-        self.note_row = self.ui.row_note
-
-        # Properties tab - Color rows
-        self.pen_color_btn = self.ui.btn_pen_color
-        self.pen_color_preview = self.ui.lbl_pen_color_preview
-        self.pen_row = self.ui.row_pen_color
-
-        self.fill_color_btn = self.ui.btn_fill_color
-        self.fill_color_preview = self.ui.lbl_fill_color_preview
-        self.fill_row = self.ui.row_fill_color
-
-        self.text_color_btn = self.ui.btn_text_color
-        self.text_color_preview = self.ui.lbl_text_color_preview
-        self.text_row = self.ui.row_text_color
-
-        # Properties tab - Adjust controls (unified row)
-        self.adjust_row = self.ui.row_adjust
-        self.adjust1_spin = self.ui.spin_adjust1
+        # -- geom (rect) --
+        #   schema: x, y, w, h, adjust1, adjust2, adjust3, angle
+        self.spin_x = self.ui.x
+        self.spin_y = self.ui.y
+        self.spin_w = self.ui.w
+        self.spin_h = self.ui.h
+        self.adjust1_spin = self.ui.adjust1
+        self.adjust2_spin = self.ui.adjust2
+        self.adjust3_spin = self.ui.adjust3
         self.adjust1_label = self.ui.label_adjust1
-        self.adjust2_spin = self.ui.spin_adjust2
         self.adjust2_label = self.ui.label_adjust2
-        self.radius_spin = self.adjust1_spin  # compat alias
-        # adjust3 + divider count — created dynamically (not in .ui)
-        from PyQt6.QtWidgets import QHBoxLayout as _QHBoxLayout, QLabel as _QLabel, QSpinBox as _QSpinBox, QWidget as _QWidget
+        self.adjust3_label = self.ui.label_adjust3
+        self.angle_spin = self.ui.angle
+        self.radius_spin = self.adjust1_spin     # compat alias
+
+        # ── Fix label max-width and font so text isn't cut off ───────
+        from PyQt6.QtGui import QFont as _QFont
+        from PyQt6.QtCore import QSize as _QSize
+        _small_font = _QFont()
+        _small_font.setPointSize(7)
+        for lbl in (self.adjust1_label, self.adjust2_label, self.adjust3_label):
+            lbl.setMaximumSize(_QSize(16777215, 16777215))  # remove width cap
+            lbl.setFont(_small_font)
+            lbl.setMinimumWidth(0)
+
+        # ── Match spinbox decimal precision to JSON (round1 = 2 dp) ──
+        for spin in (self.adjust1_spin, self.adjust2_spin, self.adjust3_spin):
+            spin.setDecimals(2)
+        self.angle_spin.setDecimals(2)
+
+        # -- geom (line) --
+        #   schema: x1, y1, x2, y2
+        self.spin_x1 = self.ui.x1
+        self.spin_y1 = self.ui.y1
+        self.spin_x2 = self.ui.x2
+        self.spin_y2 = self.ui.y2
+
+        # ── Pixel spinboxes: 0 decimal places ────────────────────────
+        for spin in (self.spin_x, self.spin_y, self.spin_w, self.spin_h,
+                     self.spin_x1, self.spin_y1, self.spin_x2, self.spin_y2):
+            spin.setDecimals(0)
+
+        self.geom_group = self.ui.group_geom_shape
+        self.frame_xywh = self.ui.xywh     # QFrame for rect-like geom
+        self.frame_xy12 = self.ui.xy12     # QFrame for line-like geom
+
+        # -- style.pen --
+        #   schema: pen.color, pen.width, pen.dash, pen.dash_pattern_length,
+        #           pen.dash_solid_percent
+        self.pen_color_btn = self.ui.btn_pen_color
+        self.pen_color_btn.setText("Pen")
+        self.pen_hex_edit = self.ui.hex_pen_color     # QLineEdit
+        self.pen_opacity = self.ui.pen_opacity         # QSlider (0-255)
+        self.pen_alpha_edit = self.ui.pen_alpha        # QLineEdit (hex alpha)
+        self.line_width_spin = self.ui.line_width      # QDoubleSpinBox
+        self.dash_combo = self.ui.dash                 # QComboBox
+        self.dash_length_spin = self.ui.dash_pattern_length  # QDoubleSpinBox
+        self.dash_solid_spin = self.ui.dash_solid_percent    # QSpinBox
+
+        # -- style.fill --
+        #   schema: fill.color
+        self.fill_color_btn = self.ui.btn_fill_color
+        self.fill_color_btn.setText("Fill")
+        self.fill_hex_edit = self.ui.hex_fill_color   # QLineEdit
+        self.fill_opacity = self.ui.fill_opacity       # QSlider (0-255)
+        self.fill_alpha_edit = self.ui.fill_alpha      # QLineEdit (hex alpha)
+
+        # -- style arrow --
+        #   schema: arrow (mode), arrow_size (begin/end)
+        self.arrow_combo = self.ui.arrows              # QComboBox
+        self.arrow_begin_spin = self.ui.arrow_begin_size  # QDoubleSpinBox
+        self.arrow_end_spin = self.ui.arrow_end_size      # QDoubleSpinBox
+        self.arrow_size_spin = self.arrow_end_spin     # compat alias
+
+        # -- contents (Contents tab) --
+        #   schema: text, halign, valign, color, font_family, font_size,
+        #           margin_*, wrap, flow_type, image_url, image_anchor
+        self.text_contents = self.ui.text             # QTextEdit
+        self.ui.contents_splitter.setStretchFactor(0, 4)  # text edit: ~80%
+        self.ui.contents_splitter.setStretchFactor(1, 1)  # graphic panel: ~20%
+        # Keep text selection visible while the user interacts with panel controls.
+        _install_persistent_selection_highlight(self.text_contents)
+        self.chk_wrap = self.ui.wrap                  # QCheckBox
+        self.text_color_btn = self.ui.btn_text_color
+        self.text_color_btn.setText("Text")
+        self.text_hex_edit = self.ui.hex_text_color   # QLineEdit
+        self.text_opacity = self.ui.text_opacity      # QSlider (0-255)
+        self.text_alpha_edit = self.ui.text_alpha     # QLineEdit (hex alpha)
+        self.text_halign_combo = self.ui.halign
+        self.text_valign_combo = self.ui.valign
+        self.combo_font = self.ui.font_family
+        self.spin_text_size = self.ui.font_size
+        self.spin_margin_left = self.ui.margin_left
+        self.spin_margin_right = self.ui.margin_right
+        self.spin_margin_top = self.ui.margin_top
+        self.spin_margin_bottom = self.ui.margin_bottom
+        self.flow_type_combo = self.ui.flow_type
+        self.edit_graphic_url = self.ui.image_url
+        self.btn_graphic_browse = self.ui.graphic_browse
+        self.spin_graphic_anchor = self.ui.image_anchor
+
+        # -- ports / connections --
+        self.list_ports = self.ui.ports
+        self.list_connections = self.ui.list_connections
+        self.group_ports = self.ui.group_ports
+        self.group_connections = self.ui.group_connections
+
+        # Tight row height — delegate pins each row to font height + 4px,
+        # overriding Qt default item padding and any theme stylesheet inflation.
+        self.list_ports.setMinimumHeight(0)
+        self.list_ports.setStyleSheet(
+            "QListWidget { padding: 0px; }"
+            "QListWidget::item { padding: 0px 2px; margin: 0px; border: none; }"
+        )
+        _TightItemDelegate.install(self.list_ports)
+        # Restore parent item highlight when ports list loses focus
+        self._ports_focus_filter = _FocusOutFilter(self._on_ports_focus_lost, self)
+        self.list_ports.installEventFilter(self._ports_focus_filter)
+
+        # ── Group-box aliases for visibility control ─────────────────
+        self.pen_row = self.ui.groupBox_2        # "Line" group
+        self.fill_row = self.ui.group_fill       # "Colors" group
+        self.text_row = self.ui.group_text_font  # "Font" group
+        self.adjust_row = self.ui.groupBox        # "Flow" group box
+        self.angle_row = self.angle_spin          # visibility on the spin itself
+        self.line_width_row = self.ui.groupBox_2
+        self.dash_row = self.dash_combo
+        self.dash_pattern_row = self.dash_length_spin
+        self.arrow_row = self.arrow_combo
+        self.arrow_size_row = self.arrow_size_spin
+
+        # ── Color preview labels (stubs — hex edits serve this role) ─
+        self.pen_color_preview = _QLabel()
+        self.pen_color_preview.setFixedSize(24, 24)
+        self.pen_color_preview.setAutoFillBackground(True)
+        self.fill_color_preview = _QLabel()
+        self.fill_color_preview.setFixedSize(24, 24)
+        self.fill_color_preview.setAutoFillBackground(True)
+        self.text_color_preview = _QLabel()
+        self.text_color_preview.setFixedSize(24, 24)
+        self.text_color_preview.setAutoFillBackground(True)
+
+        # ── Legacy stubs (invisible, keep downstream code alive) ─────
+        self.label_edit = _QLineEdit(); self.label_edit.setVisible(False)
+        self.tech_edit = _QLineEdit(); self.tech_edit.setVisible(False)
+        self.note_edit = _QLineEdit(); self.note_edit.setVisible(False)
+        self.label_align = _QComboBox(); self.label_align.addItems(["Left","Center","Right"]); self.label_align.setVisible(False)
+        self.tech_align = _QComboBox(); self.tech_align.addItems(["Left","Center","Right"]); self.tech_align.setVisible(False)
+        self.note_align = _QComboBox(); self.note_align.addItems(["Left","Center","Right"]); self.note_align.setVisible(False)
+        self.label_size = _QSpinBox(); self.label_size.setRange(6,72); self.label_size.setValue(12); self.label_size.setVisible(False)
+        self.tech_size = _QSpinBox(); self.tech_size.setRange(6,72); self.tech_size.setValue(10); self.tech_size.setVisible(False)
+        self.note_size = _QSpinBox(); self.note_size.setRange(6,72); self.note_size.setValue(10); self.note_size.setVisible(False)
+        self.label_row = _QWidget(); self.label_row.setVisible(False)
+        self.tech_row = _QWidget(); self.tech_row.setVisible(False)
+        self.note_row = _QWidget(); self.note_row.setVisible(False)
+        self.text_box_width_spin = _QSpinBox(); self.text_box_width_spin.setRange(0,500); self.text_box_width_spin.setVisible(False)
+        self.text_box_width_row = _QWidget(); self.text_box_width_row.setVisible(False)
+        self.text_spacing_combo = _QComboBox(); self.text_spacing_combo.addItems(["0","0.5","1","1.5","2"]); self.text_spacing_combo.setVisible(False)
+
+        # Divider count (created dynamically, not in .ui)
         self.divider_count_label = _QLabel("Dividers")
         self.divider_count_spin = _QSpinBox()
         self.divider_count_spin.setRange(0, 3)
         self.divider_count_spin.setValue(0)
-        self.adjust3_label = _QLabel("Divider 3")
-        self.adjust3_spin = _QSpinBox()
-        self.adjust3_spin.setRange(0, 100)
-        self.adjust3_spin.setValue(83)
-        self.adjust3_spin.setSuffix(" %")
-        layout = self.adjust_row.layout()
-        if layout:
-            # Insert divider count at position 0 (before adjust1)
-            layout.insertWidget(0, self.divider_count_label)
-            layout.insertWidget(1, self.divider_count_spin)
-            layout.addWidget(self.adjust3_label)
-            layout.addWidget(self.adjust3_spin)
         self.divider_count_label.setVisible(False)
         self.divider_count_spin.setVisible(False)
-        self.adjust3_label.setVisible(False)
-        self.adjust3_spin.setVisible(False)
+        flow_layout = self.adjust_row.layout()
+        if flow_layout:
+            flow_layout.insertWidget(0, self.divider_count_label)
+            flow_layout.insertWidget(1, self.divider_count_spin)
 
-        # Rotation angle — created dynamically (not in .ui)
-        self.angle_row = _QWidget()
-        angle_l = _QHBoxLayout(self.angle_row)
-        angle_l.setContentsMargins(0, 0, 0, 0)
-        angle_l.addWidget(_QLabel("Angle:"))
-        self.angle_spin = _QSpinBox()
-        self.angle_spin.setRange(0, 359)
-        self.angle_spin.setValue(0)
-        self.angle_spin.setSuffix("°")
-        self.angle_spin.setWrapping(True)
-        angle_l.addWidget(self.angle_spin)
-        self.angle_row.setVisible(False)
-        # Insert into the properties grid layout (after adjust row)
-        props_form = self.adjust_row.parentWidget()
-        if props_form and props_form.layout():
-            gl = props_form.layout()
-            row_count = gl.rowCount() if hasattr(gl, 'rowCount') else 0
-            gl.addWidget(_QLabel("Rotation:"), row_count, 0)
-            gl.addWidget(self.angle_row, row_count, 1)
+        # ── "Save as Default" corner button on the tab widget ────────────────
+        from PyQt6.QtWidgets import QPushButton as _QPushButton
+        self._save_default_btn = _QPushButton("Save as Default")
+        self._save_default_btn.setToolTip(
+            "Save current Format and Contents settings as new item defaults"
+        )
+        self._save_default_btn.setVisible(False)
+        self._save_default_btn.clicked.connect(self._save_as_default)
+        self.tabs.setCornerWidget(
+            self._save_default_btn, Qt.Corner.TopRightCorner
+        )
 
-        # Properties tab - Extra controls
-        self.line_width_spin = self.ui.spin_line_width
-        self.line_width_row = self.ui.row_line_width
+        # Apply compact margins after all widgets are wired up.
+        # Must run before the font pass below so its QGroupBox stylesheets
+        # (which cascade to children) are in place before we override them.
+        self._apply_compact_style()
 
-        self.dash_combo = self.ui.combo_dash
-        self.dash_row = self.ui.row_dash
+        # ── Fix radio button indicators in the contents-format panel ─────────
+        # QWindowsVistaStyle draws ::indicator via native UxTheme, ignoring
+        # CSS background-color for :checked.  Fusion uses Qt software rendering
+        # which fully honours ::indicator:checked { background-color: ... }.
+        from PyQt6.QtWidgets import QStyleFactory as _QSF
+        _fusion = _QSF.create("Fusion")
+        if _fusion:
+            for _rb in (self.ui.no_effect, self.ui.subscript, self.ui.superscript):
+                _rb.setStyle(_fusion)
 
-        self.dash_length_spin = self.ui.spin_dash_length
-        self.dash_solid_spin = self.ui.spin_dash_solid
-        self.dash_pattern_row = self.ui.row_dash_pattern
+        # ── Lock all widgets in the contents-format scroll area to 8pt ───────
+        # Apply an explicit widget-level stylesheet that overrides the inherited
+        # theme font-size for every widget type inside the scroll area, then
+        # also call setFont() on every child widget so native-painted controls
+        # (spin boxes, combo boxes, buttons) are not left at a larger size.
+        from PyQt6.QtGui import QFont as _QFont2
+        from PyQt6.QtWidgets import QWidget as _QWidgetChild
+        _lbl_font = _QFont2()
+        _lbl_font.setPointSize(8)
+        _sa = self.ui.scrollAreaWidgetContents_2
+        _sa.setStyleSheet("* { font-size: 8pt; }")
+        for _w in _sa.findChildren(_QWidgetChild):
+            _w.setFont(_lbl_font)
 
-        self.arrow_combo = self.ui.combo_arrow
-        self.arrow_row = self.ui.row_arrow
-
-        self.arrow_size_spin = self.ui.spin_arrow_size
-        self.arrow_size_row = self.ui.row_arrow_size
-
-        self.text_box_width_spin = self.ui.spin_text_box_width
-        self.text_box_width_row = self.ui.row_text_box_width
-
-        # Text layout controls (spacing and vertical alignment)
-        self.text_spacing_combo = self.ui.combo_text_spacing
-        self.text_valign_combo = self.ui.combo_text_valign
+        # Wheel events must not change values unless the widget is focused.
+        from utils import install_wheel_guard
+        install_wheel_guard(_sa)
 
     def _init_fallback(self):
         """Fallback initialization when UI file is not available."""
@@ -589,6 +1031,10 @@ class PropertyPanel(QWidget):
 
     def _connect_signals(self):
         """Connect all widget signals to handlers."""
+        # Ports list — clicking a port ID emits port_selected
+        if HAS_UI:
+            self.list_ports.currentTextChanged.connect(self._on_port_selected)
+
         # Text field changes
         self.label_edit.editingFinished.connect(self._apply_changes)
         self.tech_edit.editingFinished.connect(self._apply_changes)
@@ -621,9 +1067,36 @@ class PropertyPanel(QWidget):
         self.text_box_width_spin.valueChanged.connect(self._on_text_box_width_changed)
         self.angle_spin.valueChanged.connect(self._on_angle_changed)
 
+        # Opacity sliders and alpha hex edits
+        self.pen_opacity.valueChanged.connect(self._on_pen_opacity_changed)
+        self.fill_opacity.valueChanged.connect(self._on_fill_opacity_changed)
+        self.pen_alpha_edit.editingFinished.connect(self._on_pen_alpha_edited)
+        self.fill_alpha_edit.editingFinished.connect(self._on_fill_alpha_edited)
+        self.text_alpha_edit.editingFinished.connect(self._on_text_alpha_edited)
+        self.pen_hex_edit.editingFinished.connect(self._on_pen_hex_edited)
+        self.fill_hex_edit.editingFinished.connect(self._on_fill_hex_edited)
+        self.text_hex_edit.editingFinished.connect(self._on_text_hex_edited)
+        self.text_opacity.valueChanged.connect(self._on_text_opacity_changed)
+
         # Text layout controls
         self.text_spacing_combo.currentIndexChanged.connect(self._on_text_spacing_changed)
         self.text_valign_combo.currentIndexChanged.connect(self._on_text_valign_changed)
+
+        # Contents tab signals
+        self.text_contents.textChanged.connect(self._on_text_contents_changed)
+        self.text_contents.cursorPositionChanged.connect(self._on_text_cursor_changed)
+        self.text_contents.selectionChanged.connect(self._on_text_cursor_changed)
+        self.text_halign_combo.currentIndexChanged.connect(self._on_halign_changed)
+        self.spin_text_size.valueChanged.connect(self._on_font_size_changed)
+        self.combo_font.currentFontChanged.connect(self._on_font_changed)
+        self.chk_wrap.toggled.connect(self._on_wrap_changed)
+        self.flow_type_combo.currentIndexChanged.connect(self._on_flow_type_changed)
+        self.spin_margin_left.valueChanged.connect(self._on_margins_changed)
+        self.spin_margin_right.valueChanged.connect(self._on_margins_changed)
+        self.spin_margin_top.valueChanged.connect(self._on_margins_changed)
+        self.spin_margin_bottom.valueChanged.connect(self._on_margins_changed)
+        self.edit_graphic_url.editingFinished.connect(self._on_graphic_url_changed)
+        self.spin_graphic_anchor.valueChanged.connect(self._on_graphic_anchor_changed)
 
     def set_image_info(self, info: Dict[str, Any]):
         """Update the image info display."""
@@ -741,54 +1214,759 @@ class PropertyPanel(QWidget):
         self.text_row.setVisible(text)
 
     def _set_preview(self, lbl, color: QColor):
-        """Update a color preview label."""
+        """Update a color preview label and the matching color button foreground."""
         r, g, b, a = color.red(), color.green(), color.blue(), color.alpha()
         rgba_str = f"rgba({r}, {g}, {b}, {a / 255.0:.2f})"
         lbl.setStyleSheet(f"background-color: {rgba_str}; border: 1px solid #444;")
         lbl.update()
+        # Mirror the color onto the corresponding button foreground
+        if lbl is self.pen_color_preview:
+            self._set_button_fg(self.pen_color_btn, color)
+        elif lbl is self.fill_color_preview:
+            self._set_button_fg(self.fill_color_btn, color)
+        elif lbl is self.text_color_preview:
+            self._set_button_fg(self.text_color_btn, color)
+
+    def _set_button_fg(self, btn, color: QColor):
+        """Set a button's background color and a contrasting text color.
+
+        Blends the item color with the dock background (from the widget's
+        effective palette) to determine the actual visible color, then picks
+        black or white text for best contrast.
+        """
+        from PyQt6.QtGui import QPalette
+        r, g, b, a = color.red(), color.green(), color.blue(), color.alpha()
+        af = a / 255.0
+        # Blend with the parent's background to get the visible color
+        parent = btn.parentWidget() or btn
+        dock_bg = parent.palette().color(QPalette.ColorRole.Window)
+        br, bg_g, bb = dock_bg.red(), dock_bg.green(), dock_bg.blue()
+        vis_r = int(r * af + br * (1 - af))
+        vis_g = int(g * af + bg_g * (1 - af))
+        vis_b = int(b * af + bb * (1 - af))
+        # Perceived luminance (ITU-R BT.601)
+        lum = 0.299 * vis_r + 0.587 * vis_g + 0.114 * vis_b
+        fg = "#000000" if lum > 140 else "#ffffff"
+        bg = f"rgba({r}, {g}, {b}, {af:.2f})"
+        name = btn.objectName()
+        btn.setStyleSheet(
+            f"#{name} {{ background-color: {bg}; color: {fg}; border: 1px solid #444; }}"
+            f"#{name}:hover {{ border: 1px solid #888; }}"
+        )
+
+    def _set_color_widgets(self, which: str, color: QColor):
+        """Update hex edit, opacity slider, alpha edit, and button for pen or fill.
+
+        Args:
+            which: "pen" or "fill"
+            color: The QColor to display
+        """
+        r, g, b, a = color.red(), color.green(), color.blue(), color.alpha()
+        hex_rgba = "#{:02X}{:02X}{:02X}{:02X}".format(r, g, b, a)
+        alpha_hex = "{:02X}".format(a)
+        if which == "pen":
+            self.pen_hex_edit.setText(hex_rgba)
+            self.pen_opacity.setValue(a)
+            self.pen_alpha_edit.setText(alpha_hex)
+            self._set_preview(self.pen_color_preview, color)
+        elif which == "fill":
+            self.fill_hex_edit.setText(hex_rgba)
+            self.fill_opacity.setValue(a)
+            self.fill_alpha_edit.setText(alpha_hex)
+            self._set_preview(self.fill_color_preview, color)
+        elif which == "text":
+            self.text_hex_edit.setText(hex_rgba)
+            self.text_opacity.setValue(a)
+            self.text_alpha_edit.setText(alpha_hex)
+            self._set_button_fg(self.text_color_btn, color)
+
+    def _on_pen_opacity_changed(self, value: int):
+        """Handle pen opacity slider change."""
+        item = self._current_item
+        if item is None or not hasattr(item, "pen_color"):
+            return
+        old_color = QColor(item.pen_color)
+        item.pen_color.setAlpha(value)
+        self.pen_alpha_edit.setText("{:02X}".format(value))
+        r, g, b = item.pen_color.red(), item.pen_color.green(), item.pen_color.blue()
+        self.pen_hex_edit.setText("#{:02X}{:02X}{:02X}{:02X}".format(r, g, b, value))
+        self._set_preview(self.pen_color_preview, item.pen_color)
+        if isinstance(item, MetaLineItem):
+            item._apply_pen()
+        elif hasattr(item, "_apply_pen_brush"):
+            item._apply_pen_brush()
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+
+    def _on_fill_opacity_changed(self, value: int):
+        """Handle fill opacity slider change."""
+        item = self._current_item
+        if item is None or not hasattr(item, "brush_color"):
+            return
+        old_color = QColor(item.brush_color)
+        item.brush_color.setAlpha(value)
+        self.fill_alpha_edit.setText("{:02X}".format(value))
+        r, g, b = item.brush_color.red(), item.brush_color.green(), item.brush_color.blue()
+        self.fill_hex_edit.setText("#{:02X}{:02X}{:02X}{:02X}".format(r, g, b, value))
+        self._set_preview(self.fill_color_preview, item.brush_color)
+        if hasattr(item, "_apply_pen_brush"):
+            item._apply_pen_brush()
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+
+    def _parse_alpha_hex(self, text: str) -> int:
+        """Parse a hex alpha string, returning 0-255 or -1 on invalid input."""
+        t = text.strip()
+        if len(t) == 0:
+            return -1
+        try:
+            v = int(t, 16)
+            if 0 <= v <= 255:
+                return v
+        except ValueError:
+            pass
+        return -1
+
+    def _on_pen_alpha_edited(self):
+        """Handle pen alpha hex LineEdit editing finished."""
+        item = self._current_item
+        if item is None or not hasattr(item, "pen_color"):
+            return
+        v = self._parse_alpha_hex(self.pen_alpha_edit.text())
+        if v < 0:
+            # Revert to current alpha
+            self.pen_alpha_edit.setText("{:02X}".format(item.pen_color.alpha()))
+            return
+        item.pen_color.setAlpha(v)
+        self.pen_opacity.blockSignals(True)
+        self.pen_opacity.setValue(v)
+        self.pen_opacity.blockSignals(False)
+        r, g, b = item.pen_color.red(), item.pen_color.green(), item.pen_color.blue()
+        self.pen_hex_edit.setText("#{:02X}{:02X}{:02X}{:02X}".format(r, g, b, v))
+        self.pen_alpha_edit.setText("{:02X}".format(v))
+        self._set_preview(self.pen_color_preview, item.pen_color)
+        if isinstance(item, MetaLineItem):
+            item._apply_pen()
+        elif hasattr(item, "_apply_pen_brush"):
+            item._apply_pen_brush()
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+
+    def _on_fill_alpha_edited(self):
+        """Handle fill alpha hex LineEdit editing finished."""
+        item = self._current_item
+        if item is None or not hasattr(item, "brush_color"):
+            return
+        v = self._parse_alpha_hex(self.fill_alpha_edit.text())
+        if v < 0:
+            # Revert to current alpha
+            self.fill_alpha_edit.setText("{:02X}".format(item.brush_color.alpha()))
+            return
+        item.brush_color.setAlpha(v)
+        self.fill_opacity.blockSignals(True)
+        self.fill_opacity.setValue(v)
+        self.fill_opacity.blockSignals(False)
+        r, g, b = item.brush_color.red(), item.brush_color.green(), item.brush_color.blue()
+        self.fill_hex_edit.setText("#{:02X}{:02X}{:02X}{:02X}".format(r, g, b, v))
+        self.fill_alpha_edit.setText("{:02X}".format(v))
+        self._set_preview(self.fill_color_preview, item.brush_color)
+        if hasattr(item, "_apply_pen_brush"):
+            item._apply_pen_brush()
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+
+    def _on_pen_hex_edited(self):
+        """Handle pen hex color LineEdit editing finished (#RRGGBB or #RRGGBBAA)."""
+        item = self._current_item
+        if item is None or not hasattr(item, "pen_color"):
+            return
+        from utils import hex_to_qcolor
+        c = hex_to_qcolor(self.pen_hex_edit.text().strip(), item.pen_color)
+        if not c.isValid():
+            self.pen_hex_edit.setText(
+                "#{:02X}{:02X}{:02X}{:02X}".format(*[getattr(item.pen_color, ch)() for ch in ("red","green","blue","alpha")])
+            )
+            return
+        item.pen_color = c
+        self.pen_opacity.blockSignals(True)
+        self.pen_opacity.setValue(c.alpha())
+        self.pen_opacity.blockSignals(False)
+        self.pen_alpha_edit.setText("{:02X}".format(c.alpha()))
+        self.pen_hex_edit.setText("#{:02X}{:02X}{:02X}{:02X}".format(c.red(), c.green(), c.blue(), c.alpha()))
+        self._set_preview(self.pen_color_preview, c)
+        if isinstance(item, MetaLineItem):
+            item._apply_pen()
+        elif hasattr(item, "_apply_pen_brush"):
+            item._apply_pen_brush()
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+
+    def _on_fill_hex_edited(self):
+        """Handle fill hex color LineEdit editing finished (#RRGGBB or #RRGGBBAA)."""
+        item = self._current_item
+        if item is None or not hasattr(item, "brush_color"):
+            return
+        from utils import hex_to_qcolor
+        c = hex_to_qcolor(self.fill_hex_edit.text().strip(), item.brush_color)
+        if not c.isValid():
+            self.fill_hex_edit.setText(
+                "#{:02X}{:02X}{:02X}{:02X}".format(*[getattr(item.brush_color, ch)() for ch in ("red","green","blue","alpha")])
+            )
+            return
+        item.brush_color = c
+        self.fill_opacity.blockSignals(True)
+        self.fill_opacity.setValue(c.alpha())
+        self.fill_opacity.blockSignals(False)
+        self.fill_alpha_edit.setText("{:02X}".format(c.alpha()))
+        self.fill_hex_edit.setText("#{:02X}{:02X}{:02X}{:02X}".format(c.red(), c.green(), c.blue(), c.alpha()))
+        self._set_preview(self.fill_color_preview, c)
+        if hasattr(item, "_apply_pen_brush"):
+            item._apply_pen_brush()
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+
+    def _on_text_opacity_changed(self, value: int):
+        """Handle text opacity slider change."""
+        item = self._current_item
+        if item is None or not hasattr(item, "text_color"):
+            return
+        c = QColor(item.text_color)
+        c.setAlpha(value)
+        # Sync sibling widgets
+        self.text_alpha_edit.blockSignals(True)
+        self.text_alpha_edit.setText("{:02X}".format(value))
+        self.text_alpha_edit.blockSignals(False)
+        self.text_hex_edit.blockSignals(True)
+        self.text_hex_edit.setText("#{:02X}{:02X}{:02X}{:02X}".format(
+            c.red(), c.green(), c.blue(), value))
+        self.text_hex_edit.blockSignals(False)
+        self._apply_run_color(item, c)
+
+    def _on_text_alpha_edited(self):
+        """Handle text alpha hex LineEdit edit (2-char hex alpha)."""
+        item = self._current_item
+        if item is None or not hasattr(item, "text_color"):
+            return
+        a = self._parse_alpha_hex(self.text_alpha_edit.text().strip())
+        if a < 0:
+            self.text_alpha_edit.setText("{:02X}".format(item.text_color.alpha()))
+            return
+        c = QColor(item.text_color)
+        c.setAlpha(a)
+        self.text_opacity.blockSignals(True)
+        self.text_opacity.setValue(a)
+        self.text_opacity.blockSignals(False)
+        self.text_hex_edit.blockSignals(True)
+        self.text_hex_edit.setText("#{:02X}{:02X}{:02X}{:02X}".format(
+            c.red(), c.green(), c.blue(), a))
+        self.text_hex_edit.blockSignals(False)
+        self._apply_run_color(item, c)
+
+    def _on_text_hex_edited(self):
+        """Handle text hex color LineEdit editing finished (#RRGGBB or #RRGGBBAA)."""
+        from utils import hex_to_qcolor
+        item = self._current_item
+        if item is None or not hasattr(item, "text_color"):
+            return
+        c = hex_to_qcolor(self.text_hex_edit.text().strip(), item.text_color)
+        if not c.isValid():
+            self.text_hex_edit.setText(
+                "#{:02X}{:02X}{:02X}{:02X}".format(
+                    item.text_color.red(), item.text_color.green(),
+                    item.text_color.blue(), item.text_color.alpha())
+            )
+            return
+        self.text_opacity.blockSignals(True)
+        self.text_opacity.setValue(c.alpha())
+        self.text_opacity.blockSignals(False)
+        self.text_alpha_edit.blockSignals(True)
+        self.text_alpha_edit.setText("{:02X}".format(c.alpha()))
+        self.text_alpha_edit.blockSignals(False)
+        self._apply_run_color(item, c)
+
+    def _set_meta_text_color(self, item, color_hex: str):
+        """Write text color to both flat ``meta.color`` and nested ``default_format.color``."""
+        if not hasattr(item, "meta"):
+            return
+        item.meta.color = color_hex
+        if item.meta.default_format is None:
+            item.meta.default_format = item.meta.effective_default_format()
+        item.meta.default_format.color = color_hex
+
+    def _safe_attr(self, obj, attr: str, default=None, context: str = ""):
+        """Read an attribute, printing a console warning if missing."""
+        if hasattr(obj, attr):
+            return getattr(obj, attr)
+        print(f"[PropPanel] MISMATCH: {context or type(obj).__name__} has no '{attr}' — using default {default!r}")
+        return default
+
+    def _block_format_signals(self, block: bool):
+        """Block/unblock signals on run/block format widgets only.
+
+        Used by ``_on_text_cursor_changed`` to update the format controls
+        without triggering the format-change handlers that would apply the
+        values back to the document.
+        """
+        for w in (self.text_halign_combo, self.spin_text_size, self.combo_font,
+                  self.text_opacity, self.text_alpha_edit, self.text_hex_edit):
+            w.blockSignals(block)
+
+    def _block_all_signals(self, block: bool):
+        """Block/unblock signals on all editable widgets to prevent feedback."""
+        from PyQt6.QtWidgets import QAbstractSpinBox, QComboBox as _QCB
+        for w in (self.spin_x, self.spin_y, self.spin_w, self.spin_h,
+                  self.spin_x1, self.spin_y1, self.spin_x2, self.spin_y2,
+                  self.spin_z, self.adjust1_spin, self.adjust2_spin,
+                  self.adjust3_spin, self.angle_spin,
+                  self.line_width_spin, self.dash_length_spin,
+                  self.dash_solid_spin, self.arrow_begin_spin,
+                  self.arrow_end_spin, self.dash_combo, self.arrow_combo,
+                  self.text_halign_combo, self.text_valign_combo,
+                  self.spin_text_size, self.chk_wrap, self.text_contents,
+                  self.spin_margin_left, self.spin_margin_right,
+                  self.spin_margin_top, self.spin_margin_bottom,
+                  self.flow_type_combo, self.edit_graphic_url,
+                  self.spin_graphic_anchor, self.fill_opacity,
+                  self.pen_opacity, self.text_opacity,
+                  self.divider_count_spin):
+            w.blockSignals(block)
+
+    def _save_as_default(self):
+        """Save current Format and Contents properties as per-kind user defaults.
+
+        All values are read directly from the UI widgets so they always reflect
+        what the user sees, regardless of whether the underlying model field was
+        updated (e.g. font color / size / family are applied to runs but do not
+        mutate meta.default_format until this button is clicked).
+
+        Excludes text content and image_url.  Writes to
+        ``[item_defaults.<kind>]`` in the user settings file via a targeted
+        merge that leaves all other settings untouched, then writes the same
+        values back to the live item so the JSON editor updates immediately.
+        """
+        from PyQt6.QtWidgets import QMessageBox as _QMessageBox
+        from settings import get_settings
+
+        item = self._current_item
+        if item is None:
+            return
+
+        kind = getattr(item, "kind", "unknown")
+        mgr = get_settings()
+
+        # ── Merge / overwrite prompt ────────────────────────────────────
+        if mgr.has_user_item_defaults(kind):
+            reply = _QMessageBox.question(
+                self,
+                "Merge Item Defaults?",
+                f"User defaults for '{kind}' already exist in:\n"
+                f"{mgr.user_settings_file}\n\n"
+                f"Merge (overwrite) the defaults for '{kind}'?",
+                _QMessageBox.StandardButton.Yes | _QMessageBox.StandardButton.No,
+                _QMessageBox.StandardButton.No,
+            )
+            if reply != _QMessageBox.StandardButton.Yes:
+                return
+
+        # ── Helper: map combo index → value list ───────────────────────
+        def _combo_val(combo, values, fallback):
+            idx = combo.currentIndex()
+            return values[idx] if 0 <= idx < len(values) else fallback
+
+        # ── Style: read entirely from widgets ──────────────────────────
+        es = mgr.get_item_defaults(kind).style
+        style_dict = {
+            "pen_color":  self.pen_hex_edit.text().strip() or es.pen_color,
+            "pen_width":  int(self.line_width_spin.value()),
+            "line_dash":  _combo_val(self.dash_combo, ["solid", "dashed"], es.line_dash),
+            "fill_color": self.fill_hex_edit.text().strip() or es.fill_color,
+        }
+
+        # ── Contents: read entirely from widgets ───────────────────────
+        meta = getattr(item, "meta", None)
+        ec = mgr.get_item_defaults(kind).contents
+
+        halign    = _combo_val(self.text_halign_combo,
+                               ["left", "center", "justified", "right"], ec.halign)
+        valign    = _combo_val(self.text_valign_combo,
+                               ["top", "middle", "bottom"], ec.valign)
+        flow_type = _combo_val(self.flow_type_combo,
+                               ["none", "horizontal", "vertical", "none"], ec.flow_type)
+        font_family  = self.combo_font.currentFont().family()
+        font_size    = int(self.spin_text_size.value())
+        color        = self.text_hex_edit.text().strip() or ec.color
+        margin_left  = float(self.spin_margin_left.value())
+        margin_right = float(self.spin_margin_right.value())
+        margin_top   = float(self.spin_margin_top.value())
+        margin_bottom= float(self.spin_margin_bottom.value())
+        wrap         = self.chk_wrap.isChecked()
+        image_anchor = int(self.spin_graphic_anchor.value())
+        # No active UI widgets for spacing / text_box_width / text_box_height;
+        # fall back to meta if available, else existing defaults.
+        spacing         = float(getattr(meta, "spacing",         ec.spacing))
+        text_box_width  = float(getattr(meta, "text_box_width",  ec.text_box_width))
+        text_box_height = float(getattr(meta, "text_box_height", ec.text_box_height))
+
+        contents_dict: dict = {
+            "halign":          halign,
+            "valign":          valign,
+            "spacing":         spacing,
+            "color":           color,
+            "font_family":     font_family,
+            "font_size":       font_size,
+            "margin_left":     margin_left,
+            "margin_right":    margin_right,
+            "margin_top":      margin_top,
+            "margin_bottom":   margin_bottom,
+            "wrap":            wrap,
+            "flow_type":       flow_type,
+            "text_box_width":  text_box_width,
+            "text_box_height": text_box_height,
+            "image_anchor":    image_anchor,
+            # image_url intentionally excluded
+        }
+
+        # ── overlay-2.0 default_format ─────────────────────────────────
+        # font_family / font_size / color come from widgets (authoritative).
+        # bold/italic/underline/etc. have no dedicated panel controls — keep
+        # whatever the item's current default_format already stores; they are
+        # only changed via inline text-editor formatting.
+        existing_cf = (
+            meta.default_format
+            if (meta is not None and meta.default_format is not None)
+            else CharFormat()
+        )
+        df = existing_cf.to_dict()      # full (non-sparse) — preserves b/i/u/etc.
+        df["font_family"] = font_family
+        df["font_size"]   = font_size
+        df["color"]       = color
+        contents_dict["default_format"] = df
+
+        # ── overlay-2.0 frame ──────────────────────────────────────────
+        contents_dict["frame"] = {
+            "halign":        halign,
+            "valign":        valign,
+            "margin_left":   margin_left,
+            "margin_right":  margin_right,
+            "margin_top":    margin_top,
+            "margin_bottom": margin_bottom,
+        }
+
+        # ── Write back to the live item so the JSON editor updates ─────
+        # Update BOTH meta.* fields AND the item-level rendering attributes.
+        # set_item() reloads the panel by reading item.pen_color / text_color /
+        # etc. (not meta.*), so those must be in sync or the UI will revert.
+        from utils import hex_to_qcolor as _hq
+        from PyQt6.QtGui import QColor as _QColor
+
+        if meta is not None:
+            meta.color       = color
+            meta.halign      = halign
+            meta.valign      = valign
+            meta.font_family = font_family
+            meta.font_size   = font_size
+            meta.margin_left   = margin_left
+            meta.margin_right  = margin_right
+            meta.margin_top    = margin_top
+            meta.margin_bottom = margin_bottom
+            meta.wrap        = wrap
+            meta.flow_type   = flow_type
+            meta.image_anchor = image_anchor
+            new_default_fmt = CharFormat.from_dict(df)
+            meta.default_format = new_default_fmt
+            meta.frame          = TextFrame.from_dict(contents_dict["frame"])
+
+            # Renormalize blocks by re-extracting from the live QTextDocument.
+            # _qtextdoc_to_blocks compares each run's actual character format
+            # against new_default_fmt and emits only the fields that differ,
+            # so overrides are correctly sparse relative to the new default.
+            if meta.blocks is not None:
+                from models import TextBlock as _TB
+                new_blocks_raw = _qtextdoc_to_blocks(
+                    self.text_contents.document(), new_default_fmt
+                )
+                meta.blocks = [_TB.from_dict(b) for b in new_blocks_raw]
+
+        # Style rendering attributes (read by set_item via item.pen_color etc.)
+        _transparent = _QColor(0, 0, 0, 0)
+        _red         = _QColor(Qt.GlobalColor.red)
+        _yellow      = _QColor(Qt.GlobalColor.yellow)
+        if hasattr(item, "pen_color"):
+            item.pen_color = _hq(style_dict["pen_color"], _red)
+        if hasattr(item, "pen_width"):
+            item.pen_width = style_dict["pen_width"]
+        if hasattr(item, "line_dash"):
+            item.line_dash = style_dict["line_dash"]
+        if hasattr(item, "brush_color"):
+            item.brush_color = _hq(style_dict["fill_color"], _transparent)
+        if hasattr(item, "_apply_pen_brush"):
+            item._apply_pen_brush()
+        elif hasattr(item, "_apply_pen"):
+            item._apply_pen()
+
+        # Contents rendering attributes (read by set_item via item.text_color etc.)
+        _color_qc = _hq(color, _yellow)
+        if hasattr(item, "text_color"):
+            item.text_color = _color_qc
+        if hasattr(item, "text_size_pt"):
+            item.text_size_pt = font_size
+
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+
+        # ── Persist (targeted merge into user settings file) ───────────
+        mgr.save_user_item_defaults(kind, style_dict, contents_dict)
+
+        _QMessageBox.information(
+            self,
+            "Saved",
+            f"Default settings for '{kind}' saved to:\n{mgr.user_settings_file}",
+        )
+
+    def set_active_domain(self, domain_name: str):
+        """Update the DSL label (and item ann_dsl) when the domain menu changes.
+
+        Args:
+            domain_name: The selected domain name, or "" for Generic (no domain).
+        """
+        item = self._current_item
+        if item is None or not hasattr(item, "ann_dsl"):
+            return
+        if domain_name:
+            # Stamp domain key — preserve existing sub-keys from this domain
+            existing = item.ann_dsl.get(domain_name, {})
+            item.ann_dsl = {domain_name: existing}
+        else:
+            item.ann_dsl = {}
+        self.dsl_label.setText(_format_dsl_label(item.ann_dsl))
+        # Propagate change to JSON editor
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
 
     def set_item(self, item: Optional[QGraphicsItem]):
-        """Set the item to display/edit in the property panel."""
+        """Set the item to display/edit in the property panel.
+
+        Populates all schema-matched widgets from the item's attributes
+        and its ``meta`` (AnnotationContents) dataclass.  Prints
+        ``[PropPanel] NO WIDGET`` for schema values that have no matching
+        widget yet.
+        """
+        is_new_item = item is not self._current_item
         self._current_item = item
         if item is None or not hasattr(item, "meta"):
             self.kind_label.setText("-")
-            self.label_edit.setText("")
-            self.tech_edit.setText("")
-            self.note_edit.setText("")
+            self.dsl_label.setText("Generic")
+            self.edit_id.setText("")
+            self.text_contents.setPlainText("")
             self._set_enabled(False)
-            self._set_text_rows_visible(True, True, True)
-            self._set_color_rows_visible(False, False, False)
-            self._set_extra_rows_visible(False, False, False, False, False, text_box_width=False, text_layout=False)
-            self._set_dash_pattern_visible(False)
-            self.angle_row.setVisible(False)
+            if HAS_UI and hasattr(self, "_save_default_btn"):
+                self._save_default_btn.setVisible(False)
             return
 
-        # Switch to Properties tab when an item is selected
-        self.tabs.setCurrentIndex(1)
+        if HAS_UI and hasattr(self, "_save_default_btn"):
+            self._save_default_btn.setVisible(True)
 
-        meta: AnnotationMeta = getattr(item, "meta")
-        self.kind_label.setText(getattr(item, "kind", ""))
+        # Switch to Style tab only when the selected item changes, not on refresh
+        if is_new_item:
+            self.tabs.setCurrentIndex(0)
+        self._block_all_signals(True)
 
-        # Block signals while setting values
-        self._block_text_signals(True)
+        meta: AnnotationContents = getattr(item, "meta")
+        kind = getattr(item, "kind", "")
 
-        self.label_edit.setText(meta.label)
-        self.tech_edit.setText(meta.tech)
-        self.note_edit.setText(meta.note)
+        # ── geom frame visibility (xywh vs xy12) ────────────────────
+        is_line_like = kind in ("line",)
+        if HAS_UI:
+            self.frame_xywh.setVisible(not is_line_like)
+            self.frame_xy12.setVisible(is_line_like)
 
-        # Set alignment and font size values
-        align_map = {"left": 0, "center": 1, "right": 2}
-        self.label_align.setCurrentIndex(align_map.get(meta.label_align, 1))
-        self.label_size.setValue(meta.label_size)
-        self.tech_align.setCurrentIndex(align_map.get(meta.tech_align, 1))
-        self.tech_size.setValue(meta.tech_size)
-        self.note_align.setCurrentIndex(align_map.get(meta.note_align, 1))
-        self.note_size.setValue(meta.note_size)
+        # ── annotationItem top-level ─────────────────────────────────
+        self.edit_id.setText(getattr(item, "ann_id", ""))
+        self.kind_label.setText(kind)
+        _dsl_dict = getattr(item, "ann_dsl", {})
+        self.dsl_label.setText(_format_dsl_label(_dsl_dict))
+        self.spin_z.setValue(int(item.zValue()))
+        self.edit_parent_id.setText(getattr(item, "parent_id", ""))
 
-        self._block_text_signals(False)
+        # ── geom (rect shapes) ──────────────────────────────────────
+        pos = item.pos()
+        self.spin_x.setValue(pos.x())
+        self.spin_y.setValue(pos.y())
+        if hasattr(item, "_width"):
+            self.spin_w.setValue(item._width)
+            self.spin_h.setValue(item._height)
+
+        # ── geom (line shapes: x1,y1,x2,y2) ─────────────────────────
+        if hasattr(item, "line"):
+            ln = item.line()
+            self.spin_x1.setValue(ln.x1() + pos.x())
+            self.spin_y1.setValue(ln.y1() + pos.y())
+            self.spin_x2.setValue(ln.x2() + pos.x())
+            self.spin_y2.setValue(ln.y2() + pos.y())
+
+        # ── geom adjusts ────────────────────────────────────────────
+        if hasattr(item, "_adjust1"):
+            self.adjust1_spin.setValue(float(item._adjust1))
+        if hasattr(item, "_adjust2"):
+            self.adjust2_spin.setValue(float(item._adjust2))
+        if hasattr(item, "_adjust3"):
+            self.adjust3_spin.setValue(float(item._adjust3))
+
+        # ── geom angle ──────────────────────────────────────────────
+        self.angle_spin.setValue(item.rotation() % 360)
+
+        # ── style.pen ───────────────────────────────────────────────
+        pen_color = getattr(item, "pen_color", QColor("red"))
+        self._set_color_widgets("pen", pen_color)
+        self.line_width_spin.setValue(float(getattr(item, "pen_width", 2)))
+
+        dash_style = getattr(item, "line_dash", "solid")
+        dash_map = {"solid": 0, "dashed": 1}
+        self.dash_combo.setCurrentIndex(dash_map.get(dash_style, 0))
+        self.dash_length_spin.setValue(float(getattr(item, "dash_pattern_length", 30)))
+        self.dash_solid_spin.setValue(int(getattr(item, "dash_solid_percent", 50)))
+
+        # ── style.fill ──────────────────────────────────────────────
+        fill_color = getattr(item, "brush_color", QColor(0, 0, 0, 0))
+        self._set_color_widgets("fill", fill_color)
+
+        # ── style arrow ─────────────────────────────────────────────
+        arrow_mode = getattr(item, "arrow_mode", "none")
+        arrow_map = {"none": 0, "start": 1, "end": 2, "both": 3}
+        self.arrow_combo.setCurrentIndex(arrow_map.get(arrow_mode, 0))
+        arrow_size = getattr(item, "arrow_size", 12.0)
+        self.arrow_begin_spin.setValue(arrow_size)
+        self.arrow_end_spin.setValue(arrow_size)
+
+        # ── text color ──────────────────────────────────────────────
+        text_color = getattr(item, "text_color", pen_color)
+        self._set_color_widgets("text", text_color)
+
+        # ── contents — resolve effective frame and default_format ─────
+        _eff_frame = meta.effective_frame()
+        _eff_fmt = meta.effective_default_format()
+
+        font_family = _eff_fmt.font_family
+        font_size = max(6, int(_eff_fmt.font_size or 12))
+        halign = _eff_frame.halign
+        valign = _eff_frame.valign
+
+        from PyQt6.QtGui import QFont as _QFont, QTextCharFormat as _TCF
+        from models import hex_to_css_color
+        from utils import hex_to_qcolor
+
+        _te_fnt = _QFont(font_family) if font_family else _QFont()
+        _te_fnt.setPointSize(font_size)
+        self.text_contents.document().setDefaultFont(_te_fnt)
+
+        # Apply default text color as document CSS so that runs without an
+        # explicit color render in the item's configured default color.
+        # Must be set BEFORE setHtml() so Qt picks it up when building the doc.
+        _def_color_hex = _eff_fmt.color or getattr(meta, "color", "")
+        if _def_color_hex:
+            _css_col = hex_to_css_color(_def_color_hex)
+            self.text_contents.document().setDefaultStyleSheet(
+                f"body, p {{ color: {_css_col}; }}"
+            )
+
+        # For newly created items (no blocks, no text) snapshot default_format
+        # and frame immediately so they appear in the JSON editor right away.
+        # Uses the actual resolved font family from the QFont we just installed
+        # (empty font_family → OS default → e.g. "Segoe UI").
+        if is_new_item and meta.blocks is None and not getattr(meta, "text", "").strip():
+            if meta.default_format is None:
+                _actual_family = _te_fnt.family()
+                meta.default_format = CharFormat(
+                    font_family=_actual_family if _actual_family else font_family,
+                    font_size=font_size,
+                    color=getattr(meta, "color", "") or "",
+                )
+            if meta.frame is None:
+                meta.frame = _eff_frame
+            meta.blocks = []
+            if hasattr(item, "_notify_changed"):
+                item._notify_changed()
+
+        if not self.text_contents.hasFocus():
+            if meta.blocks is not None:
+                # Overlay-2.0: render from blocks
+                html = _blocks_to_html(meta.blocks, _eff_fmt, halign)
+                if html:
+                    self.text_contents.setHtml(html)
+                else:
+                    self.text_contents.clear()
+            else:
+                text = getattr(meta, "text", "")
+                if text:
+                    self.text_contents.setHtml(text)
+                else:
+                    self.text_contents.clear()
+
+        halign_map = {"left": 0, "center": 1, "justified": 2, "right": 3}
+        valign_map = {"top": 0, "middle": 1, "bottom": 2}
+        self.text_halign_combo.setCurrentIndex(halign_map.get(halign, 1))
+        self.text_valign_combo.setCurrentIndex(valign_map.get(valign, 0))
+        self._apply_align_to_textedit(halign)
+
+        self.spin_text_size.setValue(font_size)
+        # Always update the font combo — even when font_family is "" the OS
+        # default font is valid and should be reflected.
+        _actual_family = _te_fnt.family()
+        if _actual_family:
+            self.combo_font.setCurrentFont(_QFont(_actual_family))
+
+        # Set the typing-format (format applied to newly typed characters) so
+        # that text the user types inherits the item's default font/size/color
+        # rather than whatever Qt's theme happens to provide.
+        _tf = _TCF()
+        if _actual_family:
+            _tf.setFontFamilies([_actual_family])
+        _tf.setFontPointSize(float(font_size))
+        if _def_color_hex:
+            _tc = hex_to_qcolor(_def_color_hex, QColor())
+            if _tc.isValid():
+                _tf.setForeground(_tc)
+        self.text_contents.setCurrentCharFormat(_tf)
+
+        self.chk_wrap.setChecked(getattr(meta, "wrap", True))
+
+        self.spin_margin_left.setValue(int(_eff_frame.margin_left))
+        self.spin_margin_right.setValue(int(_eff_frame.margin_right))
+        self.spin_margin_top.setValue(int(_eff_frame.margin_top))
+        self.spin_margin_bottom.setValue(int(_eff_frame.margin_bottom))
+
+        # ── contents.color → text color (already set via item.text_color above)
+
+        # ── contents.flow_type ──────────────────────────────────────
+        flow_type = getattr(meta, "flow_type", "none")
+        flow_map = {"none": 0, "horizontal": 1, "vertical": 2}
+        self.flow_type_combo.setCurrentIndex(flow_map.get(flow_type, 0))
+
+        # ── contents.image_url / image_anchor ───────────────────────
+        self.edit_graphic_url.setText(getattr(meta, "image_url", ""))
+        self.spin_graphic_anchor.setValue(int(getattr(meta, "image_anchor", 0)))
+
+        # spacing / text_box_width / text_box_height: no UI widget yet (deferred)
+
+        self._block_all_signals(False)
+
+        # ── ports list ───────────────────────────────────────────────
+        if HAS_UI:
+            self.list_ports.blockSignals(True)
+            self.list_ports.clear()
+            port_ids = getattr(item, "ports", [])
+            for pid in port_ids:
+                self.list_ports.addItem(pid)
+            self.group_ports.setVisible(bool(port_ids))
+            if port_ids:
+                row_h = self.list_ports.sizeHintForRow(0)
+                frame = self.list_ports.frameWidth() * 2
+                self.list_ports.setFixedHeight(row_h * len(port_ids) + frame)
+            self.list_ports.blockSignals(False)
+
         self._set_enabled(True)
 
-        kind = getattr(item, "kind", "")
+        # ── Kind-specific control setup (visibility, dash pattern etc) ──
         pen_color = getattr(item, "pen_color", QColor("red"))
 
         if kind == "rect":
@@ -820,23 +1998,10 @@ class PropertyPanel(QWidget):
         elif kind == "group":
             self._setup_group_controls(item, pen_color)
         else:
-            self._set_color_rows_visible(False, False, False)
-            self._set_extra_rows_visible(False, False, False, False, False, text_box_width=False, text_layout=False)
-            self._set_dash_pattern_visible(False)
-
-        # Rotation angle — show for rotatable items
-        is_rotatable = hasattr(item, '_is_rotatable') and item._is_rotatable()
-        self.angle_row.setVisible(is_rotatable)
-        if is_rotatable:
-            self.angle_spin.blockSignals(True)
-            self.angle_spin.setValue(int(item.rotation()) % 360)
-            self.angle_spin.blockSignals(False)
+            pass
 
     def _setup_rect_controls(self, item, pen_color):
         """Configure controls for rect items."""
-        self._set_text_rows_visible(True, True, True)
-        self._set_color_rows_visible(True, True, True)
-        self._set_extra_rows_visible(False, True, True, False, False, text_box_width=False, text_layout=True)
         self._set_preview(self.pen_color_preview, pen_color)
         self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
@@ -845,9 +2010,6 @@ class PropertyPanel(QWidget):
 
     def _setup_ellipse_controls(self, item, pen_color):
         """Configure controls for ellipse items."""
-        self._set_text_rows_visible(True, True, True)
-        self._set_color_rows_visible(True, True, True)
-        self._set_extra_rows_visible(False, True, True, False, False, text_box_width=False, text_layout=True)
         self._set_preview(self.pen_color_preview, pen_color)
         self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
@@ -856,9 +2018,6 @@ class PropertyPanel(QWidget):
 
     def _setup_roundedrect_controls(self, item, pen_color):
         """Configure controls for rounded rect items."""
-        self._set_text_rows_visible(True, True, True)
-        self._set_color_rows_visible(True, True, True)
-        self._set_extra_rows_visible(True, True, True, False, False, text_box_width=False, text_layout=True)
         self._set_preview(self.pen_color_preview, pen_color)
         self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
@@ -871,9 +2030,6 @@ class PropertyPanel(QWidget):
 
     def _setup_line_controls(self, item, pen_color):
         """Configure controls for line items."""
-        self._set_text_rows_visible(True, True, True)
-        self._set_color_rows_visible(True, False, True)
-        self._set_extra_rows_visible(False, True, True, True, True, text_box_width=True, text_layout=True)
         self._set_preview(self.pen_color_preview, pen_color)
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
         self._setup_line_style_controls(item)
@@ -900,10 +2056,6 @@ class PropertyPanel(QWidget):
 
     def _setup_text_controls(self, item, pen_color):
         """Configure controls for text items."""
-        self._set_text_rows_visible(False, False, True)
-        self._set_color_rows_visible(False, False, True)
-        self._set_extra_rows_visible(False, False, False, False, False, text_box_width=False, text_layout=False)
-        self._set_dash_pattern_visible(False)
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
         if isinstance(item, MetaTextItem):
             self.note_edit.setText(item.toPlainText())
@@ -920,7 +2072,6 @@ class PropertyPanel(QWidget):
         self.dash_combo.setCurrentIndex(dash_map.get(dash_style, 0))
         self.dash_combo.blockSignals(False)
 
-        self._set_dash_pattern_visible(dash_style == "dashed")
         self.dash_length_spin.blockSignals(True)
         self.dash_length_spin.setValue(int(getattr(item, "dash_pattern_length", 30)))
         self.dash_length_spin.blockSignals(False)
@@ -933,16 +2084,21 @@ class PropertyPanel(QWidget):
         if not hasattr(item, "meta"):
             return
 
-        # Text spacing (0, 0.5, 1, 1.5, 2)
-        spacing = getattr(item.meta, "text_spacing", 0.0)
+        meta = item.meta
+        # Text spacing — new field "spacing", fallback to "text_spacing"
+        spacing = self._safe_attr(meta, "spacing", None, "meta.spacing")
+        if spacing is None:
+            spacing = self._safe_attr(meta, "text_spacing", 0.0, "meta.text_spacing")
         spacing_map = {0.0: 0, 0.5: 1, 1.0: 2, 1.5: 3, 2.0: 4}
-        spacing_index = spacing_map.get(spacing, 0)
+        spacing_index = spacing_map.get(float(spacing), 0)
         self.text_spacing_combo.blockSignals(True)
         self.text_spacing_combo.setCurrentIndex(spacing_index)
         self.text_spacing_combo.blockSignals(False)
 
-        # Vertical alignment (top, middle, bottom)
-        valign = getattr(item.meta, "text_valign", "top")
+        # Vertical alignment — new field "valign", fallback to "text_valign"
+        valign = self._safe_attr(meta, "valign", None, "meta.valign")
+        if valign is None:
+            valign = self._safe_attr(meta, "text_valign", "top", "meta.text_valign")
         valign_map = {"top": 0, "middle": 1, "bottom": 2}
         valign_index = valign_map.get(valign, 0)
         self.text_valign_combo.blockSignals(True)
@@ -959,30 +2115,35 @@ class PropertyPanel(QWidget):
         self.note_size.blockSignals(block)
 
     def _apply_changes(self):
-        """Apply changes from the form to the current item."""
+        """Apply changes from the form to the current item.
+
+        Uses new AnnotationContents fields (text, halign, valign, font_size,
+        spacing) when available, with fallback reads for old attributes.
+        """
         item = self._current_item
         if item is None or not hasattr(item, "meta"):
             return
-        meta: AnnotationMeta = getattr(item, "meta")
+        meta: AnnotationContents = getattr(item, "meta")
 
-        # Capture old meta values for undo
-        meta_fields = ["label", "tech", "note", "label_align", "label_size",
-                        "tech_align", "tech_size", "note_align", "note_size"]
-        old_meta = {f: getattr(meta, f) for f in meta_fields}
+        # Capture old values for undo — use new fields
+        contents_fields = ["text", "halign", "valign", "font_size", "spacing"]
+        old_meta = {}
+        for f in contents_fields:
+            old_meta[f] = getattr(meta, f, None)
 
-        meta.label = self.label_edit.text().strip()
-        meta.tech = self.tech_edit.text().strip()
-        meta.note = self.note_edit.text().strip()
+        # -- Write new contents fields from the new UI --
+        if HAS_UI:
+            meta.text = self.text_contents.toHtml()
+            halign_values = ["left", "center", "justified", "right"]
+            meta.halign = halign_values[self.text_halign_combo.currentIndex()]
+            valign_values = ["top", "middle", "bottom"]
+            meta.valign = valign_values[self.text_valign_combo.currentIndex()]
+            meta.font_size = self.spin_text_size.value()
+            meta.wrap = self.chk_wrap.isChecked()
 
-        align_values = ["left", "center", "right"]
-        meta.label_align = align_values[self.label_align.currentIndex()]
-        meta.label_size = self.label_size.value()
-        meta.tech_align = align_values[self.tech_align.currentIndex()]
-        meta.tech_size = self.tech_size.value()
-        meta.note_align = align_values[self.note_align.currentIndex()]
-        meta.note_size = self.note_size.value()
-
-        new_meta = {f: getattr(meta, f) for f in meta_fields}
+        new_meta = {}
+        for f in contents_fields:
+            new_meta[f] = getattr(meta, f, None)
 
         # Skip if nothing changed
         if old_meta == new_meta:
@@ -991,8 +2152,9 @@ class PropertyPanel(QWidget):
         setattr(item, "meta", meta)
 
         if isinstance(item, MetaTextItem):
-            if not getattr(item, '_editing', False) and item.toPlainText() != meta.note:
-                item.setPlainText(meta.note)
+            text_val = getattr(meta, "text", "") or getattr(meta, "note", "")
+            if not getattr(item, '_editing', False) and item.toPlainText() != text_val:
+                item.setPlainText(text_val)
 
         if hasattr(item, "_update_label_text"):
             item._update_label_text()
@@ -1004,7 +2166,8 @@ class PropertyPanel(QWidget):
             def update_func():
                 if isinstance(item, MetaTextItem):
                     if not getattr(item, '_editing', False):
-                        item.setPlainText(item.meta.note)
+                        text_val = getattr(item.meta, "text", "") or getattr(item.meta, "note", "")
+                        item.setPlainText(text_val)
                 if hasattr(item, "_update_label_text"):
                     item._update_label_text()
             cmd = ChangeMetaCommand(item, old_meta, new_meta, update_func)
@@ -1032,7 +2195,7 @@ class PropertyPanel(QWidget):
             item._apply_pen()
         elif hasattr(item, "_apply_pen_brush"):
             item._apply_pen_brush()
-        self._set_preview(self.pen_color_preview, c)
+        self._set_color_widgets("pen", c)
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
 
@@ -1042,7 +2205,7 @@ class PropertyPanel(QWidget):
                     item._apply_pen()
                 elif hasattr(item, "_apply_pen_brush"):
                     item._apply_pen_brush()
-                self._set_preview(self.pen_color_preview, item.pen_color)
+                self._set_color_widgets("pen", item.pen_color)
             cmd = ChangeStyleCommand(item, "pen_color", old_color, c, apply)
             self.undo_stack.push(cmd)
 
@@ -1065,7 +2228,7 @@ class PropertyPanel(QWidget):
         setattr(item, "brush_color", c)
         if hasattr(item, "_apply_pen_brush"):
             item._apply_pen_brush()
-        self._set_preview(self.fill_color_preview, c)
+        self._set_color_widgets("fill", c)
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
 
@@ -1073,37 +2236,70 @@ class PropertyPanel(QWidget):
             def apply():
                 if hasattr(item, "_apply_pen_brush"):
                     item._apply_pen_brush()
-                self._set_preview(self.fill_color_preview, item.brush_color)
+                self._set_color_widgets("fill", item.brush_color)
             cmd = ChangeStyleCommand(item, "brush_color", old_color, c, apply)
             self.undo_stack.push(cmd)
 
+    def _apply_run_color(self, item, color: QColor, saved_cursor=None):
+        """Apply *color* to the selected text run (or typing format).
+
+        ``meta.default_format`` is NEVER modified here — it is set once at
+        item creation and must not drift when individual runs are recolored.
+
+        If *saved_cursor* is provided (captured before a modal dialog stole
+        focus) it is used directly; otherwise the current cursor is read
+        from the text edit regardless of focus state.
+
+        When a selection exists, ``mergeCharFormat`` fires ``textChanged``
+        → ``_on_text_contents_changed``, which re-extracts blocks (with the
+        run's new color as a delta against the unchanged ``default_format``),
+        updates the canvas, and calls ``_notify_changed``.  This method only
+        needs to update the color-picker widgets in that path.
+
+        When there is no selection, ``setCharFormat`` sets the typing format
+        for the next character.  No canvas update is needed in that case
+        because no content has changed.
+
+        Args:
+            item: The current canvas item (must have a ``meta`` attribute).
+            color: The new text color.
+            saved_cursor: Optional QTextCursor captured before a dialog opened.
+        """
+        from PyQt6.QtGui import QTextCharFormat as _TCF
+
+        cursor = saved_cursor if saved_cursor is not None else self.text_contents.textCursor()
+
+        if cursor is not None:
+            fmt = _TCF()
+            fmt.setForeground(color)
+            if cursor.hasSelection():
+                # Restore selection (focus may have moved to dialog), then apply.
+                # textChanged → _on_text_contents_changed handles blocks +
+                # canvas + notify — do NOT call them again here.
+                self.text_contents.setTextCursor(cursor)
+                cursor.mergeCharFormat(fmt)
+                self.text_contents.setTextCursor(cursor)
+            else:
+                # No selection: set typing format for next character typed.
+                cursor.setCharFormat(fmt)
+                self.text_contents.setTextCursor(cursor)
+
+        # Always reflect the chosen color in the color-picker widgets.
+        self._set_color_widgets("text", color)
+
     def pick_text_color(self):
-        """Pick text color."""
+        """Pick text color via color dialog, applying to the current selection."""
         item = self._current_item
         if item is None or not hasattr(item, "meta"):
             return
         old_color = QColor(getattr(item, "text_color", QColor("yellow")))
+        # Capture cursor/selection BEFORE the dialog steals focus.
+        saved_cursor = self.text_contents.textCursor()
         c = self._pick_color(old_color, "Pick Text Color")
         if c is None:
             return
-        setattr(item, "text_color", c)
-        if isinstance(item, MetaTextItem):
-            item._apply_text_style()
-        if hasattr(item, "_update_label_text"):
-            item._update_label_text()
-        self._set_preview(self.text_color_preview, c)
-        if hasattr(item, "_notify_changed"):
-            item._notify_changed()
-
-        if self.undo_stack:
-            def apply():
-                if isinstance(item, MetaTextItem):
-                    item._apply_text_style()
-                if hasattr(item, "_update_label_text"):
-                    item._update_label_text()
-                self._set_preview(self.text_color_preview, item.text_color)
-            cmd = ChangeStyleCommand(item, "text_color", old_color, c, apply)
-            self.undo_stack.push(cmd)
+        # The QTextDocument's own undo stack handles undo for char-format changes.
+        self._apply_run_color(item, c, saved_cursor=saved_cursor)
 
     def _on_angle_changed(self, value: int):
         """Handle rotation angle change from spinner."""
@@ -1186,7 +2382,6 @@ class PropertyPanel(QWidget):
             old_dash = item.line_dash
             item.line_dash = dash_styles[index]
             is_dashed = dash_styles[index] == "dashed"
-            self._set_dash_pattern_visible(is_dashed)
             if is_dashed:
                 self.dash_length_spin.blockSignals(True)
                 self.dash_length_spin.setValue(30)
@@ -1209,7 +2404,6 @@ class PropertyPanel(QWidget):
                         item._apply_pen()
                     elif hasattr(item, "_apply_pen_brush"):
                         item._apply_pen_brush()
-                    self._set_dash_pattern_visible(item.line_dash == "dashed")
                 cmd = ChangeStyleCommand(item, "line_dash", old_dash, dash_styles[index], apply)
                 self.undo_stack.push(cmd)
 
@@ -1332,8 +2526,8 @@ class PropertyPanel(QWidget):
             return
         spacing_values = [0.0, 0.5, 1.0, 1.5, 2.0]
         if 0 <= index < len(spacing_values):
-            old_val = getattr(item.meta, "text_spacing", 0.0)
-            item.meta.text_spacing = spacing_values[index]
+            old_val = getattr(item.meta, "spacing", getattr(item.meta, "text_spacing", 0.0))
+            item.meta.spacing = spacing_values[index]
             if hasattr(item, "_update_label_text"):
                 item._update_label_text()
             if hasattr(item, "_notify_changed"):
@@ -1344,7 +2538,7 @@ class PropertyPanel(QWidget):
                     if hasattr(item, "_update_label_text"):
                         item._update_label_text()
                 cmd = ChangeMetaCommand(
-                    item, {"text_spacing": old_val}, {"text_spacing": spacing_values[index]}, update_func)
+                    item, {"spacing": old_val}, {"spacing": spacing_values[index]}, update_func)
                 self.undo_stack.push(cmd)
 
     def _on_text_valign_changed(self, index: int):
@@ -1354,8 +2548,8 @@ class PropertyPanel(QWidget):
             return
         valign_values = ["top", "middle", "bottom"]
         if 0 <= index < len(valign_values):
-            old_val = getattr(item.meta, "text_valign", "top")
-            item.meta.text_valign = valign_values[index]
+            old_val = getattr(item.meta, "valign", getattr(item.meta, "text_valign", "top"))
+            item.meta.valign = valign_values[index]
             if hasattr(item, "_update_label_position"):
                 item._update_label_position()
             item.update()
@@ -1368,8 +2562,391 @@ class PropertyPanel(QWidget):
                         item._update_label_position()
                     item.update()
                 cmd = ChangeMetaCommand(
-                    item, {"text_valign": old_val}, {"text_valign": valign_values[index]}, update_func)
+                    item, {"valign": old_val}, {"valign": valign_values[index]}, update_func)
                 self.undo_stack.push(cmd)
+
+    def _on_text_contents_changed(self):
+        """Handle text content edit (live update, no undo batching).
+
+        Extracts overlay-2.0 blocks from the QTextDocument and stores them in
+        ``meta.blocks``.  Also updates the legacy ``meta.text`` HTML fallback
+        so canvas items that haven't been migrated to blocks rendering still
+        display correctly.
+
+        Ensures ``meta.frame`` and ``meta.default_format`` are initialised from
+        the current UI controls so the three sub-objects stay in sync.
+        """
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+
+        meta = item.meta
+
+        # Ensure nested objects exist (initialise from current state if first edit)
+        if meta.frame is None:
+            meta.frame = TextFrame(
+                halign=getattr(meta, "halign", "center"),
+                valign=getattr(meta, "valign", "top"),
+                margin_left=getattr(meta, "margin_left", 4.0),
+                margin_right=getattr(meta, "margin_right", 4.0),
+                margin_top=getattr(meta, "margin_top", 4.0),
+                margin_bottom=getattr(meta, "margin_bottom", 4.0),
+            )
+        if meta.default_format is None:
+            # Snapshot the document's ACTUAL default font — set_item() already
+            # installed the correct font from settings/effective_default_format.
+            # Using the physical family here ensures _qtextdoc_to_blocks only
+            # emits font_family deltas for runs that were EXPLICITLY changed;
+            # runs using the document default won't carry a redundant font_family.
+            _doc_font = self.text_contents.document().defaultFont()
+            _fam = _doc_font.family()
+            _pt = _doc_font.pointSize()
+            meta.default_format = CharFormat(
+                font_family=_fam if _fam else getattr(meta, "font_family", ""),
+                font_size=_pt if _pt > 0 else max(6, getattr(meta, "font_size", 12)),
+                color=getattr(meta, "color", "") or "",
+            )
+
+        # Extract blocks from the QTextDocument
+        doc = self.text_contents.document()
+        raw_blocks = _qtextdoc_to_blocks(doc, meta.default_format)
+        meta.blocks = [TextBlock.from_dict(b) for b in raw_blocks]
+
+        # Update legacy text fallback (for canvas items rendering via HTML)
+        import re
+        html = self.text_contents.toHtml()
+        m = re.search(r'<body[^>]*>(.*?)</body>', html, re.DOTALL | re.IGNORECASE)
+        meta.text = m.group(1).strip() if m else self.text_contents.toPlainText()
+
+        if hasattr(item, "_update_label_text"):
+            item._update_label_text()
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+
+    def _on_text_cursor_changed(self):
+        """Reflect the current run's format in the UI controls.
+
+        Reads the ``QTextCharFormat`` at the cursor (or of the selection) and
+        the ``QTextBlockFormat`` of the current paragraph, then updates the
+        font, size, color, and alignment controls — without triggering the
+        format-change handlers that would write back to the document.
+        """
+        if not self.text_contents.hasFocus():
+            return
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+
+        from PyQt6.QtGui import QFont as _QFont, QTextCharFormat as _TCF
+        from PyQt6.QtCore import Qt as _Qt
+
+        # Effective defaults — used as fallback when the cursor sits on text
+        # that has no explicit char format (i.e. inherits from default_format).
+        _eff_fmt = item.meta.effective_default_format()
+
+        cursor = self.text_contents.textCursor()
+        # charFormat() on a cursor with a selection returns the format of
+        # the first character; charFormat() without selection returns
+        # the format at the insertion point (including typing format).
+        char_fmt = cursor.charFormat()
+        block_fmt = cursor.blockFormat()
+
+        self._block_format_signals(True)
+        try:
+            # ── font family ───────────────────────────────────────────
+            families = char_fmt.fontFamilies()
+            family = (families[0] if isinstance(families, list) and families
+                      else families if isinstance(families, str) else "")
+            if not family:
+                # No explicit family on this run — show the document default.
+                family = self.text_contents.document().defaultFont().family()
+            if not family:
+                family = _eff_fmt.font_family
+            if family:
+                self.combo_font.setCurrentFont(_QFont(family))
+
+            # ── font size ─────────────────────────────────────────────
+            pt = char_fmt.fontPointSize()
+            if pt <= 0:
+                # No explicit size — show the document default.
+                pt = self.text_contents.document().defaultFont().pointSize()
+            if pt <= 0:
+                pt = _eff_fmt.font_size or 12
+            self.spin_text_size.setValue(int(round(pt)))
+
+            # ── text color ────────────────────────────────────────────
+            fg = char_fmt.foreground()
+            if fg.style() != _Qt.BrushStyle.NoBrush:
+                self._set_color_widgets("text", fg.color())
+            elif _eff_fmt.color:
+                # No explicit color on this run — show the default_format color.
+                from utils import hex_to_qcolor
+                _dc = hex_to_qcolor(_eff_fmt.color, QColor())
+                if _dc.isValid():
+                    self._set_color_widgets("text", _dc)
+
+            # ── block alignment → halign combo ────────────────────────
+            alignment = block_fmt.alignment()
+            if alignment & _Qt.AlignmentFlag.AlignHCenter:
+                halign = "center"
+            elif alignment & _Qt.AlignmentFlag.AlignRight:
+                halign = "right"
+            elif alignment & _Qt.AlignmentFlag.AlignJustify:
+                halign = "justified"
+            elif alignment & _Qt.AlignmentFlag.AlignLeft:
+                halign = "left"
+            else:
+                halign = _eff_fmt and item.meta.effective_frame().halign or ""
+            if halign:
+                halign_map = {"left": 0, "center": 1, "justified": 2, "right": 3}
+                self.text_halign_combo.setCurrentIndex(halign_map.get(halign, 0))
+        finally:
+            self._block_format_signals(False)
+
+    def _apply_font_to_textedit(self):
+        """Sync QTextEdit default font from current font_family/font_size widgets."""
+        from PyQt6.QtGui import QFont as _QFont
+        family = self.combo_font.currentFont().family()
+        size = max(6, int(self.spin_text_size.value()))
+        fnt = _QFont(family) if family else _QFont()
+        fnt.setPointSize(size)
+        self.text_contents.document().setDefaultFont(fnt)
+
+    def _apply_align_to_textedit(self, halign: str):
+        """Set the QTextEdit document default alignment without touching content."""
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtGui import QTextOption
+        flag_map = {
+            "left":      Qt.AlignmentFlag.AlignLeft,
+            "center":    Qt.AlignmentFlag.AlignHCenter,
+            "right":     Qt.AlignmentFlag.AlignRight,
+            "justified": Qt.AlignmentFlag.AlignJustify,
+        }
+        flag = flag_map.get(halign, Qt.AlignmentFlag.AlignLeft)
+        opt = self.text_contents.document().defaultTextOption()
+        opt.setAlignment(flag)
+        self.text_contents.document().setDefaultTextOption(opt)
+
+    def _on_halign_changed(self, index: int):
+        """Handle horizontal text alignment change.
+
+        When the text editor has focus, applies the alignment to the current
+        paragraph (block-level format).  Always updates ``meta.frame.halign``
+        as the document-level default.
+        """
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+        halign_values = ["left", "center", "justified", "right"]
+        if 0 <= index < len(halign_values):
+            old_val = getattr(item.meta, "halign", "center")
+            new_val = halign_values[index]
+
+            # Apply to current paragraph — no hasFocus() check needed (combo
+            # steals focus but cursor position/selection is preserved).
+            from PyQt6.QtGui import QTextBlockFormat as _TBF
+            from PyQt6.QtCore import Qt as _Qt
+            _flag_map = {
+                "left":      _Qt.AlignmentFlag.AlignLeft,
+                "center":    _Qt.AlignmentFlag.AlignHCenter,
+                "right":     _Qt.AlignmentFlag.AlignRight,
+                "justified": _Qt.AlignmentFlag.AlignJustify,
+            }
+            blk_fmt = _TBF()
+            blk_fmt.setAlignment(_flag_map.get(new_val, _Qt.AlignmentFlag.AlignLeft))
+            cursor = self.text_contents.textCursor()
+            cursor.mergeBlockFormat(blk_fmt)
+            self.text_contents.setTextCursor(cursor)
+            self._apply_align_to_textedit(new_val)
+
+            # Write to flat field and nested frame (document-level default)
+            item.meta.halign = new_val
+            if item.meta.frame is None:
+                item.meta.frame = item.meta.effective_frame()
+            item.meta.frame.halign = new_val
+
+            if hasattr(item, "_update_label_text"):
+                item._update_label_text()
+            if hasattr(item, "_notify_changed"):
+                item._notify_changed()
+            if self.undo_stack:
+                def update_func():
+                    if hasattr(item, "_update_label_text"):
+                        item._update_label_text()
+                cmd = ChangeMetaCommand(item, {"halign": old_val}, {"halign": new_val}, update_func)
+                self.undo_stack.push(cmd)
+
+    def _on_font_size_changed(self, value: int):
+        """Handle font size change for the selected run.
+
+        ``meta.default_format`` is NEVER modified here — only the selected run
+        (or typing format) is affected.  When a selection exists, ``textChanged``
+        fires → ``_on_text_contents_changed`` handles blocks + canvas + notify.
+
+        Note: ``hasFocus()`` is NOT checked — the size spinner steals focus from
+        the text editor just like a color-picker dialog does, but the cursor
+        selection is preserved.  We use ``hasSelection()`` directly.
+        """
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+
+        from PyQt6.QtGui import QTextCharFormat as _TCF
+        fmt = _TCF()
+        fmt.setFontPointSize(float(value))
+
+        cursor = self.text_contents.textCursor()
+        if cursor.hasSelection():
+            # Restore selection visibility, apply, restore again.
+            # textChanged → _on_text_contents_changed handles blocks + canvas + notify.
+            self.text_contents.setTextCursor(cursor)
+            cursor.mergeCharFormat(fmt)
+            self.text_contents.setTextCursor(cursor)
+            return
+        # No selection: set typing format and refresh document display font.
+        cursor.setCharFormat(fmt)
+        self.text_contents.setTextCursor(cursor)
+        self._apply_font_to_textedit()
+
+    def _on_font_changed(self, font):
+        """Handle font family change for the selected run.
+
+        ``meta.default_format`` is NEVER modified here — only the selected run
+        (or typing format) is affected.  When a selection exists, ``textChanged``
+        fires → ``_on_text_contents_changed`` handles blocks + canvas + notify.
+
+        Note: ``hasFocus()`` is NOT checked — the font combo steals focus from
+        the text editor, but the cursor selection is preserved.
+        """
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+        new_val = font.family()
+
+        from PyQt6.QtGui import QTextCharFormat as _TCF
+        fmt = _TCF()
+        fmt.setFontFamilies([new_val])
+
+        cursor = self.text_contents.textCursor()
+        if cursor.hasSelection():
+            # Restore selection visibility, apply, restore again.
+            # textChanged → _on_text_contents_changed handles blocks + canvas + notify.
+            self.text_contents.setTextCursor(cursor)
+            cursor.mergeCharFormat(fmt)
+            self.text_contents.setTextCursor(cursor)
+            return
+        # No selection: set typing format and refresh document display font.
+        cursor.setCharFormat(fmt)
+        self.text_contents.setTextCursor(cursor)
+        self._apply_font_to_textedit()
+
+    def _on_wrap_changed(self, checked: bool):
+        """Handle text wrap toggle."""
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+        old_val = getattr(item.meta, "wrap", True)
+        item.meta.wrap = checked
+        if hasattr(item, "_update_label_text"):
+            item._update_label_text()
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+        if self.undo_stack:
+            def update_func():
+                if hasattr(item, "_update_label_text"):
+                    item._update_label_text()
+            cmd = ChangeMetaCommand(item, {"wrap": old_val}, {"wrap": checked}, update_func)
+            self.undo_stack.push(cmd)
+
+    def _on_flow_type_changed(self, index: int):
+        """Handle flow type change."""
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+        flow_values = ["none", "horizontal", "vertical", "none"]
+        old_val = getattr(item.meta, "flow_type", "none")
+        item.meta.flow_type = flow_values[index] if 0 <= index < len(flow_values) else "none"
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+        if self.undo_stack:
+            cmd = ChangeMetaCommand(item, {"flow_type": old_val}, {"flow_type": item.meta.flow_type}, lambda: None)
+            self.undo_stack.push(cmd)
+
+    def _on_margins_changed(self, _value: int):
+        """Handle any margin spinbox change — reads all four margins."""
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+        old_vals = {
+            "margin_left": getattr(item.meta, "margin_left", 0.0),
+            "margin_right": getattr(item.meta, "margin_right", 0.0),
+            "margin_top": getattr(item.meta, "margin_top", 0.0),
+            "margin_bottom": getattr(item.meta, "margin_bottom", 0.0),
+        }
+        item.meta.margin_left = float(self.spin_margin_left.value())
+        item.meta.margin_right = float(self.spin_margin_right.value())
+        item.meta.margin_top = float(self.spin_margin_top.value())
+        item.meta.margin_bottom = float(self.spin_margin_bottom.value())
+        # Mirror to nested frame
+        if item.meta.frame is None:
+            item.meta.frame = item.meta.effective_frame()
+        item.meta.frame.margin_left = item.meta.margin_left
+        item.meta.frame.margin_right = item.meta.margin_right
+        item.meta.frame.margin_top = item.meta.margin_top
+        item.meta.frame.margin_bottom = item.meta.margin_bottom
+        new_vals = {
+            "margin_left": item.meta.margin_left,
+            "margin_right": item.meta.margin_right,
+            "margin_top": item.meta.margin_top,
+            "margin_bottom": item.meta.margin_bottom,
+        }
+        if hasattr(item, "_update_label_text"):
+            item._update_label_text()
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+        if self.undo_stack and old_vals != new_vals:
+            def update_func():
+                if hasattr(item, "_update_label_text"):
+                    item._update_label_text()
+            cmd = ChangeMetaCommand(item, old_vals, new_vals, update_func)
+            self.undo_stack.push(cmd)
+
+    def _on_graphic_url_changed(self):
+        """Handle image URL edit."""
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+        old_val = getattr(item.meta, "image_url", "")
+        item.meta.image_url = self.edit_graphic_url.text()
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+        if self.undo_stack and old_val != item.meta.image_url:
+            cmd = ChangeMetaCommand(item, {"image_url": old_val}, {"image_url": item.meta.image_url}, lambda: None)
+            self.undo_stack.push(cmd)
+
+    def _on_graphic_anchor_changed(self, value: int):
+        """Handle image anchor spinbox change."""
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+        old_val = getattr(item.meta, "image_anchor", 0)
+        item.meta.image_anchor = value
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+        if self.undo_stack and old_val != value:
+            cmd = ChangeMetaCommand(item, {"image_anchor": old_val}, {"image_anchor": value}, lambda: None)
+            self.undo_stack.push(cmd)
+
+    def _on_port_selected(self, ann_id: str):
+        """Handle port ID clicked in the ports list — emit port_selected signal."""
+        if ann_id:
+            self.port_selected.emit(ann_id)
+
+    def _on_ports_focus_lost(self):
+        """Restore JSON editor focus to the parent item when ports list is left."""
+        item = self._current_item
+        if item and hasattr(item, "ann_id") and item.ann_id:
+            self.port_selected.emit(item.ann_id)
 
     def update_radius_display(self, item, radius: float):
         """Deprecated: Use update_adjust1_display instead."""
@@ -1378,9 +2955,6 @@ class PropertyPanel(QWidget):
 
     def _setup_hexagon_controls(self, item, pen_color):
         """Configure controls for hexagon items."""
-        self._set_text_rows_visible(True, True, True)
-        self._set_color_rows_visible(True, True, True)
-        self._set_extra_rows_visible(True, True, True, False, False, text_box_width=False, text_layout=True)
         self._set_preview(self.pen_color_preview, pen_color)
         self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
@@ -1394,9 +2968,6 @@ class PropertyPanel(QWidget):
 
     def _setup_cylinder_controls(self, item, pen_color):
         """Configure controls for cylinder items."""
-        self._set_text_rows_visible(True, True, True)
-        self._set_color_rows_visible(True, True, True)
-        self._set_extra_rows_visible(True, True, True, False, False, text_box_width=False, text_layout=True)
         self._set_preview(self.pen_color_preview, pen_color)
         self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
@@ -1410,9 +2981,6 @@ class PropertyPanel(QWidget):
 
     def _setup_blockarrow_controls(self, item, pen_color):
         """Configure controls for block arrow items."""
-        self._set_text_rows_visible(True, True, True)
-        self._set_color_rows_visible(True, True, True)
-        self._set_extra_rows_visible(True, True, True, False, False, text_box_width=False, text_layout=True, adjust2=True)
         self._set_preview(self.pen_color_preview, pen_color)
         self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
@@ -1430,18 +2998,7 @@ class PropertyPanel(QWidget):
 
     def _setup_seqblock_controls(self, item, pen_color):
         """Configure controls for sequence block items."""
-        self._set_text_rows_visible(True, True, True)
-        self._set_color_rows_visible(True, True, True)
         dc = getattr(item, "_divider_count", 0)
-        show_a1 = dc >= 1
-        show_a2 = dc >= 2
-        show_a3 = dc >= 3
-        self._set_extra_rows_visible(
-            show_a1, True, True, False, False,
-            text_box_width=False, text_layout=True,
-            adjust2=show_a2, adjust3=show_a3,
-            divider_count=True,
-        )
         # Divider count spinner
         self.divider_count_spin.blockSignals(True)
         self.divider_count_spin.setValue(dc)
@@ -1467,9 +3024,6 @@ class PropertyPanel(QWidget):
 
     def _setup_isocube_controls(self, item, pen_color):
         """Configure controls for isometric cube items."""
-        self._set_text_rows_visible(True, True, True)
-        self._set_color_rows_visible(True, True, True)
-        self._set_extra_rows_visible(True, True, True, False, False, text_box_width=False, text_layout=True, adjust2=True)
         self._set_preview(self.pen_color_preview, pen_color)
         self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
@@ -1489,9 +3043,6 @@ class PropertyPanel(QWidget):
 
     def _setup_polygon_controls(self, item, pen_color):
         """Configure controls for polygon items."""
-        self._set_text_rows_visible(True, True, True)
-        self._set_color_rows_visible(True, True, True)
-        self._set_extra_rows_visible(False, True, True, False, False, text_box_width=False, text_layout=True)
         self._set_preview(self.pen_color_preview, pen_color)
         self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
@@ -1500,11 +3051,7 @@ class PropertyPanel(QWidget):
 
     def _setup_curve_controls(self, item, pen_color):
         """Configure controls for curve items (pen, dash, arrow, optional adjust1 for ortho)."""
-        self._set_text_rows_visible(True, True, True)
-        self._set_color_rows_visible(True, False, True)
-        # Show adjust1 row if curve has H/V corners
         has_hv = hasattr(item, "_has_hv_corners") and item._has_hv_corners()
-        self._set_extra_rows_visible(has_hv, True, True, True, True, text_box_width=False, text_layout=False)
         if has_hv:
             self._configure_adjust_controls("curve")
             adjust1 = getattr(item, "_adjust1", 0)
@@ -1529,11 +3076,8 @@ class PropertyPanel(QWidget):
         self.arrow_size_spin.blockSignals(False)
 
     def _setup_group_controls(self, item, pen_color):
-        """Configure controls for group items (label only)."""
-        self._set_text_rows_visible(True, False, False)
-        self._set_color_rows_visible(False, False, False)
-        self._set_extra_rows_visible(False, False, False, False, False, text_box_width=False, text_layout=False)
-        self._set_dash_pattern_visible(False)
+        """Configure controls for group items."""
+        pass
 
     def update_angle_display(self, item, angle: float):
         """Update the angle spinbox display when rotation changes via canvas knob."""

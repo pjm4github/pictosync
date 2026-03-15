@@ -33,6 +33,9 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QFrame,
     QListWidget,
+    QRadioButton,
+    QButtonGroup,
+    QSizePolicy,
 )
 from PyQt6.QtGui import QColor
 
@@ -40,6 +43,23 @@ if TYPE_CHECKING:
     from settings import SettingsManager
 
 from styles import STYLES
+
+# Canvas item kinds with display names — order matches the toolbar
+CANVAS_ITEM_KINDS = [
+    ("rect",        "Rectangle"),
+    ("roundedrect", "Rounded Rectangle"),
+    ("ellipse",     "Ellipse"),
+    ("line",        "Line"),
+    ("curve",       "Curve"),
+    ("orthocurve",  "Ortho Curve"),
+    ("text",        "Text"),
+    ("hexagon",     "Hexagon"),
+    ("cylinder",    "Cylinder"),
+    ("blockarrow",  "Block Arrow"),
+    ("polygon",     "Polygon"),
+    ("isocube",     "Iso Cube"),
+    ("seqblock",    "Sequence Block"),
+]
 
 
 class ColorButton(QPushButton):
@@ -98,20 +118,74 @@ class SettingsDialog(QDialog):
         self.settings_manager = settings_manager
         self._parent_window = parent  # Store parent for theme application
         self.setWindowTitle("PictoSync Settings")
-        self.setMinimumSize(650, 480)
-        self.resize(720, 580)
+        self.setMinimumSize(650, 520)
+        self.resize(760, 620)
 
-        # Store original settings for cancel
+        # "user" | "system" | "builtin" — which layer is currently displayed
+        self._active_layer: str = "user"
+
+        # Store original settings for cancel (merged view)
         self._original_settings = self._snapshot_settings()
 
         self._setup_ui()
         self._load_settings()
+
+        # Wheel must not change spin/combo values unless the widget has focus.
+        from utils import install_wheel_guard
+        install_wheel_guard(self)
 
     def _setup_ui(self):
         """Create the dialog UI."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(4)
+
+        # ── Layer selector banner ─────────────────────────────────────────
+        layer_group = QGroupBox("Settings Layer")
+        layer_outer = QVBoxLayout(layer_group)
+        layer_outer.setContentsMargins(6, 4, 6, 4)
+        layer_outer.setSpacing(2)
+
+        # Radio buttons row
+        radio_row = QHBoxLayout()
+        radio_row.setSpacing(16)
+        self._rb_builtin = QRadioButton("Built-in (read-only)")
+        self._rb_system  = QRadioButton("System")
+        self._rb_user    = QRadioButton("User")
+        self._rb_user.setChecked(True)
+
+        # Force Fusion style so ::indicator:checked CSS is respected on Windows
+        # (QWindowsVistaStyle draws indicators via native UxTheme, ignoring CSS background-color)
+        from PyQt6.QtWidgets import QStyleFactory
+        _fusion = QStyleFactory.create("Fusion")
+        if _fusion:
+            self._rb_builtin.setStyle(_fusion)
+            self._rb_system.setStyle(_fusion)
+            self._rb_user.setStyle(_fusion)
+
+        self._layer_btn_group = QButtonGroup(self)
+        self._layer_btn_group.addButton(self._rb_builtin, 0)
+        self._layer_btn_group.addButton(self._rb_system,  1)
+        self._layer_btn_group.addButton(self._rb_user,    2)
+        self._layer_btn_group.idClicked.connect(self._on_layer_changed)
+
+        radio_row.addWidget(self._rb_builtin)
+        radio_row.addWidget(self._rb_system)
+        radio_row.addWidget(self._rb_user)
+        radio_row.addStretch()
+        layer_outer.addLayout(radio_row)
+
+        # File path + status label
+        self._layer_path_label = QLabel()
+        self._layer_path_label.setStyleSheet("font-size: 8pt; color: #888;")
+        self._layer_path_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
+        self._layer_path_label.setWordWrap(True)
+        layer_outer.addWidget(self._layer_path_label)
+
+        layout.addWidget(layer_group)
+        self._update_layer_path_label()
 
         # Tab widget
         self.tabs = QTabWidget()
@@ -120,10 +194,10 @@ class SettingsDialog(QDialog):
 
         # Create tabs
         self.tabs.addTab(self._create_general_tab(), "General")
-        self.tabs.addTab(self._create_editor_tab(), "Editor")
+        self.tabs.addTab(self._create_editor_tab(), "JSON Editor")
         self.tabs.addTab(self._create_canvas_tab(), "Canvas")
         self.tabs.addTab(self._create_alignment_tab(), "Alignment")
-        self.tabs.addTab(self._create_defaults_tab(), "Text Defaults")
+        self.tabs.addTab(self._create_item_defaults_tab(), "Item Defaults")
         self.tabs.addTab(self._create_external_tools_tab(), "External Tools")
 
         # Button box
@@ -135,7 +209,8 @@ class SettingsDialog(QDialog):
         )
         button_box.accepted.connect(self._on_ok)
         button_box.rejected.connect(self._on_cancel)
-        button_box.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(self._on_apply)
+        self._apply_btn = button_box.button(QDialogButtonBox.StandardButton.Apply)
+        self._apply_btn.clicked.connect(self._on_apply)
         button_box.button(QDialogButtonBox.StandardButton.RestoreDefaults).clicked.connect(self._on_restore_defaults)
         layout.addWidget(button_box)
 
@@ -146,6 +221,46 @@ class SettingsDialog(QDialog):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         return scroll
+
+    # =========================================================================
+    # Layer management
+    # =========================================================================
+
+    def _update_layer_path_label(self):
+        """Refresh the path/status label under the layer radio buttons."""
+        from pathlib import Path as _Path
+        mgr = self.settings_manager
+        if self._active_layer == "builtin":
+            self._layer_path_label.setText("Built-in defaults (no file — Python dataclass defaults)")
+        elif self._active_layer == "system":
+            p = mgr.system_settings_file
+            exists = "✓ exists" if _Path(p).exists() else "✗ not found"
+            self._layer_path_label.setText(f"System:  {p}   [{exists}]")
+        else:
+            p = mgr.user_settings_file
+            exists = "✓ exists" if _Path(p).exists() else "✗ not found"
+            self._layer_path_label.setText(f"User:    {p}   [{exists}]")
+
+    def _on_layer_changed(self, btn_id: int):
+        """Handle layer radio-button selection change."""
+        layer = {0: "builtin", 1: "system", 2: "user"}.get(btn_id, "user")
+        self._active_layer = layer
+        self._update_layer_path_label()
+
+
+        # Reload widgets from the selected layer
+        if layer == "builtin":
+            from settings import AppSettings
+            s = AppSettings()
+        elif layer == "system":
+            s = self.settings_manager.load_layer(self.settings_manager.system_settings_file)
+        else:
+            s = self.settings_manager.load_layer(self.settings_manager.user_settings_file)
+
+        self._load_settings(s)
+
+        # Built-in layer is read-only: disable Apply
+        self._apply_btn.setEnabled(layer != "builtin")
 
     # =========================================================================
     # General Tab
@@ -565,94 +680,228 @@ class SettingsDialog(QDialog):
     # Text Defaults Tab
     # =========================================================================
 
-    def _create_defaults_tab(self) -> QWidget:
-        """Create the Text Defaults settings tab."""
+    def _create_item_defaults_tab(self) -> QWidget:
+        """Create the Item Defaults tab with per-kind style + contents settings."""
+        self._item_kind_widgets: dict = {}  # kind -> {field_name -> widget}
+
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
+        layout.setSpacing(6)
 
-        # Label settings
-        label_group = QGroupBox("Label (Title)")
-        label_layout = QFormLayout(label_group)
-        label_layout.setContentsMargins(6, 4, 6, 4)
-        label_layout.setSpacing(4)
+        intro = QLabel(
+            "Set default Style and Contents for each canvas item kind. "
+            "These override the built-in defaults when creating new items. "
+            "Click a group header to expand/collapse it."
+        )
+        intro.setWordWrap(True)
+        intro.setStyleSheet("color: #666; margin-bottom: 4px; font-size: 8pt;")
+        layout.addWidget(intro)
 
-        self.default_label_align = QComboBox()
-        self.default_label_align.addItems(["left", "center", "right"])
-        label_layout.addRow("Alignment:", self.default_label_align)
+        for kind, label in CANVAS_ITEM_KINDS:
+            group = self._build_kind_group(kind, label)
+            layout.addWidget(group)
 
-        self.default_label_size = QSpinBox()
-        self.default_label_size.setRange(6, 72)
-        self.default_label_size.setSuffix(" pt")
-        label_layout.addRow("Font Size:", self.default_label_size)
-
-        layout.addWidget(label_group)
-
-        # Tech settings
-        tech_group = QGroupBox("Technology Tag")
-        tech_layout = QFormLayout(tech_group)
-        tech_layout.setContentsMargins(6, 4, 6, 4)
-        tech_layout.setSpacing(4)
-
-        self.default_tech_align = QComboBox()
-        self.default_tech_align.addItems(["left", "center", "right"])
-        tech_layout.addRow("Alignment:", self.default_tech_align)
-
-        self.default_tech_size = QSpinBox()
-        self.default_tech_size.setRange(6, 72)
-        self.default_tech_size.setSuffix(" pt")
-        tech_layout.addRow("Font Size:", self.default_tech_size)
-
-        layout.addWidget(tech_group)
-
-        # Note settings
-        note_group = QGroupBox("Note (Description)")
-        note_layout = QFormLayout(note_group)
-        note_layout.setContentsMargins(6, 4, 6, 4)
-        note_layout.setSpacing(4)
-
-        self.default_note_align = QComboBox()
-        self.default_note_align.addItems(["left", "center", "right"])
-        note_layout.addRow("Alignment:", self.default_note_align)
-
-        self.default_note_size = QSpinBox()
-        self.default_note_size.setRange(6, 72)
-        self.default_note_size.setSuffix(" pt")
-        note_layout.addRow("Font Size:", self.default_note_size)
-
-        layout.addWidget(note_group)
-
-        # Layout settings
-        layout_group = QGroupBox("Text Layout")
-        layout_layout = QFormLayout(layout_group)
-        layout_layout.setContentsMargins(6, 4, 6, 4)
-        layout_layout.setSpacing(4)
-
-        self.default_valign = QComboBox()
-        self.default_valign.addItems(["top", "middle", "bottom"])
-        layout_layout.addRow("Vertical Alignment:", self.default_valign)
-
-        self.default_line_spacing = QDoubleSpinBox()
-        self.default_line_spacing.setRange(0.0, 3.0)
-        self.default_line_spacing.setSingleStep(0.5)
-        self.default_line_spacing.setSuffix(" em")
-        layout_layout.addRow("Line Spacing:", self.default_line_spacing)
-
-        self.default_text_box_width = QDoubleSpinBox()
-        self.default_text_box_width.setRange(0.0, 500.0)
-        self.default_text_box_width.setSpecialValueText("Auto")
-        layout_layout.addRow("Text Box Width:", self.default_text_box_width)
-
-        self.default_text_box_height = QDoubleSpinBox()
-        self.default_text_box_height.setRange(0.0, 500.0)
-        self.default_text_box_height.setSpecialValueText("Auto")
-        layout_layout.addRow("Text Box Height:", self.default_text_box_height)
-
-        layout.addWidget(layout_group)
         layout.addStretch()
-
         return self._create_scrollable_tab(widget)
+
+    def _build_kind_group(self, kind: str, label: str) -> QGroupBox:
+        """Build a collapsible QGroupBox for one canvas item kind.
+
+        Stores widget references in ``self._item_kind_widgets[kind]``.
+
+        Args:
+            kind: Internal kind string (e.g. ``"roundedrect"``).
+            label: Human-readable display name (e.g. ``"Rounded Rectangle"``).
+
+        Returns:
+            The populated, collapsed QGroupBox.
+        """
+        w: dict = {}
+        self._item_kind_widgets[kind] = w
+
+        outer = QGroupBox(label)
+        outer.setCheckable(True)
+        outer.setChecked(False)  # collapsed by default
+        outer.setStyleSheet(
+            "QGroupBox { font-weight: bold; } "
+            "QGroupBox::indicator { width: 12px; height: 12px; }"
+        )
+
+        # Content widget — hidden when group is collapsed
+        content = QWidget()
+        content.setVisible(False)
+        outer_layout = QVBoxLayout(outer)
+        outer_layout.setContentsMargins(4, 2, 4, 4)
+        outer_layout.setSpacing(4)
+        outer_layout.addWidget(content)
+
+        outer.toggled.connect(content.setVisible)
+
+        inner = QVBoxLayout(content)
+        inner.setContentsMargins(0, 0, 0, 0)
+        inner.setSpacing(4)
+
+        # ── Style ──────────────────────────────────────────────────
+        style_group = QGroupBox("Style")
+        style_group.setStyleSheet("QGroupBox { font-weight: normal; }")
+        style_layout = QFormLayout(style_group)
+        style_layout.setContentsMargins(6, 4, 6, 4)
+        style_layout.setSpacing(4)
+
+        w["pen_color"] = ColorButton()
+        style_layout.addRow("Pen Color:", w["pen_color"])
+
+        w["pen_width"] = QSpinBox()
+        w["pen_width"].setRange(1, 20)
+        w["pen_width"].setSuffix(" px")
+        style_layout.addRow("Pen Width:", w["pen_width"])
+
+        w["line_dash"] = QComboBox()
+        w["line_dash"].addItems(["solid", "dashed", "dotted", "dot-dashed"])
+        style_layout.addRow("Line Dash:", w["line_dash"])
+
+        w["fill_color"] = ColorButton()
+        style_layout.addRow("Fill Color:", w["fill_color"])
+
+        inner.addWidget(style_group)
+
+        # ── Contents ───────────────────────────────────────────────
+        contents_group = QGroupBox("Contents")
+        contents_group.setStyleSheet("QGroupBox { font-weight: normal; }")
+        cont_layout = QFormLayout(contents_group)
+        cont_layout.setContentsMargins(6, 4, 6, 4)
+        cont_layout.setSpacing(4)
+
+        w["halign"] = QComboBox()
+        w["halign"].addItems(["left", "center", "right", "justified"])
+        cont_layout.addRow("Horizontal Align:", w["halign"])
+
+        w["valign"] = QComboBox()
+        w["valign"].addItems(["top", "middle", "bottom"])
+        cont_layout.addRow("Vertical Align:", w["valign"])
+
+        w["font_size"] = QSpinBox()
+        w["font_size"].setRange(6, 72)
+        w["font_size"].setSuffix(" pt")
+        cont_layout.addRow("Font Size:", w["font_size"])
+
+        w["font_family"] = QLineEdit()
+        w["font_family"].setPlaceholderText("(system default)")
+        cont_layout.addRow("Font Family:", w["font_family"])
+
+        w["color"] = ColorButton()
+        cont_layout.addRow("Text Color:", w["color"])
+
+        w["spacing"] = QDoubleSpinBox()
+        w["spacing"].setRange(0.0, 3.0)
+        w["spacing"].setSingleStep(0.1)
+        w["spacing"].setSuffix(" em")
+        cont_layout.addRow("Paragraph Spacing:", w["spacing"])
+
+        w["wrap"] = QCheckBox()
+        cont_layout.addRow("Word Wrap:", w["wrap"])
+
+        # Margins row (4 compact spinboxes on one line)
+        margin_row = QHBoxLayout()
+        for side in ("margin_left", "margin_right", "margin_top", "margin_bottom"):
+            spin = QDoubleSpinBox()
+            spin.setRange(0.0, 200.0)
+            spin.setSuffix(" px")
+            spin.setFixedWidth(80)
+            w[side] = spin
+            margin_row.addWidget(QLabel(side.split("_")[1].capitalize() + ":"))
+            margin_row.addWidget(spin)
+        margin_row.addStretch()
+        cont_layout.addRow("Margins:", margin_row)
+
+        w["flow_type"] = QComboBox()
+        w["flow_type"].addItems(["none", "horizontal", "vertical"])
+        cont_layout.addRow("Flow Type:", w["flow_type"])
+
+        w["text_box_width"] = QDoubleSpinBox()
+        w["text_box_width"].setRange(0.0, 2000.0)
+        w["text_box_width"].setSpecialValueText("Auto")
+        w["text_box_width"].setSuffix(" px")
+        cont_layout.addRow("Text Box Width:", w["text_box_width"])
+
+        w["text_box_height"] = QDoubleSpinBox()
+        w["text_box_height"].setRange(0.0, 2000.0)
+        w["text_box_height"].setSpecialValueText("Auto")
+        w["text_box_height"].setSuffix(" px")
+        cont_layout.addRow("Text Box Height:", w["text_box_height"])
+
+        inner.addWidget(contents_group)
+
+        return outer
+
+    def _load_item_defaults(self, s) -> None:
+        """Populate the item-kind widgets from *s.item_defaults*.
+
+        Args:
+            s: An ``AppSettings`` instance (may be merged, single-layer, or built-in).
+        """
+        from settings import ItemDefaults
+        for kind, _label in CANVAS_ITEM_KINDS:
+            if kind not in self._item_kind_widgets:
+                continue
+            id_obj = s.item_defaults.get(kind, ItemDefaults())
+            w = self._item_kind_widgets[kind]
+            # Style
+            w["pen_color"].setColor(id_obj.style.pen_color)
+            w["pen_width"].setValue(id_obj.style.pen_width)
+            w["line_dash"].setCurrentText(id_obj.style.line_dash)
+            w["fill_color"].setColor(id_obj.style.fill_color)
+            # Contents
+            w["halign"].setCurrentText(id_obj.contents.halign)
+            w["valign"].setCurrentText(id_obj.contents.valign)
+            w["font_size"].setValue(id_obj.contents.font_size)
+            w["font_family"].setText(id_obj.contents.font_family)
+            w["color"].setColor(id_obj.contents.color)
+            w["spacing"].setValue(id_obj.contents.spacing)
+            w["wrap"].setChecked(id_obj.contents.wrap)
+            w["margin_left"].setValue(id_obj.contents.margin_left)
+            w["margin_right"].setValue(id_obj.contents.margin_right)
+            w["margin_top"].setValue(id_obj.contents.margin_top)
+            w["margin_bottom"].setValue(id_obj.contents.margin_bottom)
+            w["flow_type"].setCurrentText(id_obj.contents.flow_type)
+            w["text_box_width"].setValue(id_obj.contents.text_box_width)
+            w["text_box_height"].setValue(id_obj.contents.text_box_height)
+
+    def _save_item_defaults(self, s) -> None:
+        """Write item-kind widget values into *s.item_defaults*.
+
+        Args:
+            s: The ``AppSettings`` object to update in place.
+        """
+        from settings import ItemDefaults, DefaultStyleSettings, DefaultContentsSettings
+        for kind, _label in CANVAS_ITEM_KINDS:
+            if kind not in self._item_kind_widgets:
+                continue
+            w = self._item_kind_widgets[kind]
+            style = DefaultStyleSettings(
+                pen_color=w["pen_color"].color(),
+                pen_width=w["pen_width"].value(),
+                line_dash=w["line_dash"].currentText(),
+                fill_color=w["fill_color"].color(),
+            )
+            contents = DefaultContentsSettings(
+                halign=w["halign"].currentText(),
+                valign=w["valign"].currentText(),
+                font_size=w["font_size"].value(),
+                font_family=w["font_family"].text().strip(),
+                color=w["color"].color(),
+                spacing=w["spacing"].value(),
+                wrap=w["wrap"].isChecked(),
+                margin_left=w["margin_left"].value(),
+                margin_right=w["margin_right"].value(),
+                margin_top=w["margin_top"].value(),
+                margin_bottom=w["margin_bottom"].value(),
+                flow_type=w["flow_type"].currentText(),
+                text_box_width=w["text_box_width"].value(),
+                text_box_height=w["text_box_height"].value(),
+            )
+            s.item_defaults[kind] = ItemDefaults(style=style, contents=contents)
 
     # =========================================================================
     # External Tools Tab
@@ -1074,17 +1323,34 @@ class SettingsDialog(QDialog):
             "align_bgr_multiplier": s.alignment.color.bgr_tolerance_multiplier,
             "align_size_weight": s.alignment.scoring.size_difference_weight,
             "align_line_hue_tolerances": s.alignment.line.hue_tolerances,
-            # Defaults
-            "default_label_align": s.defaults.label_align,
-            "default_label_size": s.defaults.label_size,
-            "default_tech_align": s.defaults.tech_align,
-            "default_tech_size": s.defaults.tech_size,
-            "default_note_align": s.defaults.note_align,
-            "default_note_size": s.defaults.note_size,
-            "default_valign": s.defaults.vertical_align,
-            "default_line_spacing": s.defaults.line_spacing,
-            "default_text_box_width": s.defaults.text_box_width,
-            "default_text_box_height": s.defaults.text_box_height,
+            # Item Defaults (snapshot as a deep copy dict keyed by kind)
+            "item_defaults": {
+                kind: {
+                    "style": {
+                        "pen_color": id_obj.style.pen_color,
+                        "pen_width": id_obj.style.pen_width,
+                        "line_dash": id_obj.style.line_dash,
+                        "fill_color": id_obj.style.fill_color,
+                    },
+                    "contents": {
+                        "halign": id_obj.contents.halign,
+                        "valign": id_obj.contents.valign,
+                        "spacing": id_obj.contents.spacing,
+                        "color": id_obj.contents.color,
+                        "font_family": id_obj.contents.font_family,
+                        "font_size": id_obj.contents.font_size,
+                        "margin_left": id_obj.contents.margin_left,
+                        "margin_right": id_obj.contents.margin_right,
+                        "margin_top": id_obj.contents.margin_top,
+                        "margin_bottom": id_obj.contents.margin_bottom,
+                        "wrap": id_obj.contents.wrap,
+                        "flow_type": id_obj.contents.flow_type,
+                        "text_box_width": id_obj.contents.text_box_width,
+                        "text_box_height": id_obj.contents.text_box_height,
+                    },
+                }
+                for kind, id_obj in s.item_defaults.items()
+            },
             # Gemini
             "gemini_models": list(s.gemini.models),
             "gemini_default_model": s.gemini.default_model,
@@ -1098,9 +1364,14 @@ class SettingsDialog(QDialog):
             "tools_c4_boundaries_per_row": s.external_tools.c4_boundaries_per_row,
         }
 
-    def _load_settings(self):
-        """Load current settings into the UI widgets."""
-        s = self.settings_manager.settings
+    def _load_settings(self, settings=None):
+        """Load *settings* (or current merged settings) into the UI widgets.
+
+        Args:
+            settings: Optional AppSettings to display. When None, uses the
+                      merged settings_manager.settings (startup default).
+        """
+        s = settings if settings is not None else self.settings_manager.settings
 
         # General
         self.theme_combo.setCurrentText(s.theme)
@@ -1178,17 +1449,8 @@ class SettingsDialog(QDialog):
         # Alignment - Line
         self.align_line_hue_tolerances.setText(", ".join(map(str, s.alignment.line.hue_tolerances)))
 
-        # Defaults
-        self.default_label_align.setCurrentText(s.defaults.label_align)
-        self.default_label_size.setValue(s.defaults.label_size)
-        self.default_tech_align.setCurrentText(s.defaults.tech_align)
-        self.default_tech_size.setValue(s.defaults.tech_size)
-        self.default_note_align.setCurrentText(s.defaults.note_align)
-        self.default_note_size.setValue(s.defaults.note_size)
-        self.default_valign.setCurrentText(s.defaults.vertical_align)
-        self.default_line_spacing.setValue(s.defaults.line_spacing)
-        self.default_text_box_width.setValue(s.defaults.text_box_width)
-        self.default_text_box_height.setValue(s.defaults.text_box_height)
+        # Item Defaults
+        self._load_item_defaults(s)
 
         # Gemini
         self.gemini_model_list.clear()
@@ -1201,7 +1463,17 @@ class SettingsDialog(QDialog):
         self._detect_external_tools()
 
     def _save_settings(self):
-        """Save UI widget values to settings."""
+        """Save UI widget values to the active layer's settings file.
+
+        Built-in layer is read-only — calling this method does nothing in that case.
+        System layer writes to the system file; User layer writes to the user file.
+        The merged in-memory settings_manager.settings is also updated so that
+        the running app reflects the change immediately.
+        """
+        if self._active_layer == "builtin":
+            return  # read-only
+
+        # Write into the merged settings object (live app)
         s = self.settings_manager.settings
 
         # General
@@ -1289,17 +1561,8 @@ class SettingsDialog(QDialog):
         except ValueError:
             pass  # Keep existing value
 
-        # Defaults
-        s.defaults.label_align = self.default_label_align.currentText()
-        s.defaults.label_size = self.default_label_size.value()
-        s.defaults.tech_align = self.default_tech_align.currentText()
-        s.defaults.tech_size = self.default_tech_size.value()
-        s.defaults.note_align = self.default_note_align.currentText()
-        s.defaults.note_size = self.default_note_size.value()
-        s.defaults.vertical_align = self.default_valign.currentText()
-        s.defaults.line_spacing = self.default_line_spacing.value()
-        s.defaults.text_box_width = self.default_text_box_width.value()
-        s.defaults.text_box_height = self.default_text_box_height.value()
+        # Item Defaults
+        self._save_item_defaults(s)
 
         # Gemini
         s.gemini.models = [
@@ -1325,8 +1588,15 @@ class SettingsDialog(QDialog):
         s.external_tools.c4_shapes_per_row = self.tools_c4_shapes_spin.value()
         s.external_tools.c4_boundaries_per_row = self.tools_c4_bnd_spin.value()
 
-        # Persist to file
-        self.settings_manager.save()
+        # Persist to the active layer's file
+        if self._active_layer == "system":
+            self.settings_manager.save_to(
+                self.settings_manager.system_settings_file,
+                self.settings_manager.settings,
+            )
+        else:  # user
+            self.settings_manager.save()
+        self._update_layer_path_label()
 
     def _restore_from_snapshot(self, snapshot: dict):
         """Restore settings from a snapshot."""
@@ -1386,17 +1656,36 @@ class SettingsDialog(QDialog):
         s.alignment.scoring.size_difference_weight = snapshot["align_size_weight"]
         s.alignment.line.hue_tolerances = snapshot["align_line_hue_tolerances"]
 
-        # Defaults
-        s.defaults.label_align = snapshot["default_label_align"]
-        s.defaults.label_size = snapshot["default_label_size"]
-        s.defaults.tech_align = snapshot["default_tech_align"]
-        s.defaults.tech_size = snapshot["default_tech_size"]
-        s.defaults.note_align = snapshot["default_note_align"]
-        s.defaults.note_size = snapshot["default_note_size"]
-        s.defaults.vertical_align = snapshot["default_valign"]
-        s.defaults.line_spacing = snapshot["default_line_spacing"]
-        s.defaults.text_box_width = snapshot["default_text_box_width"]
-        s.defaults.text_box_height = snapshot["default_text_box_height"]
+        # Item Defaults
+        from settings import ItemDefaults, DefaultStyleSettings, DefaultContentsSettings
+        s.item_defaults = {}
+        for kind, d in snapshot.get("item_defaults", {}).items():
+            st = d.get("style", {})
+            co = d.get("contents", {})
+            s.item_defaults[kind] = ItemDefaults(
+                style=DefaultStyleSettings(
+                    pen_color=st.get("pen_color", "#FF0000FF"),
+                    pen_width=st.get("pen_width", 2),
+                    line_dash=st.get("line_dash", "solid"),
+                    fill_color=st.get("fill_color", "#00000000"),
+                ),
+                contents=DefaultContentsSettings(
+                    halign=co.get("halign", "left"),
+                    valign=co.get("valign", "top"),
+                    spacing=co.get("spacing", 0.0),
+                    color=co.get("color", "#FF00FFFF"),
+                    font_family=co.get("font_family", ""),
+                    font_size=co.get("font_size", 12),
+                    margin_left=co.get("margin_left", 0.0),
+                    margin_right=co.get("margin_right", 0.0),
+                    margin_top=co.get("margin_top", 0.0),
+                    margin_bottom=co.get("margin_bottom", 0.0),
+                    wrap=co.get("wrap", True),
+                    flow_type=co.get("flow_type", "none"),
+                    text_box_width=co.get("text_box_width", 0.0),
+                    text_box_height=co.get("text_box_height", 0.0),
+                ),
+            )
 
         # Gemini
         s.gemini.models = snapshot["gemini_models"]
@@ -1434,26 +1723,13 @@ class SettingsDialog(QDialog):
         self._apply_theme_to_app()
 
     def _on_restore_defaults(self):
-        """Handle Restore Defaults button - reset all settings to defaults."""
+        """Handle Restore Defaults button - load built-in defaults into the UI.
+
+        Restores the currently displayed layer's widgets to built-in defaults.
+        Does not write to any file until Apply/OK is clicked.
+        """
         from settings import AppSettings
-
-        # Create fresh default settings
-        defaults = AppSettings()
-
-        # Apply to current settings object
-        s = self.settings_manager.settings
-        s.theme = defaults.theme
-        s.workspace_dir = defaults.workspace_dir
-        s.pptx_export_to_source_dir = defaults.pptx_export_to_source_dir
-        s.editor = defaults.editor
-        s.canvas = defaults.canvas
-        s.alignment = defaults.alignment
-        s.defaults = defaults.defaults
-        s.gemini = defaults.gemini
-        s.external_tools = defaults.external_tools
-
-        # Reload UI
-        self._load_settings()
+        self._load_settings(AppSettings())
 
     def selected_style(self) -> str:
         """Get the currently selected theme for immediate application."""

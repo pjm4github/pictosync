@@ -9,7 +9,7 @@
     "version": {
       "type": "string",
       "description": "Schema version identifier",
-      "enum": ["draft-1", "overlay-1.0"]
+      "enum": ["draft-1", "overlay-1.0", "overlay-2.0"]
     },
     "image": {
       "$ref": "#/$defs/imageInfo"
@@ -85,11 +85,14 @@
             "$ref": "#/$defs/annotationItem"
           }
         },
-        "meta": {
-          "$ref": "#/$defs/annotationMeta"
+        "contents": {
+          "$ref": "#/$defs/annotationContents"
         },
         "style": {
           "$ref": "#/$defs/styleDefinition"
+        },
+        "dsl": {
+          "$ref": "#/$defs/dslMetadata"
         },
         "z": {
           "type": "integer",
@@ -116,39 +119,19 @@
       },
       "allOf": [
         {
-          "if": {
-            "properties": { "kind": { "const": "rect" } }
-          },
-          "then": {
-            "properties": {
-              "geom": { "$ref": "#/$defs/rectGeometry" }
-            }
-          }
+          "if": { "properties": { "kind": { "const": "rect" } } },
+          "then": { "properties": { "geom": { "$ref": "#/$defs/rectGeometry" } } }
         },
         {
-          "if": {
-            "properties": { "kind": { "const": "roundedrect" } }
-          },
-          "then": {
-            "properties": {
-              "geom": { "$ref": "#/$defs/roundedRectGeometry" }
-            }
-          }
+          "if": { "properties": { "kind": { "const": "roundedrect" } } },
+          "then": { "properties": { "geom": { "$ref": "#/$defs/roundedRectGeometry" } } }
         },
         {
-          "if": {
-            "properties": { "kind": { "const": "ellipse" } }
-          },
-          "then": {
-            "properties": {
-              "geom": { "$ref": "#/$defs/rectGeometry" }
-            }
-          }
+          "if": { "properties": { "kind": { "const": "ellipse" } } },
+          "then": { "properties": { "geom": { "$ref": "#/$defs/rectGeometry" } } }
         },
         {
-          "if": {
-            "properties": { "kind": { "const": "line" } }
-          },
+          "if": { "properties": { "kind": { "const": "line" } } },
           "then": {
             "properties": {
               "geom": { "$ref": "#/$defs/lineGeometry" },
@@ -164,27 +147,17 @@
           }
         },
         {
-          "if": {
-            "properties": { "kind": { "const": "text" } }
-          },
+          "if": { "properties": { "kind": { "const": "text" } } },
           "then": {
             "properties": {
               "geom": { "$ref": "#/$defs/pointGeometry" },
-              "meta": {
-                "type": "object",
-                "properties": {
-                  "note": { "type": "string", "default": "Text" }
-                }
-              },
+              "contents": { "$ref": "#/$defs/annotationContents" },
               "style": {
                 "type": "object",
                 "properties": {
                   "pen": { "type": "object", "properties": {
                     "color": { "type": "string", "default": "#000000" },
                     "width": { "type": "number", "default": 1 }
-                  }},
-                  "text": { "type": "object", "properties": {
-                    "color": { "type": "string", "default": "#000000" }
                   }}
                 }
               }
@@ -192,9 +165,7 @@
           }
         },
         {
-          "if": {
-            "properties": { "kind": { "const": "hexagon" } }
-          },
+          "if": { "properties": { "kind": { "const": "hexagon" } } },
           "then": {
             "properties": {
               "geom": { "$ref": "#/$defs/hexagonGeometry" },
@@ -203,9 +174,6 @@
                 "properties": {
                   "pen": { "type": "object", "properties": {
                     "color": { "type": "string", "default": "#008B8B" }
-                  }},
-                  "text": { "type": "object", "properties": {
-                    "color": { "type": "string", "default": "#008B8B" }
                   }}
                 }
               }
@@ -213,9 +181,7 @@
           }
         },
         {
-          "if": {
-            "properties": { "kind": { "const": "cylinder" } }
-          },
+          "if": { "properties": { "kind": { "const": "cylinder" } } },
           "then": {
             "properties": {
               "geom": { "$ref": "#/$defs/cylinderGeometry" },
@@ -224,9 +190,6 @@
                 "properties": {
                   "pen": { "type": "object", "properties": {
                     "color": { "type": "string", "default": "#8B008B" }
-                  }},
-                  "text": { "type": "object", "properties": {
-                    "color": { "type": "string", "default": "#8B008B" }
                   }}
                 }
               }
@@ -234,9 +197,7 @@
           }
         },
         {
-          "if": {
-            "properties": { "kind": { "const": "blockarrow" } }
-          },
+          "if": { "properties": { "kind": { "const": "blockarrow" } } },
           "then": {
             "properties": {
               "geom": { "$ref": "#/$defs/blockArrowGeometry" },
@@ -245,9 +206,6 @@
                 "properties": {
                   "pen": { "type": "object", "properties": {
                     "color": { "type": "string", "default": "#B8860B" }
-                  }},
-                  "text": { "type": "object", "properties": {
-                    "color": { "type": "string", "default": "#B8860B" }
                   }}
                 }
               }
@@ -255,9 +213,7 @@
           }
         },
         {
-          "if": {
-            "properties": { "kind": { "const": "curve" } }
-          },
+          "if": { "properties": { "kind": { "const": "curve" } } },
           "then": {
             "properties": {
               "geom": { "$ref": "#/$defs/curveGeometry" },
@@ -273,9 +229,7 @@
           }
         },
         {
-          "if": {
-            "properties": { "kind": { "const": "orthocurve" } }
-          },
+          "if": { "properties": { "kind": { "const": "orthocurve" } } },
           "then": {
             "properties": {
               "geom": { "$ref": "#/$defs/orthoCurveGeometry" },
@@ -291,9 +245,7 @@
           }
         },
         {
-          "if": {
-            "properties": { "kind": { "const": "isocube" } }
-          },
+          "if": { "properties": { "kind": { "const": "isocube" } } },
           "then": {
             "properties": {
               "geom": { "$ref": "#/$defs/isoCubeGeometry" },
@@ -305,9 +257,6 @@
                   }},
                   "fill": { "type": "object", "properties": {
                     "color": { "type": "string", "default": "#C8C8C8C8" }
-                  }},
-                  "text": { "type": "object", "properties": {
-                    "color": { "type": "string", "default": "#000000" }
                   }}
                 }
               }
@@ -315,19 +264,11 @@
           }
         },
         {
-          "if": {
-            "properties": { "kind": { "const": "seqblock" } }
-          },
-          "then": {
-            "properties": {
-              "geom": { "$ref": "#/$defs/seqblockGeometry" }
-            }
-          }
+          "if": { "properties": { "kind": { "const": "seqblock" } } },
+          "then": { "properties": { "geom": { "$ref": "#/$defs/seqblockGeometry" } } }
         },
         {
-          "if": {
-            "properties": { "kind": { "const": "port" } }
-          },
+          "if": { "properties": { "kind": { "const": "port" } } },
           "then": {
             "required": ["parent_id"],
             "properties": {
@@ -346,9 +287,7 @@
           }
         },
         {
-          "if": {
-            "properties": { "kind": { "const": "group" } }
-          },
+          "if": { "properties": { "kind": { "const": "group" } } },
           "then": {
             "required": ["children"],
             "properties": {
@@ -361,6 +300,7 @@
         }
       ]
     },
+
     "geometry": {
       "type": "object",
       "description": "Geometry specification (varies by item kind)",
@@ -378,60 +318,30 @@
         { "$ref": "#/$defs/seqblockGeometry" }
       ]
     },
+
     "rectGeometry": {
       "type": "object",
       "description": "Rectangle geometry (rect, ellipse)",
       "required": ["x", "y", "w", "h"],
       "properties": {
-        "x": {
-          "type": "number",
-          "description": "X position of top-left corner"
-        },
-        "y": {
-          "type": "number",
-          "description": "Y position of top-left corner"
-        },
-        "w": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Width"
-        },
-        "h": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Height"
-        },
-        "angle": {
-          "type": "number",
-          "default": 0,
-          "description": "Rotation angle in degrees (clockwise, 0-360). Omitted when 0."
-        }
+        "x": { "type": "number", "description": "X position of top-left corner" },
+        "y": { "type": "number", "description": "Y position of top-left corner" },
+        "w": { "type": "number", "minimum": 0, "description": "Width" },
+        "h": { "type": "number", "minimum": 0, "description": "Height" },
+        "angle": { "type": "number", "default": 0, "description": "Rotation angle in degrees (clockwise, 0-360). Omitted when 0." }
       },
       "additionalProperties": false
     },
+
     "roundedRectGeometry": {
       "type": "object",
       "description": "Rounded rectangle geometry",
       "required": ["x", "y", "w", "h"],
       "properties": {
-        "x": {
-          "type": "number",
-          "description": "X position of top-left corner"
-        },
-        "y": {
-          "type": "number",
-          "description": "Y position of top-left corner"
-        },
-        "w": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Width"
-        },
-        "h": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Height"
-        },
+        "x": { "type": "number", "description": "X position of top-left corner" },
+        "y": { "type": "number", "description": "Y position of top-left corner" },
+        "w": { "type": "number", "minimum": 0, "description": "Width" },
+        "h": { "type": "number", "minimum": 0, "description": "Height" },
         "adjust1": {
           "type": "number",
           "minimum": 0,
@@ -441,77 +351,44 @@
           "ui_label": "Radius",
           "ui_suffix": " px"
         },
-        "angle": {
-          "type": "number",
-          "default": 0,
-          "description": "Rotation angle in degrees (clockwise, 0-360). Omitted when 0."
-        }
+        "angle": { "type": "number", "default": 0, "description": "Rotation angle in degrees (clockwise, 0-360). Omitted when 0." }
       },
       "additionalProperties": false
     },
+
     "lineGeometry": {
       "type": "object",
       "description": "Line geometry with start and end points",
       "required": ["x1", "y1", "x2", "y2"],
       "properties": {
-        "x1": {
-          "type": "number",
-          "description": "Start point X"
-        },
-        "y1": {
-          "type": "number",
-          "description": "Start point Y"
-        },
-        "x2": {
-          "type": "number",
-          "description": "End point X"
-        },
-        "y2": {
-          "type": "number",
-          "description": "End point Y"
-        }
+        "x1": { "type": "number", "description": "Start point X" },
+        "y1": { "type": "number", "description": "Start point Y" },
+        "x2": { "type": "number", "description": "End point X" },
+        "y2": { "type": "number", "description": "End point Y" }
       },
       "additionalProperties": false
     },
+
     "pointGeometry": {
       "type": "object",
       "description": "Point geometry for text placement",
       "required": ["x", "y"],
       "properties": {
-        "x": {
-          "type": "number",
-          "description": "X position"
-        },
-        "y": {
-          "type": "number",
-          "description": "Y position"
-        }
+        "x": { "type": "number", "description": "X position" },
+        "y": { "type": "number", "description": "Y position" }
       },
       "additionalProperties": false
     },
+
     "hexagonGeometry": {
       "type": "object",
       "description": "Hexagon geometry with adjust1 control (indent ratio)",
       "required": ["x", "y", "w", "h"],
       "properties": {
-        "x": {
-          "type": "number",
-          "description": "X position of top-left corner"
-        },
-        "y": {
-          "type": "number",
-          "description": "Y position of top-left corner"
-        },
-        "w": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Width"
-        },
-        "h": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Height"
-        },
+        "x": { "type": "number", "description": "X position of top-left corner" },
+        "y": { "type": "number", "description": "Y position of top-left corner" },
+        "w": { "type": "number", "minimum": 0, "description": "Width" },
+        "h": { "type": "number", "minimum": 0, "description": "Height" },
         "adjust1": {
           "type": "number",
           "minimum": 0,
@@ -521,37 +398,20 @@
           "ui_label": "Indent",
           "ui_suffix": " %"
         },
-        "angle": {
-          "type": "number",
-          "default": 0,
-          "description": "Rotation angle in degrees (clockwise, 0-360). Omitted when 0."
-        }
+        "angle": { "type": "number", "default": 0, "description": "Rotation angle in degrees (clockwise, 0-360). Omitted when 0." }
       },
       "additionalProperties": false
     },
+
     "cylinderGeometry": {
       "type": "object",
       "description": "Cylinder geometry with adjust1 control (cap ratio)",
       "required": ["x", "y", "w", "h"],
       "properties": {
-        "x": {
-          "type": "number",
-          "description": "X position of top-left corner"
-        },
-        "y": {
-          "type": "number",
-          "description": "Y position of top-left corner"
-        },
-        "w": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Width"
-        },
-        "h": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Height"
-        },
+        "x": { "type": "number", "description": "X position of top-left corner" },
+        "y": { "type": "number", "description": "Y position of top-left corner" },
+        "w": { "type": "number", "minimum": 0, "description": "Width" },
+        "h": { "type": "number", "minimum": 0, "description": "Height" },
         "adjust1": {
           "type": "number",
           "minimum": 0.01,
@@ -561,37 +421,20 @@
           "ui_label": "Cap",
           "ui_suffix": " %"
         },
-        "angle": {
-          "type": "number",
-          "default": 0,
-          "description": "Rotation angle in degrees (clockwise, 0-360). Omitted when 0."
-        }
+        "angle": { "type": "number", "default": 0, "description": "Rotation angle in degrees (clockwise, 0-360). Omitted when 0." }
       },
       "additionalProperties": false
     },
+
     "blockArrowGeometry": {
       "type": "object",
       "description": "Block arrow geometry with adjust1 (shaft width) and adjust2 (head length) controls",
       "required": ["x", "y", "w", "h"],
       "properties": {
-        "x": {
-          "type": "number",
-          "description": "X position of top-left corner"
-        },
-        "y": {
-          "type": "number",
-          "description": "Y position of top-left corner"
-        },
-        "w": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Width"
-        },
-        "h": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Height"
-        },
+        "x": { "type": "number", "description": "X position of top-left corner" },
+        "y": { "type": "number", "description": "Y position of top-left corner" },
+        "w": { "type": "number", "minimum": 0, "description": "Width" },
+        "h": { "type": "number", "minimum": 0, "description": "Height" },
         "adjust2": {
           "type": "number",
           "minimum": 10,
@@ -610,14 +453,11 @@
           "ui_label": "Shaft",
           "ui_suffix": " %"
         },
-        "angle": {
-          "type": "number",
-          "default": 0,
-          "description": "Rotation angle in degrees (clockwise, 0-360). Omitted when 0."
-        }
+        "angle": { "type": "number", "default": 0, "description": "Rotation angle in degrees (clockwise, 0-360). Omitted when 0." }
       },
       "additionalProperties": false
     },
+
     "curveNode": {
       "type": "object",
       "description": "A single node in a curve path",
@@ -643,6 +483,7 @@
         "sweep": { "type": "integer", "enum": [0, 1], "description": "Sweep direction flag" }
       }
     },
+
     "curveGeometry": {
       "type": "object",
       "description": "Curve geometry with bounding box and path nodes",
@@ -667,13 +508,10 @@
           "ui_label": "Bend Radius",
           "ui_suffix": " px"
         },
-        "angle": {
-          "type": "number",
-          "default": 0,
-          "description": "Rotation angle in degrees (clockwise, 0-360). Omitted when 0."
-        }
+        "angle": { "type": "number", "default": 0, "description": "Rotation angle in degrees (clockwise, 0-360). Omitted when 0." }
       }
     },
+
     "orthoCurveNode": {
       "type": "object",
       "description": "A single node in an orthogonal curve path (M/H/V only)",
@@ -688,6 +526,7 @@
         "y": { "type": "number", "description": "Endpoint Y (0-1 relative)" }
       }
     },
+
     "orthoCurveGeometry": {
       "type": "object",
       "description": "Orthogonal curve geometry with bounding box and M/H/V path nodes",
@@ -712,13 +551,10 @@
           "ui_label": "Bend Radius",
           "ui_suffix": " px"
         },
-        "angle": {
-          "type": "number",
-          "default": 0,
-          "description": "Rotation angle in degrees (clockwise, 0-360). Omitted when 0."
-        }
+        "angle": { "type": "number", "default": 0, "description": "Rotation angle in degrees (clockwise, 0-360). Omitted when 0." }
       }
     },
+
     "isoCubeGeometry": {
       "type": "object",
       "description": "Isometric cube geometry with depth and angle controls",
@@ -746,14 +582,11 @@
           "ui_label": "Angle",
           "ui_suffix": " °"
         },
-        "angle": {
-          "type": "number",
-          "default": 0,
-          "description": "Rotation angle in degrees (clockwise, 0-360). Omitted when 0."
-        }
+        "angle": { "type": "number", "default": 0, "description": "Rotation angle in degrees (clockwise, 0-360). Omitted when 0." }
       },
       "additionalProperties": false
     },
+
     "seqblockGeometry": {
       "type": "object",
       "description": "Sequence block geometry with adjustable divider positions",
@@ -788,14 +621,11 @@
           "ui_label": "Divider 3",
           "ui_suffix": " %"
         },
-        "angle": {
-          "type": "number",
-          "default": 0,
-          "description": "Rotation angle in degrees (clockwise, 0-360). Omitted when 0."
-        }
+        "angle": { "type": "number", "default": 0, "description": "Rotation angle in degrees (clockwise, 0-360). Omitted when 0." }
       },
       "additionalProperties": false
     },
+
     "portGeometry": {
       "type": "object",
       "description": "Port connector geometry — position on parent perimeter",
@@ -824,133 +654,323 @@
           "default": "",
           "description": "Protocol label for this port"
         },
-        "x": {
-          "type": "number",
-          "description": "X position (parentless ports only)"
-        },
-        "y": {
-          "type": "number",
-          "description": "Y position (parentless ports only)"
-        },
-        "w": {
-          "type": "number",
-          "description": "Width (parentless ports only)"
-        },
-        "h": {
-          "type": "number",
-          "description": "Height (parentless ports only)"
-        }
+        "x": { "type": "number", "description": "X position (parentless ports only)" },
+        "y": { "type": "number", "description": "Y position (parentless ports only)" },
+        "w": { "type": "number", "description": "Width (parentless ports only)" },
+        "h": { "type": "number", "description": "Height (parentless ports only)" }
       },
       "additionalProperties": false
     },
-    "annotationMeta": {
+
+    "annotationContents": {
       "type": "object",
-      "description": "Annotation metadata including labels and formatting",
+      "description": "Rich-text document contents with frame layout. The 'blocks' array is the canonical content model. The legacy 'text' field (HTML string) is retained for backward compatibility with overlay-1.0 files but should not be written by overlay-2.0 producers.",
       "properties": {
-        "label": {
-          "type": "string",
-          "default": "",
-          "description": "Primary label text"
+
+        "frame": {
+          "$ref": "#/$defs/textFrame",
+          "description": "Layout of the text block within the shape bounding box — margins and alignment"
         },
-        "tech": {
-          "type": "string",
-          "default": "",
-          "description": "Technology or protocol (e.g., 'HTTPS/JSON', 'gRPC', 'Kafka')"
+
+        "default_format": {
+          "$ref": "#/$defs/charFormat",
+          "description": "Document-level character format defaults. Individual run formats are sparse overrides of these values."
         },
-        "note": {
-          "type": "string",
-          "default": "",
-          "description": "Freeform note or description"
+
+        "blocks": {
+          "type": "array",
+          "description": "Ordered list of paragraph blocks. Each block contains one or more inline runs. Empty array = no text content.",
+          "items": { "$ref": "#/$defs/textBlock" }
         },
-        "label_align": {
-          "type": "string",
-          "enum": ["left", "center", "right"],
-          "default": "center",
-          "description": "Label text alignment"
+
+        "wrap": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether text wraps within the frame bounds"
         },
-        "label_size": {
-          "type": "integer",
-          "minimum": 6,
-          "maximum": 72,
-          "default": 12,
-          "description": "Label font size in points"
-        },
-        "tech_align": {
-          "type": "string",
-          "enum": ["left", "center", "right"],
-          "default": "center",
-          "description": "Tech text alignment"
-        },
-        "tech_size": {
-          "type": "integer",
-          "minimum": 6,
-          "maximum": 72,
-          "default": 10,
-          "description": "Tech font size in points"
-        },
-        "note_align": {
-          "type": "string",
-          "enum": ["left", "center", "right"],
-          "default": "center",
-          "description": "Note text alignment"
-        },
-        "note_size": {
-          "type": "integer",
-          "minimum": 6,
-          "maximum": 72,
-          "default": 10,
-          "description": "Note font size in points"
-        },
-        "text_valign": {
-          "type": "string",
-          "enum": ["top", "middle", "bottom"],
-          "default": "top",
-          "description": "Vertical alignment of text block within the shape"
-        },
-        "text_spacing": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 2,
-          "default": 0,
-          "description": "Spacing between label/tech/note lines (in em units: 0, 0.5, 1, 1.5, 2)"
-        },
+
         "text_box_width": {
           "type": "number",
           "minimum": 0,
           "default": 0,
-          "description": "Text box width for line labels (0 = auto-size)"
+          "description": "Override text box width for line labels (0 = use shape width minus margins)"
         },
         "text_box_height": {
           "type": "number",
           "minimum": 0,
           "default": 0,
-          "description": "Text box height for line labels (0 = auto-size)"
+          "description": "Override text box height for line labels (0 = use shape height minus margins)"
         },
-        "dsl": {
-          "$ref": "#/$defs/dslMetadata"
+
+        "text": {
+          "type": "string",
+          "default": "",
+          "description": "[DEPRECATED — overlay-1.0 only] Rich text content as HTML fragments. Ignored by overlay-2.0 readers when 'blocks' is present. Retained for backward-compatible loading only."
+        },
+        "halign": {
+          "type": "string",
+          "enum": ["left", "center", "right", "justified"],
+          "default": "center",
+          "description": "[DEPRECATED — overlay-1.0 only] Horizontal alignment. Superseded by frame.halign in overlay-2.0."
+        },
+        "valign": {
+          "type": "string",
+          "enum": ["top", "middle", "bottom"],
+          "default": "top",
+          "description": "[DEPRECATED — overlay-1.0 only] Vertical alignment. Superseded by frame.valign in overlay-2.0."
+        },
+        "spacing": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2,
+          "default": 0,
+          "description": "[DEPRECATED — overlay-1.0 only] Paragraph spacing in em units. Superseded by textBlock.space_after in overlay-2.0."
+        },
+        "color": {
+          "$ref": "#/$defs/colorHex",
+          "description": "[DEPRECATED — overlay-1.0 only] Text color. Superseded by default_format.color in overlay-2.0."
+        },
+        "font_family": {
+          "type": "string",
+          "default": "",
+          "description": "[DEPRECATED — overlay-1.0 only] Font family. Superseded by default_format.font_family in overlay-2.0."
+        },
+        "font_size": {
+          "type": "integer",
+          "minimum": 6,
+          "maximum": 72,
+          "default": 12,
+          "description": "[DEPRECATED — overlay-1.0 only] Base font size in points. Superseded by default_format.font_size in overlay-2.0."
+        },
+        "margin_left": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "description": "[DEPRECATED — overlay-1.0 only] Left margin in pixels. Superseded by frame.margin_left in overlay-2.0."
+        },
+        "margin_right": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "description": "[DEPRECATED — overlay-1.0 only] Right margin in pixels. Superseded by frame.margin_right in overlay-2.0."
+        },
+        "margin_top": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "description": "[DEPRECATED — overlay-1.0 only] Top margin in pixels. Superseded by frame.margin_top in overlay-2.0."
+        },
+        "margin_bottom": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "description": "[DEPRECATED — overlay-1.0 only] Bottom margin in pixels. Superseded by frame.margin_bottom in overlay-2.0."
+        },
+        "flow_type": {
+          "type": "string",
+          "enum": ["none", "tight", "wrap-points", "top-bottom"],
+          "default": "none",
+          "description": "[DEPRECATED — overlay-1.0 only] Text flow around embedded image. Superseded by textRun anchor sizing in overlay-2.0."
+        },
+        "image_url": {
+          "type": "string",
+          "default": "",
+          "description": "[DEPRECATED — overlay-1.0 only] URL or path to an embedded image. Superseded by textRun type=anchor in overlay-2.0."
+        },
+        "image_anchor": {
+          "type": "integer",
+          "default": 0,
+          "description": "[DEPRECATED — overlay-1.0 only] Image anchor position. Superseded by textRun type=anchor in overlay-2.0."
         }
       },
       "additionalProperties": true
     },
+
+    "textFrame": {
+      "type": "object",
+      "description": "Controls how the text block is positioned and clipped inside the shape bounding box. Margin values define the inset content area. Alignment is applied after QTextDocument layout.",
+      "properties": {
+        "margin_left":   { "type": "number", "minimum": 0, "default": 4, "description": "Left inset margin in pixels" },
+        "margin_right":  { "type": "number", "minimum": 0, "default": 4, "description": "Right inset margin in pixels" },
+        "margin_top":    { "type": "number", "minimum": 0, "default": 4, "description": "Top inset margin in pixels" },
+        "margin_bottom": { "type": "number", "minimum": 0, "default": 4, "description": "Bottom inset margin in pixels" },
+        "valign": {
+          "type": "string",
+          "enum": ["top", "middle", "bottom"],
+          "default": "top",
+          "description": "Vertical alignment of the composed text block within the shape content area. Computed post-layout using QTextDocument.size().height() vs available frame height."
+        },
+        "halign": {
+          "type": "string",
+          "enum": ["left", "center", "right", "justified"],
+          "default": "center",
+          "description": "Default horizontal alignment applied to all paragraphs unless overridden by textBlock.halign."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "charFormat": {
+      "type": "object",
+      "description": "Character-level formatting properties. Used both as document-level defaults (annotationContents.default_format) and as sparse per-run overrides (textRun.format). Only properties present in a run's format object override the document default — absent properties inherit from default_format.",
+      "properties": {
+        "font_family": {
+          "type": "string",
+          "description": "Font family name. Empty string = inherit system default sans-serif."
+        },
+        "font_size": {
+          "type": "integer",
+          "minimum": 6,
+          "maximum": 144,
+          "description": "Font size in points."
+        },
+        "bold":          { "type": "boolean", "description": "Bold weight." },
+        "italic":        { "type": "boolean", "description": "Italic style." },
+        "underline":     { "type": "boolean", "description": "Underline decoration." },
+        "strikethrough": { "type": "boolean", "description": "Strikethrough decoration." },
+        "color": {
+          "$ref": "#/$defs/colorHex",
+          "description": "Foreground text color."
+        },
+        "background_color": {
+          "$ref": "#/$defs/colorHex",
+          "description": "Character highlight / background color."
+        },
+        "superscript": { "type": "boolean", "description": "Superscript vertical alignment. Mutually exclusive with subscript." },
+        "subscript":   { "type": "boolean", "description": "Subscript vertical alignment. Mutually exclusive with superscript." }
+      },
+      "additionalProperties": false
+    },
+
+    "textBlock": {
+      "type": "object",
+      "description": "A paragraph block — the block-level container in the document. Maps 1:1 to a QTextBlock. Contains an ordered list of inline runs. Paragraph-level properties here override frame-level defaults for this paragraph only.",
+      "required": ["runs"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Session-stable identifier for pictosync delta tracking (e.g. 'b0', 'b1'). Generated at runtime, not persisted across save/load cycles."
+        },
+        "halign": {
+          "type": "string",
+          "enum": ["left", "center", "right", "justified"],
+          "description": "Paragraph-level horizontal alignment override. When present, takes precedence over frame.halign for this paragraph only."
+        },
+        "line_spacing": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 4.0,
+          "default": 1.0,
+          "description": "Line height multiplier. 1.0 = single spacing, 2.0 = double. Maps to QTextBlockFormat.setLineHeight(value * 100, ProportionalHeight)."
+        },
+        "space_before": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "description": "Space above this paragraph in pixels. Maps to QTextBlockFormat.setTopMargin()."
+        },
+        "space_after": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "description": "Space below this paragraph in pixels. Maps to QTextBlockFormat.setBottomMargin()."
+        },
+        "runs": {
+          "type": "array",
+          "description": "Ordered list of inline runs within this paragraph. Each run is either a text span or an anchored graphic object. Maps to QTextFragment items within the QTextBlock.",
+          "items": { "$ref": "#/$defs/textRun" },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "textRun": {
+      "type": "object",
+      "description": "An inline run within a paragraph. Discriminated by 'type': either a character text span or an anchored graphic object. Text runs map to QTextFragment. Anchor runs map to a QTextObjectInterface custom object inserted via QTextCursor with a custom QTextCharFormat carrying the object type.",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["text", "anchor"],
+          "description": "Run discriminator. 'text' = character content span. 'anchor' = inline embedded graphic item."
+        },
+        "id": {
+          "type": "string",
+          "description": "Session-stable run identifier for pictosync delta tracking (e.g. 'b0r2'). Generated at runtime, not persisted across save/load cycles."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "type": { "const": "text" } },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["text"],
+            "properties": {
+              "text": {
+                "type": "string",
+                "description": "The character content of this run. May contain any Unicode text including newline characters for soft line breaks within a paragraph."
+              },
+              "format": {
+                "$ref": "#/$defs/charFormat",
+                "description": "Sparse character format overrides for this run. Only properties that differ from annotationContents.default_format need to be present. Qt coalesces adjacent runs with identical effective formats automatically."
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "anchor" } },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["anchor_id"],
+            "properties": {
+              "anchor_id": {
+                "type": "string",
+                "description": "Annotation ID of the embedded graphic item. Must reference a valid 'id' in the top-level annotations array. The referenced item is rendered inline at this position in the text flow."
+              },
+              "sizing": {
+                "type": "string",
+                "enum": ["inline", "fixed"],
+                "default": "inline",
+                "description": "Sizing mode. 'inline' = render at the item's natural geometry size, flowing with text baseline. 'fixed' = render at explicit width/height overrides."
+              },
+              "width": {
+                "type": "number",
+                "minimum": 1,
+                "description": "Display width in pixels. Used when sizing='fixed'. Ignored for sizing='inline'."
+              },
+              "height": {
+                "type": "number",
+                "minimum": 1,
+                "description": "Display height in pixels. Used when sizing='fixed'. Ignored for sizing='inline'."
+              },
+              "baseline_offset": {
+                "type": "number",
+                "default": 0,
+                "description": "Vertical shift from the text baseline in pixels. Positive values shift the object upward. Useful for aligning small icons with adjacent text."
+              }
+            }
+          }
+        }
+      ]
+    },
+
     "colorHex": {
       "type": "string",
       "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
       "description": "Hex color string (#RRGGBB or #RRGGBBAA)"
     },
+
     "penStyle": {
       "type": "object",
       "description": "Pen/stroke style",
       "properties": {
-        "color": {
-          "$ref": "#/$defs/colorHex",
-          "default": "#FF0000"
-        },
-        "width": {
-          "type": "number",
-          "minimum": 0,
-          "default": 2,
-          "description": "Stroke width in pixels"
-        },
+        "color": { "$ref": "#/$defs/colorHex", "default": "#FF0000" },
+        "width": { "type": "number", "minimum": 0, "default": 2, "description": "Stroke width in pixels" },
         "dash": {
           "type": "string",
           "enum": ["solid", "dashed"],
@@ -973,48 +993,24 @@
         }
       }
     },
+
     "fillStyle": {
       "type": "object",
       "description": "Fill/background style",
       "properties": {
-        "color": {
-          "$ref": "#/$defs/colorHex",
-          "default": "#00000000"
-        }
+        "color": { "$ref": "#/$defs/colorHex", "default": "#00000000" }
       }
     },
-    "textStyle": {
-      "type": "object",
-      "description": "Text style",
-      "properties": {
-        "color": {
-          "$ref": "#/$defs/colorHex",
-          "default": "#FFFF00"
-        },
-        "size_pt": {
-          "type": "number",
-          "minimum": 6,
-          "maximum": 72,
-          "default": 12,
-          "description": "Font size in points"
-        }
-      }
-    },
+
     "styleDefinition": {
       "type": "object",
-      "description": "Complete style definition for an item",
+      "description": "Complete style definition for an item (pen + fill only; text properties live in contents)",
       "properties": {
-        "pen": {
-          "$ref": "#/$defs/penStyle"
-        },
-        "fill": {
-          "$ref": "#/$defs/fillStyle"
-        },
-        "text": {
-          "$ref": "#/$defs/textStyle"
-        }
+        "pen":  { "$ref": "#/$defs/penStyle" },
+        "fill": { "$ref": "#/$defs/fillStyle" }
       }
     },
+
     "dslMetadata": {
       "type": "object",
       "description": "Domain-specific language metadata (meta.dsl). Contains a tool hint and one domain sub-object (c4, uml, d2, …). Stored as a standalone $defs entry — NOT referenced from annotationMeta.properties — so _extract_defaults won't inject empty dsl objects onto every annotation.",
@@ -1024,12 +1020,11 @@
           "enum": ["mermaid", "plantuml", "d2"],
           "description": "Rendering tool that produced this annotation"
         },
-        "c4": {
-          "$ref": "#/$defs/dslC4"
-        }
+        "c4": { "$ref": "#/$defs/dslC4" }
       },
       "additionalProperties": true
     },
+
     "dslC4": {
       "type": "object",
       "description": "C4 model metadata. Shapes carry type+alias+parent; boundaries carry type='boundary'+alias+boundary_type+parent; relationships carry rel_type+from+to.",
@@ -1066,30 +1061,18 @@
           "description": "Canonical relationship direction type",
           "enum": ["rel", "birel", "rel_b", "rel_u", "rel_d", "rel_l", "rel_r"]
         },
-        "from": {
-          "type": "string",
-          "description": "Source element alias in a relationship"
-        },
-        "to": {
-          "type": "string",
-          "description": "Target element alias in a relationship"
-        }
+        "from": { "type": "string", "description": "Source element alias in a relationship" },
+        "to":   { "type": "string", "description": "Target element alias in a relationship" }
       },
       "additionalProperties": true
     },
+
     "lineStyleDefinition": {
       "type": "object",
       "description": "Style definition for line items (includes arrow mode)",
       "properties": {
-        "pen": {
-          "$ref": "#/$defs/penStyle"
-        },
-        "fill": {
-          "$ref": "#/$defs/fillStyle"
-        },
-        "text": {
-          "$ref": "#/$defs/textStyle"
-        },
+        "pen":  { "$ref": "#/$defs/penStyle" },
+        "fill": { "$ref": "#/$defs/fillStyle" },
         "arrow": {
           "type": "string",
           "enum": ["none", "start", "end", "both"],
