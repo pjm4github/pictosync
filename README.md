@@ -4,7 +4,7 @@
 
 # PictoSync
 
-**v1.11** | PNG Image Canvas Tool for Object Synchronization
+**v2.0** | PNG Image Canvas Tool for Object Synchronization
 
 Diagram annotation tool with AI-powered extraction and bidirectional sync.
 
@@ -120,7 +120,7 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 - **Accept Ghost Fields**: Right-click a gray ghost field to "Accept" it — the field becomes permanent and survives toggling schema check off
 - **Schema-Driven Defaults**: All default annotation values (meta, style, per-kind overrides) are derived from the JSON schema — no hardcoded Python dicts
 - **Smart Scrolling**: Clicking canvas items scrolls editor to the annotation's opening brace on mouse release
-- **Gutter Highlight Bar**: Colored bar in gutter marks the full scope of the selected annotation
+- **Gutter Highlight Bar**: Colored bar in gutter marks the full scope of the selected annotation; uses a single-pass escape-aware algorithm (correct `\\"` handling) that tracks the innermost enclosing JSON object; bar stays continuously synchronized as the user types in the UI panel, edits JSON, or folds/unfolds code blocks
 - **Consistent Precision**: Geometry values use 2 decimal places, style values use 1 decimal place
 
 ### Property Panel
@@ -128,7 +128,10 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 - **Schema-Driven Adjust Controls**: Adjust spinboxes (radius, indent, cap, shaft, head) derive labels, suffixes, and ranges from `annotation_schema.json`
 - **Qt Designer UI**: Built with Qt Designer for consistent layout
 - **Auto-Compile**: UI files are automatically compiled on startup if modified
-- **Text Formatting**: Font size, alignment, vertical position, and spacing controls
+- **Contents Tab**: Rich-text editor for shape text with run-level font family, font size, bold/italic/underline, text color, subscript/superscript, and horizontal/vertical alignment controls
+- **Text Selection Persistence**: Selecting text in the Contents editor and then changing font or color via panel controls applies the change to the selection and keeps it highlighted — the selection is only cleared when the user explicitly clicks a new position or uses arrow keys
+- **Run-Level Color Picker**: Text color changes apply to the selected run (or set typing format when nothing is selected); color picker captures the selection before the dialog opens so it is not lost when focus moves to the dialog
+- **Text Formatting**: Font size, alignment, vertical position, and spacing controls; wrap toggle; text flow type
 
 ### User Interface
 - **Dynamic Title Bar**: Window title shows the currently loaded file (e.g. "PictoSync — diagram.puml"); reverts to default when no file is loaded
@@ -137,9 +140,11 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 - **Compact Settings Dialog**: Tighter tab labels, reduced margins, and smaller dialog footprint
 - **Hide/Show PNG**: Toggle background image visibility for cleaner annotation view
 - **Handle-Enclosed Selection**: Rubber band selection respects individual item handles with live preview
-- **Multiple Themes**: 7 built-in themes (Foundation Dark, Bulma Light, Bauhaus, Neumorphism, Materialize, Tailwind, Bootstrap)
+- **Multiple Themes**: 7 built-in themes (Foundation Dark, Bulma Light, Bauhaus, Neumorphism, Materialize, Tailwind, Bootstrap); all themes include correctly styled radio button and checkbox indicators
+- **Native Radio Button Fix**: Fusion style applied to radio buttons to override Windows UxTheme renderer, which ignores CSS `::indicator:checked` background-color; all themes now show correct checked/unchecked visual states
 - **Styled Splitters**: High-contrast, theme-aware resize handles
 - **Custom Icons**: Theme-matched SVG icons for all tools and actions
+- **Wheel Guard**: Mouse wheel does not change spinner or combo box values unless the widget already has keyboard focus — prevents accidental value changes while scrolling past controls
 
 ## Installation
 
@@ -365,6 +370,17 @@ See `schemas/annotation_schema.json` for the full specification.
 **Y** = implemented, **—** = test data collected, parser not yet implemented
 
 ## Version History
+
+### v2.0 (2026-03-14)
+- **Contents tab**: Rich-text editor in the property panel with run-level font family, font size, bold/italic/underline, text color (with hex + alpha edits), subscript/superscript, horizontal and vertical alignment, wrap toggle, and text flow type; splitter lets user resize the text editor vs. graphic panel regions
+- **Text selection persistence**: Selected text in the Contents editor stays highlighted when focus moves to any panel control (font combo, size spinner, color picker, etc.); the QPalette Inactive highlight colors are set to match Active so Qt's native rendering keeps the selection visible without overriding per-character formatting; selection is only cleared when the user clicks a new position or uses arrow keys inside the text widget
+- **Run-level color always applies**: `_apply_run_color` now always reads the text cursor regardless of `hasFocus()` state — color changes from the hex edit, alpha spinner, and other panel controls correctly apply to the selection even after focus has moved away from the text widget
+- **Theme radio button indicators**: All 5 themes (Foundation Dark, Bulma Light, Bauhaus, Neumorphism, Tailwind) now display correctly styled radio button and checkbox indicators with contrasting checked/unchecked states
+- **Windows native style fix**: Fusion style applied to all radio buttons in the property panel and settings dialog; bypasses `QWindowsVistaStyle` UxTheme rendering that ignores CSS `::indicator:checked { background-color }`, ensuring theme indicator colors are respected on Windows
+- **Gutter bar continuous sync**: JSON editor gutter highlight bar now stays synchronized while the user types in the UI panel or folds/unfolds code blocks; `_recompute_fold_regions` (fired on every `textChanged`) recomputes the bar range and triggers a repaint; fold/unfold methods also trigger `line_number_area.update()`
+- **Gutter bar escape-aware algorithm**: Rewrote `_find_annotation_line_range` and `_find_annotation_char_range` using a single forward pass with an `escape_next` flag; correctly handles `\\"` (escaped backslash before closing quote) that broke the old `text[i-1] != '\\'` check, which caused the bar to stop prematurely at values containing backslash sequences
+- **Wheel guard**: `install_wheel_guard()` utility in `utils.py` installs an event filter on all `QAbstractSpinBox` and `QComboBox` descendants of a widget; wheel events are ignored unless the widget has keyboard focus, preventing accidental value changes while scrolling past the Contents panel or Settings dialog
+- **8pt font lock for Contents panel**: All labels and controls inside the `contents_format` scroll area are locked to 8pt regardless of the active app theme stylesheet
 
 ### v1.11 (2026-03-10)
 - **Snap-to-port**: Line, curve, and orthocurve endpoints snap to ports with cyan glow visual feedback; bidirectional connection model tracks which end (start/end) is connected to which port
