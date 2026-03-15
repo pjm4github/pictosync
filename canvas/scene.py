@@ -29,6 +29,7 @@ from canvas.items import (
     MetaSeqBlockItem,
     MetaGroupItem,
     MetaPortItem,
+    _find_nearby_port,
 )
 from canvas.perimeter import PORTEABLE_KINDS, t_from_local_point
 from settings import get_settings
@@ -42,6 +43,34 @@ def _get_z_index_base() -> int:
 def _get_z_index_step() -> int:
     """Get z-index step from settings. Default: 10."""
     return get_settings().settings.canvas.zorder.step
+
+
+def _stamp_style_defaults(item: QGraphicsItem) -> None:
+    """Apply per-kind style defaults to a newly created item so it paints
+    with the user's saved pen/fill colours immediately — including during
+    the drag phase before *_on_new_item* fires.
+
+    Only style (pen / fill) is set here.  Meta / contents defaults are
+    applied later by ``_apply_item_defaults`` in main.py once the item is
+    fully placed.
+    """
+    kind = getattr(item, "kind", None)
+    if not kind:
+        return
+    from utils import hex_to_qcolor
+    defs = get_settings().get_item_defaults(kind)
+    st = defs.style
+    _red  = QColor(Qt.GlobalColor.red)
+    _none = QColor(0, 0, 0, 0)
+    item.pen_color = hex_to_qcolor(st.pen_color, _red)
+    item.pen_width = st.pen_width
+    item.line_dash  = st.line_dash
+    if hasattr(item, "brush_color"):
+        item.brush_color = hex_to_qcolor(st.fill_color, _none)
+    if hasattr(item, "_apply_pen_brush"):
+        item._apply_pen_brush()
+    elif hasattr(item, "_apply_pen"):
+        item._apply_pen()
 
 
 class AnnotatorScene(QGraphicsScene):
@@ -85,6 +114,9 @@ class AnnotatorScene(QGraphicsScene):
         self._seqblock_type: str = "alt"
         # Alt+drag port tracking
         self._alt_drag_port: Optional[MetaPortItem] = None
+        # Port snap tracking during line/curve drawing
+        self._draw_snap_start: Optional[MetaPortItem] = None
+        self._draw_snap_end: Optional[MetaPortItem] = None
 
     @property
     def is_interacting(self) -> bool:
@@ -236,6 +268,11 @@ class AnnotatorScene(QGraphicsScene):
             # Curve finish/cancel on right-click — capture click as final point
             if self.mode in (Mode.CURVE, Mode.ORTHOCURVE) and self._curve_points:
                 sp = event.scenePos()
+                # Snap last point to nearby port
+                port = _find_nearby_port(self, sp)
+                if port:
+                    sp = port.mapToScene(QPointF(0, 0))
+                    self._draw_snap_end = port
                 if self.mode == Mode.ORTHOCURVE:
                     sp = self._commit_ortho_point(sp)
                 self._curve_points.append(sp)
@@ -280,6 +317,15 @@ class AnnotatorScene(QGraphicsScene):
 
             # Curve multi-click mode
             if self.mode == Mode.CURVE:
+                # Snap first point to nearby port
+                if not self._curve_points:
+                    port = _find_nearby_port(self, sp)
+                    if port:
+                        sp = port.mapToScene(QPointF(0, 0))
+                        self._draw_snap_start = port
+                    else:
+                        self._draw_snap_start = None
+                    self._draw_snap_end = None
                 self._curve_points.append(sp)
                 self._update_curve_preview(sp)
                 event.accept()
@@ -287,6 +333,15 @@ class AnnotatorScene(QGraphicsScene):
 
             # Orthogonal curve multi-click mode
             if self.mode == Mode.ORTHOCURVE:
+                # Snap first point to nearby port
+                if not self._curve_points:
+                    port = _find_nearby_port(self, sp)
+                    if port:
+                        sp = port.mapToScene(QPointF(0, 0))
+                        self._draw_snap_start = port
+                    else:
+                        self._draw_snap_start = None
+                    self._draw_snap_end = None
                 snapped = self._commit_ortho_point(sp)
                 self._curve_points.append(snapped)
                 self._update_curve_preview(snapped)
@@ -313,6 +368,16 @@ class AnnotatorScene(QGraphicsScene):
                     self.addItem(self._temp_item)
                     self._temp_item.setZValue(next_z)
                 elif self.mode == Mode.LINE:
+                    # Snap start point to nearby port
+                    start_port = _find_nearby_port(self, sp)
+                    if start_port:
+                        sp = start_port.mapToScene(QPointF(0, 0))
+                        self._drag_start = sp
+                        self._draw_snap_start = start_port
+                        start_port.set_snap_hover(True)
+                    else:
+                        self._draw_snap_start = None
+                    self._draw_snap_end = None
                     self._temp_item = MetaLineItem(sp.x(), sp.y(), sp.x(), sp.y(), ann_id, self._on_item_changed)
                     self.addItem(self._temp_item)
                     self._temp_item.setZValue(next_z)
@@ -341,6 +406,8 @@ class AnnotatorScene(QGraphicsScene):
                     self.addItem(self._temp_item)
                     self._temp_item.setZValue(next_z)
 
+                if self._temp_item is not None:
+                    _stamp_style_defaults(self._temp_item)
                 event.accept()
                 return
 
@@ -349,6 +416,7 @@ class AnnotatorScene(QGraphicsScene):
                 ti = MetaTextItem(sp.x(), sp.y(), "Double-click to edit", ann_id, self._on_item_changed)
                 self.addItem(ti)
                 ti.setZValue(self._get_next_z_index())
+                _stamp_style_defaults(ti)
                 ti.setSelected(True)
                 if self._on_new_item:
                     self._on_new_item(ti)
@@ -466,6 +534,17 @@ class AnnotatorScene(QGraphicsScene):
             elif isinstance(self._temp_item, MetaLineItem):
                 x1, y1 = sx, sy
                 x2, y2 = cx, cy
+                # Snap end point to nearby port
+                end_port = _find_nearby_port(self, cur)
+                if end_port is not self._draw_snap_end:
+                    if self._draw_snap_end:
+                        self._draw_snap_end.set_snap_hover(False)
+                    self._draw_snap_end = end_port
+                    if end_port:
+                        end_port.set_snap_hover(True)
+                if end_port:
+                    ep = end_port.mapToScene(QPointF(0, 0))
+                    x2, y2 = ep.x(), ep.y()
                 self._temp_item.setPos(QPointF(x1, y1))
                 self._temp_item.setLine(QLineF(0, 0, x2 - x1, y2 - y1))
 
@@ -482,6 +561,9 @@ class AnnotatorScene(QGraphicsScene):
             return
 
         if self._drag_start is not None and self._temp_item is not None:
+            # Establish port connections for lines drawn near ports
+            if isinstance(self._temp_item, MetaLineItem):
+                self._connect_draw_snap_ports(self._temp_item)
             if self._on_new_item:
                 self._on_new_item(self._temp_item)
 
@@ -578,6 +660,7 @@ class AnnotatorScene(QGraphicsScene):
         item = MetaPolygonItem(min_x, min_y, w, h, rel_points, ann_id, self._on_item_changed)
         self.addItem(item)
         item.setZValue(next_z)
+        _stamp_style_defaults(item)
 
         if self._on_new_item:
             self._on_new_item(item)
@@ -675,6 +758,10 @@ class AnnotatorScene(QGraphicsScene):
             item = MetaCurveItem(min_x, min_y, w, h, nodes, ann_id, self._on_item_changed)
         self.addItem(item)
         item.setZValue(next_z)
+        _stamp_style_defaults(item)
+
+        # Establish port connections for curves drawn near ports
+        self._connect_draw_snap_ports(item)
 
         if self._on_new_item:
             self._on_new_item(item)
@@ -692,6 +779,35 @@ class AnnotatorScene(QGraphicsScene):
             self._curve_preview = None
         self._curve_points.clear()
         self._ortho_direction = None
+        # Clear any leftover snap hover from cancelled draws
+        if self._draw_snap_start:
+            self._draw_snap_start.set_snap_hover(False)
+            self._draw_snap_start = None
+        if self._draw_snap_end:
+            self._draw_snap_end.set_snap_hover(False)
+            self._draw_snap_end = None
+
+    def _connect_draw_snap_ports(self, item):
+        """Establish bidirectional port connections for an item drawn near ports.
+
+        Called after a line or curve is created. Connects the start/end
+        to any ports that were snapped during drawing, then clears the
+        snap tracking state.
+        """
+        for which, port in [("start", self._draw_snap_start),
+                            ("end", self._draw_snap_end)]:
+            if port is None:
+                continue
+            port.set_snap_hover(False)
+            if item.ann_id not in port._connections:
+                port.add_connection(item.ann_id)
+            if hasattr(item, '_port_ids') and port.ann_id not in item._port_ids:
+                item._port_ids.append(port.ann_id)
+            if hasattr(item, '_port_endpoints'):
+                item._port_endpoints[port.ann_id] = which
+            port._notify_changed()
+        self._draw_snap_start = None
+        self._draw_snap_end = None
 
     # ---- Orthogonal curve snap helpers ----
 

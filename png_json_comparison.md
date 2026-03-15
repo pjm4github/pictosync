@@ -412,3 +412,22 @@ dAIgram (GPT-4o) and PictoSync (Google Gemini) are the only tools found that ext
 - [ToDiagram](https://todiagram.com/) | [JSON Crack](https://jsoncrack.com/)
 - [diagram-converter npm](https://www.npmjs.com/package/@whitebite/diagram-converter)
 - [JSON Graph Specification](https://github.com/jsongraph/json-graph-specification)
+
+
+## EA Tools according to Gartner
+![magic quad Ent Arch.png](magic%20quad%20Ent%20Arch.png)
+### mentioned
+- LeanIX
+- [Ardoq](https://www.ardoq.com/features/scenarios)
+- [Orbus Software](https://www.orbussoftware.com/product/orbusinfinity/integrations/orbusinfinity-draw)
+- [Bizzdesign](https://bizzdesign.com/enterprise-architecture-management-eam-software)
+- [BOC Group](https://www.boc-group.com/en/adoit/)
+- [Avolution](https://www.avolutionsoftware.com/abacus/enterprise-architecture-modeling-roadmapping/)
+- [QualiWare](https://www.qualiware.com/qualiware-1010)
+- [ins-pi](https://www.ins-pi.com/)
+- [ValueBlue](https://www.valueblue.com/solutions/enterprise-architecture)
+- [GBTEC](https://www.gbtec.com/campaign-lp/homepage-b/)
+- [ServiceNow](https://www.servicenow.com/products/it-operations-management.html)
+- [Bee360](https://www.bee360.com/enterprise-architecture-management/)
+- [UNICOM Systems](https://www.unicomsi.com/products/system-architect/)
+- [Sparx Systems](https://www.sparxsystems.us/enterprise-architect/whats-new-in-sparx-ea-17/)

@@ -80,6 +80,7 @@ class MetaMixin:
     def __init__(self):
         self.kind = "unknown"
         self.meta = AnnotationMeta()
+        self.ann_dsl: dict = {}
         self.pen_color = QColor(Qt.GlobalColor.red)
         self.pen_width = 2
         self.brush_color = QColor(0, 0, 0, 0)  # transparent
@@ -118,36 +119,35 @@ class MetaMixin:
         """Return ``{"ports": [...]}`` for JSON serialization."""
         return {"ports": self.ports}
 
-    @staticmethod
-    def _meta_dict(meta: AnnotationMeta) -> Dict[str, Any]:
-        """Convert metadata to dict for JSON serialization.
+    def _meta_dict(self, meta: AnnotationMeta) -> Dict[str, Any]:
+        """Convert contents to dict for JSON serialization.
 
-        Uses ``AnnotationMeta.to_dict()`` which merges any extra keys
-        (e.g. C4 fields like ``alias``, ``c4_type``) back into the dict.
+        ``contents`` holds text/format data; ``dsl`` is a top-level
+        annotation key sourced from ``self.ann_dsl``.
         """
-        return {"meta": meta.to_dict()}
+        d = meta.to_dict()
+        # Remove any legacy dsl that may have leaked into meta extras
+        d.pop("dsl", None)
+        # Always emit dsl key so it appears in the JSON editor
+        return {"contents": d, "dsl": dict(self.ann_dsl)}
 
     def _style_dict(self) -> Dict[str, Any]:
-        """Get style as dict for JSON serialization."""
+        """Get style as dict for JSON serialization.
+
+        Text visual properties (color, font_size) now live in ``contents``,
+        so ``style`` contains only ``pen`` + ``fill`` (+ ``arrow_size``).
+        """
         pen_style = {
-            "color": qcolor_to_hex(self.pen_color),
+            "color": qcolor_to_hex(self.pen_color, include_alpha=True),
             "width": int(self.pen_width),
             "dash": self.line_dash,
             "dash_pattern_length": round(self.dash_pattern_length, 1),
             "dash_solid_percent": round(self.dash_solid_percent, 1),
         }
 
-        # Text style only contains visual properties (color, size)
-        # Layout properties (valign, spacing) are stored in meta
-        text_style = {
-            "color": qcolor_to_hex(self.text_color),
-            "size_pt": round(self.text_size_pt, 1),
-        }
-
-        style = {
+        style: Dict[str, Any] = {
             "pen": pen_style,
             "fill": {"color": qcolor_to_hex(self.brush_color, include_alpha=True)},
-            "text": text_style,
         }
         # Only include arrow_size for line items
         if hasattr(self, "arrow_mode"):
@@ -155,13 +155,16 @@ class MetaMixin:
         return {"style": style}
 
     def apply_style_from_record(self, rec: Dict[str, Any]):
-        """Apply style from a JSON record dict."""
+        """Apply style from a JSON record dict.
+
+        Text color / font_size are read from ``contents`` (new format).
+        Falls back to ``style.text`` for old-format files.
+        """
         style = rec.get("style") or {}
         if not isinstance(style, dict):
             return
         pen = style.get("pen") or {}
         fill = style.get("fill") or {}
-        txt = style.get("text") or {}
 
         if isinstance(pen, dict):
             self.pen_color = hex_to_qcolor(pen.get("color", ""), self.pen_color)
@@ -184,14 +187,25 @@ class MetaMixin:
         if isinstance(fill, dict):
             self.brush_color = hex_to_qcolor(fill.get("color", ""), self.brush_color)
 
-        if isinstance(txt, dict):
-            self.text_color = hex_to_qcolor(txt.get("color", ""), self.text_color)
+        # Text color / font_size — prefer contents, fallback to legacy style.text
+        contents = rec.get("contents") or rec.get("meta") or {}
+        if isinstance(contents, dict) and "color" in contents:
+            self.text_color = hex_to_qcolor(contents.get("color", ""), self.text_color)
             try:
-                if "size_pt" in txt and txt["size_pt"] is not None:
-                    self.text_size_pt = float(txt["size_pt"])
+                if "font_size" in contents and contents["font_size"] is not None:
+                    self.text_size_pt = float(contents["font_size"])
             except Exception:
                 pass
-            # Note: text layout options (valign, spacing) are stored in meta, not style
+        else:
+            # Old format: style.text.color / style.text.size_pt
+            txt = style.get("text") or {}
+            if isinstance(txt, dict):
+                self.text_color = hex_to_qcolor(txt.get("color", ""), self.text_color)
+                try:
+                    if "size_pt" in txt and txt["size_pt"] is not None:
+                        self.text_size_pt = float(txt["size_pt"])
+                except Exception:
+                    pass
 
         arrow = style.get("arrow", "none")
         if hasattr(self, "arrow_mode") and isinstance(arrow, str):

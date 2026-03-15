@@ -307,6 +307,7 @@ class MainWindow(QMainWindow):
         # Give property panel and scene access to undo stack/actions
         self.props.undo_stack = self.undo_stack
         self.scene.set_undo_actions(self.undo_act, self.redo_act)
+        self.props.port_selected.connect(self._on_props_port_selected)
 
         self.statusBar().showMessage("Drop a PNG. Auto-Extract or edit Draft JSON. Import links JSON<->Scene.")
         self.props.set_image_info({})
@@ -447,7 +448,7 @@ class MainWindow(QMainWindow):
         domain_group = QActionGroup(self)
         domain_group.setExclusive(True)
 
-        none_act = QAction("None", self)
+        none_act = QAction("Generic", self)
         none_act.setCheckable(True)
         none_act.setChecked(True)
         none_act.triggered.connect(lambda: self._set_active_domain(None))
@@ -774,6 +775,7 @@ class MainWindow(QMainWindow):
         if domain is None:
             self._active_domain = None
             self._dsl_tb.setVisible(False)
+            self.props.set_active_domain("")
             return
 
         self._active_domain = domain
@@ -788,7 +790,7 @@ class MainWindow(QMainWindow):
                 act.setIcon(icon)
                 self._icon_actions[act] = tool.icon
             act.triggered.connect(
-                lambda checked, t=tool: self._on_domain_tool_clicked(t)
+                lambda checked, t=tool, dn=domain.name: self._on_domain_tool_clicked(t, dn)
             )
             self._dsl_tb.addAction(act)
             self._domain_tool_actions.append(act)
@@ -798,11 +800,15 @@ class MainWindow(QMainWindow):
 
         self._dsl_tb.setVisible(True)
 
-    def _on_domain_tool_clicked(self, tool: DomainTool):
+        # Update DSL label on currently selected item
+        self.props.set_active_domain(domain.name)
+
+    def _on_domain_tool_clicked(self, tool: DomainTool, domain_name: str = ""):
         """Create a canvas item from a DSL tool definition.
 
         Args:
             tool: The domain tool that was clicked.
+            domain_name: Name of the domain this tool belongs to.
         """
         base_kind = tool.base_kind
         defaults = tool.defaults or {}
@@ -850,6 +856,10 @@ class MainWindow(QMainWindow):
         # Apply meta defaults
         meta = AnnotationMeta.from_dict(meta_defaults) if meta_defaults else AnnotationMeta()
         it.set_meta(meta)
+
+        # Stamp DSL identifier at top level
+        if domain_name:
+            it.ann_dsl = {domain_name: {"tool": tool.name, "label": tool.label}}
 
         # Apply style defaults
         if defaults:
@@ -1200,6 +1210,11 @@ class MainWindow(QMainWindow):
             return
         self._scroll_to_text_field(ann_id)
 
+    def _on_props_port_selected(self, ann_id: str):
+        """Handle port selected in the property panel ports list."""
+        self.draft.set_highlighted_annotation(ann_id)
+        self._scroll_draft_to_id_top(ann_id)
+
     def _scroll_draft_to_id_top(self, ann_id: str):
         """Scroll the draft editor to show the given annotation ID."""
         ok = self.draft.scroll_to_id_top(ann_id)
@@ -1416,13 +1431,8 @@ class MainWindow(QMainWindow):
             # Detect if this is a Mermaid SVG
             diagram_type = detect_mermaid_svg(svg_path)
             if diagram_type is None:
-                QMessageBox.warning(
-                    self, "Unsupported SVG",
-                    "This SVG does not appear to be a Mermaid-rendered diagram.\n\n"
-                    "PictoSync supports all Mermaid diagram types (flowchart, sequence, "
-                    "class, state, ER, Gantt, pie, etc.) exported from "
-                    "Mermaid Live Editor, VS Code, or mermaid.ink.",
-                )
+                # Not a Mermaid SVG — try generic SVG parser
+                self._import_generic_svg(svg_path)
                 return
 
             # Render SVG → temp PNG for canvas background (1× so pixel
@@ -1458,6 +1468,58 @@ class MainWindow(QMainWindow):
 
             self.statusBar().showMessage(
                 f"Imported {svg_path} — {num_annotations} annotations extracted",
+                8000,
+            )
+            self._update_title(svg_path)
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def _import_generic_svg(self, svg_path: str):
+        """Import a generic (non-Mermaid, non-PlantUML) SVG file.
+
+        Renders the SVG to a temp PNG for the canvas background, then
+        parses SVG elements into annotations for the JSON editor.
+
+        Args:
+            svg_path: Path to the .svg file.
+        """
+        from svg.parser import parse_generic_svg
+        from mermaid.renderer import render_svg_to_png
+
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            # Render SVG → temp PNG for canvas background
+            try:
+                png_path = render_svg_to_png(svg_path, scale=1.0)
+                self.load_background_png(png_path)
+            except RuntimeError as e:
+                QMessageBox.warning(
+                    self, "SVG Rendering",
+                    f"Could not render SVG to PNG background.\n"
+                    f"Annotations will still be parsed from the SVG.\n\n{e}",
+                )
+
+            # Parse SVG elements into annotations
+            try:
+                data = parse_generic_svg(svg_path)
+            except Exception as e:
+                QMessageBox.warning(
+                    self, "Parse Error",
+                    f"Could not parse SVG:\n{e}",
+                )
+                return
+
+            num_annotations = len(data.get("annotations", []))
+            pretty = json.dumps(data, indent=2)
+            self._set_draft_text_programmatically(
+                pretty,
+                enable_import=True,
+                status=f"Generic SVG imported: {num_annotations} annotations. Click Import to link JSON\u2194Scene.",
+                focus_id=None,
+            )
+
+            self.statusBar().showMessage(
+                f"Imported {svg_path} \u2014 {num_annotations} annotations extracted",
                 8000,
             )
             self._update_title(svg_path)
@@ -2201,8 +2263,9 @@ class MainWindow(QMainWindow):
             for rec in annotations:
                 if isinstance(rec, dict) and "kind" in rec:
                     kind = rec["kind"]
-                    meta = rec.get("meta", {}) or {}
-                    rec["meta"] = normalize_meta(meta, kind)
+                    contents = rec.get("contents") or rec.get("meta", {}) or {}
+                    rec["contents"] = normalize_meta(contents, kind)
+                    rec.pop("meta", None)
 
         sorted_data = sort_draft_data(data)
         pretty = json.dumps(sorted_data, indent=2)
@@ -2318,6 +2381,28 @@ class MainWindow(QMainWindow):
                 self.draft.import_btn.setEnabled(False)
                 self.draft.set_status("Invalid JSON.")
 
+    def _json_cursor_in_contents(self) -> bool:
+        """Return True if the JSON editor cursor is inside a 'contents' block.
+
+        Scans the text preceding the cursor for the last ``"contents"`` key
+        and checks whether that block's braces are still open at the cursor.
+        """
+        txt = self.draft.get_json_text()
+        pos = self.draft.text.textCursor().position()
+        prefix = txt[:pos]
+        idx = prefix.rfind('"contents"')
+        if idx == -1:
+            return False
+        depth = 0
+        for ch in prefix[idx + len('"contents"'):]:
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    return False
+        return depth > 0
+
     def _apply_json_text_to_scene(self):
         """Apply JSON text changes to the scene (debounced)."""
         trace("_apply_json_text_to_scene called", "SYNC")
@@ -2372,9 +2457,13 @@ class MainWindow(QMainWindow):
                 self.draft.set_status(f"\u23f3 {validation_errors[0]}")
                 return
 
+            in_contents = self._json_cursor_in_contents()
             trace("Rebuilding scene from draft...", "SYNC")
             self._rebuild_scene_from_draft()
             trace("Scene rebuild complete", "SYNC")
+            # Switch properties tab to match the edited JSON section
+            if self.props._current_item is not None:
+                self.props.tabs.setCurrentIndex(1 if in_contents else 0)
 
             if changed:
                 self._push_draft_data_to_editor(status="Added missing ids; scene updated.", focus_id=None)
@@ -2560,6 +2649,69 @@ class MainWindow(QMainWindow):
             if not self.draft.text.hasFocus():
                 self._scroll_draft_to_id_top(restored_id)
 
+    def _apply_item_defaults(self, item) -> None:
+        """Apply user/system per-kind defaults to a freshly drawn canvas item.
+
+        Called only for newly drawn items (not when loading from JSON).
+        Reads ``[item_defaults.<kind>]`` from the merged settings and stamps
+        style + contents onto the item so it renders with the saved defaults.
+
+        Args:
+            item: A canvas item that has just been created by the drawing tools.
+        """
+        kind = getattr(item, "kind", None)
+        if not kind:
+            return
+
+        from settings import get_settings
+        from utils import hex_to_qcolor as _hq
+        from PyQt6.QtGui import QColor as _QColor
+
+        defs = get_settings().get_item_defaults(kind)
+        _red = _QColor(Qt.GlobalColor.red)
+        _yellow = _QColor(Qt.GlobalColor.yellow)
+
+        # ── Style ────────────────────────────────────────────────────────
+        item.pen_color = _hq(defs.style.pen_color, _red)
+        item.pen_width = defs.style.pen_width
+        item.line_dash = defs.style.line_dash
+        if hasattr(item, "brush_color"):
+            item.brush_color = _hq(defs.style.fill_color, _QColor(0, 0, 0, 0))
+        if hasattr(item, "_apply_pen_brush"):
+            item._apply_pen_brush()
+
+        # ── Contents / meta ──────────────────────────────────────────────
+        if hasattr(item, "meta"):
+            c = defs.contents
+            item.meta.halign        = c.halign
+            item.meta.valign        = c.valign
+            item.meta.font_size     = c.font_size
+            item.meta.font_family   = c.font_family
+            item.meta.color         = c.color
+            item.meta.spacing       = c.spacing
+            item.meta.wrap          = c.wrap
+            item.meta.margin_left   = c.margin_left
+            item.meta.margin_right  = c.margin_right
+            item.meta.margin_top    = c.margin_top
+            item.meta.margin_bottom = c.margin_bottom
+            item.meta.flow_type     = c.flow_type
+            item.meta.text_box_width  = c.text_box_width
+            item.meta.text_box_height = c.text_box_height
+
+            # overlay-2.0: stamp saved frame + default_format if present
+            if c.frame is not None:
+                from models import TextFrame as _TF
+                item.meta.frame = _TF.from_dict(c.frame)
+            if c.default_format is not None:
+                from models import CharFormat as _CF
+                item.meta.default_format = _CF.from_dict(c.default_format)
+
+        # Sync rendering attributes that shadow meta fields
+        if hasattr(item, "text_size_pt"):
+            item.text_size_pt = defs.contents.font_size
+        if hasattr(item, "text_color"):
+            item.text_color = _hq(defs.contents.color, _yellow)
+
     def _on_new_scene_item(self, item: QGraphicsItem):
         """Handle new item added to scene."""
         # Always handle tool mode change after item creation
@@ -2571,6 +2723,9 @@ class MainWindow(QMainWindow):
         # Skip items that are children of a group (they're managed by the group)
         if isinstance(item.parentItem(), MetaGroupItem):
             return
+
+        # Apply user/system per-kind defaults to freshly drawn items
+        self._apply_item_defaults(item)
 
         # Auto-enable linking and initialize draft data when items are created
         if self._draft_data is None:
@@ -2591,7 +2746,7 @@ class MainWindow(QMainWindow):
         if isinstance(item, MetaSeqBlockItem):
             bt = item.block_type
             item.meta.label = bt.capitalize()
-            item.meta.extras.setdefault("dsl", {})["sequence"] = {"block_type": bt}
+            item.ann_dsl["sequence"] = {"block_type": bt}
             rec = item.to_record()  # re-serialize with stamped meta
 
         anns = self._draft_data.get("annotations", [])
@@ -2963,29 +3118,31 @@ class MainWindow(QMainWindow):
         if not isinstance(ann_id, str) or not ann_id:
             ann_id = self._new_ann_id()
 
-        meta_dict = rec.get("meta") or {}
+        # Read contents (new) or meta (old) dict
+        meta_dict = rec.get("contents") or rec.get("meta") or {}
         if isinstance(meta_dict, dict):
             meta_dict.pop("kind", None)  # Strip legacy meta.kind
         meta = AnnotationMeta.from_dict(meta_dict)
 
         # Strip brackets from tech field - they will be added in the view
-        if meta.tech:
+        if hasattr(meta, "tech") and meta.tech:
             meta.tech = meta.tech.strip().strip("[]").strip()
 
         # Backward-compat: migrate legacy "text" field to meta.note
         legacy_text = rec.get("text", "")
-        if legacy_text and not meta.note:
+        if legacy_text and hasattr(meta, "note") and not meta.note:
             meta.note = str(legacy_text)
 
         # Parse C4-style text if meta fields are empty and note field exists
-        text_content = meta.note or ""
-        if text_content and not meta.label and not meta.tech:
-            label, tech, note = parse_c4_text(str(text_content))
-            if label or tech:
-                meta.label = label
-                # Strip brackets from parsed tech as well
-                meta.tech = tech.strip().strip("[]").strip() if tech else ""
-                meta.note = note
+        if hasattr(meta, "note") and hasattr(meta, "label"):
+            text_content = meta.note or ""
+            if text_content and not meta.label and not meta.tech:
+                label, tech, note = parse_c4_text(str(text_content))
+                if label or tech:
+                    meta.label = label
+                    # Strip brackets from parsed tech as well
+                    meta.tech = tech.strip().strip("[]").strip() if tech else ""
+                    meta.note = note
 
         # Get z-index from record (will be applied after item is created)
         z_index = rec.get("z", 0)
@@ -3170,7 +3327,7 @@ class MainWindow(QMainWindow):
         elif kind == "seqblock":
             g = rec.get("geom", {})
             # Determine block_type from DSL metadata, then meta.label fallback
-            dsl = meta_dict.get("dsl", {})
+            dsl = rec.get("dsl") or meta_dict.get("dsl") or {}
             seq = dsl.get("sequence", {}) if isinstance(dsl, dict) else {}
             block_type = seq.get("block_type", "")
             if not block_type:
@@ -3242,6 +3399,11 @@ class MainWindow(QMainWindow):
                     it.add_member(child_item)
             if z_index:
                 it.setZValue(z_index)
+
+        # Restore ann_dsl from top-level dsl key (new format)
+        # or from meta dict dsl key (old format / merger output)
+        if it is not None and hasattr(it, 'ann_dsl'):
+            it.ann_dsl = rec.get("dsl") or meta_dict.get("dsl") or {}
 
         # Restore rotation angle from geom if present
         if it is not None and hasattr(it, 'set_rotation_angle'):

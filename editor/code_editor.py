@@ -466,6 +466,16 @@ class JsonCodeEditor(QPlainTextEdit):
 
         self.folding_area.update()
 
+        # Recompute the highlight bar range whenever the text changes.
+        # set_highlighted_annotation() short-circuits when the ID hasn't changed,
+        # so text edits (from the properties panel or direct typing) would leave
+        # the bar stale without this.
+        if self._highlighted_annotation_id:
+            self._highlighted_line_range = self._find_annotation_line_range(
+                self._highlighted_annotation_id
+            )
+            self.line_number_area.update()
+
     def toggle_fold(self, block_number: int):
         """Toggle folding for a given block."""
         if block_number not in self._fold_regions:
@@ -496,6 +506,7 @@ class JsonCodeEditor(QPlainTextEdit):
         self._folded_blocks.add(block_number)
         self.viewport().update()
         self.folding_area.update()
+        self.line_number_area.update()
         self._update_margins()
 
     def _unfold(self, block_number: int):
@@ -518,6 +529,7 @@ class JsonCodeEditor(QPlainTextEdit):
         self._folded_blocks.discard(block_number)
         self.viewport().update()
         self.folding_area.update()
+        self.line_number_area.update()
         self._update_margins()
 
     def unfold_all(self):
@@ -530,6 +542,7 @@ class JsonCodeEditor(QPlainTextEdit):
         self._folded_blocks.clear()
         self.viewport().update()
         self.folding_area.update()
+        self.line_number_area.update()
 
     def fold_all(self):
         """Fold all foldable regions."""
@@ -953,91 +966,61 @@ class JsonCodeEditor(QPlainTextEdit):
         self.set_highlighted_annotation("")
 
     def _find_annotation_line_range(self, ann_id: str) -> Tuple[int, int]:
-        """
-        Find the start and end line numbers for an annotation with the given ID.
+        """Find the start and end line numbers for an annotation with the given ID.
+
+        Uses a single forward pass with proper backslash-escape handling (same
+        logic as ``_recompute_fold_regions``) to find the innermost ``{...}``
+        object that contains the ``"id"`` field position.
+
         Returns (-1, -1) if not found.
         """
         text = self.toPlainText()
         if not text.strip():
             return (-1, -1)
 
-        # Find the "id" field with this annotation ID
         import re
-        id_pattern = rf'"id"\s*:\s*"{re.escape(ann_id)}"'
-        id_match = re.search(id_pattern, text)
-
+        id_match = re.search(rf'"id"\s*:\s*"{re.escape(ann_id)}"', text)
         if not id_match:
             return (-1, -1)
-
         id_pos = id_match.start()
 
-        # Scan backwards from id_pos to find the opening brace of this object
-        brace_depth = 0
-        object_start = -1
+        # Single forward pass — track open-brace positions on a stack.
+        # The first matched close-brace whose paired open-brace is before id_pos
+        # AND whose own position is after id_pos is the innermost enclosing object.
         in_string = False
+        escape_next = False
+        stack: List[int] = []
 
-        for i in range(id_pos - 1, -1, -1):
-            ch = text[i]
-
-            # Handle string detection (scanning backwards)
-            if ch == '"' and (i == 0 or text[i-1] != '\\'):
+        for i, ch in enumerate(text):
+            if escape_next:
+                escape_next = False
+                continue
+            if ch == '\\' and in_string:
+                escape_next = True
+                continue
+            if ch == '"':
                 in_string = not in_string
                 continue
-
             if in_string:
                 continue
-
-            if ch == '}':
-                brace_depth += 1
-            elif ch == '{':
-                if brace_depth == 0:
-                    object_start = i
-                    break
-                brace_depth -= 1
-
-        if object_start < 0:
-            return (-1, -1)
-
-        # Now find the closing brace of this object
-        brace_depth = 1
-        object_end = -1
-        in_string = False
-
-        for i in range(object_start + 1, len(text)):
-            ch = text[i]
-
-            if ch == '"' and text[i-1] != '\\':
-                in_string = not in_string
-                continue
-
-            if in_string:
-                continue
-
             if ch == '{':
-                brace_depth += 1
-            elif ch == '}':
-                brace_depth -= 1
-                if brace_depth == 0:
-                    object_end = i
-                    break
-
-        if object_end < 0:
-            return (-1, -1)
-
-        # Convert positions to line numbers
-        doc = self.document()
-        start_block = doc.findBlock(object_start)
-        end_block = doc.findBlock(object_end)
-
-        if start_block.isValid() and end_block.isValid():
-            return (start_block.blockNumber(), end_block.blockNumber())
+                stack.append(i)
+            elif ch == '}' and stack:
+                open_pos = stack.pop()
+                if open_pos < id_pos < i:
+                    doc = self.document()
+                    s = doc.findBlock(open_pos)
+                    e = doc.findBlock(i)
+                    if s.isValid() and e.isValid():
+                        return (s.blockNumber(), e.blockNumber())
+                    return (-1, -1)
 
         return (-1, -1)
 
     def _find_annotation_char_range(self, ann_id: str) -> Tuple[int, int]:
         """Find character offsets for an annotation's ``{ ... }`` block.
 
-        Nearly identical to :meth:`_find_annotation_line_range` but returns
+        Same algorithm as :meth:`_find_annotation_line_range` but returns
         ``(object_start, object_end)`` character positions instead of block
         numbers.  Returns ``(-1, -1)`` if not found.
 
@@ -1051,57 +1034,32 @@ class JsonCodeEditor(QPlainTextEdit):
         if not text.strip():
             return (-1, -1)
 
-        id_pattern = rf'"id"\s*:\s*"{re.escape(ann_id)}"'
-        id_match = re.search(id_pattern, text)
+        id_match = re.search(rf'"id"\s*:\s*"{re.escape(ann_id)}"', text)
         if not id_match:
             return (-1, -1)
-
         id_pos = id_match.start()
 
-        # Scan backwards to find opening brace
-        brace_depth = 0
-        object_start = -1
         in_string = False
+        escape_next = False
+        stack: List[int] = []
 
-        for i in range(id_pos - 1, -1, -1):
-            ch = text[i]
-            if ch == '"' and (i == 0 or text[i - 1] != '\\'):
-                in_string = not in_string
+        for i, ch in enumerate(text):
+            if escape_next:
+                escape_next = False
                 continue
-            if in_string:
+            if ch == '\\' and in_string:
+                escape_next = True
                 continue
-            if ch == '}':
-                brace_depth += 1
-            elif ch == '{':
-                if brace_depth == 0:
-                    object_start = i
-                    break
-                brace_depth -= 1
-
-        if object_start < 0:
-            return (-1, -1)
-
-        # Scan forwards to find closing brace
-        brace_depth = 1
-        object_end = -1
-        in_string = False
-
-        for i in range(object_start + 1, len(text)):
-            ch = text[i]
-            if ch == '"' and text[i - 1] != '\\':
+            if ch == '"':
                 in_string = not in_string
                 continue
             if in_string:
                 continue
             if ch == '{':
-                brace_depth += 1
-            elif ch == '}':
-                brace_depth -= 1
-                if brace_depth == 0:
-                    object_end = i
-                    break
+                stack.append(i)
+            elif ch == '}' and stack:
+                open_pos = stack.pop()
+                if open_pos < id_pos < i:
+                    return (open_pos, i)
 
-        if object_end < 0:
-            return (-1, -1)
-
-        return (object_start, object_end)
+        return (-1, -1)

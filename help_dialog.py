@@ -101,11 +101,11 @@ def show_about_dialog(parent=None):
         parent,
         "About PictoSync",
         "<h2>PictoSync</h2>"
-        "<p><b>v1.8</b> &mdash; Diagram Annotation &amp; Sync Tool</p>"
+        "<p><b>v2.0</b> &mdash; Diagram Annotation &amp; Sync Tool</p>"
         "<p>Create diagram overlays with manual drawing tools, "
         "Gemini AI auto-extraction, and bidirectional JSON synchronization.</p>"
         "<p>Supports PlantUML import, Mermaid import (SVG &amp; source), "
-        "C4 pipeline, DSL plugins, and PowerPoint export.</p>"
+        "generic SVG import, C4 pipeline, DSL plugins, and PowerPoint export.</p>"
         "<p>Built with PyQt6 and Google Gemini AI.</p>"
         "<hr>"
         '<p>Source: <a href="https://github.com/pjm4github/pictosync">'
@@ -126,7 +126,11 @@ _QUICK_START_HTML = """\
   <li><b>PlantUML (.puml)</b> &mdash; rendered to PNG (requires Java + plantuml.jar)
       and parsed into annotation JSON automatically.</li>
   <li><b>Mermaid SVG (.svg)</b> &mdash; pre-rendered SVG loaded and parsed into
-      annotations.</li>
+      annotations. Supports flowcharts, state diagrams, C4, and all other
+      Mermaid diagram types.</li>
+  <li><b>Generic SVG (.svg)</b> &mdash; any SVG not recognized as Mermaid is
+      parsed using the generic SVG parser, which converts standard SVG elements
+      (rect, circle, ellipse, line, path, polygon, text) into annotations.</li>
   <li><b>Mermaid source (.mmd / .mermaid)</b> &mdash; rendered via Mermaid CLI,
       then parsed. C4 diagrams use a two-step pipeline
       (source &rarr; SVG &rarr; annotations with metadata).</li>
@@ -134,32 +138,46 @@ _QUICK_START_HTML = """\
 
 <h3>2. Draw Annotations</h3>
 <p>Click a drawing tool in the toolbar (or press its shortcut key), then
-<b>click and drag</b> on the canvas to create a shape. All 12 primitive tools
+<b>click and drag</b> on the canvas to create a shape. All 13 primitive tools
 are available: Rectangle, Rounded Rect, Ellipse, Line, Text, Hexagon, Cylinder,
-Block Arrow, Iso Cube, Polygon, Curve, and Orthocurve.</p>
+Block Arrow, Iso Cube, Polygon, Curve, Orthocurve, and Port.</p>
 <p><i>Tip:</i> <b>Ctrl+click</b> a tool to enable <b>sticky mode</b> &mdash;
 the tool stays active so you can draw multiple shapes in a row.
 Press <b>Esc</b> or right-click to exit sticky mode.</p>
 
-<h3>3. Edit Properties</h3>
+<h3>3. Connect with Ports</h3>
+<p>Use the <b>Port</b> tool (<b>O</b>) to attach connector ports to any shape.
+Ports snap to the parent shape's perimeter and move with it. Draw lines or
+curves near a port to <b>snap-connect</b> them (cyan glow feedback). Drag an
+endpoint away from a port to <b>disconnect</b>.</p>
+<p><i>Tip:</i> Hold <b>Alt+click/drag</b> to select and move a port underneath
+overlapping lines.</p>
+
+<h3>4. Edit Properties</h3>
 <p>Click a shape to select it. The <b>Property Panel</b> below the canvas
 shows schema-driven controls for label, tech, note, colors, geometry,
-pen style, fill, and arrow settings.</p>
+pen style, fill, arrow settings, and rotation angle.</p>
 
-<h3>4. JSON Synchronization</h3>
+<h3>5. Rotate Shapes</h3>
+<p>All shapes support <b>rotation</b> via the green drag handle inside the
+shape boundary, or via the angle spinner (0&ndash;359&deg;) in the property
+panel. Resize handles, polygon vertices, and curve nodes all work correctly
+when the shape is rotated.</p>
+
+<h3>6. JSON Synchronization</h3>
 <p>The <b>Draft JSON</b> editor on the right stays in bidirectional sync with the
 canvas. Edit JSON directly, then click <b>Import &amp; Link</b> to apply changes.
 The editor highlights the focused annotation and scrolls to keep it visible.</p>
 <p>Use <b>Schema Check</b> to validate the JSON structure.</p>
 
-<h3>5. AI Extraction</h3>
+<h3>7. AI Extraction</h3>
 <p>With a PNG loaded, click <b>Auto-Extract (Gemini)</b> in the toolbar to
 have the AI detect diagram elements automatically. Use <b>Cycle Model</b>
 to switch Gemini models. The token counter shows API usage.</p>
 <p>Use <b>Focus Align</b> to refine a single selected annotation via AI.</p>
 <p><i>Requires the <code>GOOGLE_API_KEY</code> environment variable.</i></p>
 
-<h3>6. Save &amp; Export</h3>
+<h3>8. Save &amp; Export</h3>
 <ul>
   <li><b>File &rarr; Save Project</b> (<b>Ctrl+S</b>) &mdash; save the full
       project (image + annotations) for later reload.</li>
@@ -186,15 +204,17 @@ _TOOLS_HTML = """\
     <th>Tool</th><th>Key</th><th>Description</th>
   </tr>
   <tr><td><b>Select</b></td><td>S</td>
-      <td>Select, move, and resize annotations. Drag handles to resize.</td></tr>
+      <td>Select, move, and resize annotations. Drag handles to resize.
+          Drag green knob to rotate.</td></tr>
   <tr><td><b>Rectangle</b></td><td>R</td>
       <td>Draw rectangular annotation boxes.</td></tr>
   <tr><td><b>Rounded Rect</b></td><td>U</td>
-      <td>Draw rounded-corner rectangles.</td></tr>
+      <td>Draw rounded-corner rectangles. Adjust corner radius via handle.</td></tr>
   <tr><td><b>Ellipse</b></td><td>E</td>
       <td>Draw elliptical or circular annotations.</td></tr>
   <tr><td><b>Line</b></td><td>L</td>
-      <td>Draw lines and connectors. Supports arrowheads.</td></tr>
+      <td>Draw lines and connectors. Supports arrowheads (none, start, end,
+          both). Snap to ports with visual feedback.</td></tr>
   <tr><td><b>Text</b></td><td>T</td>
       <td>Place standalone text annotations. Double-click to edit.</td></tr>
   <tr><td><b>Hexagon</b></td><td>H</td>
@@ -204,18 +224,54 @@ _TOOLS_HTML = """\
   <tr><td><b>Block Arrow</b></td><td>A</td>
       <td>Draw block arrow shapes for directional flow.</td></tr>
   <tr><td><b>Iso Cube</b></td><td>I</td>
-      <td>Draw isometric cube shapes with adjustable top/side handles.
+      <td>Draw isometric cube shapes with adjustable depth and extrusion
+          angle (0&ndash;360&deg;). Drag control handles to adjust.
           Supports semi-transparent fills.</td></tr>
   <tr><td><b>Polygon</b></td><td>P</td>
-      <td>Draw polygon shapes. Click to add vertices;
-          double-click or press Enter to finish.</td></tr>
+      <td>Draw polygon shapes. Click to add vertices; right-click to close.
+          Double-click to enter vertex editing mode; right-click vertices
+          to delete, right-click edges to insert vertices.</td></tr>
   <tr><td><b>Curve</b></td><td>V</td>
-      <td>Draw bezier curves. Click to add control points;
-          double-click or press Enter to finish. Drag handles to reshape.</td></tr>
+      <td>Draw bezier curves. Click to add control points; right-click to
+          finish. Double-click to enter node editing mode; right-click a
+          node to change type (Line, Cubic, Quad, Arc). Supports arrowheads
+          and snap-to-port.</td></tr>
   <tr><td><b>Orthocurve</b></td><td><i>dropdown</i></td>
       <td>Draw orthogonal (right-angle) curves via the Curve tool dropdown.
-          Points snap to horizontal/vertical segments.</td></tr>
+          Points snap to horizontal/vertical segments. Ctrl+click to extend.
+          Last point is freely draggable (L node) while maintaining
+          orthogonality. Optional corner bend radius via adjust handle.
+          Supports arrowheads and snap-to-port.</td></tr>
+  <tr><td><b>Port</b></td><td>O</td>
+      <td>Attach connector ports to any shape&rsquo;s perimeter. Ports track
+          a parametric position and move with their parent. Set direction
+          (In/Out/InOut) and protocol in the property panel.</td></tr>
 </table>
+
+<h3>Rotation</h3>
+<ul>
+  <li>All shapes support <b>rotation</b> via the green drag handle or the
+      angle spinner (0&ndash;359&deg;) in the property panel.</li>
+  <li>Resize handles follow the rotated axis; cursor shapes rotate with the
+      item orientation.</li>
+  <li>Polygon vertices and curve nodes remain editable when the shape is
+      rotated.</li>
+  <li>Connected port endpoints are recalculated after rotation.</li>
+</ul>
+
+<h3>Port Connections</h3>
+<ul>
+  <li><b>Snap-to-port:</b> Drawing or dragging a line/curve endpoint near a
+      port snaps it with a <b>cyan glow</b> indicator.</li>
+  <li><b>Disconnect:</b> Drag a connected endpoint away from a port to
+      cleanly disconnect.</li>
+  <li><b>Alt+click/drag:</b> Hold Alt and click to select and move a port
+      underneath overlapping lines.</li>
+  <li><b>Direction badge:</b> Connected ports show an external direction
+      indicator (triangle for In/Out, diamond for InOut).</li>
+  <li><b>Follow movement:</b> Moving a shape with connected ports
+      automatically updates all attached line/curve endpoints.</li>
+</ul>
 
 <h3>Groups</h3>
 <ul>
@@ -228,7 +284,8 @@ _TOOLS_HTML = """\
 
 <h3>Undo / Redo</h3>
 <p>Undo (<b>Ctrl+Z</b>) and Redo (<b>Ctrl+Y</b>) track moves, resizes,
-text changes, and property edits. History is maintained per session.</p>
+text changes, property edits, and adjust handle changes. History is maintained
+per session.</p>
 
 <h3>Z-Order &amp; Auto-Stacking</h3>
 <ul>
@@ -245,7 +302,8 @@ text changes, and property edits. History is maintained per session.</p>
     <th>Action</th><th>Description</th>
   </tr>
   <tr><td><b>Open Graphic</b></td>
-      <td>Load a PNG, PlantUML, Mermaid SVG, or Mermaid source file.</td></tr>
+      <td>Load a PNG, PlantUML, SVG (Mermaid or generic), or Mermaid source
+          file.</td></tr>
   <tr><td><b>Clear Overlay</b></td>
       <td>Remove all annotations from the canvas.</td></tr>
   <tr><td><b>Hide / Show PNG</b></td>
@@ -277,17 +335,28 @@ _IMPORT_EXPORT_HTML = """\
   <li>Drop a <code>.puml</code> file or use <b>File &rarr; Open Graphic</b>.</li>
   <li>PictoSync renders the file to PNG via Java + plantuml.jar, then parses
       the SVG output to extract shape positions, labels, and connectors.</li>
-  <li>Supports sequence, activity, state, class, component, and description
-      diagrams.</li>
-  <li>Curve connectors and link styles are preserved.</li>
-  <li>Diagram name is validated and used for the project title.</li>
+  <li>Supports sequence, activity, state, class, component, deployment,
+      use-case, and architecture diagrams.</li>
+  <li>Curve connectors with cubic bezier geometry and link styles are
+      preserved.</li>
+  <li>Cluster/package shapes parsed from SVG paths including decorative tabs.</li>
+  <li>Diagram name is validated for illegal Windows filename characters.</li>
 </ul>
 
 <h3>Mermaid SVG Import</h3>
 <ul>
   <li>Drop a pre-rendered <b>.svg</b> file exported from Mermaid.</li>
-  <li>PictoSync parses SVG elements (rects, paths, text) into annotations.</li>
-  <li>Works with flowcharts, sequence diagrams, and other Mermaid SVG output.</li>
+  <li>PictoSync auto-detects Mermaid SVGs via the
+      <code>aria-roledescription</code> attribute.</li>
+  <li><b>Flowchart parser:</b> nodes, edge paths, edge labels, and cluster
+      subgraphs.</li>
+  <li><b>State diagram parser:</b> composite/concurrent states,
+      <code>classDef</code> styling (fill, stroke, text color),
+      <code>:::</code> class shorthand, notes, fork/join bars, choice
+      pseudostates, and dashed dividers.</li>
+  <li>Pixel-perfect PNG alignment: viewport set to SVG viewBox dimensions
+      with CSS margin reset.</li>
+  <li>SVG z-order: annotations stacked clusters &rarr; edges &rarr; nodes.</li>
 </ul>
 
 <h3>Mermaid Source Import</h3>
@@ -299,7 +368,32 @@ _IMPORT_EXPORT_HTML = """\
   <li><b>C4 two-step pipeline:</b> source is rendered to SVG, then metadata
       (kind, label, tech, description) is extracted from both the source text
       and SVG positions. C4 layout settings control spacing and grouping.</li>
-  <li>Supports C4 Context, Container, Component, and Deployment diagrams.</li>
+  <li>Supports C4 Context, Container, Component, Dynamic, and Deployment
+      diagrams.</li>
+</ul>
+
+<h3>Generic SVG Import</h3>
+<ul>
+  <li>Any <b>.svg</b> file not recognized as Mermaid is parsed using the
+      <b>generic SVG parser</b>.</li>
+  <li>Standard SVG elements are mapped to PictoSync annotations:
+      <code>&lt;rect&gt;</code> &rarr; rect/roundedrect,
+      <code>&lt;circle&gt;</code> / <code>&lt;ellipse&gt;</code> &rarr; ellipse,
+      <code>&lt;line&gt;</code> &rarr; line,
+      <code>&lt;polygon&gt;</code> &rarr; polygon,
+      <code>&lt;path&gt;</code> &rarr; curve or polygon,
+      <code>&lt;polyline&gt;</code> &rarr; curve,
+      <code>&lt;text&gt;</code> &rarr; text.</li>
+  <li>Transform inheritance: <code>translate</code>, <code>scale</code>,
+      <code>rotate</code>, and <code>matrix</code> transforms on
+      <code>&lt;g&gt;</code> groups are resolved to absolute coordinates.</li>
+  <li>Text elements inside shapes are automatically merged into the shape&rsquo;s
+      label.</li>
+  <li>Fill colors, stroke colors, corner radii, and arrow markers are
+      preserved.</li>
+  <li>Closed filled paths with straight edges become polygons; paths with
+      curves become rounded rectangles; open paths become curve annotations.</li>
+  <li>The SVG is also rendered to a PNG background image.</li>
 </ul>
 
 <h3>DSL Plugin System</h3>
@@ -323,10 +417,20 @@ _IMPORT_EXPORT_HTML = """\
 <ul>
   <li><b>File &rarr; Export PowerPoint</b> creates a <code>.pptx</code> file
       with native PowerPoint shapes.</li>
-  <li>Exports all shape types including rectangles, rounded rects, ellipses,
-      hexagons, cylinders, block arrows, iso cubes, and polygons.</li>
-  <li>Curves use native PowerPoint bezier freeform shapes.</li>
-  <li>Arrowheads, line styles, and semi-transparent fills are preserved.</li>
+  <li>Exports all 13 shape types: rectangles, rounded rects, ellipses,
+      hexagons, cylinders, block arrows, iso cubes, polygons, curves,
+      orthogonal curves, lines, text, ports, and sequence blocks.</li>
+  <li>Curves use native PowerPoint bezier freeform shapes
+      (<code>cubicBezTo</code>, <code>quadBezTo</code>).</li>
+  <li>Orthogonal curves export as freeform polylines with arrowheads.</li>
+  <li>Sequence blocks export as grouped compound shapes (outer rect,
+      pentagon type-tab, dashed dividers, section labels).</li>
+  <li>Iso cubes export as PowerPoint CUBE auto-shapes with depth and
+      flip mapping.</li>
+  <li>Arrowheads for lines, curves, and orthocurves with correct OOXML
+      element ordering for dual-arrow (both) mode.</li>
+  <li>Rotation angles are preserved on all rotatable shapes.</li>
+  <li>Semi-transparent fills export with PPTX transparency.</li>
   <li>Groups are flattened for maximum compatibility.</li>
   <li>Export directory defaults to the source file location.</li>
 </ul>
@@ -389,10 +493,13 @@ _AI_EDITOR_HTML = """\
 <h3>User Interface</h3>
 <ul>
   <li><b>Dynamic title bar</b> shows the current project name and file path.</li>
-  <li><b>Themes:</b> light and dark theme support.</li>
-  <li><b>Custom icons</b> for toolbar tools and domain plugins.</li>
+  <li><b>7 built-in themes:</b> Foundation Dark, Bulma Light, Bauhaus,
+      Neumorphism, Materialize, Tailwind, Bootstrap.</li>
+  <li><b>Custom icons</b> for toolbar tools and domain plugins, theme-aware.</li>
   <li><b>Hide / Show PNG</b> toggles the background image to inspect
       annotations in isolation.</li>
+  <li><b>Wait cursor</b> during PlantUML/Mermaid/SVG import operations.</li>
+  <li><b>Styled splitters</b> with high-contrast, theme-aware resize handles.</li>
 </ul>
 """
 
@@ -404,7 +511,7 @@ _SHORTCUTS_HTML = """\
   <tr style="background:#f0f0f0;">
     <th>Category</th><th>Shortcut</th><th>Action</th>
   </tr>
-  <tr><td rowspan="12"><b>Drawing Tools</b></td>
+  <tr><td rowspan="13"><b>Drawing Tools</b></td>
       <td><code>S</code></td><td>Select mode</td></tr>
   <tr><td><code>R</code></td><td>Rectangle tool</td></tr>
   <tr><td><code>U</code></td><td>Rounded rectangle tool</td></tr>
@@ -416,7 +523,8 @@ _SHORTCUTS_HTML = """\
   <tr><td><code>A</code></td><td>Block arrow tool</td></tr>
   <tr><td><code>I</code></td><td>Iso Cube tool</td></tr>
   <tr><td><code>P</code></td><td>Polygon tool</td></tr>
-  <tr><td><code>V</code></td><td>Curve tool</td></tr>
+  <tr><td><code>V</code></td><td>Curve / Orthocurve tool</td></tr>
+  <tr><td><code>O</code></td><td>Port tool</td></tr>
 
   <tr><td rowspan="3"><b>Editing</b></td>
       <td><code>Delete</code></td><td>Delete selected items</td></tr>
@@ -442,8 +550,30 @@ _SHORTCUTS_HTML = """\
       <td><code>F1</code></td><td>Open this Help dialog</td></tr>
 </table>
 
-<br>
-<p><b>Tip:</b> <code>Ctrl+click</code> a drawing tool to toggle
-<b>sticky mode</b> &mdash; the tool stays active after each shape is drawn.
-Press <b>Esc</b> or right-click to return to Select mode.</p>
+<h3>Mouse Actions</h3>
+<table cellpadding="6" cellspacing="0" border="1"
+       style="border-collapse:collapse; width:100%;">
+  <tr style="background:#f0f0f0;">
+    <th>Action</th><th>Effect</th>
+  </tr>
+  <tr><td><code>Ctrl+click</code> tool</td>
+      <td>Toggle <b>sticky mode</b> &mdash; tool stays active after each
+          shape is drawn. Press <b>Esc</b> to exit.</td></tr>
+  <tr><td><code>Alt+click/drag</code></td>
+      <td>Select and move a <b>port</b> underneath overlapping lines.</td></tr>
+  <tr><td><code>Double-click</code> curve</td>
+      <td>Enter <b>node editing</b> mode with draggable blue square
+          handles. Double-click again or press Esc to exit.</td></tr>
+  <tr><td><code>Double-click</code> polygon</td>
+      <td>Enter <b>vertex editing</b> mode. Right-click vertices to delete;
+          right-click edges to insert.</td></tr>
+  <tr><td><code>Right-click</code> curve node</td>
+      <td>Change node type (Line, Cubic, Quadratic, Arc).</td></tr>
+  <tr><td><code>Ctrl+click</code> orthocurve</td>
+      <td>Extend with a new H/V segment.</td></tr>
+  <tr><td>Drag endpoint near port</td>
+      <td><b>Snap-to-port</b> with cyan glow feedback.</td></tr>
+  <tr><td>Drag endpoint away from port</td>
+      <td><b>Disconnect</b> from port cleanly.</td></tr>
+</table>
 """

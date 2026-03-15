@@ -6,10 +6,13 @@ Persistent settings management for PictoSync.
 Handles cross-platform settings storage using TOML format with platformdirs
 for proper user config directory detection.
 
-Settings file location:
-    - Windows: %APPDATA%/pictosync/settings.toml
-    - macOS: ~/Library/Application Support/pictosync/settings.toml
-    - Linux: ~/.config/pictosync/settings.toml
+Settings file locations:
+    System (built-in defaults):
+        - Windows: %LOCALAPPDATA%/pictosync/settings.toml
+        - Linux:   ~/.local/share/pictosync/settings.toml
+        - macOS:   ~/Library/Application Support/pictosync/settings.toml
+    User (per-user overrides):
+        - All platforms: ~/Documents/pictosync/settings.toml
 
 Default values are documented in comments throughout this file.
 If settings.toml is corrupted, these defaults will be used.
@@ -33,6 +36,30 @@ else:
 import tomli_w
 
 APP_NAME = "pictosync"
+
+
+def get_documents_folder() -> Path:
+    """Return the shell Documents folder, resolving OneDrive redirection on Windows.
+
+    On Windows, ``~/Documents`` may point to an OneDrive-redirected path rather
+    than the true shell Documents folder.  ``SHGetFolderPathW`` asks the shell
+    directly, so it always returns the canonical location regardless of
+    OneDrive sync settings.
+
+    On macOS / Linux the function simply returns ``~/Documents``.
+
+    Returns:
+        Path to the user's Documents folder.
+    """
+    if sys.platform == "win32":
+        import ctypes
+        buf = ctypes.create_unicode_buffer(260)
+        # CSIDL 0x0005 = CSIDL_PERSONAL = "My Documents"
+        ctypes.windll.shell32.SHGetFolderPathW(0, 0x0005, 0, 0, buf)
+        resolved = buf.value
+        if resolved:
+            return Path(resolved)
+    return Path.home() / "Documents"
 
 # Console debug logging — toggle via settings dialog (future)
 DEBUG_LOG: bool = False
@@ -316,31 +343,88 @@ class AlignmentSettings:
 # =============================================================================
 
 @dataclass
-class DefaultTextSettings:
-    """Default text formatting settings for annotations.
+class DefaultContentsSettings:
+    """Default values for annotationContents fields.
+
+    These map 1-to-1 to the annotationContents JSON schema fields and are
+    applied when creating new annotations or when a field is absent from a
+    loaded file.
 
     Defaults:
-        label_align: "center"
-        label_size: 12
-        tech_align: "center"
-        tech_size: 10
-        note_align: "center"
-        note_size: 10
-        vertical_align: "top"
-        line_spacing: 0.0
+        halign: "center"
+        valign: "top"
+        spacing: 0.0
+        color: "#FFFF00FF"
+        font_family: ""
+        font_size: 12
+        margin_left: 0.0
+        margin_right: 0.0
+        margin_top: 0.0
+        margin_bottom: 0.0
+        wrap: True
+        flow_type: "none"
         text_box_width: 0.0
         text_box_height: 0.0
+        image_url: ""
+        image_anchor: 0
     """
-    label_align: str = "center"       # Default: "center"
-    label_size: int = 12              # Default: 12 points
-    tech_align: str = "center"        # Default: "center"
-    tech_size: int = 10               # Default: 10 points
-    note_align: str = "center"        # Default: "center"
-    note_size: int = 10               # Default: 10 points
-    vertical_align: str = "top"       # Default: "top"
-    line_spacing: float = 0.0         # Default: 0.0 em
+    halign: str = "left"              # Default: "left"
+    valign: str = "top"               # Default: "top"
+    spacing: float = 0.0              # Default: 0.0 em
+    color: str = "#FF00FFFF"          # Default: magenta (opaque)
+    font_family: str = ""             # Default: "" (system sans-serif)
+    font_size: int = 12               # Default: 12 points
+    margin_left: float = 0.0          # Default: 0.0 px
+    margin_right: float = 0.0         # Default: 0.0 px
+    margin_top: float = 0.0           # Default: 0.0 px
+    margin_bottom: float = 0.0        # Default: 0.0 px
+    wrap: bool = True                 # Default: True
+    flow_type: str = "none"           # Default: "none"
     text_box_width: float = 0.0       # Default: 0.0 (auto)
     text_box_height: float = 0.0      # Default: 0.0 (auto)
+    image_url: str = ""               # Default: "" (none)
+    image_anchor: int = 0             # Default: 0 (none)
+    # overlay-2.0 rich-text defaults (None = not set / use built-in defaults)
+    frame: Optional[Dict[str, Any]] = None           # TextFrame fields
+    default_format: Optional[Dict[str, Any]] = None  # CharFormat fields
+
+
+# Backwards-compatibility alias — remove once settings_dialog.py is migrated
+DefaultTextSettings = DefaultContentsSettings
+
+
+# =============================================================================
+# Default Style Settings
+# =============================================================================
+
+@dataclass
+class DefaultStyleSettings:
+    """Default style values saved from the Format (Style) tab.
+
+    Defaults:
+        pen_color: "#FF0000FF"
+        pen_width: 2
+        line_dash: "solid"
+        fill_color: "#00000000"
+    """
+    pen_color: str = "#FF0000FF"      # Default: red opaque
+    pen_width: int = 2                # Default: 2 pixels
+    line_dash: str = "solid"          # Default: "solid"
+    fill_color: str = "#00000000"     # Default: transparent
+
+
+# =============================================================================
+# Per-Kind Item Defaults
+# =============================================================================
+
+@dataclass
+class ItemDefaults:
+    """Bundled style + contents defaults for one canvas item kind.
+
+    Stored under ``[item_defaults.<kind>]`` in the user settings file.
+    """
+    style: DefaultStyleSettings = field(default_factory=DefaultStyleSettings)
+    contents: DefaultContentsSettings = field(default_factory=DefaultContentsSettings)
 
 
 # =============================================================================
@@ -420,7 +504,9 @@ class AppSettings:
     editor: EditorSettings = field(default_factory=EditorSettings)
     canvas: CanvasSettings = field(default_factory=CanvasSettings)
     alignment: AlignmentSettings = field(default_factory=AlignmentSettings)
-    defaults: DefaultTextSettings = field(default_factory=DefaultTextSettings)
+    defaults: DefaultContentsSettings = field(default_factory=DefaultContentsSettings)
+    style: DefaultStyleSettings = field(default_factory=DefaultStyleSettings)
+    item_defaults: Dict[str, ItemDefaults] = field(default_factory=dict)
     gemini: GeminiSettings = field(default_factory=GeminiSettings)
     external_tools: ExternalToolsSettings = field(default_factory=ExternalToolsSettings)
 
@@ -429,64 +515,237 @@ class AppSettings:
 # Settings Manager
 # =============================================================================
 
+def _build_item_defaults_toml(id_obj: "ItemDefaults") -> Dict[str, Any]:
+    """Serialize one ItemDefaults to a TOML-compatible dict.
+
+    Includes overlay-2.0 ``frame`` and ``default_format`` sub-tables when
+    they have been saved (i.e. are not None).
+    """
+    contents: Dict[str, Any] = {
+        "halign":           id_obj.contents.halign,
+        "valign":           id_obj.contents.valign,
+        "spacing":          id_obj.contents.spacing,
+        "color":            id_obj.contents.color,
+        "font_family":      id_obj.contents.font_family,
+        "font_size":        id_obj.contents.font_size,
+        "margin_left":      id_obj.contents.margin_left,
+        "margin_right":     id_obj.contents.margin_right,
+        "margin_top":       id_obj.contents.margin_top,
+        "margin_bottom":    id_obj.contents.margin_bottom,
+        "wrap":             id_obj.contents.wrap,
+        "flow_type":        id_obj.contents.flow_type,
+        "text_box_width":   id_obj.contents.text_box_width,
+        "text_box_height":  id_obj.contents.text_box_height,
+        "image_anchor":     id_obj.contents.image_anchor,
+    }
+    if id_obj.contents.frame is not None:
+        contents["frame"] = id_obj.contents.frame
+    if id_obj.contents.default_format is not None:
+        contents["default_format"] = id_obj.contents.default_format
+    return {
+        "style": {
+            "pen_color":  id_obj.style.pen_color,
+            "pen_width":  id_obj.style.pen_width,
+            "line_dash":  id_obj.style.line_dash,
+            "fill_color": id_obj.style.fill_color,
+        },
+        "contents": contents,
+    }
+
+
 class SettingsManager:
     """Manages loading, saving, and accessing application settings.
 
-    Settings are stored in a TOML file at the platform-appropriate location.
-    If the settings file doesn't exist, defaults are used and the file is
-    created on first save.
+    Two-tier file layout
+    --------------------
+    system_settings_file  — machine-level defaults (AppData\\Local\\pictosync on Windows)
+    user_settings_file    — per-user overrides   (~/Documents/pictosync on all platforms)
+
+    Load order: built-in Python defaults → system file → user file.
+    "Save as Default" writes only to the user file (targeted merge).
 
     Args:
         app_name: Application name used for the config directory.
     """
 
     def __init__(self, app_name: str = APP_NAME):
-        self.settings_dir = Path(platformdirs.user_config_dir(app_name))
-        self.settings_file = self.settings_dir / "settings.toml"
+        # ── System settings: AppData\Local\pictosync (Windows)
+        #                     ~/.local/share/pictosync  (Linux)
+        #                     ~/Library/Application Support/pictosync (macOS)
+        self.system_settings_dir = Path(
+            platformdirs.user_data_dir(app_name, appauthor=False)
+        )
+        self.system_settings_file = self.system_settings_dir / "settings.toml"
+
+        # ── User settings: <Documents>/pictosync/settings.toml (all platforms)
+        #    Uses SHGetFolderPathW on Windows so OneDrive redirection is resolved.
+        self.user_settings_dir = get_documents_folder() / app_name
+        self.user_settings_file = self.user_settings_dir / "settings.toml"
+
+        # Backward-compat aliases used by the rest of the codebase
+        self.settings_dir = self.user_settings_dir
+        self.settings_file = self.user_settings_file
+
         self.settings = self.load()
-        self._needs_save = not self.settings_file.exists()  # Save if file didn't exist
+        self._needs_save = not self.user_settings_file.exists()
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def ensure_file_complete(self) -> None:
-        """Ensure settings file exists with all sections. Call once at startup."""
-        if self._needs_save or not self.settings_file.exists():
+        """Ensure both settings files exist. Call once at startup."""
+        if not self.system_settings_file.exists():
+            self.save_system()
+        if self._needs_save or not self.user_settings_file.exists():
             self.save()
             self._needs_save = False
 
-    def load(self) -> AppSettings:
-        """Load settings from the TOML file.
+    def save_system(self) -> None:
+        """Save built-in defaults to the system settings file."""
+        self.system_settings_dir.mkdir(parents=True, exist_ok=True)
+        with open(self.system_settings_file, "wb") as f:
+            tomli_w.dump(self._to_toml_dict(AppSettings()), f)
 
-        Returns:
-            AppSettings instance with values from file or defaults if file
-            doesn't exist or is invalid.
-        """
-        if not self.settings_file.exists():
-            return AppSettings()
+    def load_layer(self, path: "Path") -> "AppSettings":
+        """Load a single settings file in isolation (no cascade).
 
-        try:
-            with open(self.settings_file, "rb") as f:
-                data = tomllib.load(f)
-
-            return self._parse_toml(data)
-        except Exception:
-            # If file is corrupted or invalid, return defaults
-            return AppSettings()
-
-    def _parse_toml(self, data: Dict[str, Any]) -> AppSettings:
-        """Parse TOML data into AppSettings.
+        Returns AppSettings populated only from that file's values,
+        falling back to built-in defaults for anything not present.
 
         Args:
-            data: Parsed TOML dictionary.
+            path: Path to the TOML file to load.
 
         Returns:
-            AppSettings instance populated from TOML data.
+            AppSettings populated from the file.
         """
         settings = AppSettings()
+        if path.exists():
+            try:
+                with open(path, "rb") as f:
+                    self._apply_toml(settings, tomllib.load(f))
+            except Exception:
+                pass
+        return settings
 
+    def save_to(self, path: Path, settings: "AppSettings") -> None:
+        """Save *settings* to an arbitrary path.
+
+        Args:
+            path: Destination TOML file path.
+            settings: AppSettings to serialise.
+        """
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "wb") as f:
+            tomli_w.dump(self._to_toml_dict(settings), f)
+
+    def load(self) -> AppSettings:
+        """Load settings using three-layer cascade.
+
+        Layers (each overrides the previous):
+          1. Built-in Python defaults (AppSettings())
+          2. System settings file
+          3. User settings file
+
+        Returns:
+            Merged AppSettings instance.
+        """
+        settings = AppSettings()
+        for path in (self.system_settings_file, self.user_settings_file):
+            if path.exists():
+                try:
+                    with open(path, "rb") as f:
+                        self._apply_toml(settings, tomllib.load(f))
+                except Exception:
+                    pass  # Corrupted file — keep what we have
+        return settings
+
+    def save(self) -> None:
+        """Save *all* current settings to the user settings file."""
+        self.user_settings_dir.mkdir(parents=True, exist_ok=True)
+        with open(self.user_settings_file, "wb") as f:
+            tomli_w.dump(self._to_toml_dict(), f)
+
+    def save_user_item_defaults(
+        self,
+        kind: str,
+        style: Dict[str, Any],
+        contents: Dict[str, Any],
+    ) -> None:
+        """Merge item defaults for *kind* into the user settings file.
+
+        Only the ``[item_defaults.<kind>]`` section is written; all other
+        settings already in the user file are preserved unchanged.
+
+        Args:
+            kind: Canvas item kind string (e.g. "rect", "roundedrect").
+            style: Dict of DefaultStyleSettings field values.
+            contents: Dict of DefaultContentsSettings field values (no image_url).
+        """
+        # Load raw existing user TOML (preserve all other settings)
+        raw: Dict[str, Any] = {}
+        if self.user_settings_file.exists():
+            try:
+                with open(self.user_settings_file, "rb") as f:
+                    raw = tomllib.load(f)
+            except Exception:
+                raw = {}
+
+        # Update only the target kind sub-table
+        item_defaults = raw.setdefault("item_defaults", {})
+        item_defaults[kind] = {"style": style, "contents": contents}
+
+        self.user_settings_dir.mkdir(parents=True, exist_ok=True)
+        with open(self.user_settings_file, "wb") as f:
+            tomli_w.dump(raw, f)
+
+        # Reload in-memory settings so callers see the change immediately
+        self.settings = self.load()
+
+    def get_item_defaults(self, kind: str) -> "ItemDefaults":
+        """Return defaults for *kind*, falling back to global defaults.
+
+        Args:
+            kind: Canvas item kind string.
+
+        Returns:
+            ItemDefaults with style + contents for this kind.
+        """
+        if kind in self.settings.item_defaults:
+            return self.settings.item_defaults[kind]
+        return ItemDefaults(
+            style=self.settings.style,
+            contents=self.settings.defaults,
+        )
+
+    def has_user_item_defaults(self, kind: str) -> bool:
+        """Return True if the user settings file already has defaults for *kind*."""
+        if not self.user_settings_file.exists():
+            return False
+        try:
+            with open(self.user_settings_file, "rb") as f:
+                raw = tomllib.load(f)
+            return kind in raw.get("item_defaults", {})
+        except Exception:
+            return False
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _apply_toml(self, settings: AppSettings, data: Dict[str, Any]) -> None:
+        """Apply *data* (parsed TOML dict) onto *settings* in place.
+
+        Called once per file in the load cascade so each layer overrides
+        the previous without resetting unrelated fields.
+        """
         # General section
         general = data.get("general", {})
         settings.theme = general.get("theme", settings.theme)
         settings.workspace_dir = general.get("workspace_dir", settings.workspace_dir)
-        settings.pptx_export_to_source_dir = general.get("pptx_export_to_source_dir", settings.pptx_export_to_source_dir)
+        settings.pptx_export_to_source_dir = general.get(
+            "pptx_export_to_source_dir", settings.pptx_export_to_source_dir
+        )
 
         # Editor section
         editor = data.get("editor", {})
@@ -576,29 +835,72 @@ class SettingsManager:
             ln = alignment["line"]
             settings.alignment.line.hue_tolerances = ln.get("hue_tolerances", settings.alignment.line.hue_tolerances)
 
-        # Defaults section
+        # Defaults section — reads [defaults.contents]; falls back to legacy [defaults.text]
         defaults = data.get("defaults", {})
-        if "text" in defaults:
-            t = defaults["text"]
-            settings.defaults.label_align = t.get("label_align", settings.defaults.label_align)
-            settings.defaults.label_size = t.get("label_size", settings.defaults.label_size)
-            settings.defaults.tech_align = t.get("tech_align", settings.defaults.tech_align)
-            settings.defaults.tech_size = t.get("tech_size", settings.defaults.tech_size)
-            settings.defaults.note_align = t.get("note_align", settings.defaults.note_align)
-            settings.defaults.note_size = t.get("note_size", settings.defaults.note_size)
-            settings.defaults.vertical_align = t.get("vertical_align", settings.defaults.vertical_align)
-            settings.defaults.line_spacing = t.get("line_spacing", settings.defaults.line_spacing)
-            settings.defaults.text_box_width = t.get("text_box_width", settings.defaults.text_box_width)
-            settings.defaults.text_box_height = t.get("text_box_height", settings.defaults.text_box_height)
+        c = defaults.get("contents") or defaults.get("text") or {}
+        if c:
+            settings.defaults.halign = c.get("halign", c.get("label_align", settings.defaults.halign))
+            settings.defaults.valign = c.get("valign", c.get("vertical_align", settings.defaults.valign))
+            settings.defaults.spacing = c.get("spacing", c.get("line_spacing", settings.defaults.spacing))
+            settings.defaults.color = c.get("color", settings.defaults.color)
+            settings.defaults.font_family = c.get("font_family", settings.defaults.font_family)
+            settings.defaults.font_size = c.get("font_size", c.get("label_size", settings.defaults.font_size))
+            settings.defaults.margin_left = c.get("margin_left", settings.defaults.margin_left)
+            settings.defaults.margin_right = c.get("margin_right", settings.defaults.margin_right)
+            settings.defaults.margin_top = c.get("margin_top", settings.defaults.margin_top)
+            settings.defaults.margin_bottom = c.get("margin_bottom", settings.defaults.margin_bottom)
+            settings.defaults.wrap = c.get("wrap", settings.defaults.wrap)
+            settings.defaults.flow_type = c.get("flow_type", settings.defaults.flow_type)
+            settings.defaults.text_box_width = c.get("text_box_width", settings.defaults.text_box_width)
+            settings.defaults.text_box_height = c.get("text_box_height", settings.defaults.text_box_height)
+            settings.defaults.image_url = c.get("image_url", settings.defaults.image_url)
+            settings.defaults.image_anchor = c.get("image_anchor", settings.defaults.image_anchor)
+
+        st = defaults.get("style", {})
+        if st:
+            settings.style.pen_color = st.get("pen_color", settings.style.pen_color)
+            settings.style.pen_width = int(st.get("pen_width", settings.style.pen_width))
+            settings.style.line_dash = st.get("line_dash", settings.style.line_dash)
+            settings.style.fill_color = st.get("fill_color", settings.style.fill_color)
+
+        # Per-kind item defaults
+        for kind, kind_data in data.get("item_defaults", {}).items():
+            if not isinstance(kind_data, dict):
+                continue
+            id_obj = settings.item_defaults.setdefault(kind, ItemDefaults())
+            _st = kind_data.get("style", {})
+            if _st:
+                id_obj.style.pen_color = _st.get("pen_color", id_obj.style.pen_color)
+                id_obj.style.pen_width = int(_st.get("pen_width", id_obj.style.pen_width))
+                id_obj.style.line_dash = _st.get("line_dash", id_obj.style.line_dash)
+                id_obj.style.fill_color = _st.get("fill_color", id_obj.style.fill_color)
+            _c = kind_data.get("contents", {})
+            if _c:
+                id_obj.contents.halign = _c.get("halign", id_obj.contents.halign)
+                id_obj.contents.valign = _c.get("valign", id_obj.contents.valign)
+                id_obj.contents.spacing = _c.get("spacing", id_obj.contents.spacing)
+                id_obj.contents.color = _c.get("color", id_obj.contents.color)
+                id_obj.contents.font_family = _c.get("font_family", id_obj.contents.font_family)
+                id_obj.contents.font_size = int(_c.get("font_size", id_obj.contents.font_size))
+                id_obj.contents.margin_left = _c.get("margin_left", id_obj.contents.margin_left)
+                id_obj.contents.margin_right = _c.get("margin_right", id_obj.contents.margin_right)
+                id_obj.contents.margin_top = _c.get("margin_top", id_obj.contents.margin_top)
+                id_obj.contents.margin_bottom = _c.get("margin_bottom", id_obj.contents.margin_bottom)
+                id_obj.contents.wrap = _c.get("wrap", id_obj.contents.wrap)
+                id_obj.contents.flow_type = _c.get("flow_type", id_obj.contents.flow_type)
+                id_obj.contents.text_box_width = _c.get("text_box_width", id_obj.contents.text_box_width)
+                id_obj.contents.text_box_height = _c.get("text_box_height", id_obj.contents.text_box_height)
+                id_obj.contents.image_anchor = int(_c.get("image_anchor", id_obj.contents.image_anchor))
+                if "frame" in _c and isinstance(_c["frame"], dict):
+                    id_obj.contents.frame = _c["frame"]
+                if "default_format" in _c and isinstance(_c["default_format"], dict):
+                    id_obj.contents.default_format = _c["default_format"]
 
         # Gemini section
         gemini = data.get("gemini", {})
         if "models" in gemini:
             settings.gemini.models = gemini["models"]
-        settings.gemini.default_model = gemini.get(
-            "default_model", settings.gemini.default_model
-        )
-        # Ensure default_model is in the list
+        settings.gemini.default_model = gemini.get("default_model", settings.gemini.default_model)
         if settings.gemini.default_model not in settings.gemini.models:
             if settings.gemini.models:
                 settings.gemini.default_model = settings.gemini.models[0]
@@ -613,30 +915,10 @@ class SettingsManager:
         settings.external_tools.c4_shapes_per_row = int(ext.get("c4_shapes_per_row", settings.external_tools.c4_shapes_per_row))
         settings.external_tools.c4_boundaries_per_row = int(ext.get("c4_boundaries_per_row", settings.external_tools.c4_boundaries_per_row))
 
-        return settings
-
-    def save(self) -> None:
-        """Save current settings to the TOML file.
-
-        Creates the settings directory if it doesn't exist.
-        """
-        # Ensure directory exists
-        self.settings_dir.mkdir(parents=True, exist_ok=True)
-
-        # Convert settings to TOML structure
-        data = self._to_toml_dict()
-
-        with open(self.settings_file, "wb") as f:
-            tomli_w.dump(data, f)
-
-    def _to_toml_dict(self) -> Dict[str, Any]:
-        """Convert settings to a TOML-compatible dictionary structure.
-
-        Returns:
-            Dictionary organized by TOML sections.
-        """
-        s = self.settings
-        return {
+    def _to_toml_dict(self, settings: "Optional[AppSettings]" = None) -> Dict[str, Any]:
+        """Serialize *settings* (or current merged settings) to a TOML-compatible dictionary."""
+        s = settings if settings is not None else self.settings
+        d: Dict[str, Any] = {
             "general": {
                 "theme": s.theme,
                 "workspace_dir": s.workspace_dir,
@@ -653,9 +935,7 @@ class SettingsManager:
                     "right_margin": s.editor.line_numbers.right_margin,
                     "highlight_bar_width": s.editor.line_numbers.highlight_bar_width,
                 },
-                "folding": {
-                    "width": s.editor.folding.width,
-                },
+                "folding": {"width": s.editor.folding.width},
                 "syntax": {
                     "key_color": s.editor.syntax.key_color,
                     "key_bold": s.editor.syntax.key_bold,
@@ -693,16 +973,9 @@ class SettingsManager:
                     "min_text_box_size": s.canvas.lines.min_text_box_size,
                     "min_gap_pixels": s.canvas.lines.min_gap_pixels,
                 },
-                "selection": {
-                    "outline_color": s.canvas.selection.outline_color,
-                },
-                "zorder": {
-                    "base": s.canvas.zorder.base,
-                    "step": s.canvas.zorder.step,
-                },
-                "zoom": {
-                    "wheel_factor": s.canvas.zoom.wheel_factor,
-                },
+                "selection": {"outline_color": s.canvas.selection.outline_color},
+                "zorder": {"base": s.canvas.zorder.base, "step": s.canvas.zorder.step},
+                "zoom": {"wheel_factor": s.canvas.zoom.wheel_factor},
             },
             "alignment": {
                 "detection": {
@@ -720,26 +993,38 @@ class SettingsManager:
                     "low_saturation_threshold": s.alignment.color.low_saturation_threshold,
                     "bgr_tolerance_multiplier": s.alignment.color.bgr_tolerance_multiplier,
                 },
-                "scoring": {
-                    "size_difference_weight": s.alignment.scoring.size_difference_weight,
-                },
-                "line": {
-                    "hue_tolerances": s.alignment.line.hue_tolerances,
-                },
+                "scoring": {"size_difference_weight": s.alignment.scoring.size_difference_weight},
+                "line": {"hue_tolerances": s.alignment.line.hue_tolerances},
             },
             "defaults": {
-                "text": {
-                    "label_align": s.defaults.label_align,
-                    "label_size": s.defaults.label_size,
-                    "tech_align": s.defaults.tech_align,
-                    "tech_size": s.defaults.tech_size,
-                    "note_align": s.defaults.note_align,
-                    "note_size": s.defaults.note_size,
-                    "vertical_align": s.defaults.vertical_align,
-                    "line_spacing": s.defaults.line_spacing,
+                "contents": {
+                    "halign": s.defaults.halign,
+                    "valign": s.defaults.valign,
+                    "spacing": s.defaults.spacing,
+                    "color": s.defaults.color,
+                    "font_family": s.defaults.font_family,
+                    "font_size": s.defaults.font_size,
+                    "margin_left": s.defaults.margin_left,
+                    "margin_right": s.defaults.margin_right,
+                    "margin_top": s.defaults.margin_top,
+                    "margin_bottom": s.defaults.margin_bottom,
+                    "wrap": s.defaults.wrap,
+                    "flow_type": s.defaults.flow_type,
                     "text_box_width": s.defaults.text_box_width,
                     "text_box_height": s.defaults.text_box_height,
+                    "image_url": s.defaults.image_url,
+                    "image_anchor": s.defaults.image_anchor,
                 },
+                "style": {
+                    "pen_color": s.style.pen_color,
+                    "pen_width": s.style.pen_width,
+                    "line_dash": s.style.line_dash,
+                    "fill_color": s.style.fill_color,
+                },
+            },
+            "item_defaults": {
+                kind: _build_item_defaults_toml(id_obj)
+                for kind, id_obj in s.item_defaults.items()
             },
             "gemini": {
                 "models": s.gemini.models,
@@ -755,31 +1040,18 @@ class SettingsManager:
                 "c4_boundaries_per_row": s.external_tools.c4_boundaries_per_row,
             },
         }
+        return d
 
     def to_toml(self) -> str:
-        """Convert current settings to a TOML-formatted string.
-
-        Returns:
-            TOML representation of the current settings.
-        """
-        data = self._to_toml_dict()
-        return tomli_w.dumps(data)
+        """Convert current settings to a TOML-formatted string."""
+        return tomli_w.dumps(self._to_toml_dict())
 
     def get_workspace_dir(self) -> Path:
-        """Get the resolved workspace directory path.
-
-        Returns:
-            Path to workspace directory. Falls back to ~/Documents/PictoSync
-            if workspace_dir setting is empty.
-        """
+        """Return resolved workspace directory, falling back to ~/Documents/PictoSync."""
         if self.settings.workspace_dir:
             return Path(self.settings.workspace_dir)
         return Path.home() / "Documents" / "PictoSync"
 
     def get_settings_path(self) -> Path:
-        """Get the path to the settings file.
-
-        Returns:
-            Path object pointing to the settings file location.
-        """
-        return self.settings_file
+        """Return path to the user settings file (backward-compat)."""
+        return self.user_settings_file

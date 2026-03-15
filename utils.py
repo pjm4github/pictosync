@@ -10,6 +10,7 @@ import json
 import re
 from typing import Any, Dict, Optional, Tuple
 
+from PyQt6.QtCore import QEvent, QObject, Qt
 from PyQt6.QtGui import QColor
 
 
@@ -291,3 +292,32 @@ def parse_c4_text(text: str) -> Tuple[str, str, str]:
         label = text.strip()
 
     return (label, tech, note)
+
+
+class _WheelGuard(QObject):
+    """Event filter that ignores wheel events unless the widget has focus."""
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.Wheel and not obj.hasFocus():
+            event.ignore()
+            return True
+        return super().eventFilter(obj, event)
+
+
+def install_wheel_guard(root_widget) -> None:
+    """Install a wheel-event guard on every QAbstractSpinBox and QComboBox
+    that is a descendant of *root_widget* (inclusive).
+
+    After this call, wheel scrolling only changes a widget's value when that
+    widget already has keyboard focus.  The guard object is parented to each
+    widget so Qt keeps it alive automatically.
+    """
+    from PyQt6.QtWidgets import QAbstractSpinBox, QComboBox
+    targets = root_widget.findChildren((QAbstractSpinBox, QComboBox))
+    # Also guard root_widget itself if it matches
+    from PyQt6.QtWidgets import QWidget
+    if isinstance(root_widget, (QAbstractSpinBox, QComboBox)):
+        targets = [root_widget] + list(targets)
+    for w in targets:
+        w.installEventFilter(_WheelGuard(w))
+        w.setFocusPolicy(Qt.FocusPolicy.StrongFocus)

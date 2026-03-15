@@ -293,25 +293,35 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
         lines = []
         align_map = {"left": "left", "center": "center", "right": "right"}
 
-        # Get text spacing in em units (lines * 1em)
-        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
-        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
+        # New contents model: use pre-built HTML if available
+        html_text = getattr(self.meta, "text", "")
+        if html_text:
+            self._label_item.setHtml(html_text)
+        else:
+            # Legacy path: build HTML from label/tech/note fields
+            spacing = getattr(self.meta, "text_spacing", getattr(self.meta, "spacing", 0.0))
+            margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
 
-        if self.meta.label:
-            align = align_map.get(self.meta.label_align, "center")
-            size = self.meta.label_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
-        if self.meta.tech:
-            align = align_map.get(self.meta.tech_align, "center")
-            size = self.meta.tech_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
-        if self.meta.note:
-            align = align_map.get(self.meta.note_align, "center")
-            size = self.meta.note_size
-            # No bottom margin on the last element
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
+            label = getattr(self.meta, "label", "")
+            tech = getattr(self.meta, "tech", "")
+            note = getattr(self.meta, "note", "")
+            if label:
+                la = getattr(self.meta, "label_align", "center")
+                align = align_map.get(la, "center")
+                size = getattr(self.meta, "label_size", 12)
+                lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{label}</b></p>')
+            if tech:
+                ta = getattr(self.meta, "tech_align", "center")
+                align = align_map.get(ta, "center")
+                size = getattr(self.meta, "tech_size", 10)
+                lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{tech}]</i></p>')
+            if note:
+                na = getattr(self.meta, "note_align", "center")
+                align = align_map.get(na, "center")
+                size = getattr(self.meta, "note_size", 10)
+                lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{note}</p>')
 
-        self._label_item.setHtml("".join(lines) if lines else "")
+            self._label_item.setHtml("".join(lines) if lines else "")
         self._label_item.setDefaultTextColor(self.text_color)
         # Update position after text changes (valign may need recalculation)
         self._update_label_position()
@@ -551,8 +561,8 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         text_height = self._label_item.boundingRect().height()
         available_height = self._height - 2 * padding
 
-        # Get vertical alignment from meta
-        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
+        # Get vertical alignment from meta (new field: valign; legacy: text_valign)
+        valign = getattr(self.meta, "valign", getattr(self.meta, "text_valign", "top")) if hasattr(self, "meta") else "top"
 
         if valign == "middle":
             y_pos = padding + (available_height - text_height) / 2
@@ -564,30 +574,74 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._label_item.setPos(padding, max(padding, y_pos))
 
     def _update_label_text(self):
-        lines = []
-        align_map = {"left": "left", "center": "center", "right": "right"}
+        from PyQt6.QtGui import QFont as _QFont, QTextOption as _QTextOption
+        from PyQt6.QtCore import Qt as _Qt
 
-        # Get text spacing in em units (lines * 1em)
-        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
-        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
+        # Resolve effective frame and default_format (overlay-2.0 or flat fallback)
+        _eff_frame = self.meta.effective_frame()
+        _eff_fmt = self.meta.effective_default_format()
 
-        if self.meta.label:
-            align = align_map.get(self.meta.label_align, "center")
-            size = self.meta.label_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
-        if self.meta.tech:
-            align = align_map.get(self.meta.tech_align, "center")
-            size = self.meta.tech_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
-        if self.meta.note:
-            align = align_map.get(self.meta.note_align, "center")
-            size = self.meta.note_size
-            # No bottom margin on the last element
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
+        font_family = _eff_fmt.font_family
+        font_size = max(6, int(_eff_fmt.font_size or 12))
+        halign = _eff_frame.halign
+        color_str = _eff_fmt.color or getattr(self.meta, "color", "")
 
-        self._label_item.setHtml("".join(lines) if lines else "")
+        # Sync text_color from resolved color
+        if color_str:
+            from utils import hex_to_qcolor as _htq
+            self.text_color = _htq(color_str, self.text_color)
+
+        fnt = _QFont(font_family) if font_family else _QFont()
+        fnt.setPointSize(font_size)
+        self._label_item.setFont(fnt)
         self._label_item.setDefaultTextColor(self.text_color)
-        # Update position after text changes (valign may need recalculation)
+
+        # Apply halign as document default alignment
+        _halign_flag = {
+            "left":      _Qt.AlignmentFlag.AlignLeft,
+            "center":    _Qt.AlignmentFlag.AlignHCenter,
+            "right":     _Qt.AlignmentFlag.AlignRight,
+            "justified": _Qt.AlignmentFlag.AlignJustify,
+        }.get(halign, _Qt.AlignmentFlag.AlignHCenter)
+        _opt = self._label_item.document().defaultTextOption()
+        _opt.setAlignment(_halign_flag)
+        self._label_item.document().setDefaultTextOption(_opt)
+
+        # Render: prefer overlay-2.0 blocks, fall back to legacy HTML / label fields
+        if self.meta.blocks is not None:
+            from models import _blocks_to_legacy_text
+            html_text = _blocks_to_legacy_text(self.meta.blocks)
+            self._label_item.setHtml(html_text if html_text else "")
+        elif getattr(self.meta, "text", ""):
+            self._label_item.setHtml(self.meta.text)
+        else:
+            # Legacy path: build HTML from label/tech/note fields
+            lines = []
+            align_map = {"left": "left", "center": "center", "right": "right"}
+            spacing = getattr(self.meta, "text_spacing", getattr(self.meta, "spacing", 0.0))
+            margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
+
+            label = getattr(self.meta, "label", "")
+            tech = getattr(self.meta, "tech", "")
+            note = getattr(self.meta, "note", "")
+            if label:
+                la = getattr(self.meta, "label_align", "center")
+                align = align_map.get(la, "center")
+                size = getattr(self.meta, "label_size", 12)
+                lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{label}</b></p>')
+            if tech:
+                ta = getattr(self.meta, "tech_align", "center")
+                align = align_map.get(ta, "center")
+                size = getattr(self.meta, "tech_size", 10)
+                lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{tech}]</i></p>')
+            if note:
+                na = getattr(self.meta, "note_align", "center")
+                align = align_map.get(na, "center")
+                size = getattr(self.meta, "note_size", 10)
+                lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{note}</p>')
+
+            self._label_item.setHtml("".join(lines) if lines else "")
+
         self._update_label_position()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
@@ -875,25 +929,35 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         lines = []
         align_map = {"left": "left", "center": "center", "right": "right"}
 
-        # Get text spacing in em units (lines * 1em)
-        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
-        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
+        # New contents model: use pre-built HTML if available
+        html_text = getattr(self.meta, "text", "")
+        if html_text:
+            self._label_item.setHtml(html_text)
+        else:
+            # Legacy path: build HTML from label/tech/note fields
+            spacing = getattr(self.meta, "text_spacing", getattr(self.meta, "spacing", 0.0))
+            margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
 
-        if self.meta.label:
-            align = align_map.get(self.meta.label_align, "center")
-            size = self.meta.label_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
-        if self.meta.tech:
-            align = align_map.get(self.meta.tech_align, "center")
-            size = self.meta.tech_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
-        if self.meta.note:
-            align = align_map.get(self.meta.note_align, "center")
-            size = self.meta.note_size
-            # No bottom margin on the last element
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
+            label = getattr(self.meta, "label", "")
+            tech = getattr(self.meta, "tech", "")
+            note = getattr(self.meta, "note", "")
+            if label:
+                la = getattr(self.meta, "label_align", "center")
+                align = align_map.get(la, "center")
+                size = getattr(self.meta, "label_size", 12)
+                lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{label}</b></p>')
+            if tech:
+                ta = getattr(self.meta, "tech_align", "center")
+                align = align_map.get(ta, "center")
+                size = getattr(self.meta, "tech_size", 10)
+                lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{tech}]</i></p>')
+            if note:
+                na = getattr(self.meta, "note_align", "center")
+                align = align_map.get(na, "center")
+                size = getattr(self.meta, "note_size", 10)
+                lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{note}</p>')
 
-        self._label_item.setHtml("".join(lines) if lines else "")
+            self._label_item.setHtml("".join(lines) if lines else "")
         self._label_item.setDefaultTextColor(self.text_color)
         # Update position after text changes (valign may need recalculation)
         self._update_label_position()
@@ -7341,8 +7405,8 @@ class MetaPortItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         if isinstance(conns, list):
             self._connections = list(conns)
 
-        # ── meta ──
-        meta_dict = rec.get("meta") or {}
+        # ── contents (was meta) ──
+        meta_dict = rec.get("contents") or rec.get("meta") or {}
         if isinstance(meta_dict, dict):
             meta_dict.pop("kind", None)
             self.set_meta(AnnotationMeta.from_dict(meta_dict))
