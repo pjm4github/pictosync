@@ -205,48 +205,43 @@ class TestScrollPreservationDuringDrag:
 class TestPumlImport:
     """PUML import must still work correctly with scroll-lock changes."""
 
-    def test_line_meta_has_formatting_defaults(self, linked_scene, qapp):
-        """Line annotations from PUML import should have full meta formatting fields."""
+    def test_line_has_label_tech_note(self, linked_scene, qapp):
+        """Line annotations from PUML import should have label/tech/note keys."""
         mw, items = linked_scene
         text = mw.draft.get_json_text()
         data = json.loads(text)
         lines = [a for a in data["annotations"] if a.get("kind") == "line"]
         assert len(lines) > 0, "Should have at least one line annotation"
-        expected_keys = {
-            "label", "tech", "note",
-            "label_align", "label_size",
-            "tech_align", "tech_size",
-            "note_align", "note_size",
-            "text_valign", "text_spacing",
-            "text_box_width", "text_box_height",
-        }
         for line in lines:
-            meta = line["meta"]
-            missing = expected_keys - set(meta.keys())
-            assert not missing, (
-                f"Line {line['id']} meta missing keys: {missing}"
+            # Accept either "contents" (overlay-2.0) or "meta" (legacy PUML)
+            contents = line.get("contents") or line.get("meta") or {}
+            assert "label" in contents, (
+                f"Line {line['id']} missing 'label' key"
+            )
+            assert "tech" in contents, (
+                f"Line {line['id']} missing 'tech' key"
+            )
+            assert "note" in contents, (
+                f"Line {line['id']} missing 'note' key"
             )
 
-    def test_shape_meta_has_formatting_defaults(self, linked_scene, qapp):
-        """Shape annotations from PUML import should have full meta formatting fields."""
+    def test_shape_has_label_tech_note(self, linked_scene, qapp):
+        """Shape annotations from PUML import should have label/tech/note keys."""
         mw, items = linked_scene
         text = mw.draft.get_json_text()
         data = json.loads(text)
         shapes = [a for a in data["annotations"] if a.get("kind") not in ("line", "group")]
         assert len(shapes) > 0, "Should have at least one shape annotation"
-        expected_keys = {
-            "label", "tech", "note",
-            "label_align", "label_size",
-            "tech_align", "tech_size",
-            "note_align", "note_size",
-            "text_valign", "text_spacing",
-            "text_box_width", "text_box_height",
-        }
         for shape in shapes:
-            meta = shape["meta"]
-            missing = expected_keys - set(meta.keys())
-            assert not missing, (
-                f"Shape {shape['id']} ({shape.get('kind')}) meta missing keys: {missing}"
+            contents = shape.get("contents") or shape.get("meta") or {}
+            assert "label" in contents, (
+                f"Shape {shape['id']} ({shape.get('kind')}) missing 'label'"
+            )
+            assert "tech" in contents, (
+                f"Shape {shape['id']} ({shape.get('kind')}) missing 'tech'"
+            )
+            assert "note" in contents, (
+                f"Shape {shape['id']} ({shape.get('kind')}) missing 'note'"
             )
 
     def test_import_produces_annotations(self, linked_scene, qapp):

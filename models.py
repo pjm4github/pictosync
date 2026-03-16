@@ -292,6 +292,66 @@ class AnnotationContents:
     # Arbitrary extra keys preserved through round-trips
     extras: Dict[str, Any] = field(default_factory=dict, repr=False)
 
+    # -- Block-based label/tech/note property aliases -------------------
+
+    def _ensure_blocks(self) -> List[TextBlock]:
+        """Ensure at least 3 blocks exist (label, tech, note) and return them.
+
+        Also initialises ``frame`` and ``default_format`` from effective
+        values when they are ``None``, so the overlay-2.0 structure is
+        always complete after this call.
+        """
+        if self.blocks is None:
+            self.blocks = []
+        if self.frame is None:
+            self.frame = self.effective_frame()
+        if self.default_format is None:
+            self.default_format = self.effective_default_format()
+        while len(self.blocks) < 3:
+            self.blocks.append(TextBlock(runs=[TextRun(type="text", text="")]))
+        return self.blocks
+
+    @property
+    def label(self) -> str:
+        """Block 0 plain text (bold run)."""
+        if self.blocks and len(self.blocks) >= 1:
+            return self.blocks[0].plain_text()
+        return ""
+
+    @label.setter
+    def label(self, value: str) -> None:
+        blks = self._ensure_blocks()
+        blks[0].runs = [TextRun(type="text", text=value,
+                                format=CharFormat(bold=True))]
+        self.text = _blocks_to_legacy_text(self.blocks)
+
+    @property
+    def tech(self) -> str:
+        """Block 1 plain text (italic run). Stored WITHOUT brackets."""
+        if self.blocks and len(self.blocks) >= 2:
+            return self.blocks[1].plain_text()
+        return ""
+
+    @tech.setter
+    def tech(self, value: str) -> None:
+        blks = self._ensure_blocks()
+        blks[1].runs = [TextRun(type="text", text=value,
+                                format=CharFormat(italic=True))]
+        self.text = _blocks_to_legacy_text(self.blocks)
+
+    @property
+    def note(self) -> str:
+        """Block 2 plain text (plain run)."""
+        if self.blocks and len(self.blocks) >= 3:
+            return self.blocks[2].plain_text()
+        return ""
+
+    @note.setter
+    def note(self, value: str) -> None:
+        blks = self._ensure_blocks()
+        blks[2].runs = [TextRun(type="text", text=value)]
+        self.text = _blocks_to_legacy_text(self.blocks)
+
     # -- Serialization -------------------------------------------------
 
     @classmethod
@@ -315,13 +375,13 @@ class AnnotationContents:
 
         # ── 1. Legacy meta format (label/tech/note) ─────────────────
         if bool(_OLD_META_KEYS & d.keys()):
-            label = d.get("label", "")
-            tech = d.get("tech", "")
-            note = d.get("note", "")
+            label_val = d.get("label", "")
+            tech_val = d.get("tech", "")
+            note_val = d.get("note", "")
             label_size = d.get("label_size", 12)
             tech_size = d.get("tech_size", 10)
             note_size = d.get("note_size", 10)
-            html = build_contents_text(label, tech, note,
+            html = build_contents_text(label_val, tech_val, note_val,
                                        label_size, tech_size, note_size)
             halign = d.get("label_align", "center")
             valign = d.get("text_valign", "top")
@@ -329,15 +389,30 @@ class AnnotationContents:
             text_box_width = d.get("text_box_width", 0.0)
             text_box_height = d.get("text_box_height", 0.0)
 
+            # Build overlay-2.0 blocks from legacy fields
+            blocks: List[TextBlock] = [
+                TextBlock(runs=[TextRun(type="text", text=label_val,
+                                        format=CharFormat(bold=True, font_size=label_size))]),
+                TextBlock(runs=[TextRun(type="text", text=tech_val,
+                                        format=CharFormat(italic=True, font_size=tech_size))]),
+                TextBlock(runs=[TextRun(type="text", text=note_val,
+                                        format=CharFormat(font_size=note_size))]),
+            ]
+            frame = TextFrame(halign=halign, valign=valign)
+            default_format = CharFormat(font_size=label_size)
+
             old_all = _OLD_META_KEYS | {"text_box_width", "text_box_height", "dsl"}
             extras: Dict[str, Any] = {k: v for k, v in d.items()
                                        if k not in old_all}
             if "dsl" in d:
                 extras["dsl"] = d["dsl"]
             return cls(
+                frame=frame, default_format=default_format, blocks=blocks,
                 text=html, halign=halign, valign=valign, spacing=spacing,
                 font_size=label_size,
                 text_box_width=text_box_width, text_box_height=text_box_height,
+                margin_left=frame.margin_left, margin_right=frame.margin_right,
+                margin_top=frame.margin_top, margin_bottom=frame.margin_bottom,
                 extras=extras,
             )
 
@@ -410,6 +485,10 @@ class AnnotationContents:
                 d["text_box_width"] = self.text_box_width
             if self.text_box_height:
                 d["text_box_height"] = self.text_box_height
+            # Convenience keys for external tooling and property panel
+            d["label"] = self.label
+            d["tech"] = self.tech
+            d["note"] = self.note
             d.update(self.extras)
             return d
 

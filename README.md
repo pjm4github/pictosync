@@ -4,7 +4,7 @@
 
 # PictoSync
 
-**v2.0** | Diagram Normalization & Agentic Specification IDE
+**v2.1** | Diagram Normalization & Agentic Specification IDE
 
 ---
 

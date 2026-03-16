@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>963</width>
-    <height>440</height>
+    <width>964</width>
+    <height>492</height>
    </rect>
   </property>
   <property name="minimumSize">
@@ -1632,7 +1632,7 @@
            <bool>true</bool>
           </property>
           <property name="placeholderText">
-           <string>Enter text content (HTML or Markdown)...</string>
+           <string>Enter text content ...</string>
           </property>
          </widget>
          <widget class="QGroupBox" name="group_graphic_url">
@@ -1790,9 +1790,9 @@
           <property name="geometry">
            <rect>
             <x>0</x>
-            <y>-66</y>
+            <y>0</y>
             <width>251</width>
-            <height>442</height>
+            <height>475</height>
            </rect>
           </property>
           <layout class="QVBoxLayout" name="verticalLayout_12">
@@ -1879,7 +1879,7 @@
                  <widget class="QLineEdit" name="hex_text_color">
                   <property name="maximumSize">
                    <size>
-                    <width>120</width>
+                    <width>110</width>
                     <height>16777215</height>
                    </size>
                   </property>
@@ -1970,7 +1970,7 @@
                    </widget>
                   </item>
                   <item row="0" column="1">
-                   <widget class="QCheckBox" name="strickthrough">
+                   <widget class="QCheckBox" name="strikethrough">
                     <property name="text">
                      <string>Strikethrough</string>
                     </property>

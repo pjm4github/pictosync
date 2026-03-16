@@ -1,4 +1,4 @@
-# Form implementation generated from reading ui file 'properties/properties_panel.ui'
+# Form implementation generated from reading ui file 'C:\Users\pmora\OneDrive\Documents\Git\GitHub\pictosync\properties\properties_panel.ui'
 #
 # Created by: PyQt6 UI code generator 6.10.2
 #
@@ -12,7 +12,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 class Ui_PropertyPanel(object):
     def setupUi(self, PropertyPanel):
         PropertyPanel.setObjectName("PropertyPanel")
-        PropertyPanel.resize(963, 440)
+        PropertyPanel.resize(964, 492)
         PropertyPanel.setMinimumSize(QtCore.QSize(200, 300))
         self.gridLayout_4 = QtWidgets.QGridLayout(PropertyPanel)
         self.gridLayout_4.setObjectName("gridLayout_4")
@@ -681,7 +681,7 @@ class Ui_PropertyPanel(object):
         self.contents_format.setWidgetResizable(True)
         self.contents_format.setObjectName("contents_format")
         self.scrollAreaWidgetContents_2 = QtWidgets.QWidget()
-        self.scrollAreaWidgetContents_2.setGeometry(QtCore.QRect(0, -66, 251, 442))
+        self.scrollAreaWidgetContents_2.setGeometry(QtCore.QRect(0, 0, 251, 475))
         self.scrollAreaWidgetContents_2.setObjectName("scrollAreaWidgetContents_2")
         self.verticalLayout_12 = QtWidgets.QVBoxLayout(self.scrollAreaWidgetContents_2)
         self.verticalLayout_12.setObjectName("verticalLayout_12")
@@ -714,7 +714,7 @@ class Ui_PropertyPanel(object):
         self.horizontalLayout_38 = QtWidgets.QHBoxLayout()
         self.horizontalLayout_38.setObjectName("horizontalLayout_38")
         self.hex_text_color = QtWidgets.QLineEdit(parent=self.group_text_font)
-        self.hex_text_color.setMaximumSize(QtCore.QSize(120, 16777215))
+        self.hex_text_color.setMaximumSize(QtCore.QSize(110, 16777215))
         self.hex_text_color.setMaxLength(12)
         self.hex_text_color.setObjectName("hex_text_color")
         self.horizontalLayout_38.addWidget(self.hex_text_color)
@@ -751,9 +751,9 @@ class Ui_PropertyPanel(object):
         self.bold = QtWidgets.QCheckBox(parent=self.group_text_font)
         self.bold.setObjectName("bold")
         self.gridLayout_5.addWidget(self.bold, 0, 0, 1, 1)
-        self.strickthrough = QtWidgets.QCheckBox(parent=self.group_text_font)
-        self.strickthrough.setObjectName("strickthrough")
-        self.gridLayout_5.addWidget(self.strickthrough, 0, 1, 1, 1)
+        self.strikethrough = QtWidgets.QCheckBox(parent=self.group_text_font)
+        self.strikethrough.setObjectName("strikethrough")
+        self.gridLayout_5.addWidget(self.strikethrough, 0, 1, 1, 1)
         self.italic = QtWidgets.QCheckBox(parent=self.group_text_font)
         self.italic.setObjectName("italic")
         self.gridLayout_5.addWidget(self.italic, 1, 0, 1, 1)
@@ -963,7 +963,7 @@ class Ui_PropertyPanel(object):
         self.label_parent_id.setText(_translate("PropertyPanel", "Parent:"))
         self.parent_id.setPlaceholderText(_translate("PropertyPanel", "(none)"))
         self.tabs.setTabText(self.tabs.indexOf(self.tab_main), _translate("PropertyPanel", "Style"))
-        self.text.setPlaceholderText(_translate("PropertyPanel", "Enter text content (HTML or Markdown)..."))
+        self.text.setPlaceholderText(_translate("PropertyPanel", "Enter text content ..."))
         self.group_graphic_url.setTitle(_translate("PropertyPanel", "Image / Icon"))
         self.label_graphic_url.setText(_translate("PropertyPanel", "URL:"))
         self.image_url.setPlaceholderText(_translate("PropertyPanel", "path or URL to image..."))
@@ -980,7 +980,7 @@ class Ui_PropertyPanel(object):
         self.label_text_size.setText(_translate("PropertyPanel", "Size:"))
         self.font_size.setSuffix(_translate("PropertyPanel", " pt"))
         self.bold.setText(_translate("PropertyPanel", "Bold"))
-        self.strickthrough.setText(_translate("PropertyPanel", "Strikethrough"))
+        self.strikethrough.setText(_translate("PropertyPanel", "Strikethrough"))
         self.italic.setText(_translate("PropertyPanel", "Italic"))
         self.underline.setText(_translate("PropertyPanel", "Underline"))
         self.groupBox_4.setTitle(_translate("PropertyPanel", "Effects"))

@@ -588,6 +588,10 @@ class PropertyPanel(QWidget):
         self.edit_graphic_url = self.ui.image_url
         self.btn_graphic_browse = self.ui.graphic_browse
         self.spin_graphic_anchor = self.ui.image_anchor
+        self.chk_bold = self.ui.bold                     # QCheckBox
+        self.chk_italic = self.ui.italic                 # QCheckBox
+        self.chk_underline = self.ui.underline           # QCheckBox
+        self.chk_strikethrough = self.ui.strikethrough   # QCheckBox (UI typo)
 
         # -- ports / connections --
         self.list_ports = self.ui.ports
@@ -696,7 +700,9 @@ class PropertyPanel(QWidget):
         _lbl_font = _QFont2()
         _lbl_font.setPointSize(8)
         _sa = self.ui.scrollAreaWidgetContents_2
-        _sa.setStyleSheet("* { font-size: 8pt; }")
+        _sa.setStyleSheet(
+            "QLabel, QCheckBox, QRadioButton, QGroupBox { font-size: 8pt; }"
+        )
         for _w in _sa.findChildren(_QWidgetChild):
             _w.setFont(_lbl_font)
 
@@ -1097,6 +1103,10 @@ class PropertyPanel(QWidget):
         self.spin_margin_bottom.valueChanged.connect(self._on_margins_changed)
         self.edit_graphic_url.editingFinished.connect(self._on_graphic_url_changed)
         self.spin_graphic_anchor.valueChanged.connect(self._on_graphic_anchor_changed)
+        self.chk_bold.toggled.connect(self._on_bold_changed)
+        self.chk_italic.toggled.connect(self._on_italic_changed)
+        self.chk_underline.toggled.connect(self._on_underline_changed)
+        self.chk_strikethrough.toggled.connect(self._on_strikethrough_changed)
 
     def set_image_info(self, info: Dict[str, Any]):
         """Update the image info display."""
@@ -1508,7 +1518,9 @@ class PropertyPanel(QWidget):
         values back to the document.
         """
         for w in (self.text_halign_combo, self.spin_text_size, self.combo_font,
-                  self.text_opacity, self.text_alpha_edit, self.text_hex_edit):
+                  self.text_opacity, self.text_alpha_edit, self.text_hex_edit,
+                  self.chk_bold, self.chk_italic, self.chk_underline,
+                  self.chk_strikethrough):
             w.blockSignals(block)
 
     def _block_all_signals(self, block: bool):
@@ -1528,7 +1540,9 @@ class PropertyPanel(QWidget):
                   self.flow_type_combo, self.edit_graphic_url,
                   self.spin_graphic_anchor, self.fill_opacity,
                   self.pen_opacity, self.text_opacity,
-                  self.divider_count_spin):
+                  self.divider_count_spin,
+                  self.chk_bold, self.chk_italic, self.chk_underline,
+                  self.chk_strikethrough):
             w.blockSignals(block)
 
     def _save_as_default(self):
@@ -1711,6 +1725,8 @@ class PropertyPanel(QWidget):
         if hasattr(item, "text_size_pt"):
             item.text_size_pt = font_size
 
+        if hasattr(item, "_update_label_text"):
+            item._update_label_text()
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
 
@@ -1948,6 +1964,11 @@ class PropertyPanel(QWidget):
 
         # spacing / text_box_width / text_box_height: no UI widget yet (deferred)
 
+        # ── label / tech / note convenience edits ──────────────────────
+        self.label_edit.setText(meta.label)
+        self.tech_edit.setText(meta.tech)
+        self.note_edit.setText(meta.note)
+
         self._block_all_signals(False)
 
         # ── ports list ───────────────────────────────────────────────
@@ -2119,31 +2140,53 @@ class PropertyPanel(QWidget):
 
         Uses new AnnotationContents fields (text, halign, valign, font_size,
         spacing) when available, with fallback reads for old attributes.
+        Also syncs label/tech/note edits via property setters.
         """
         item = self._current_item
         if item is None or not hasattr(item, "meta"):
             return
         meta: AnnotationContents = getattr(item, "meta")
 
-        # Capture old values for undo — use new fields
+        # Capture old values for undo
         contents_fields = ["text", "halign", "valign", "font_size", "spacing"]
         old_meta = {}
         for f in contents_fields:
             old_meta[f] = getattr(meta, f, None)
+        old_meta["label"] = meta.label
+        old_meta["tech"] = meta.tech
+        old_meta["note"] = meta.note
 
-        # -- Write new contents fields from the new UI --
+        # -- Write label/tech/note from the convenience edits --
+        new_label = self.label_edit.text()
+        new_tech = self.tech_edit.text()
+        new_note = self.note_edit.text()
+        if new_label != meta.label:
+            meta.label = new_label
+        if new_tech != meta.tech:
+            meta.tech = new_tech
+        if new_note != meta.note:
+            meta.note = new_note
+
+        # -- Write contents fields from the Contents tab UI --
         if HAS_UI:
-            meta.text = self.text_contents.toHtml()
             halign_values = ["left", "center", "justified", "right"]
             meta.halign = halign_values[self.text_halign_combo.currentIndex()]
             valign_values = ["top", "middle", "bottom"]
             meta.valign = valign_values[self.text_valign_combo.currentIndex()]
             meta.font_size = self.spin_text_size.value()
             meta.wrap = self.chk_wrap.isChecked()
+            # Sync text_contents QTextEdit → meta.text only if labels
+            # didn't change (label/tech/note setters already update text)
+            if (new_label == old_meta["label"] and new_tech == old_meta["tech"]
+                    and new_note == old_meta["note"]):
+                meta.text = self.text_contents.toHtml()
 
         new_meta = {}
         for f in contents_fields:
             new_meta[f] = getattr(meta, f, None)
+        new_meta["label"] = meta.label
+        new_meta["tech"] = meta.tech
+        new_meta["note"] = meta.note
 
         # Skip if nothing changed
         if old_meta == new_meta:
@@ -2152,7 +2195,7 @@ class PropertyPanel(QWidget):
         setattr(item, "meta", meta)
 
         if isinstance(item, MetaTextItem):
-            text_val = getattr(meta, "text", "") or getattr(meta, "note", "")
+            text_val = meta.note
             if not getattr(item, '_editing', False) and item.toPlainText() != text_val:
                 item.setPlainText(text_val)
 
@@ -2162,11 +2205,24 @@ class PropertyPanel(QWidget):
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
 
+        # Sync text_contents QTextEdit with updated blocks (block signals
+        # to avoid feedback loop)
+        if HAS_UI and (new_label != old_meta["label"] or new_tech != old_meta["tech"]
+                       or new_note != old_meta["note"]):
+            self.text_contents.blockSignals(True)
+            if meta.blocks is not None:
+                from models import _blocks_to_legacy_text
+                html = _blocks_to_legacy_text(meta.blocks)
+                self.text_contents.setHtml(html if html else "")
+            elif meta.text:
+                self.text_contents.setHtml(meta.text)
+            self.text_contents.blockSignals(False)
+
         if self.undo_stack:
             def update_func():
                 if isinstance(item, MetaTextItem):
                     if not getattr(item, '_editing', False):
-                        text_val = getattr(item.meta, "text", "") or getattr(item.meta, "note", "")
+                        text_val = item.meta.note
                         item.setPlainText(text_val)
                 if hasattr(item, "_update_label_text"):
                     item._update_label_text()
@@ -2685,6 +2741,12 @@ class PropertyPanel(QWidget):
                 if _dc.isValid():
                     self._set_color_widgets("text", _dc)
 
+            # ── bold / italic / underline / strikethrough ─────────────
+            self.chk_bold.setChecked(char_fmt.fontWeight() >= 700)
+            self.chk_italic.setChecked(char_fmt.fontItalic())
+            self.chk_underline.setChecked(char_fmt.fontUnderline())
+            self.chk_strikethrough.setChecked(char_fmt.fontStrikeOut())
+
             # ── block alignment → halign combo ────────────────────────
             alignment = block_fmt.alignment()
             if alignment & _Qt.AlignmentFlag.AlignHCenter:
@@ -2839,6 +2901,52 @@ class PropertyPanel(QWidget):
         cursor.setCharFormat(fmt)
         self.text_contents.setTextCursor(cursor)
         self._apply_font_to_textedit()
+
+    # ── bold / italic / underline / strikethrough handlers ──────────
+
+    def _apply_char_format_toggle(self, setter_name: str, value: bool):
+        """Apply a boolean char-format toggle to the selection or typing format.
+
+        Args:
+            setter_name: QTextCharFormat method name (e.g. 'setFontWeight').
+            value: The boolean state of the checkbox.
+        """
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+
+        from PyQt6.QtGui import QTextCharFormat as _TCF, QFont as _QFont
+        fmt = _TCF()
+        if setter_name == "setFontWeight":
+            fmt.setFontWeight(_QFont.Weight.Bold if value else _QFont.Weight.Normal)
+        else:
+            getattr(fmt, setter_name)(value)
+
+        cursor = self.text_contents.textCursor()
+        if cursor.hasSelection():
+            self.text_contents.setTextCursor(cursor)
+            cursor.mergeCharFormat(fmt)
+            self.text_contents.setTextCursor(cursor)
+            return
+        # No selection: set typing format for subsequent input.
+        cursor.mergeCharFormat(fmt)
+        self.text_contents.setTextCursor(cursor)
+
+    def _on_bold_changed(self, checked: bool):
+        """Toggle bold on selected text or typing format."""
+        self._apply_char_format_toggle("setFontWeight", checked)
+
+    def _on_italic_changed(self, checked: bool):
+        """Toggle italic on selected text or typing format."""
+        self._apply_char_format_toggle("setFontItalic", checked)
+
+    def _on_underline_changed(self, checked: bool):
+        """Toggle underline on selected text or typing format."""
+        self._apply_char_format_toggle("setFontUnderline", checked)
+
+    def _on_strikethrough_changed(self, checked: bool):
+        """Toggle strikethrough on selected text or typing format."""
+        self._apply_char_format_toggle("setFontStrikeOut", checked)
 
     def _on_wrap_changed(self, checked: bool):
         """Handle text wrap toggle."""
@@ -3007,18 +3115,24 @@ class PropertyPanel(QWidget):
         self._set_preview(self.fill_color_preview, getattr(item, "brush_color", QColor(0, 0, 0, 0)))
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
         self._configure_adjust_controls("seqblock")
-        if show_a1:
+        if hasattr(self, "adjust1_spin"):
             self.adjust1_spin.blockSignals(True)
             self.adjust1_spin.setValue(int(getattr(item, "_adjust1", 0.5) * 100))
             self.adjust1_spin.blockSignals(False)
-        if show_a2:
+            self.adjust1_spin.setEnabled(dc >= 1)
+            self.adjust1_label.setEnabled(dc >= 1)
+        if hasattr(self, "adjust2_spin"):
             self.adjust2_spin.blockSignals(True)
             self.adjust2_spin.setValue(int(getattr(item, "_adjust2", 0.67) * 100))
             self.adjust2_spin.blockSignals(False)
-        if show_a3:
+            self.adjust2_spin.setEnabled(dc >= 2)
+            self.adjust2_label.setEnabled(dc >= 2)
+        if hasattr(self, "adjust3_spin"):
             self.adjust3_spin.blockSignals(True)
             self.adjust3_spin.setValue(int(getattr(item, "_adjust3", 0.83) * 100))
             self.adjust3_spin.blockSignals(False)
+            self.adjust3_spin.setEnabled(dc >= 3)
+            self.adjust3_label.setEnabled(dc >= 3)
         self._setup_line_style_controls(item)
         self._setup_text_layout_controls(item)
 

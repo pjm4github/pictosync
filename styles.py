@@ -4,6 +4,71 @@ styles.py
 Application stylesheets - Foundation (dark) and Bulma (light) themes.
 """
 
+import os as _os
+import tempfile as _tempfile
+
+# ---------------------------------------------------------------------------
+# Generate SVG arrow icons per-theme at import time
+# ---------------------------------------------------------------------------
+
+_ARROW_UP_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="7" height="5" viewBox="0 0 7 5">'
+    '<polygon points="3.5,0 7,5 0,5" fill="{color}"/></svg>'
+)
+_ARROW_DOWN_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="7" height="5" viewBox="0 0 7 5">'
+    '<polygon points="0,0 7,0 3.5,5" fill="{color}"/></svg>'
+)
+
+# Accent colors keyed by theme name — matches QPushButton background-color
+_ARROW_COLORS = {
+    "Foundation (Dark)": "#0e639c",
+    "Bulma (Light)":     "#00d1b2",
+    "Bauhaus":           "#1e88e5",
+    "Neumorphism":       "#6c5ce7",
+    "Materialize":       "#3f51b5",
+    "Tailwind":          "#6366f1",
+    "Bootstrap":         "#0d6efd",
+}
+
+_arrow_dir = _os.path.join(_tempfile.gettempdir(), "pictosync_arrows")
+_os.makedirs(_arrow_dir, exist_ok=True)
+
+# {theme_name: {"up": path, "down": path}}
+_ARROW_PATHS: dict = {}
+
+for _theme, _color in _ARROW_COLORS.items():
+    _safe = _theme.replace(" ", "_").replace("(", "").replace(")", "")
+    _up_path = _os.path.join(_arrow_dir, f"up_{_safe}.svg")
+    _dn_path = _os.path.join(_arrow_dir, f"dn_{_safe}.svg")
+    with open(_up_path, "w") as _f:
+        _f.write(_ARROW_UP_SVG.format(color=_color))
+    with open(_dn_path, "w") as _f:
+        _f.write(_ARROW_DOWN_SVG.format(color=_color))
+    _ARROW_PATHS[_theme] = {
+        "up": _up_path.replace("\\", "/"),
+        "down": _dn_path.replace("\\", "/"),
+    }
+
+
+def _arrow_css(theme: str) -> str:
+    """Return stylesheet fragment for spin/combo arrow icons."""
+    p = _ARROW_PATHS[theme]
+    return f"""
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
+    image: url("{p['up']}");
+    width: 7px; height: 5px;
+}}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
+    image: url("{p['down']}");
+    width: 7px; height: 5px;
+}}
+QComboBox::down-arrow, QFontComboBox::down-arrow {{
+    image: url("{p['down']}");
+    width: 8px; height: 6px;
+}}
+"""
+
 FOUNDATION_STYLE = """
 /* === Base Colors === */
 QMainWindow {
@@ -255,17 +320,18 @@ QSpinBox:focus {
     border-color: #0e639c;
 }
 
-QSpinBox::up-button,
-QSpinBox::down-button {
-    background-color: #505050;
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    background: transparent;
     border: none;
     width: 16px;
 }
 
-QSpinBox::up-button:hover,
-QSpinBox::down-button:hover {
-    background-color: #606060;
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background: transparent;
 }
+
 
 QComboBox {
     background-color: #3c3c3c;
@@ -286,8 +352,10 @@ QComboBox:focus {
 
 QComboBox::drop-down {
     border: none;
+    background: transparent;
     width: 24px;
 }
+
 
 QComboBox QAbstractItemView {
     background-color: #2d2d30;
@@ -420,12 +488,34 @@ QDockWidget QLineEdit, PropertyPanel QLineEdit {
     padding: 1px 4px;
 }
 
-QDockWidget QSpinBox, PropertyPanel QSpinBox {
-    padding: 0px 2px;
+QDockWidget QSpinBox, PropertyPanel QSpinBox,
+QDockWidget QDoubleSpinBox, PropertyPanel QDoubleSpinBox {
+    padding: 1px 2px;
+    border-radius: 3px;
+    min-height: 20px;
+    max-height: 24px;
 }
 
-QDockWidget QComboBox, PropertyPanel QComboBox {
+QDockWidget QSpinBox::up-button, PropertyPanel QSpinBox::up-button,
+QDockWidget QDoubleSpinBox::up-button, PropertyPanel QDoubleSpinBox::up-button,
+QDockWidget QSpinBox::down-button, PropertyPanel QSpinBox::down-button,
+QDockWidget QDoubleSpinBox::down-button, PropertyPanel QDoubleSpinBox::down-button {
+    width: 12px;
+    margin: 0px;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox,
+QDockWidget QFontComboBox, PropertyPanel QFontComboBox {
     padding: 1px 4px;
+    border-radius: 3px;
+    min-width: 0px;
+    min-height: 20px;
+    max-height: 24px;
+}
+
+QDockWidget QComboBox::drop-down, PropertyPanel QComboBox::drop-down,
+QDockWidget QFontComboBox::drop-down, PropertyPanel QFontComboBox::drop-down {
+    width: 16px;
 }
 
 QDockWidget QPushButton, PropertyPanel QPushButton {
@@ -496,9 +586,9 @@ QRadioButton::indicator {
     border: 2px solid #666; background-color: #2d2d30;
 }
 QRadioButton::indicator:checked {
-    border: 2px solid #4da6ff; background-color: #4da6ff;
+    border: 2px solid #0e639c; background-color: #0e639c;
 }
-QRadioButton::indicator:hover { border: 2px solid #aaa; }
+QRadioButton::indicator:hover { border: 2px solid #0e639c; }
 
 QCheckBox { spacing: 6px; color: #d4d4d4; }
 QCheckBox::indicator {
@@ -506,9 +596,9 @@ QCheckBox::indicator {
     border: 2px solid #666; background-color: #2d2d30;
 }
 QCheckBox::indicator:checked {
-    border: 2px solid #4da6ff; background-color: #4da6ff;
+    border: 2px solid #0e639c; background-color: #0e639c;
 }
-QCheckBox::indicator:hover { border: 2px solid #aaa; }
+QCheckBox::indicator:hover { border: 2px solid #0e639c; }
 """
 
 BULMA_STYLE = """
@@ -768,17 +858,18 @@ QSpinBox:focus {
     border-color: #00d1b2;
 }
 
-QSpinBox::up-button,
-QSpinBox::down-button {
-    background-color: #f5f5f5;
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    background: transparent;
     border: none;
     width: 18px;
 }
 
-QSpinBox::up-button:hover,
-QSpinBox::down-button:hover {
-    background-color: #ededed;
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background: transparent;
 }
+
 
 QComboBox {
     background-color: #ffffff;
@@ -799,8 +890,10 @@ QComboBox:focus {
 
 QComboBox::drop-down {
     border: none;
+    background: transparent;
     width: 28px;
 }
+
 
 QComboBox QAbstractItemView {
     background-color: #ffffff;
@@ -940,12 +1033,34 @@ QDockWidget QLineEdit, PropertyPanel QLineEdit {
     padding: 1px 4px;
 }
 
-QDockWidget QSpinBox, PropertyPanel QSpinBox {
-    padding: 0px 2px;
+QDockWidget QSpinBox, PropertyPanel QSpinBox,
+QDockWidget QDoubleSpinBox, PropertyPanel QDoubleSpinBox {
+    padding: 1px 2px;
+    border-radius: 3px;
+    min-height: 20px;
+    max-height: 24px;
 }
 
-QDockWidget QComboBox, PropertyPanel QComboBox {
+QDockWidget QSpinBox::up-button, PropertyPanel QSpinBox::up-button,
+QDockWidget QDoubleSpinBox::up-button, PropertyPanel QDoubleSpinBox::up-button,
+QDockWidget QSpinBox::down-button, PropertyPanel QSpinBox::down-button,
+QDockWidget QDoubleSpinBox::down-button, PropertyPanel QDoubleSpinBox::down-button {
+    width: 12px;
+    margin: 0px;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox,
+QDockWidget QFontComboBox, PropertyPanel QFontComboBox {
     padding: 1px 4px;
+    border-radius: 3px;
+    min-width: 0px;
+    min-height: 20px;
+    max-height: 24px;
+}
+
+QDockWidget QComboBox::drop-down, PropertyPanel QComboBox::drop-down,
+QDockWidget QFontComboBox::drop-down, PropertyPanel QFontComboBox::drop-down {
+    width: 16px;
 }
 
 QDockWidget QPushButton, PropertyPanel QPushButton {
@@ -1016,9 +1131,9 @@ QRadioButton::indicator {
     border: 2px solid #b5bfc8; background-color: #ffffff;
 }
 QRadioButton::indicator:checked {
-    border: 2px solid #485fc7; background-color: #485fc7;
+    border: 2px solid #00d1b2; background-color: #00d1b2;
 }
-QRadioButton::indicator:hover { border: 2px solid #485fc7; }
+QRadioButton::indicator:hover { border: 2px solid #00d1b2; }
 
 QCheckBox { spacing: 6px; color: #363636; }
 QCheckBox::indicator {
@@ -1026,9 +1141,9 @@ QCheckBox::indicator {
     border: 2px solid #b5bfc8; background-color: #ffffff;
 }
 QCheckBox::indicator:checked {
-    border: 2px solid #485fc7; background-color: #485fc7;
+    border: 2px solid #00d1b2; background-color: #00d1b2;
 }
-QCheckBox::indicator:hover { border: 2px solid #485fc7; }
+QCheckBox::indicator:hover { border: 2px solid #00d1b2; }
 """
 
 BAUHAUS_STYLE = """
@@ -1293,18 +1408,18 @@ QSpinBox:focus {
     border-width: 4px;
 }
 
-QSpinBox::up-button,
-QSpinBox::down-button {
-    background-color: #fdd835;
-    border: 2px solid #000000;
-    border-radius: 0;
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    background: transparent;
+    border: none;
     width: 20px;
 }
 
-QSpinBox::up-button:hover,
-QSpinBox::down-button:hover {
-    background-color: #e53935;
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background: transparent;
 }
+
 
 QComboBox {
     background-color: #ffffff;
@@ -1326,10 +1441,10 @@ QComboBox:focus {
 
 QComboBox::drop-down {
     border: none;
-    border-left: 3px solid #000000;
+    background: transparent;
     width: 30px;
-    background-color: #fdd835;
 }
+
 
 QComboBox QAbstractItemView {
     background-color: #ffffff;
@@ -1478,12 +1593,34 @@ QDockWidget QLineEdit, PropertyPanel QLineEdit {
     padding: 1px 4px;
 }
 
-QDockWidget QSpinBox, PropertyPanel QSpinBox {
-    padding: 0px 2px;
+QDockWidget QSpinBox, PropertyPanel QSpinBox,
+QDockWidget QDoubleSpinBox, PropertyPanel QDoubleSpinBox {
+    padding: 1px 2px;
+    border-radius: 3px;
+    min-height: 20px;
+    max-height: 24px;
 }
 
-QDockWidget QComboBox, PropertyPanel QComboBox {
+QDockWidget QSpinBox::up-button, PropertyPanel QSpinBox::up-button,
+QDockWidget QDoubleSpinBox::up-button, PropertyPanel QDoubleSpinBox::up-button,
+QDockWidget QSpinBox::down-button, PropertyPanel QSpinBox::down-button,
+QDockWidget QDoubleSpinBox::down-button, PropertyPanel QDoubleSpinBox::down-button {
+    width: 12px;
+    margin: 0px;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox,
+QDockWidget QFontComboBox, PropertyPanel QFontComboBox {
     padding: 1px 4px;
+    border-radius: 3px;
+    min-width: 0px;
+    min-height: 20px;
+    max-height: 24px;
+}
+
+QDockWidget QComboBox::drop-down, PropertyPanel QComboBox::drop-down,
+QDockWidget QFontComboBox::drop-down, PropertyPanel QFontComboBox::drop-down {
+    width: 16px;
 }
 
 QDockWidget QPushButton, PropertyPanel QPushButton {
@@ -1556,9 +1693,9 @@ QRadioButton::indicator {
     border: 2px solid #000000; background-color: #ffffff;
 }
 QRadioButton::indicator:checked {
-    border: 2px solid #e53935; background-color: #e53935;
+    border: 2px solid #1e88e5; background-color: #1e88e5;
 }
-QRadioButton::indicator:hover { border: 2px solid #e53935; }
+QRadioButton::indicator:hover { border: 2px solid #1e88e5; }
 
 QCheckBox { spacing: 6px; color: #000000; }
 QCheckBox::indicator {
@@ -1566,9 +1703,9 @@ QCheckBox::indicator {
     border: 2px solid #000000; background-color: #ffffff;
 }
 QCheckBox::indicator:checked {
-    border: 2px solid #e53935; background-color: #e53935;
+    border: 2px solid #1e88e5; background-color: #1e88e5;
 }
-QCheckBox::indicator:hover { border: 2px solid #e53935; }
+QCheckBox::indicator:hover { border: 2px solid #1e88e5; }
 """
 
 NEUMORPHISM_STYLE = """
@@ -1828,19 +1965,19 @@ QSpinBox:focus {
     background-color: #d9e0ea;
 }
 
-QSpinBox::up-button,
-QSpinBox::down-button {
-    background-color: #d1d9e6;
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    background: transparent;
     border: none;
-    border-radius: 6px;
     width: 20px;
     margin: 2px;
 }
 
-QSpinBox::up-button:hover,
-QSpinBox::down-button:hover {
-    background-color: #c8d0e0;
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background: transparent;
 }
+
 
 QComboBox {
     background-color: #e0e5ec;
@@ -1861,10 +1998,12 @@ QComboBox:focus {
 
 QComboBox::drop-down {
     border: none;
+    background: transparent;
     width: 30px;
     border-top-right-radius: 12px;
     border-bottom-right-radius: 12px;
 }
+
 
 QComboBox QAbstractItemView {
     background-color: #e0e5ec;
@@ -2011,12 +2150,34 @@ QDockWidget QLineEdit, PropertyPanel QLineEdit {
     padding: 1px 4px;
 }
 
-QDockWidget QSpinBox, PropertyPanel QSpinBox {
-    padding: 0px 2px;
+QDockWidget QSpinBox, PropertyPanel QSpinBox,
+QDockWidget QDoubleSpinBox, PropertyPanel QDoubleSpinBox {
+    padding: 1px 2px;
+    border-radius: 3px;
+    min-height: 20px;
+    max-height: 24px;
 }
 
-QDockWidget QComboBox, PropertyPanel QComboBox {
+QDockWidget QSpinBox::up-button, PropertyPanel QSpinBox::up-button,
+QDockWidget QDoubleSpinBox::up-button, PropertyPanel QDoubleSpinBox::up-button,
+QDockWidget QSpinBox::down-button, PropertyPanel QSpinBox::down-button,
+QDockWidget QDoubleSpinBox::down-button, PropertyPanel QDoubleSpinBox::down-button {
+    width: 12px;
+    margin: 0px;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox,
+QDockWidget QFontComboBox, PropertyPanel QFontComboBox {
     padding: 1px 4px;
+    border-radius: 3px;
+    min-width: 0px;
+    min-height: 20px;
+    max-height: 24px;
+}
+
+QDockWidget QComboBox::drop-down, PropertyPanel QComboBox::drop-down,
+QDockWidget QFontComboBox::drop-down, PropertyPanel QFontComboBox::drop-down {
+    width: 16px;
 }
 
 QDockWidget QPushButton, PropertyPanel QPushButton {
@@ -2327,17 +2488,18 @@ QSpinBox:focus {
     border-bottom: 2px solid #3f51b5;
 }
 
-QSpinBox::up-button,
-QSpinBox::down-button {
-    background-color: transparent;
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    background: transparent;
     border: none;
     width: 20px;
 }
 
-QSpinBox::up-button:hover,
-QSpinBox::down-button:hover {
-    background-color: #e0e0e0;
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background: transparent;
 }
+
 
 QComboBox {
     background-color: transparent;
@@ -2355,8 +2517,10 @@ QComboBox:focus {
 
 QComboBox::drop-down {
     border: none;
+    background: transparent;
     width: 24px;
 }
+
 
 QComboBox QAbstractItemView {
     background-color: #ffffff;
@@ -2496,12 +2660,34 @@ QDockWidget QLineEdit, PropertyPanel QLineEdit {
     padding: 1px 0;
 }
 
-QDockWidget QSpinBox, PropertyPanel QSpinBox {
-    padding: 0px 0;
+QDockWidget QSpinBox, PropertyPanel QSpinBox,
+QDockWidget QDoubleSpinBox, PropertyPanel QDoubleSpinBox {
+    padding: 1px 2px;
+    border-radius: 3px;
+    min-height: 20px;
+    max-height: 24px;
 }
 
-QDockWidget QComboBox, PropertyPanel QComboBox {
-    padding: 1px 0;
+QDockWidget QSpinBox::up-button, PropertyPanel QSpinBox::up-button,
+QDockWidget QDoubleSpinBox::up-button, PropertyPanel QDoubleSpinBox::up-button,
+QDockWidget QSpinBox::down-button, PropertyPanel QSpinBox::down-button,
+QDockWidget QDoubleSpinBox::down-button, PropertyPanel QDoubleSpinBox::down-button {
+    width: 12px;
+    margin: 0px;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox,
+QDockWidget QFontComboBox, PropertyPanel QFontComboBox {
+    padding: 1px 4px;
+    border-radius: 3px;
+    min-width: 0px;
+    min-height: 20px;
+    max-height: 24px;
+}
+
+QDockWidget QComboBox::drop-down, PropertyPanel QComboBox::drop-down,
+QDockWidget QFontComboBox::drop-down, PropertyPanel QFontComboBox::drop-down {
+    width: 16px;
 }
 
 QDockWidget QPushButton, PropertyPanel QPushButton {
@@ -2574,9 +2760,9 @@ QRadioButton::indicator {
     border: 2px solid #b0bec5; background-color: #e0e5ec;
 }
 QRadioButton::indicator:checked {
-    border: 2px solid #6c5ce7; background-color: #6c5ce7;
+    border: 2px solid #3f51b5; background-color: #3f51b5;
 }
-QRadioButton::indicator:hover { border: 2px solid #6c5ce7; }
+QRadioButton::indicator:hover { border: 2px solid #3f51b5; }
 
 QCheckBox { spacing: 6px; color: #37474f; }
 QCheckBox::indicator {
@@ -2584,9 +2770,9 @@ QCheckBox::indicator {
     border: 2px solid #b0bec5; background-color: #e0e5ec;
 }
 QCheckBox::indicator:checked {
-    border: 2px solid #6c5ce7; background-color: #6c5ce7;
+    border: 2px solid #3f51b5; background-color: #3f51b5;
 }
-QCheckBox::indicator:hover { border: 2px solid #6c5ce7; }
+QCheckBox::indicator:hover { border: 2px solid #3f51b5; }
 """
 
 TAILWIND_STYLE = """
@@ -2844,19 +3030,19 @@ QSpinBox:focus {
     border-width: 2px;
 }
 
-QSpinBox::up-button,
-QSpinBox::down-button {
-    background-color: #f8fafc;
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    background: transparent;
     border: none;
-    border-radius: 4px;
     width: 20px;
     margin: 2px;
 }
 
-QSpinBox::up-button:hover,
-QSpinBox::down-button:hover {
-    background-color: #e2e8f0;
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background: transparent;
 }
+
 
 QComboBox {
     background-color: #ffffff;
@@ -2878,8 +3064,10 @@ QComboBox:focus {
 
 QComboBox::drop-down {
     border: none;
+    background: transparent;
     width: 28px;
 }
+
 
 QComboBox QAbstractItemView {
     background-color: #ffffff;
@@ -3024,12 +3212,34 @@ QDockWidget QLineEdit, PropertyPanel QLineEdit {
     padding: 1px 4px;
 }
 
-QDockWidget QSpinBox, PropertyPanel QSpinBox {
-    padding: 0px 2px;
+QDockWidget QSpinBox, PropertyPanel QSpinBox,
+QDockWidget QDoubleSpinBox, PropertyPanel QDoubleSpinBox {
+    padding: 1px 2px;
+    border-radius: 3px;
+    min-height: 20px;
+    max-height: 24px;
 }
 
-QDockWidget QComboBox, PropertyPanel QComboBox {
+QDockWidget QSpinBox::up-button, PropertyPanel QSpinBox::up-button,
+QDockWidget QDoubleSpinBox::up-button, PropertyPanel QDoubleSpinBox::up-button,
+QDockWidget QSpinBox::down-button, PropertyPanel QSpinBox::down-button,
+QDockWidget QDoubleSpinBox::down-button, PropertyPanel QDoubleSpinBox::down-button {
+    width: 12px;
+    margin: 0px;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox,
+QDockWidget QFontComboBox, PropertyPanel QFontComboBox {
     padding: 1px 4px;
+    border-radius: 3px;
+    min-width: 0px;
+    min-height: 20px;
+    max-height: 24px;
+}
+
+QDockWidget QComboBox::drop-down, PropertyPanel QComboBox::drop-down,
+QDockWidget QFontComboBox::drop-down, PropertyPanel QFontComboBox::drop-down {
+    width: 16px;
 }
 
 QDockWidget QPushButton, PropertyPanel QPushButton {
@@ -3348,17 +3558,18 @@ QSpinBox:focus {
     border-color: #86b7fe;
 }
 
-QSpinBox::up-button,
-QSpinBox::down-button {
-    background-color: #e9ecef;
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    background: transparent;
     border: none;
     width: 20px;
 }
 
-QSpinBox::up-button:hover,
-QSpinBox::down-button:hover {
-    background-color: #dee2e6;
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background: transparent;
 }
+
 
 QComboBox {
     background-color: #ffffff;
@@ -3379,8 +3590,10 @@ QComboBox:focus {
 
 QComboBox::drop-down {
     border: none;
+    background: transparent;
     width: 28px;
 }
+
 
 QComboBox QAbstractItemView {
     background-color: #ffffff;
@@ -3530,12 +3743,34 @@ QDockWidget QLineEdit, PropertyPanel QLineEdit {
     padding: 1px 4px;
 }
 
-QDockWidget QSpinBox, PropertyPanel QSpinBox {
-    padding: 0px 2px;
+QDockWidget QSpinBox, PropertyPanel QSpinBox,
+QDockWidget QDoubleSpinBox, PropertyPanel QDoubleSpinBox {
+    padding: 1px 2px;
+    border-radius: 3px;
+    min-height: 20px;
+    max-height: 24px;
 }
 
-QDockWidget QComboBox, PropertyPanel QComboBox {
+QDockWidget QSpinBox::up-button, PropertyPanel QSpinBox::up-button,
+QDockWidget QDoubleSpinBox::up-button, PropertyPanel QDoubleSpinBox::up-button,
+QDockWidget QSpinBox::down-button, PropertyPanel QSpinBox::down-button,
+QDockWidget QDoubleSpinBox::down-button, PropertyPanel QDoubleSpinBox::down-button {
+    width: 12px;
+    margin: 0px;
+}
+
+QDockWidget QComboBox, PropertyPanel QComboBox,
+QDockWidget QFontComboBox, PropertyPanel QFontComboBox {
     padding: 1px 4px;
+    border-radius: 3px;
+    min-width: 0px;
+    min-height: 20px;
+    max-height: 24px;
+}
+
+QDockWidget QComboBox::drop-down, PropertyPanel QComboBox::drop-down,
+QDockWidget QFontComboBox::drop-down, PropertyPanel QFontComboBox::drop-down {
+    width: 16px;
 }
 
 QDockWidget QPushButton, PropertyPanel QPushButton {
@@ -3610,10 +3845,10 @@ QRadioButton::indicator:unchecked {
     border: 2px solid #475569; background-color: #f8fafc;
 }
 QRadioButton::indicator:checked {
-    border: 4px solid #1d4ed8; background-color: #1d4ed8;
+    border: 4px solid #0d6efd; background-color: #0d6efd;
 }
-QRadioButton::indicator:unchecked:hover { border: 2px solid #1d4ed8; }
-QRadioButton::indicator:checked:hover { border: 4px solid #1e40af; background-color: #1e40af; }
+QRadioButton::indicator:unchecked:hover { border: 2px solid #0d6efd; }
+QRadioButton::indicator:checked:hover { border: 4px solid #0b5ed7; background-color: #0b5ed7; }
 
 QCheckBox { spacing: 6px; color: #1e293b; }
 QCheckBox::indicator {
@@ -3624,21 +3859,21 @@ QCheckBox::indicator:unchecked {
     border: 2px solid #475569; background-color: #f8fafc;
 }
 QCheckBox::indicator:checked {
-    border: 2px solid #1d4ed8; background-color: #1d4ed8;
+    border: 2px solid #0d6efd; background-color: #0d6efd;
 }
-QCheckBox::indicator:unchecked:hover { border: 2px solid #1d4ed8; }
-QCheckBox::indicator:checked:hover { border: 2px solid #1e40af; background-color: #1e40af; }
+QCheckBox::indicator:unchecked:hover { border: 2px solid #0d6efd; }
+QCheckBox::indicator:checked:hover { border: 2px solid #0b5ed7; background-color: #0b5ed7; }
 """
 
 # Style registry for easy access
 STYLES = {
-    "Foundation (Dark)": FOUNDATION_STYLE,
-    "Bulma (Light)": BULMA_STYLE,
-    "Bauhaus": BAUHAUS_STYLE,
-    "Neumorphism": NEUMORPHISM_STYLE,
-    "Materialize": MATERIALIZE_STYLE,
-    "Tailwind": TAILWIND_STYLE,
-    "Bootstrap": BOOTSTRAP_STYLE,
+    "Foundation (Dark)": FOUNDATION_STYLE + _arrow_css("Foundation (Dark)"),
+    "Bulma (Light)": BULMA_STYLE + _arrow_css("Bulma (Light)"),
+    "Bauhaus": BAUHAUS_STYLE + _arrow_css("Bauhaus"),
+    "Neumorphism": NEUMORPHISM_STYLE + _arrow_css("Neumorphism"),
+    "Materialize": MATERIALIZE_STYLE + _arrow_css("Materialize"),
+    "Tailwind": TAILWIND_STYLE + _arrow_css("Tailwind"),
+    "Bootstrap": BOOTSTRAP_STYLE + _arrow_css("Bootstrap"),
 }
 
 DEFAULT_STYLE = "Tailwind"

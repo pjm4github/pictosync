@@ -94,6 +94,66 @@ class MetaMixin:
         self._rotating = False
         self._rotation_start_angle = 0.0
 
+    def _get_text_margins(self):
+        """Return (left, right, top, bottom) margins from the effective TextFrame.
+
+        Falls back to (4, 4, 4, 4) when no metadata is available.
+        """
+        if hasattr(self, "meta") and hasattr(self.meta, "effective_frame"):
+            frame = self.meta.effective_frame()
+            return (frame.margin_left, frame.margin_right,
+                    frame.margin_top, frame.margin_bottom)
+        return (4.0, 4.0, 4.0, 4.0)
+
+    def _position_label_in_rect(self, area_x: float, area_y: float,
+                                area_w: float, area_h: float):
+        """Position ``_label_item`` inside a content rectangle using TextFrame margins.
+
+        Args:
+            area_x, area_y: Top-left of the shape's content area (after any
+                shape-specific insets such as cylinder caps or hexagon indent).
+            area_w, area_h: Size of that content area.
+
+        Behaviour:
+            * **wrap=True** (default): text wraps at ``right margin``; if text
+              is taller than the available height the bottom boundary is ignored.
+            * **wrap=False**: ``setTextWidth(-1)`` — text extends beyond the
+              right margin without wrapping.
+            * **valign=top**: text starts at ``top margin``.
+            * **valign=bottom**: text bottom sits at ``bottom margin``; if text
+              is taller it overflows above the top boundary.
+            * **valign=middle**: text is centred between top and bottom margins.
+        """
+        ml, mr, mt, mb = self._get_text_margins()
+        wrap = getattr(self.meta, "wrap", True) if hasattr(self, "meta") else True
+
+        text_area_w = area_w - ml - mr
+        if wrap:
+            self._label_item.setTextWidth(max(10, text_area_w))
+        else:
+            self._label_item.setTextWidth(-1)
+
+        text_height = self._label_item.boundingRect().height()
+        text_area_h = area_h - mt - mb
+
+        # Resolve vertical alignment — prefer effective_frame, then legacy field
+        valign = "top"
+        if hasattr(self, "meta"):
+            if hasattr(self.meta, "effective_frame"):
+                valign = self.meta.effective_frame().valign or "top"
+            else:
+                valign = getattr(self.meta, "valign",
+                                 getattr(self.meta, "text_valign", "top"))
+
+        if valign == "middle":
+            y_pos = area_y + mt + (text_area_h - text_height) / 2
+        elif valign == "bottom":
+            y_pos = area_y + area_h - mb - text_height
+        else:  # top (default)
+            y_pos = area_y + mt
+
+        self._label_item.setPos(area_x + ml, y_pos)
+
     def _should_paint_handles(self) -> bool:
         """Check if this item should paint selection handles.
 
@@ -509,6 +569,54 @@ class MetaMixin:
         self._end_resize_tracking()
         self._rotating = False
         self._notify_changed()
+
+    def _render_label_from_meta(self):
+        """Shared label rendering using overlay-2.0 blocks path.
+
+        Resolves effective frame + default_format, sets font/alignment
+        on ``_label_item``, then renders from blocks (preferred) or
+        legacy HTML text fallback.  Finishes with ``_update_label_position()``.
+        """
+        from PyQt6.QtGui import QFont as _QFont, QTextOption as _QTextOption
+        from PyQt6.QtCore import Qt as _Qt
+        from models import _blocks_to_legacy_text
+
+        _eff_frame = self.meta.effective_frame()
+        _eff_fmt = self.meta.effective_default_format()
+
+        font_family = _eff_fmt.font_family
+        font_size = max(6, int(_eff_fmt.font_size or 12))
+        halign = _eff_frame.halign
+        color_str = _eff_fmt.color or getattr(self.meta, "color", "")
+
+        if color_str:
+            from utils import hex_to_qcolor as _htq
+            self.text_color = _htq(color_str, self.text_color)
+
+        fnt = _QFont(font_family) if font_family else _QFont()
+        fnt.setPointSize(font_size)
+        self._label_item.setFont(fnt)
+        self._label_item.setDefaultTextColor(self.text_color)
+
+        _halign_flag = {
+            "left":      _Qt.AlignmentFlag.AlignLeft,
+            "center":    _Qt.AlignmentFlag.AlignHCenter,
+            "right":     _Qt.AlignmentFlag.AlignRight,
+            "justified": _Qt.AlignmentFlag.AlignJustify,
+        }.get(halign, _Qt.AlignmentFlag.AlignHCenter)
+        _opt = self._label_item.document().defaultTextOption()
+        _opt.setAlignment(_halign_flag)
+        self._label_item.document().setDefaultTextOption(_opt)
+
+        if self.meta.blocks is not None:
+            html_text = _blocks_to_legacy_text(self.meta.blocks)
+            self._label_item.setHtml(html_text if html_text else "")
+        elif getattr(self.meta, "text", ""):
+            self._label_item.setHtml(self.meta.text)
+        else:
+            self._label_item.setHtml("")
+
+        self._update_label_position()
 
     def _add_angle_to_geom(self, geom: dict) -> dict:
         """Add angle to geom dict if non-zero. Call from to_record().

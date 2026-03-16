@@ -261,7 +261,7 @@ class TestItemCreationAndJSON:
         mw = main_window
         item, ann_id = _create_item(mw, kind, qapp)
         ann = _get_ann(mw, ann_id)
-        assert "meta" in ann, f"No 'meta' key for {kind}"
+        assert "contents" in ann, f"No 'contents' key for {kind}"
         assert "style" in ann, f"No 'style' key for {kind}"
 
     @pytest.mark.parametrize("kind", ALL_KINDS)
@@ -294,7 +294,7 @@ class TestPropertyPanelMeta:
         qapp.processEvents()
 
         ann = _get_ann(mw, ann_id)
-        assert ann["meta"]["label"] == "TestLabel"
+        assert ann["contents"]["label"] == "TestLabel"
 
     @pytest.mark.parametrize("kind", ALL_KINDS)
     def test_tech_edit(self, main_window, qapp, kind):
@@ -308,7 +308,7 @@ class TestPropertyPanelMeta:
         qapp.processEvents()
 
         ann = _get_ann(mw, ann_id)
-        assert ann["meta"]["tech"] == "gRPC"
+        assert ann["contents"]["tech"] == "gRPC"
 
     @pytest.mark.parametrize("kind", ALL_KINDS)
     def test_note_edit(self, main_window, qapp, kind):
@@ -322,7 +322,7 @@ class TestPropertyPanelMeta:
         qapp.processEvents()
 
         ann = _get_ann(mw, ann_id)
-        assert ann["meta"]["note"] == "A useful note"
+        assert ann["contents"]["note"] == "A useful note"
 
     @pytest.mark.parametrize("kind", ALL_KINDS)
     def test_all_meta_fields_together(self, main_window, qapp, kind):
@@ -338,9 +338,9 @@ class TestPropertyPanelMeta:
         qapp.processEvents()
 
         ann = _get_ann(mw, ann_id)
-        assert ann["meta"]["label"] == "MyService"
-        assert ann["meta"]["tech"] == "HTTPS/JSON"
-        assert ann["meta"]["note"] == "Main service"
+        assert ann["contents"]["label"] == "MyService"
+        assert ann["contents"]["tech"] == "HTTPS/JSON"
+        assert ann["contents"]["note"] == "Main service"
 
 
 # ---------------------------------------------------------------------------
@@ -361,7 +361,7 @@ class TestPenColorChange:
 
         ann = _get_ann(mw, ann_id)
         pen_color = ann["style"]["pen"]["color"].upper()
-        assert pen_color == "#00FF00"
+        assert pen_color in ("#00FF00", "#00FF00FF")
 
     @pytest.mark.parametrize("kind", ALL_KINDS)
     def test_pen_color_custom(self, main_window, qapp, kind):
@@ -374,7 +374,7 @@ class TestPenColorChange:
 
         ann = _get_ann(mw, ann_id)
         pen_color = ann["style"]["pen"]["color"].upper()
-        assert pen_color == "#AB12CD"
+        assert pen_color in ("#AB12CD", "#AB12CDFF")
 
 
 # ---------------------------------------------------------------------------

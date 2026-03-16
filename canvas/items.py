@@ -269,62 +269,10 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
 
     def _update_label_position(self):
         r = self.rect()
-        # Text padding - using hardcoded default. Default: 4 pixels
-        padding = 4
-        self._label_item.setTextWidth(max(10, r.width() - 2 * padding))
-
-        # Calculate text height after setting width (so wrapping is applied)
-        text_height = self._label_item.boundingRect().height()
-        available_height = r.height() - 2 * padding
-
-        # Get vertical alignment from meta
-        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
-
-        if valign == "middle":
-            y_pos = padding + (available_height - text_height) / 2
-        elif valign == "bottom":
-            y_pos = r.height() - padding - text_height
-        else:  # top (default)
-            y_pos = padding
-
-        self._label_item.setPos(padding, max(padding, y_pos))
+        self._position_label_in_rect(0, 0, r.width(), r.height())
 
     def _update_label_text(self):
-        lines = []
-        align_map = {"left": "left", "center": "center", "right": "right"}
-
-        # New contents model: use pre-built HTML if available
-        html_text = getattr(self.meta, "text", "")
-        if html_text:
-            self._label_item.setHtml(html_text)
-        else:
-            # Legacy path: build HTML from label/tech/note fields
-            spacing = getattr(self.meta, "text_spacing", getattr(self.meta, "spacing", 0.0))
-            margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
-
-            label = getattr(self.meta, "label", "")
-            tech = getattr(self.meta, "tech", "")
-            note = getattr(self.meta, "note", "")
-            if label:
-                la = getattr(self.meta, "label_align", "center")
-                align = align_map.get(la, "center")
-                size = getattr(self.meta, "label_size", 12)
-                lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{label}</b></p>')
-            if tech:
-                ta = getattr(self.meta, "tech_align", "center")
-                align = align_map.get(ta, "center")
-                size = getattr(self.meta, "tech_size", 10)
-                lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{tech}]</i></p>')
-            if note:
-                na = getattr(self.meta, "note_align", "center")
-                align = align_map.get(na, "center")
-                size = getattr(self.meta, "note_size", 10)
-                lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{note}</p>')
-
-            self._label_item.setHtml("".join(lines) if lines else "")
-        self._label_item.setDefaultTextColor(self.text_color)
-        # Update position after text changes (valign may need recalculation)
-        self._update_label_position()
+        self._render_label_from_meta()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         self.meta = meta
@@ -554,95 +502,15 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.setBrush(QBrush(self.brush_color))
 
     def _update_label_position(self):
-        padding = 4 + self._adjust1 * 0.3  # Extra padding for rounded corners
-        self._label_item.setTextWidth(max(10, self._width - 2 * padding))
-
-        # Calculate text height after setting width (so wrapping is applied)
-        text_height = self._label_item.boundingRect().height()
-        available_height = self._height - 2 * padding
-
-        # Get vertical alignment from meta (new field: valign; legacy: text_valign)
-        valign = getattr(self.meta, "valign", getattr(self.meta, "text_valign", "top")) if hasattr(self, "meta") else "top"
-
-        if valign == "middle":
-            y_pos = padding + (available_height - text_height) / 2
-        elif valign == "bottom":
-            y_pos = self._height - padding - text_height
-        else:  # top (default)
-            y_pos = padding
-
-        self._label_item.setPos(padding, max(padding, y_pos))
+        # Rounded corners push the content area inward slightly
+        corner_inset = self._adjust1 * 0.3
+        self._position_label_in_rect(
+            corner_inset, corner_inset,
+            self._width - 2 * corner_inset,
+            self._height - 2 * corner_inset)
 
     def _update_label_text(self):
-        from PyQt6.QtGui import QFont as _QFont, QTextOption as _QTextOption
-        from PyQt6.QtCore import Qt as _Qt
-
-        # Resolve effective frame and default_format (overlay-2.0 or flat fallback)
-        _eff_frame = self.meta.effective_frame()
-        _eff_fmt = self.meta.effective_default_format()
-
-        font_family = _eff_fmt.font_family
-        font_size = max(6, int(_eff_fmt.font_size or 12))
-        halign = _eff_frame.halign
-        color_str = _eff_fmt.color or getattr(self.meta, "color", "")
-
-        # Sync text_color from resolved color
-        if color_str:
-            from utils import hex_to_qcolor as _htq
-            self.text_color = _htq(color_str, self.text_color)
-
-        fnt = _QFont(font_family) if font_family else _QFont()
-        fnt.setPointSize(font_size)
-        self._label_item.setFont(fnt)
-        self._label_item.setDefaultTextColor(self.text_color)
-
-        # Apply halign as document default alignment
-        _halign_flag = {
-            "left":      _Qt.AlignmentFlag.AlignLeft,
-            "center":    _Qt.AlignmentFlag.AlignHCenter,
-            "right":     _Qt.AlignmentFlag.AlignRight,
-            "justified": _Qt.AlignmentFlag.AlignJustify,
-        }.get(halign, _Qt.AlignmentFlag.AlignHCenter)
-        _opt = self._label_item.document().defaultTextOption()
-        _opt.setAlignment(_halign_flag)
-        self._label_item.document().setDefaultTextOption(_opt)
-
-        # Render: prefer overlay-2.0 blocks, fall back to legacy HTML / label fields
-        if self.meta.blocks is not None:
-            from models import _blocks_to_legacy_text
-            html_text = _blocks_to_legacy_text(self.meta.blocks)
-            self._label_item.setHtml(html_text if html_text else "")
-        elif getattr(self.meta, "text", ""):
-            self._label_item.setHtml(self.meta.text)
-        else:
-            # Legacy path: build HTML from label/tech/note fields
-            lines = []
-            align_map = {"left": "left", "center": "center", "right": "right"}
-            spacing = getattr(self.meta, "text_spacing", getattr(self.meta, "spacing", 0.0))
-            margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
-
-            label = getattr(self.meta, "label", "")
-            tech = getattr(self.meta, "tech", "")
-            note = getattr(self.meta, "note", "")
-            if label:
-                la = getattr(self.meta, "label_align", "center")
-                align = align_map.get(la, "center")
-                size = getattr(self.meta, "label_size", 12)
-                lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{label}</b></p>')
-            if tech:
-                ta = getattr(self.meta, "tech_align", "center")
-                align = align_map.get(ta, "center")
-                size = getattr(self.meta, "tech_size", 10)
-                lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{tech}]</i></p>')
-            if note:
-                na = getattr(self.meta, "note_align", "center")
-                align = align_map.get(na, "center")
-                size = getattr(self.meta, "note_size", 10)
-                lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{note}</p>')
-
-            self._label_item.setHtml("".join(lines) if lines else "")
-
-        self._update_label_position()
+        self._render_label_from_meta()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         self.meta = meta
@@ -905,62 +773,16 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
 
     def _update_label_position(self):
         r = self.rect()
-        # Ellipse needs more padding to keep text inside the curved shape
-        padding = max(8, r.width() * 0.1, r.height() * 0.1)
-        self._label_item.setTextWidth(max(10, r.width() - 2 * padding))
-
-        # Calculate text height after setting width (so wrapping is applied)
-        text_height = self._label_item.boundingRect().height()
-        available_height = r.height() - 2 * padding
-
-        # Get vertical alignment from meta
-        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
-
-        if valign == "middle":
-            y_pos = padding + (available_height - text_height) / 2
-        elif valign == "bottom":
-            y_pos = r.height() - padding - text_height
-        else:  # top (default)
-            y_pos = padding
-
-        self._label_item.setPos(padding, max(padding, y_pos))
+        # Ellipse inscribes the text area — inset ~10% to stay inside the curve
+        inset_x = max(4, r.width() * 0.1)
+        inset_y = max(4, r.height() * 0.1)
+        self._position_label_in_rect(
+            inset_x, inset_y,
+            r.width() - 2 * inset_x,
+            r.height() - 2 * inset_y)
 
     def _update_label_text(self):
-        lines = []
-        align_map = {"left": "left", "center": "center", "right": "right"}
-
-        # New contents model: use pre-built HTML if available
-        html_text = getattr(self.meta, "text", "")
-        if html_text:
-            self._label_item.setHtml(html_text)
-        else:
-            # Legacy path: build HTML from label/tech/note fields
-            spacing = getattr(self.meta, "text_spacing", getattr(self.meta, "spacing", 0.0))
-            margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
-
-            label = getattr(self.meta, "label", "")
-            tech = getattr(self.meta, "tech", "")
-            note = getattr(self.meta, "note", "")
-            if label:
-                la = getattr(self.meta, "label_align", "center")
-                align = align_map.get(la, "center")
-                size = getattr(self.meta, "label_size", 12)
-                lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{label}</b></p>')
-            if tech:
-                ta = getattr(self.meta, "tech_align", "center")
-                align = align_map.get(ta, "center")
-                size = getattr(self.meta, "tech_size", 10)
-                lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{tech}]</i></p>')
-            if note:
-                na = getattr(self.meta, "note_align", "center")
-                align = align_map.get(na, "center")
-                size = getattr(self.meta, "note_size", 10)
-                lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{note}</p>')
-
-            self._label_item.setHtml("".join(lines) if lines else "")
-        self._label_item.setDefaultTextColor(self.text_color)
-        # Update position after text changes (valign may need recalculation)
-        self._update_label_position()
+        self._render_label_from_meta()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         self.meta = meta
@@ -1189,180 +1011,124 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
         self.setPen(pen)
 
     def _update_label_position(self):
+        """Position _label_item relative to the line midpoint.
+
+        When ``text_box_width`` is set, text wraps inside a box whose
+        horizontal position is controlled by halign (left/center/right
+        of the midpoint) and vertical position by valign.  Otherwise
+        text floats centered on the midpoint with no wrapping.
+        """
         ln = self.line()
         mid_x = (ln.x1() + ln.x2()) / 2
         mid_y = (ln.y1() + ln.y2()) / 2
 
-        # Check if we have a text bounding box width (height is optional)
         has_text_box = (hasattr(self, "meta") and self.meta.text_box_width > 0)
 
         if has_text_box:
-            # Use the text box width for wrapping
             box_w = self.meta.text_box_width
             padding = 4
-
-            # Set text width for wrapping - this is the key for text wrapping
             text_width = box_w - 2 * padding
-            self._label_item.setTextWidth(text_width)
-            self._tech_item.setTextWidth(text_width)
-            self._note_item.setTextWidth(text_width)
+            self._label_item.setTextWidth(max(10, text_width))
 
-            # Calculate total height of visible text items
-            total_height = 0
-            if hasattr(self, "meta"):
-                if self.meta.label and self._label_item.isVisible():
-                    total_height += self._label_item.boundingRect().height()
-                if self.meta.tech and self._tech_item.isVisible():
-                    total_height += self._tech_item.boundingRect().height()
-                if self.meta.note and self._note_item.isVisible():
-                    total_height += self._note_item.boundingRect().height()
+            text_height = self._label_item.boundingRect().height()
 
-            # Use text_box_height if set, otherwise use actual content height
             if self.meta.text_box_height > 0:
                 box_h = self.meta.text_box_height
             else:
-                box_h = total_height + 2 * padding
+                box_h = text_height + 2 * padding
 
-            # Determine text block alignment relative to line midpoint
-            # Get the dominant alignment (use label_align as primary)
-            block_align = "center"
+            # Horizontal position of the text box relative to midpoint
+            _eff_halign = "center"
             if hasattr(self, "meta"):
-                block_align = self.meta.label_align
+                _eff_halign = self.meta.effective_frame().halign or "center"
 
-            # Position the text box based on block alignment
-            # All alignments are vertically centered on the line midpoint (middle-left, middle-center, middle-right)
-            box_y = mid_y - box_h / 2  # Vertically centered on midpoint
-
-            if block_align == "left":
-                # Text block is to the LEFT of the line center (right edge at midpoint)
+            if _eff_halign == "left":
                 box_x = mid_x - box_w
-            elif block_align == "right":
-                # Text block is to the RIGHT of the line center (left edge at midpoint)
+            elif _eff_halign == "right":
                 box_x = mid_x
-            else:  # center
-                # Text block is centered on line horizontally
+            else:
                 box_x = mid_x - box_w / 2
 
+            # Vertical position of the text box relative to midpoint
+            _eff_valign = "top"
+            if hasattr(self, "meta"):
+                _eff_valign = self.meta.effective_frame().valign or "top"
+
+            if _eff_valign == "middle":
+                box_y = mid_y - box_h / 2
+            elif _eff_valign == "bottom":
+                box_y = mid_y - box_h
+            else:
+                box_y = mid_y - box_h / 2  # default: centered
+
             self._text_box_rect = QRectF(box_x, box_y, box_w, box_h)
-
-            # Position text items inside the box
-            current_y = box_y + padding
-
-            if hasattr(self, "meta"):
-                if self.meta.label and self._label_item.isVisible():
-                    self._label_item.setPos(box_x + padding, current_y)
-                    current_y += self._label_item.boundingRect().height()
-
-                if self.meta.tech and self._tech_item.isVisible():
-                    self._tech_item.setPos(box_x + padding, current_y)
-                    current_y += self._tech_item.boundingRect().height()
-
-                if self.meta.note and self._note_item.isVisible():
-                    self._note_item.setPos(box_x + padding, current_y)
+            self._label_item.setPos(box_x + padding, box_y + padding)
         else:
-            # No text box - use original positioning logic
             self._text_box_rect = None
-
-            # Remove text width constraint
             self._label_item.setTextWidth(-1)
-            self._tech_item.setTextWidth(-1)
-            self._note_item.setTextWidth(-1)
 
-            # Gather visible items (those with text) and calculate total height
-            visible_items = []
-            if hasattr(self, "meta"):
-                if self.meta.label:
-                    visible_items.append((self._label_item, self.meta.label_align))
-                if self.meta.tech:
-                    visible_items.append((self._tech_item, self.meta.tech_align))
-                if self.meta.note:
-                    visible_items.append((self._note_item, self.meta.note_align))
-
-            if not visible_items:
-                return
-
-            # Calculate total height of all visible text items
-            total_height = sum(item.boundingRect().height() for item, _ in visible_items)
-
-            # Vertically center on the line midpoint
-            current_y = mid_y - total_height / 2
-
-            for item, align in visible_items:
-                item_width = item.boundingRect().width()
-                item_height = item.boundingRect().height()
-
-                # Position based on alignment relative to line center (middle-left, middle-center, middle-right)
-                if align == "left":
-                    # Text ends at center point
-                    pos_x = mid_x - item_width
-                elif align == "right":
-                    # Text starts at center point
-                    pos_x = mid_x
-                else:  # center
-                    # Text centered on center point
-                    pos_x = mid_x - item_width / 2
-
-                item.setPos(pos_x, current_y)
-                current_y += item_height
+            text_w = self._label_item.boundingRect().width()
+            text_h = self._label_item.boundingRect().height()
+            self._label_item.setPos(mid_x - text_w / 2, mid_y - text_h / 2)
 
     def _update_label_text(self):
-        # Check if we have a text box - this affects text justification
-        has_text_box = self.meta.text_box_width > 0
+        """Render all blocks into _label_item using _blocks_to_legacy_text.
 
-        # Determine text justification within the box based on block alignment
-        # - "left" block alignment = text right-justified within box
-        # - "right" block alignment = text left-justified within box
-        # - "center" block alignment = text centered within box
-        def get_text_align(block_align: str) -> str:
-            if has_text_box:
-                if block_align == "left":
-                    return "right"  # Text right-justified when box is left of line
-                elif block_align == "right":
-                    return "left"   # Text left-justified when box is right of line
-                else:
-                    return "center"
-            else:
-                return "center"  # Default for no text box
+        Per-block alignment is preserved in the HTML (``text-align`` on each
+        ``<p>``), matching the text_contents widget display.  _tech_item and
+        _note_item are hidden — all text goes through _label_item.
+        """
+        from models import _blocks_to_legacy_text
+        from PyQt6.QtGui import QFont as _QFont, QTextOption as _QTextOption
+        from PyQt6.QtCore import Qt as _Qt
 
-        # Get hex color for HTML
-        text_hex = "#{:02X}{:02X}{:02X}".format(
-            self.text_color.red(), self.text_color.green(), self.text_color.blue()
-        )
+        _eff_frame = self.meta.effective_frame()
+        _eff_fmt = self.meta.effective_default_format()
 
-        # Update label text item
-        if self.meta.label:
-            text_align = get_text_align(self.meta.label_align)
-            size = self.meta.label_size
-            html = f'<p style="text-align:{text_align}; font-size:{size}pt; color:{text_hex}; margin:0;"><b>{self.meta.label}</b></p>'
-            self._label_item.setHtml(html)
-            self._label_item.setVisible(True)
+        # Sync text_color from effective default format
+        color_str = _eff_fmt.color or getattr(self.meta, "color", "")
+        if color_str:
+            from utils import hex_to_qcolor as _htq
+            self.text_color = _htq(color_str, self.text_color)
+
+        font_family = _eff_fmt.font_family
+        font_size = max(6, int(_eff_fmt.font_size or 12))
+        halign = _eff_frame.halign or "center"
+
+        fnt = _QFont(font_family) if font_family else _QFont()
+        fnt.setPointSize(font_size)
+        self._label_item.setFont(fnt)
+        self._label_item.setDefaultTextColor(self.text_color)
+
+        # Set default alignment on the document
+        _halign_flag = {
+            "left":      _Qt.AlignmentFlag.AlignLeft,
+            "center":    _Qt.AlignmentFlag.AlignHCenter,
+            "right":     _Qt.AlignmentFlag.AlignRight,
+            "justified": _Qt.AlignmentFlag.AlignJustify,
+        }.get(halign, _Qt.AlignmentFlag.AlignHCenter)
+        _opt = self._label_item.document().defaultTextOption()
+        _opt.setAlignment(_halign_flag)
+        self._label_item.document().setDefaultTextOption(_opt)
+
+        # Render all blocks into _label_item — per-block alignment is in the HTML
+        if self.meta.blocks is not None:
+            html_text = _blocks_to_legacy_text(self.meta.blocks)
+            self._label_item.setHtml(html_text if html_text else "")
+        elif getattr(self.meta, "text", ""):
+            self._label_item.setHtml(self.meta.text)
         else:
-            self._label_item.setPlainText("")
-            self._label_item.setVisible(False)
+            self._label_item.setHtml("")
 
-        # Update tech text item
-        if self.meta.tech:
-            text_align = get_text_align(self.meta.tech_align)
-            size = self.meta.tech_size
-            html = f'<p style="text-align:{text_align}; font-size:{size}pt; color:{text_hex}; margin:0;"><i>[{self.meta.tech}]</i></p>'
-            self._tech_item.setHtml(html)
-            self._tech_item.setVisible(True)
-        else:
-            self._tech_item.setPlainText("")
-            self._tech_item.setVisible(False)
+        has_content = bool(self._label_item.toPlainText().strip())
+        self._label_item.setVisible(has_content)
 
-        # Update note text item
-        if self.meta.note:
-            text_align = get_text_align(self.meta.note_align)
-            size = self.meta.note_size
-            html = f'<p style="text-align:{text_align}; font-size:{size}pt; color:{text_hex}; margin:0;">{self.meta.note}</p>'
-            self._note_item.setHtml(html)
-            self._note_item.setVisible(True)
-        else:
-            self._note_item.setPlainText("")
-            self._note_item.setVisible(False)
+        # Hide legacy separate items — all text is now in _label_item
+        self._tech_item.setPlainText("")
+        self._tech_item.setVisible(False)
+        self._note_item.setPlainText("")
+        self._note_item.setVisible(False)
 
-        # Update position after text changes (alignment may have changed)
         self._update_label_position()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
@@ -2009,46 +1775,13 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.setBrush(QBrush(self.brush_color))
 
     def _update_label_position(self):
-        padding = 4 + self._width * self._adjust1 * 0.5
-        self._label_item.setTextWidth(max(10, self._width - 2 * padding))
-
-        text_height = self._label_item.boundingRect().height()
-        available_height = self._height - 2 * padding
-
-        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
-
-        if valign == "middle":
-            y_pos = padding + (available_height - text_height) / 2
-        elif valign == "bottom":
-            y_pos = self._height - padding - text_height
-        else:
-            y_pos = padding
-
-        self._label_item.setPos(padding, max(padding, y_pos))
+        # Hexagon indent pushes the content area inward on left/right
+        indent = self._width * self._adjust1 * 0.5
+        self._position_label_in_rect(
+            indent, 0, self._width - 2 * indent, self._height)
 
     def _update_label_text(self):
-        lines = []
-        align_map = {"left": "left", "center": "center", "right": "right"}
-
-        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
-        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
-
-        if self.meta.label:
-            align = align_map.get(self.meta.label_align, "center")
-            size = self.meta.label_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
-        if self.meta.tech:
-            align = align_map.get(self.meta.tech_align, "center")
-            size = self.meta.tech_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
-        if self.meta.note:
-            align = align_map.get(self.meta.note_align, "center")
-            size = self.meta.note_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
-
-        self._label_item.setHtml("".join(lines) if lines else "")
-        self._label_item.setDefaultTextColor(self.text_color)
-        self._update_label_position()
+        self._render_label_from_meta()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         self.meta = meta
@@ -2337,48 +2070,13 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.setBrush(QBrush(self.brush_color))
 
     def _update_label_position(self):
+        # Text goes in the body area between the top and bottom caps
         cap_h = self._height * self._adjust1
-        padding = 4
-        self._label_item.setTextWidth(max(10, self._width - 2 * padding))
-
-        text_height = self._label_item.boundingRect().height()
-        # Text goes in body area, below top cap
-        available_height = self._height - cap_h * 2 - 2 * padding
-
-        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
-
-        if valign == "middle":
-            y_pos = cap_h + padding + (available_height - text_height) / 2
-        elif valign == "bottom":
-            y_pos = self._height - cap_h - padding - text_height
-        else:
-            y_pos = cap_h + padding
-
-        self._label_item.setPos(padding, max(cap_h + padding, y_pos))
+        self._position_label_in_rect(
+            0, cap_h, self._width, self._height - 2 * cap_h)
 
     def _update_label_text(self):
-        lines = []
-        align_map = {"left": "left", "center": "center", "right": "right"}
-
-        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
-        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
-
-        if self.meta.label:
-            align = align_map.get(self.meta.label_align, "center")
-            size = self.meta.label_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
-        if self.meta.tech:
-            align = align_map.get(self.meta.tech_align, "center")
-            size = self.meta.tech_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
-        if self.meta.note:
-            align = align_map.get(self.meta.note_align, "center")
-            size = self.meta.note_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
-
-        self._label_item.setHtml("".join(lines) if lines else "")
-        self._label_item.setDefaultTextColor(self.text_color)
-        self._update_label_position()
+        self._render_label_from_meta()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         self.meta = meta
@@ -2707,49 +2405,14 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.setBrush(QBrush(self.brush_color))
 
     def _update_label_position(self):
-        shaft_margin = self._height * (1 - self._adjust1) / 2
-        head_x = self._width - self._adjust2
-        padding = 4
-        # Text goes in the shaft area
-        self._label_item.setTextWidth(max(10, head_x - 2 * padding))
-
-        text_height = self._label_item.boundingRect().height()
+        # Text goes in the shaft area (excluding the arrowhead)
+        shaft_top = self._height * (1 - self._adjust1) / 2
         shaft_height = self._height * self._adjust1
-
-        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
-
-        if valign == "middle":
-            y_pos = shaft_margin + (shaft_height - text_height) / 2
-        elif valign == "bottom":
-            y_pos = self._height - shaft_margin - padding - text_height
-        else:
-            y_pos = shaft_margin + padding
-
-        self._label_item.setPos(padding, max(shaft_margin + padding, y_pos))
+        shaft_width = self._width - self._adjust2  # exclude head
+        self._position_label_in_rect(0, shaft_top, shaft_width, shaft_height)
 
     def _update_label_text(self):
-        lines = []
-        align_map = {"left": "left", "center": "center", "right": "right"}
-
-        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
-        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
-
-        if self.meta.label:
-            align = align_map.get(self.meta.label_align, "center")
-            size = self.meta.label_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
-        if self.meta.tech:
-            align = align_map.get(self.meta.tech_align, "center")
-            size = self.meta.tech_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
-        if self.meta.note:
-            align = align_map.get(self.meta.note_align, "center")
-            size = self.meta.note_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
-
-        self._label_item.setHtml("".join(lines) if lines else "")
-        self._label_item.setDefaultTextColor(self.text_color)
-        self._update_label_position()
+        self._render_label_from_meta()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         self.meta = meta
@@ -3123,46 +2786,10 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.setBrush(QBrush(self.brush_color))
 
     def _update_label_position(self):
-        padding = 8
-        self._label_item.setTextWidth(max(10, self._width - 2 * padding))
-
-        text_height = self._label_item.boundingRect().height()
-        available_height = self._height - 2 * padding
-
-        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
-
-        if valign == "middle":
-            y_pos = padding + (available_height - text_height) / 2
-        elif valign == "bottom":
-            y_pos = self._height - padding - text_height
-        else:
-            y_pos = padding
-
-        self._label_item.setPos(padding, max(padding, y_pos))
+        self._position_label_in_rect(0, 0, self._width, self._height)
 
     def _update_label_text(self):
-        lines = []
-        align_map = {"left": "left", "center": "center", "right": "right"}
-
-        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
-        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
-
-        if self.meta.label:
-            align = align_map.get(self.meta.label_align, "center")
-            size = self.meta.label_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
-        if self.meta.tech:
-            align = align_map.get(self.meta.tech_align, "center")
-            size = self.meta.tech_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
-        if self.meta.note:
-            align = align_map.get(self.meta.note_align, "center")
-            size = self.meta.note_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
-
-        self._label_item.setHtml("".join(lines) if lines else "")
-        self._label_item.setDefaultTextColor(self.text_color)
-        self._update_label_position()
+        self._render_label_from_meta()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         self.meta = meta
@@ -3952,35 +3579,10 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def _update_label_position(self):
         """Position label at center of bounding box."""
-        padding = 8
-        self._label_item.setTextWidth(max(10, self._width - 2 * padding))
-        text_height = self._label_item.boundingRect().height()
-        y_pos = (self._height - text_height) / 2
-        self._label_item.setPos(padding, max(padding, y_pos))
+        self._position_label_in_rect(0, 0, self._width, self._height)
 
     def _update_label_text(self):
-        """Update embedded label HTML from meta fields."""
-        lines = []
-        align_map = {"left": "left", "center": "center", "right": "right"}
-        spacing = getattr(self.meta, "text_spacing", 0.0)
-        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
-
-        if self.meta.label:
-            align = align_map.get(self.meta.label_align, "center")
-            size = self.meta.label_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
-        if self.meta.tech:
-            align = align_map.get(self.meta.tech_align, "center")
-            size = self.meta.tech_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
-        if self.meta.note:
-            align = align_map.get(self.meta.note_align, "center")
-            size = self.meta.note_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
-
-        self._label_item.setHtml("".join(lines) if lines else "")
-        self._label_item.setDefaultTextColor(self.text_color)
-        self._update_label_position()
+        self._render_label_from_meta()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         """Set annotation metadata and update label."""
@@ -5518,45 +5120,10 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def _update_label_position(self):
         """Position label text inside the front face."""
         fx, fy, fw, fh = self._front_rect()
-        padding = 4
-        self._label_item.setTextWidth(max(10, fw - 2 * padding))
-
-        text_height = self._label_item.boundingRect().height()
-        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
-
-        if valign == "middle":
-            y_pos = fy + (fh - text_height) / 2
-        elif valign == "bottom":
-            y_pos = fy + fh - padding - text_height
-        else:
-            y_pos = fy + padding
-
-        self._label_item.setPos(fx + padding, max(fy + padding, y_pos))
+        self._position_label_in_rect(fx, fy, fw, fh)
 
     def _update_label_text(self):
-        """Rebuild label HTML from meta fields."""
-        lines = []
-        align_map = {"left": "left", "center": "center", "right": "right"}
-
-        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
-        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
-
-        if self.meta.label:
-            align = align_map.get(self.meta.label_align, "center")
-            size = self.meta.label_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
-        if self.meta.tech:
-            align = align_map.get(self.meta.tech_align, "center")
-            size = self.meta.tech_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
-        if self.meta.note:
-            align = align_map.get(self.meta.note_align, "center")
-            size = self.meta.note_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
-
-        self._label_item.setHtml("".join(lines) if lines else "")
-        self._label_item.setDefaultTextColor(self.text_color)
-        self._update_label_position()
+        self._render_label_from_meta()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         """Set annotation metadata and update label display."""
@@ -6393,9 +5960,11 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         ``[text]`` — the first just below the type tab, subsequent ones
         just below each divider line.
         """
+        _eff_frame = self.meta.effective_frame()
+        _eff_fmt = self.meta.effective_default_format()
         align_map = {"left": "left", "center": "center", "right": "right"}
-        align = align_map.get(self.meta.tech_align, "center")
-        size = self.meta.tech_size
+        align = align_map.get(_eff_frame.halign or "center", "center")
+        size = max(6, int(_eff_fmt.font_size or 10))
 
         sections: List[str] = []
         if self.meta.tech:
