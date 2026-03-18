@@ -702,6 +702,37 @@
           "description": "Override text box height for line labels (0 = use shape height minus margins)"
         },
 
+        "text_anchor_v": {
+          "type": "string",
+          "enum": ["top", "middle", "bottom"],
+          "default": "middle",
+          "description": "Vertical placement of the text box relative to the anchor point on the line/curve"
+        },
+
+        "anchor_value": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 50,
+          "description": "Position along the line/curve path (0-100%) where the text box is anchored"
+        },
+
+        "text_box_border": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to draw the text box border stroke"
+        },
+        "text_box_border_color": {
+          "type": "string",
+          "default": "",
+          "description": "Text box border stroke color (#RRGGBBAA hex, empty = default grey)"
+        },
+        "text_box_background_color": {
+          "type": "string",
+          "default": "",
+          "description": "Text box background fill color (#RRGGBBAA hex, empty = white)"
+        },
+
         "text": {
           "type": "string",
           "default": "",

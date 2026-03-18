@@ -154,6 +154,62 @@ class MetaMixin:
 
         self._label_item.setPos(area_x + ml, y_pos)
 
+    def _render_label_from_meta(self):
+        """Rebuild ``_label_item`` HTML from meta blocks (or legacy text).
+
+        Uses the overlay-2.0 blocks path when available, falling back to
+        the pre-built ``meta.text`` HTML.  Sets font, color, and alignment
+        on the ``_label_item`` QGraphicsTextItem, then calls the item's
+        ``_update_label_position()`` for shape-specific placement.
+        """
+        from PyQt6.QtGui import QFont as _QFont, QTextOption as _QTextOption
+        from PyQt6.QtCore import Qt as _Qt
+        from models import _blocks_to_legacy_text
+
+        meta = getattr(self, "meta", None)
+        if meta is None:
+            return
+
+        _eff_frame = meta.effective_frame()
+        _eff_fmt = meta.effective_default_format()
+
+        font_family = _eff_fmt.font_family
+        font_size = max(6, int(_eff_fmt.font_size or 12))
+        halign = _eff_frame.halign
+        color_str = _eff_fmt.color or ""
+
+        # Sync text_color from resolved color
+        if color_str:
+            from utils import hex_to_qcolor as _htq
+            self.text_color = _htq(color_str, self.text_color)
+
+        fnt = _QFont(font_family) if font_family else _QFont()
+        fnt.setPointSize(font_size)
+        self._label_item.setFont(fnt)
+        self._label_item.setDefaultTextColor(self.text_color)
+
+        # Apply halign as document default alignment
+        _halign_flag = {
+            "left":      _Qt.AlignmentFlag.AlignLeft,
+            "center":    _Qt.AlignmentFlag.AlignHCenter,
+            "right":     _Qt.AlignmentFlag.AlignRight,
+            "justified": _Qt.AlignmentFlag.AlignJustify,
+        }.get(halign, _Qt.AlignmentFlag.AlignHCenter)
+        _opt = self._label_item.document().defaultTextOption()
+        _opt.setAlignment(_halign_flag)
+        self._label_item.document().setDefaultTextOption(_opt)
+
+        # Render: prefer overlay-2.0 blocks, fall back to legacy HTML
+        if meta.blocks is not None:
+            html_text = _blocks_to_legacy_text(meta.blocks)
+            self._label_item.setHtml(html_text if html_text else "")
+        elif getattr(meta, "text", ""):
+            self._label_item.setHtml(meta.text)
+        else:
+            self._label_item.setHtml("")
+
+        self._update_label_position()
+
     def _should_paint_handles(self) -> bool:
         """Check if this item should paint selection handles.
 

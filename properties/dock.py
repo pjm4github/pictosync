@@ -593,6 +593,41 @@ class PropertyPanel(QWidget):
         self.chk_underline = self.ui.underline           # QCheckBox
         self.chk_strikethrough = self.ui.strikethrough   # QCheckBox (UI typo)
 
+        # -- text box dimensions --
+        self.spin_text_box_width = self.ui.text_box_width    # QSpinBox
+        self.spin_text_box_height = self.ui.text_box_height  # QSpinBox
+        self.spin_text_box_width.setRange(0, 2000)
+        self.spin_text_box_height.setRange(0, 2000)
+        self.spin_text_box_width.setSpecialValueText("Auto")
+        self.spin_text_box_height.setSpecialValueText("Auto")
+        self.group_text_box_dims = self.ui.group_text_margins_2  # parent group
+
+        # -- text box appearance (background fill + border) --
+        self.btn_background_color = self.ui.background_color  # QPushButton
+        self.btn_border_color = self.ui.border_color          # QPushButton
+        self.chk_border = self.ui.border                      # QCheckBox
+
+        # -- anchor point grid (3x3 text box placement) --
+        from properties.anchor_point_widget import AnchorPointWidget
+        self.anchor_pt_group = self.ui.anchor_pt_group  # QGroupBox
+        self.anchor_pt_widget = AnchorPointWidget(self.anchor_pt_group)
+        _grp_lay = self.anchor_pt_group.layout()
+        if _grp_lay is None:
+            from PyQt6.QtWidgets import QVBoxLayout as _QVL
+            _grp_lay = _QVL(self.anchor_pt_group)
+            _grp_lay.setContentsMargins(2, 2, 2, 2)
+        _grp_lay.addWidget(self.anchor_pt_widget)
+        self.anchor_pt_group.setVisible(False)  # hidden by default
+
+        # -- anchor (line/curve text box position along path) --
+        self.anchor_frame = self.ui.anchor_frame
+        self.anchor_slider = self.ui.anchor          # QSlider
+        self.anchor_value_edit = self.ui.anchor_value # QLineEdit
+        self.anchor_slider.setRange(0, 100)
+        self.anchor_slider.setValue(50)
+        self.anchor_value_edit.setText("50")
+        self.anchor_frame.setVisible(False)  # hidden by default
+
         # -- ports / connections --
         self.list_ports = self.ui.ports
         self.list_connections = self.ui.list_connections
@@ -1108,6 +1143,20 @@ class PropertyPanel(QWidget):
         self.chk_underline.toggled.connect(self._on_underline_changed)
         self.chk_strikethrough.toggled.connect(self._on_strikethrough_changed)
 
+        # Text box appearance (background + border) and anchor point grid
+        if HAS_UI:
+            self.btn_background_color.clicked.connect(self._pick_text_box_background_color)
+            self.btn_border_color.clicked.connect(self._pick_text_box_border_color)
+            self.chk_border.toggled.connect(self._on_text_box_border_toggled)
+            self.anchor_pt_widget.anchor_changed.connect(self._on_anchor_point_changed)
+            self.spin_text_box_width.valueChanged.connect(self._on_text_box_dims_changed)
+            self.spin_text_box_height.valueChanged.connect(self._on_text_box_dims_changed)
+
+        # Anchor slider/edit for line/curve
+        if HAS_UI:
+            self.anchor_slider.valueChanged.connect(self._on_anchor_slider_changed)
+            self.anchor_value_edit.editingFinished.connect(self._on_anchor_edit_finished)
+
     def set_image_info(self, info: Dict[str, Any]):
         """Update the image info display."""
         self._image_info = info or {}
@@ -1526,6 +1575,7 @@ class PropertyPanel(QWidget):
     def _block_all_signals(self, block: bool):
         """Block/unblock signals on all editable widgets to prevent feedback."""
         from PyQt6.QtWidgets import QAbstractSpinBox, QComboBox as _QCB
+        extra = [self.anchor_slider, self.spin_text_box_width, self.spin_text_box_height] if HAS_UI else []
         for w in (self.spin_x, self.spin_y, self.spin_w, self.spin_h,
                   self.spin_x1, self.spin_y1, self.spin_x2, self.spin_y2,
                   self.spin_z, self.adjust1_spin, self.adjust2_spin,
@@ -1542,7 +1592,7 @@ class PropertyPanel(QWidget):
                   self.pen_opacity, self.text_opacity,
                   self.divider_count_spin,
                   self.chk_bold, self.chk_italic, self.chk_underline,
-                  self.chk_strikethrough):
+                  self.chk_strikethrough, *extra):
             w.blockSignals(block)
 
     def _save_as_default(self):
@@ -1988,6 +2038,10 @@ class PropertyPanel(QWidget):
         self._set_enabled(True)
 
         # ── Kind-specific control setup (visibility, dash pattern etc) ──
+        # Hide anchor/text-box controls by default; line/curve _setup methods show them
+        if HAS_UI:
+            self.anchor_frame.setVisible(False)
+            self.anchor_pt_group.setVisible(False)
         pen_color = getattr(item, "pen_color", QColor("red"))
 
         if kind == "rect":
@@ -2055,6 +2109,9 @@ class PropertyPanel(QWidget):
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
         self._setup_line_style_controls(item)
         self._setup_text_layout_controls(item)
+        self._setup_anchor_controls(item)
+        self._setup_text_box_dims(item)
+        self._setup_text_box_appearance(item)
 
         # Arrow mode
         arrow_mode = getattr(item, "arrow_mode", "none")
@@ -2125,6 +2182,172 @@ class PropertyPanel(QWidget):
         self.text_valign_combo.blockSignals(True)
         self.text_valign_combo.setCurrentIndex(valign_index)
         self.text_valign_combo.blockSignals(False)
+
+    def _setup_text_box_dims(self, item):
+        """Populate text box width/height spinboxes for line/curve items."""
+        if not HAS_UI:
+            return
+        meta = getattr(item, "meta", None)
+        if meta is None:
+            return
+        self.spin_text_box_width.blockSignals(True)
+        self.spin_text_box_width.setValue(int(getattr(meta, "text_box_width", 0)))
+        self.spin_text_box_width.blockSignals(False)
+        self.spin_text_box_height.blockSignals(True)
+        self.spin_text_box_height.setValue(int(getattr(meta, "text_box_height", 0)))
+        self.spin_text_box_height.blockSignals(False)
+
+    def _on_text_box_dims_changed(self, _value: int):
+        """Handle text box width or height spinbox change."""
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+        item.meta.text_box_width = float(self.spin_text_box_width.value())
+        item.meta.text_box_height = float(self.spin_text_box_height.value())
+        item.prepareGeometryChange()
+        if hasattr(item, "_update_label_position"):
+            item._update_label_position()
+        item.update()
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+
+    def _setup_text_box_appearance(self, item):
+        """Configure text box background/border controls for line/curve items."""
+        if not HAS_UI:
+            return
+        meta = getattr(item, "meta", None)
+        if meta is None:
+            return
+
+        # Border checkbox
+        self.chk_border.blockSignals(True)
+        self.chk_border.setChecked(getattr(meta, "text_box_border", True))
+        self.chk_border.blockSignals(False)
+
+        # Border color button
+        from utils import hex_to_qcolor
+        border_hex = getattr(meta, "text_box_border_color", "")
+        border_c = hex_to_qcolor(border_hex, QColor(200, 200, 200)) if border_hex else QColor(200, 200, 200)
+        self._set_button_fg(self.btn_border_color, border_c)
+
+        # Background color button
+        bg_hex = getattr(meta, "text_box_background_color", "")
+        bg_c = hex_to_qcolor(bg_hex, QColor(255, 255, 255)) if bg_hex else QColor(255, 255, 255)
+        self._set_button_fg(self.btn_background_color, bg_c)
+
+    def _pick_text_box_background_color(self):
+        """Pick text box background fill color."""
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+        from utils import hex_to_qcolor, qcolor_to_hex
+        cur_hex = getattr(item.meta, "text_box_background_color", "")
+        old_c = hex_to_qcolor(cur_hex, QColor(255, 255, 255)) if cur_hex else QColor(255, 255, 255)
+        c = self._pick_color(old_c, "Pick Text Box Background")
+        if c is None:
+            return
+        item.meta.text_box_background_color = qcolor_to_hex(c, include_alpha=True)
+        self._set_button_fg(self.btn_background_color, c)
+        item.update()
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+
+    def _pick_text_box_border_color(self):
+        """Pick text box border stroke color."""
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+        from utils import hex_to_qcolor, qcolor_to_hex
+        cur_hex = getattr(item.meta, "text_box_border_color", "")
+        old_c = hex_to_qcolor(cur_hex, QColor(200, 200, 200)) if cur_hex else QColor(200, 200, 200)
+        c = self._pick_color(old_c, "Pick Text Box Border Color")
+        if c is None:
+            return
+        item.meta.text_box_border_color = qcolor_to_hex(c, include_alpha=True)
+        self._set_button_fg(self.btn_border_color, c)
+        item.update()
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+
+    def _on_anchor_point_changed(self, h_anchor: str, v_anchor: str):
+        """Handle anchor point grid selection change."""
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+        item.meta.text_anchor = h_anchor
+        item.meta.text_anchor_v = v_anchor
+        if hasattr(item, "_update_label_position"):
+            item.prepareGeometryChange()
+            item._update_label_position()
+            item.update()
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+
+    def _on_text_box_border_toggled(self, checked: bool):
+        """Handle text box border checkbox toggle."""
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+        item.meta.text_box_border = checked
+        item.update()
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+
+    def _setup_anchor_controls(self, item):
+        """Configure anchor slider/edit and anchor point grid for line/curve items."""
+        if not HAS_UI:
+            return
+        self.anchor_frame.setVisible(True)
+        anchor_val = 50
+        if hasattr(item, "meta"):
+            anchor_val = int(getattr(item.meta, "anchor_value", 50.0))
+        self.anchor_slider.blockSignals(True)
+        self.anchor_slider.setValue(anchor_val)
+        self.anchor_slider.blockSignals(False)
+        self.anchor_value_edit.setText(str(anchor_val))
+
+        # Anchor point grid (3x3)
+        self.anchor_pt_group.setVisible(True)
+        if hasattr(item, "meta"):
+            h_a = getattr(item.meta, "text_anchor", "center")
+            v_a = getattr(item.meta, "text_anchor_v", "middle")
+            self.anchor_pt_widget.set_anchor(h_a, v_a)
+
+    def _on_anchor_slider_changed(self, value: int):
+        """Handle anchor slider value change."""
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+        self.anchor_value_edit.setText(str(value))
+        item.meta.anchor_value = float(value)
+        if hasattr(item, "_update_label_position"):
+            item.prepareGeometryChange()
+            item._update_label_position()
+            item.update()
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
+
+    def _on_anchor_edit_finished(self):
+        """Handle anchor value line-edit editing finished."""
+        item = self._current_item
+        if item is None or not hasattr(item, "meta"):
+            return
+        try:
+            val = int(self.anchor_value_edit.text())
+        except ValueError:
+            val = 50
+        val = max(0, min(100, val))
+        self.anchor_value_edit.setText(str(val))
+        self.anchor_slider.blockSignals(True)
+        self.anchor_slider.setValue(val)
+        self.anchor_slider.blockSignals(False)
+        item.meta.anchor_value = float(val)
+        if hasattr(item, "_update_label_position"):
+            item.prepareGeometryChange()
+            item._update_label_position()
+            item.update()
+        if hasattr(item, "_notify_changed"):
+            item._notify_changed()
 
     def _block_text_signals(self, block: bool):
         """Block or unblock signals from text formatting controls."""
@@ -3175,6 +3398,9 @@ class PropertyPanel(QWidget):
         self._set_preview(self.pen_color_preview, pen_color)
         self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
         self._setup_line_style_controls(item)
+        self._setup_anchor_controls(item)
+        self._setup_text_box_dims(item)
+        self._setup_text_box_appearance(item)
 
         # Arrow mode
         arrow_mode = getattr(item, "arrow_mode", "none")

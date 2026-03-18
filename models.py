@@ -274,6 +274,12 @@ class AnnotationContents:
     wrap: bool = True
     text_box_width: float = 0.0
     text_box_height: float = 0.0
+    text_anchor: str = "center"    # left | center | right — horizontal box placement
+    text_anchor_v: str = "middle"  # top | middle | bottom — vertical box placement
+    anchor_value: float = 50.0   # 0-100 — position along line/curve path (%)
+    text_box_border: bool = True           # show text box border stroke
+    text_box_border_color: str = ""        # #RRGGBBAA hex; empty = default grey
+    text_box_background_color: str = ""    # #RRGGBBAA hex; empty = white
     # ── overlay-1.0 flat fields (mirrors + fallbacks) ─────────────────
     text: str = ""
     halign: str = "left"
@@ -388,6 +394,9 @@ class AnnotationContents:
             spacing = d.get("text_spacing", 0.0)
             text_box_width = d.get("text_box_width", 0.0)
             text_box_height = d.get("text_box_height", 0.0)
+            # Legacy label_align doubles as text_anchor for line items
+            text_anchor = d.get("text_anchor", d.get("label_align", "center"))
+            text_anchor_v = d.get("text_anchor_v", "middle")
 
             # Build overlay-2.0 blocks from legacy fields
             blocks: List[TextBlock] = [
@@ -401,7 +410,14 @@ class AnnotationContents:
             frame = TextFrame(halign=halign, valign=valign)
             default_format = CharFormat(font_size=label_size)
 
-            old_all = _OLD_META_KEYS | {"text_box_width", "text_box_height", "dsl"}
+            anchor_value = d.get("anchor_value", 50.0)
+            text_box_border = d.get("text_box_border", True)
+            text_box_border_color = d.get("text_box_border_color", "")
+            text_box_background_color = d.get("text_box_background_color", "")
+            old_all = _OLD_META_KEYS | {"text_box_width", "text_box_height",
+                                        "anchor_value", "text_anchor_v",
+                                        "text_box_border", "text_box_border_color",
+                                        "text_box_background_color", "dsl"}
             extras: Dict[str, Any] = {k: v for k, v in d.items()
                                        if k not in old_all}
             if "dsl" in d:
@@ -411,6 +427,11 @@ class AnnotationContents:
                 text=html, halign=halign, valign=valign, spacing=spacing,
                 font_size=label_size,
                 text_box_width=text_box_width, text_box_height=text_box_height,
+                text_anchor=text_anchor, text_anchor_v=text_anchor_v,
+                anchor_value=anchor_value,
+                text_box_border=text_box_border,
+                text_box_border_color=text_box_border_color,
+                text_box_background_color=text_box_background_color,
                 margin_left=frame.margin_left, margin_right=frame.margin_right,
                 margin_top=frame.margin_top, margin_bottom=frame.margin_bottom,
                 extras=extras,
@@ -424,6 +445,12 @@ class AnnotationContents:
             wrap = d.get("wrap", True)
             text_box_width = d.get("text_box_width", 0.0)
             text_box_height = d.get("text_box_height", 0.0)
+            text_anchor = d.get("text_anchor", "center")
+            text_anchor_v = d.get("text_anchor_v", "middle")
+            anchor_value = d.get("anchor_value", 50.0)
+            text_box_border = d.get("text_box_border", True)
+            text_box_border_color = d.get("text_box_border_color", "")
+            text_box_background_color = d.get("text_box_background_color", "")
 
             # Mirror nested → flat for canvas item backward compat
             halign = frame.halign
@@ -438,11 +465,20 @@ class AnnotationContents:
 
             extras = {k: v for k, v in d.items()
                       if k not in {"frame", "default_format", "blocks", "wrap",
-                                   "text_box_width", "text_box_height"}}
+                                   "text_box_width", "text_box_height",
+                                   "text_anchor", "text_anchor_v",
+                                   "anchor_value",
+                                   "text_box_border", "text_box_border_color",
+                                   "text_box_background_color",
+                                   "label", "tech", "note"}}
             return cls(
                 frame=frame, default_format=default_format, blocks=blocks,
                 wrap=wrap, text_box_width=text_box_width,
-                text_box_height=text_box_height,
+                text_box_height=text_box_height, text_anchor=text_anchor,
+                text_anchor_v=text_anchor_v, anchor_value=anchor_value,
+                text_box_border=text_box_border,
+                text_box_border_color=text_box_border_color,
+                text_box_background_color=text_box_background_color,
                 text=text, halign=halign, valign=valign,
                 color=color, font_family=font_family, font_size=font_size,
                 margin_left=frame.margin_left, margin_right=frame.margin_right,
@@ -480,11 +516,34 @@ class AnnotationContents:
                 if fmt_d:
                     d["default_format"] = fmt_d
             d["blocks"] = [b.to_dict() for b in self.blocks]
+            # Convenience aliases — makes the JSON human-readable and keeps
+            # test assertions simple.
+            _lbl = self.label
+            _tch = self.tech
+            _nte = self.note
+            if _lbl:
+                d["label"] = _lbl
+            if _tch:
+                d["tech"] = _tch
+            if _nte:
+                d["note"] = _nte
             d["wrap"] = self.wrap
             if self.text_box_width:
                 d["text_box_width"] = self.text_box_width
             if self.text_box_height:
                 d["text_box_height"] = self.text_box_height
+            if self.text_anchor and self.text_anchor != "center":
+                d["text_anchor"] = self.text_anchor
+            if self.text_anchor_v and self.text_anchor_v != "middle":
+                d["text_anchor_v"] = self.text_anchor_v
+            if self.anchor_value != 50.0:
+                d["anchor_value"] = self.anchor_value
+            if not self.text_box_border:
+                d["text_box_border"] = False
+            if self.text_box_border_color:
+                d["text_box_border_color"] = self.text_box_border_color
+            if self.text_box_background_color:
+                d["text_box_background_color"] = self.text_box_background_color
             # Convenience keys for external tooling and property panel
             d["label"] = self.label
             d["tech"] = self.tech
@@ -532,6 +591,71 @@ class AnnotationContents:
             "text_box_width":  d.text_box_width,
             "text_box_height": d.text_box_height,
         }
+
+    # -- Block-based label / tech / note aliases -------------------------
+
+    def _ensure_blocks(self) -> List[TextBlock]:
+        """Ensure at least 3 blocks exist for the label/tech/note slots.
+
+        Lazily initialises ``blocks``, ``frame``, and ``default_format``
+        the first time a caller writes through the ``label``/``tech``/``note``
+        property setters.
+
+        Returns:
+            The (now guaranteed ≥ 3-element) ``blocks`` list.
+        """
+        if self.blocks is None:
+            self.blocks = []
+        if self.frame is None:
+            self.frame = self.effective_frame()
+        if self.default_format is None:
+            self.default_format = self.effective_default_format()
+        while len(self.blocks) < 3:
+            self.blocks.append(TextBlock(runs=[TextRun(type="text", text="")]))
+        return self.blocks
+
+    @property
+    def label(self) -> str:
+        """Plain text of block 0 (label slot)."""
+        if self.blocks and len(self.blocks) >= 1:
+            return self.blocks[0].plain_text()
+        return ""
+
+    @label.setter
+    def label(self, value: str):
+        blks = self._ensure_blocks()
+        blks[0].runs = [TextRun(type="text", text=value,
+                                format=CharFormat(bold=True))]
+        self.text = _blocks_to_legacy_text(self.blocks)
+
+    @property
+    def tech(self) -> str:
+        """Plain text of block 1 (tech slot)."""
+        if self.blocks and len(self.blocks) >= 2:
+            return self.blocks[1].plain_text()
+        return ""
+
+    @tech.setter
+    def tech(self, value: str):
+        blks = self._ensure_blocks()
+        blks[1].runs = [TextRun(type="text", text=value,
+                                format=CharFormat(italic=True))]
+        self.text = _blocks_to_legacy_text(self.blocks)
+
+    @property
+    def note(self) -> str:
+        """Plain text of block 2 (note slot)."""
+        if self.blocks and len(self.blocks) >= 3:
+            return self.blocks[2].plain_text()
+        return ""
+
+    @note.setter
+    def note(self, value: str):
+        blks = self._ensure_blocks()
+        blks[2].runs = [TextRun(type="text", text=value)]
+        self.text = _blocks_to_legacy_text(self.blocks)
+
+    # -- Effective defaults ------------------------------------------------
 
     def effective_frame(self) -> TextFrame:
         """Return the effective TextFrame, using defaults if not set."""

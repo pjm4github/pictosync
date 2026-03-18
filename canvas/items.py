@@ -1010,59 +1010,84 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
         _apply_dash_style(pen, self.line_dash, self.dash_pattern_length, self.dash_solid_percent)
         self.setPen(pen)
 
-    def _update_label_position(self):
-        """Position _label_item relative to the line midpoint.
-
-        When ``text_box_width`` is set, text wraps inside a box whose
-        horizontal position is controlled by halign (left/center/right
-        of the midpoint) and vertical position by valign.  Otherwise
-        text floats centered on the midpoint with no wrapping.
-        """
+    def _point_at_t(self, t: float) -> QPointF:
+        """Return the point at parameter *t* (0-1) along the line."""
         ln = self.line()
-        mid_x = (ln.x1() + ln.x2()) / 2
-        mid_y = (ln.y1() + ln.y2()) / 2
+        return QPointF(ln.x1() + t * (ln.x2() - ln.x1()),
+                       ln.y1() + t * (ln.y2() - ln.y1()))
+
+    def _anchor_box_position(self, ax: float, ay: float, bw: float, bh: float) -> tuple:
+        """Compute text box (x, y) from anchor point and text_anchor / text_anchor_v.
+
+        The UI grid is mirrored: clicking the top-right button places the
+        box so its *bottom-left* corner sits at the anchor point (the box
+        extends up and to the right of the anchor).
+        """
+        h = getattr(self.meta, "text_anchor", "center")
+        v = getattr(self.meta, "text_anchor_v", "middle")
+        if h == "left":
+            bx = ax
+        elif h == "right":
+            bx = ax - bw
+        else:
+            bx = ax - bw / 2
+        if v == "top":
+            by = ay
+        elif v == "bottom":
+            by = ay - bh
+        else:
+            by = ay - bh / 2
+        return bx, by
+
+    def _update_label_position(self):
+        """Position _label_item relative to the anchor point on the line.
+
+        When ``text_box_width`` is set, a virtual text rectangle is placed
+        relative to the anchor point using ``text_anchor`` (left/center/right).
+        When text content exists but no explicit text_box_width, auto-sizes
+        a text box from the rendered label dimensions.
+        Inner text layout (margins, halign, valign, wrap) is handled by the
+        shared ``_position_label_in_rect()`` — identical to shapes.
+        """
+        t = getattr(self.meta, "anchor_value", 50.0) / 100.0
+        anchor_pt = self._point_at_t(t)
+        mid_x = anchor_pt.x()
+        mid_y = anchor_pt.y()
 
         has_text_box = (hasattr(self, "meta") and self.meta.text_box_width > 0)
+        has_text = bool(self._label_item.toPlainText().strip())
 
         if has_text_box:
             box_w = self.meta.text_box_width
-            padding = 4
-            text_width = box_w - 2 * padding
-            self._label_item.setTextWidth(max(10, text_width))
 
+            # Estimate box height: use explicit value or auto-size from text
+            ml, mr, mt, mb = self._get_text_margins()
+            wrap = getattr(self.meta, "wrap", True)
+            if wrap:
+                self._label_item.setTextWidth(max(10, box_w - ml - mr))
+            else:
+                self._label_item.setTextWidth(-1)
             text_height = self._label_item.boundingRect().height()
 
             if self.meta.text_box_height > 0:
                 box_h = self.meta.text_box_height
             else:
-                box_h = text_height + 2 * padding
+                box_h = text_height + mt + mb
 
-            # Horizontal position of the text box relative to midpoint
-            _eff_halign = "center"
-            if hasattr(self, "meta"):
-                _eff_halign = self.meta.effective_frame().halign or "center"
-
-            if _eff_halign == "left":
-                box_x = mid_x - box_w
-            elif _eff_halign == "right":
-                box_x = mid_x
-            else:
-                box_x = mid_x - box_w / 2
-
-            # Vertical position of the text box relative to midpoint
-            _eff_valign = "top"
-            if hasattr(self, "meta"):
-                _eff_valign = self.meta.effective_frame().valign or "top"
-
-            if _eff_valign == "middle":
-                box_y = mid_y - box_h / 2
-            elif _eff_valign == "bottom":
-                box_y = mid_y - box_h
-            else:
-                box_y = mid_y - box_h / 2  # default: centered
-
+            box_x, box_y = self._anchor_box_position(mid_x, mid_y, box_w, box_h)
             self._text_box_rect = QRectF(box_x, box_y, box_w, box_h)
-            self._label_item.setPos(box_x + padding, box_y + padding)
+            self._position_label_in_rect(box_x, box_y, box_w, box_h)
+        elif has_text:
+            # Auto-size text box from label content
+            self._label_item.setTextWidth(-1)
+            ml, mr, mt, mb = self._get_text_margins()
+            text_rect = self._label_item.boundingRect()
+            box_w = text_rect.width() + ml + mr
+            box_h = text_rect.height() + mt + mb
+
+            box_x, box_y = self._anchor_box_position(mid_x, mid_y, box_w, box_h)
+            self._text_box_rect = QRectF(box_x, box_y, box_w, box_h)
+            self._position_label_in_rect(box_x, box_y, box_w, box_h)
         else:
             self._text_box_rect = None
             self._label_item.setTextWidth(-1)
@@ -1072,64 +1097,17 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
             self._label_item.setPos(mid_x - text_w / 2, mid_y - text_h / 2)
 
     def _update_label_text(self):
-        """Render all blocks into _label_item using _blocks_to_legacy_text.
-
-        Per-block alignment is preserved in the HTML (``text-align`` on each
-        ``<p>``), matching the text_contents widget display.  _tech_item and
-        _note_item are hidden — all text goes through _label_item.
-        """
-        from models import _blocks_to_legacy_text
-        from PyQt6.QtGui import QFont as _QFont, QTextOption as _QTextOption
-        from PyQt6.QtCore import Qt as _Qt
-
-        _eff_frame = self.meta.effective_frame()
-        _eff_fmt = self.meta.effective_default_format()
-
-        # Sync text_color from effective default format
-        color_str = _eff_fmt.color or getattr(self.meta, "color", "")
-        if color_str:
-            from utils import hex_to_qcolor as _htq
-            self.text_color = _htq(color_str, self.text_color)
-
-        font_family = _eff_fmt.font_family
-        font_size = max(6, int(_eff_fmt.font_size or 12))
-        halign = _eff_frame.halign or "center"
-
-        fnt = _QFont(font_family) if font_family else _QFont()
-        fnt.setPointSize(font_size)
-        self._label_item.setFont(fnt)
-        self._label_item.setDefaultTextColor(self.text_color)
-
-        # Set default alignment on the document
-        _halign_flag = {
-            "left":      _Qt.AlignmentFlag.AlignLeft,
-            "center":    _Qt.AlignmentFlag.AlignHCenter,
-            "right":     _Qt.AlignmentFlag.AlignRight,
-            "justified": _Qt.AlignmentFlag.AlignJustify,
-        }.get(halign, _Qt.AlignmentFlag.AlignHCenter)
-        _opt = self._label_item.document().defaultTextOption()
-        _opt.setAlignment(_halign_flag)
-        self._label_item.document().setDefaultTextOption(_opt)
-
-        # Render all blocks into _label_item — per-block alignment is in the HTML
-        if self.meta.blocks is not None:
-            html_text = _blocks_to_legacy_text(self.meta.blocks)
-            self._label_item.setHtml(html_text if html_text else "")
-        elif getattr(self.meta, "text", ""):
-            self._label_item.setHtml(self.meta.text)
-        else:
-            self._label_item.setHtml("")
+        """Render text via shared helper; hide legacy tech/note items."""
+        self._render_label_from_meta()
 
         has_content = bool(self._label_item.toPlainText().strip())
         self._label_item.setVisible(has_content)
 
-        # Hide legacy separate items — all text is now in _label_item
+        # Hide legacy separate items — all text goes through _label_item
         self._tech_item.setPlainText("")
         self._tech_item.setVisible(False)
         self._note_item.setPlainText("")
         self._note_item.setVisible(False)
-
-        self._update_label_position()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         self.meta = meta
@@ -1231,17 +1209,37 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
             if self.arrow_mode in (self.ARROW_START, self.ARROW_BOTH):
                 self._draw_arrowhead(painter, QPointF(ln.x2(), ln.y2()), QPointF(ln.x1(), ln.y1()), effective_arrow_size)
 
-        # Draw text bounding box if present - with opaque fill to obscure the line
+        # Draw text bounding box if present
         if self._text_box_rect is not None:
-            # Draw opaque white background to cover the line underneath
+            bg_hex = getattr(self.meta, "text_box_background_color", "")
+            if bg_hex:
+                from utils import hex_to_qcolor
+                bg_c = hex_to_qcolor(bg_hex, QColor(255, 255, 255))
+            else:
+                bg_c = QColor(255, 255, 255)
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QBrush(QColor(255, 255, 255)))  # Opaque white fill
+            painter.setBrush(QBrush(bg_c))
             painter.drawRect(self._text_box_rect)
-            # Draw subtle border
-            box_pen = QPen(QColor(200, 200, 200), 1, Qt.PenStyle.SolidLine)
-            painter.setPen(box_pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(self._text_box_rect)
+
+            if getattr(self.meta, "text_box_border", True):
+                border_hex = getattr(self.meta, "text_box_border_color", "")
+                if border_hex:
+                    from utils import hex_to_qcolor as _h2q
+                    border_c = _h2q(border_hex, QColor(200, 200, 200))
+                else:
+                    border_c = QColor(200, 200, 200)
+                box_pen = QPen(border_c, 1, Qt.PenStyle.SolidLine)
+                painter.setPen(box_pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(self._text_box_rect)
+
+        # Draw anchor dot when selected
+        if self._should_paint_handles():
+            t = getattr(self.meta, "anchor_value", 50.0) / 100.0
+            pt = self._point_at_t(t)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor(160, 160, 160)))
+            painter.drawEllipse(pt, 5, 5)
 
         # Draw resize handles when selected
         if self._should_paint_handles():
@@ -3191,6 +3189,10 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.dash_solid_percent = cached.default_dash_solid_percent
         self._apply_pen_brush()
 
+        # Text box properties (local coordinates, computed from anchor_value)
+        self._text_box_rect: Optional[QRectF] = None
+        self._drag_text_box: Optional[str] = None
+
         # Embedded text for C4 properties
         self._label_item = QGraphicsTextItem(self)
         self._label_item.setDefaultTextColor(self.text_color)
@@ -3577,9 +3579,81 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.setPen(pen)
         self.setBrush(QBrush(QColor(0, 0, 0, 0)))  # Transparent fill
 
+    def _point_at_t(self, t: float) -> QPointF:
+        """Return the point at parameter *t* (0-1) along the curve path.
+
+        Uses ``QPainterPath.pointAtPercent()`` on the actual rendered path,
+        so the result follows cubic/quadratic beziers, arcs, and bend-radius
+        corners exactly as drawn.
+        """
+        path = self.path()
+        if path.isEmpty():
+            return QPointF(self._width / 2, self._height / 2)
+        return path.pointAtPercent(max(0.0, min(1.0, t)))
+
+    def _anchor_box_position(self, ax: float, ay: float, bw: float, bh: float) -> tuple:
+        """Compute text box (x, y) from anchor point and text_anchor / text_anchor_v.
+
+        The UI grid is mirrored: clicking the top-right button places the
+        box so its *bottom-left* corner sits at the anchor point (the box
+        extends up and to the right of the anchor).
+        """
+        h = getattr(self.meta, "text_anchor", "center")
+        v = getattr(self.meta, "text_anchor_v", "middle")
+        if h == "left":
+            bx = ax
+        elif h == "right":
+            bx = ax - bw
+        else:
+            bx = ax - bw / 2
+        if v == "top":
+            by = ay
+        elif v == "bottom":
+            by = ay - bh
+        else:
+            by = ay - bh / 2
+        return bx, by
+
     def _update_label_position(self):
-        """Position label at center of bounding box."""
-        self._position_label_in_rect(0, 0, self._width, self._height)
+        """Position label at anchor point along the curve path."""
+        t = getattr(self.meta, "anchor_value", 50.0) / 100.0
+        anchor_pt = self._point_at_t(t)
+
+        has_text_box = (hasattr(self, "meta") and self.meta.text_box_width > 0)
+        has_text = bool(self._label_item.toPlainText().strip())
+
+        if has_text_box:
+            box_w = self.meta.text_box_width
+            ml, mr, mt, mb = self._get_text_margins()
+            wrap = getattr(self.meta, "wrap", True)
+            if wrap:
+                self._label_item.setTextWidth(max(10, box_w - ml - mr))
+            else:
+                self._label_item.setTextWidth(-1)
+            text_height = self._label_item.boundingRect().height()
+
+            if self.meta.text_box_height > 0:
+                box_h = self.meta.text_box_height
+            else:
+                box_h = text_height + mt + mb
+
+            box_x, box_y = self._anchor_box_position(anchor_pt.x(), anchor_pt.y(), box_w, box_h)
+            self._text_box_rect = QRectF(box_x, box_y, box_w, box_h)
+            self._position_label_in_rect(box_x, box_y, box_w, box_h)
+        elif has_text:
+            # Auto-size text box from label content
+            self._label_item.setTextWidth(-1)
+            ml, mr, mt, mb = self._get_text_margins()
+            text_rect = self._label_item.boundingRect()
+            box_w = text_rect.width() + ml + mr
+            box_h = text_rect.height() + mt + mb
+
+            box_x, box_y = self._anchor_box_position(anchor_pt.x(), anchor_pt.y(), box_w, box_h)
+            self._text_box_rect = QRectF(box_x, box_y, box_w, box_h)
+            self._position_label_in_rect(box_x, box_y, box_w, box_h)
+        else:
+            self._text_box_rect = None
+            self._position_label_in_rect(0, 0, self._width, self._height)
 
     def _update_label_text(self):
         self._render_label_from_meta()
@@ -3770,6 +3844,15 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             else:
                 self.setCursor(Qt.CursorShape.ArrowCursor)
         else:
+            # Check text box handles first
+            tb_h = self._hit_test_text_box_handle(event.scenePos())
+            if tb_h:
+                if tb_h in ("tb_tl", "tb_br"):
+                    self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+                else:
+                    self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+                super().hoverMoveEvent(event)
+                return
             h = self._hit_test_handle(event.scenePos())
             if h == "adjust1":
                 self.setCursor(Qt.CursorShape.CrossCursor)
@@ -3831,6 +3914,14 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 return
 
         if event.button() == Qt.MouseButton.LeftButton:
+            # Check text box handles first (before node editing)
+            tb_h = self._hit_test_text_box_handle(event.scenePos())
+            if tb_h:
+                self._begin_resize_tracking()
+                self._drag_text_box = tb_h
+                event.accept()
+                return
+
             if self._node_editing:
                 hit = self._hit_test_node(event.scenePos())
                 if hit is not None:
@@ -3864,6 +3955,14 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        # Text box handle drag
+        if self._drag_text_box:
+            local_pt = self.mapFromScene(event.scenePos())
+            self._resize_text_box(self._drag_text_box, local_pt)
+            self._notify_changed()
+            event.accept()
+            return
+
         # Adjust1 (bend radius) handle drag
         if self._rotating:
             self._handle_rotation_move(event)
@@ -3982,6 +4081,12 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if self._drag_text_box:
+            self._end_resize_tracking()
+            self._drag_text_box = None
+            self._notify_changed()
+            event.accept()
+            return
         if self._rotating:
             self._end_rotation()
             self._reattach_port_endpoints()
@@ -4209,6 +4314,82 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._update_transform_origin()
         self._notify_changed()
 
+    # ---- Text box handles (same pattern as MetaLineItem) ----
+
+    def _text_box_handle_points(self) -> Dict[str, QPointF]:
+        """Return text box corner handle positions for resizing."""
+        if self._text_box_rect is None:
+            return {}
+        r = self._text_box_rect
+        return {
+            "tb_tl": QPointF(r.left(), r.top()),
+            "tb_tr": QPointF(r.right(), r.top()),
+            "tb_bl": QPointF(r.left(), r.bottom()),
+            "tb_br": QPointF(r.right(), r.bottom()),
+        }
+
+    def _draw_text_box_handles(self, painter: QPainter):
+        """Draw handles for resizing the text bounding box."""
+        handles = self._text_box_handle_points()
+        if not handles:
+            return
+        handle_pen = QPen(QColor(255, 140, 0), 1)
+        handle_brush = QBrush(QColor(255, 200, 100))
+        painter.setPen(handle_pen)
+        painter.setBrush(handle_brush)
+        handle_size = _get_handle_size()
+        half = handle_size / 2
+        for pos in handles.values():
+            painter.drawRect(QRectF(pos.x() - half, pos.y() - half, handle_size, handle_size))
+
+    def _hit_test_text_box_handle(self, scene_pt: QPointF) -> Optional[str]:
+        """Test if scene point hits a text box resize handle."""
+        if not self._should_paint_handles():
+            return None
+        if self._text_box_rect is None:
+            return None
+        handles = self._text_box_handle_points()
+        local_pt = self.mapFromScene(scene_pt)
+        hit_dist = _get_hit_distance()
+        for name, pos in handles.items():
+            if QLineF(local_pt, pos).length() <= hit_dist:
+                return name
+        return None
+
+    def _resize_text_box(self, handle: str, local_pt: QPointF):
+        """Resize the text box based on handle being dragged."""
+        if self._text_box_rect is None:
+            return
+        r = self._text_box_rect
+        min_size = 30.0
+        if handle == "tb_tl":
+            new_left = min(local_pt.x(), r.right() - min_size)
+            new_top = min(local_pt.y(), r.bottom() - min_size)
+            new_width = r.right() - new_left
+            new_height = r.bottom() - new_top
+        elif handle == "tb_tr":
+            new_left = r.left()
+            new_top = min(local_pt.y(), r.bottom() - min_size)
+            new_width = max(local_pt.x() - r.left(), min_size)
+            new_height = r.bottom() - new_top
+        elif handle == "tb_bl":
+            new_left = min(local_pt.x(), r.right() - min_size)
+            new_top = r.top()
+            new_width = r.right() - new_left
+            new_height = max(local_pt.y() - r.top(), min_size)
+        elif handle == "tb_br":
+            new_left = r.left()
+            new_top = r.top()
+            new_width = max(local_pt.x() - r.left(), min_size)
+            new_height = max(local_pt.y() - r.top(), min_size)
+        else:
+            return
+        self.meta.text_box_width = round1(new_width)
+        self.meta.text_box_height = round1(new_height)
+        self.prepareGeometryChange()
+        self._update_label_position()
+        self.update()
+
     # ---- Shape / bounds / paint ----
 
     def shape(self) -> QPainterPath:
@@ -4218,8 +4399,12 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         s = QPainterPathStroker()
         s.setWidth(max(20, self.pen_width + 10))
         stroker = s.createStroke(self.path())
+        if self._text_box_rect is not None:
+            stroker.addRect(self._text_box_rect)
         if self._should_paint_handles() and not self._node_editing:
-            return shape_with_handles(stroker, self._handle_points_local())
+            all_handles = self._handle_points_local()
+            all_handles.update(self._text_box_handle_points())
+            return shape_with_handles(stroker, all_handles)
         if self._should_paint_handles() and self._node_editing:
             hit_r = _get_handle_size() / 2 + 1
             for pt, _, _ in self._node_points_scene():
@@ -4230,7 +4415,10 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def boundingRect(self) -> QRectF:
         r = super().boundingRect()
         margin = _get_handle_size() / 2 + 1 + self.pen_width
-        return r.adjusted(-margin, -margin, margin, margin)
+        r = r.adjusted(-margin, -margin, margin, margin)
+        if self._text_box_rect is not None:
+            r = r.united(self._text_box_rect.adjusted(-margin, -margin, margin, margin))
+        return r
 
     def paint(self, painter: QPainter, option, widget=None):
         my_option = QStyleOptionGraphicsItem(option)
@@ -4258,8 +4446,43 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                     if from_pt is not None and to_pt is not None:
                         self._draw_arrowhead(painter, from_pt, to_pt, effective_arrow_size)
 
+        # Draw text box when present
+        if self._text_box_rect is not None:
+            bg_hex = getattr(self.meta, "text_box_background_color", "")
+            if bg_hex:
+                from utils import hex_to_qcolor
+                bg_c = hex_to_qcolor(bg_hex, QColor(255, 255, 255))
+            else:
+                bg_c = QColor(255, 255, 255)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(bg_c))
+            painter.drawRect(self._text_box_rect)
+
+            if getattr(self.meta, "text_box_border", True):
+                border_hex = getattr(self.meta, "text_box_border_color", "")
+                if border_hex:
+                    from utils import hex_to_qcolor as _h2q
+                    border_c = _h2q(border_hex, QColor(200, 200, 200))
+                else:
+                    border_c = QColor(200, 200, 200)
+                box_pen = QPen(border_c, 1, Qt.PenStyle.SolidLine)
+                painter.setPen(box_pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(self._text_box_rect)
+
         if not self._should_paint_handles():
             return
+
+        # Draw anchor dot
+        t = getattr(self.meta, "anchor_value", 50.0) / 100.0
+        pt = self._point_at_t(t)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor(160, 160, 160)))
+        painter.drawEllipse(pt, 5, 5)
+
+        # Draw text box handles
+        if self._text_box_rect is not None:
+            self._draw_text_box_handles(painter)
 
         if self._node_editing:
             self._paint_node_handles(painter)
