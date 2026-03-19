@@ -1529,7 +1529,17 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
 
 
 class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
-    """Text item with inline editing and configurable font."""
+    """Display-only text item rendered from the overlay-2.0 content model.
+
+    All text editing is done through the Contents tab text widget in the
+    property panel.  Double-click on the scene item focuses that widget.
+    The scene item is re-rendered from ``meta.blocks`` whenever the
+    Contents tab changes (via ``_render_from_meta()``).
+
+    This avoids the dual-document sync problem: the Contents tab's
+    QTextEdit is the single source of truth for text content and
+    formatting.  The scene item is a one-way render target.
+    """
 
     KIND = "text"
 
@@ -1537,10 +1547,8 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
         return False
     KIND_ALIASES = frozenset(k for k, v in KIND_ALIAS_MAP.items() if v == "text")
 
-    # Class-level callbacks for focus events (set by MainWindow)
-    on_editing_started = None  # Called when text editing begins
-    on_editing_finished = None  # Called when text editing ends
-    on_text_changed = None  # Called when text content changes during editing
+    # Class-level callback: called on double-click to focus the Contents tab
+    on_request_edit = None   # Called with (item) — MainWindow focuses Contents tab
     on_text_edit_finished = None  # Called with (item, old_text, new_text) for undo
 
     # Class-level default text color (set by MainWindow based on theme)
@@ -1551,14 +1559,15 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
         MetaMixin.__init__(self)
         LinkedMixin.__init__(self, ann_id, on_change)
 
-        self.kind ="text"
-        # Store initial text in meta.note
-        self.meta.note = text
+        self.kind = "text"
+        # Build overlay-2.0 structure: one block, one plain run with default text.
+        # label = block 0 plain text; tech = block 1; note = block 2.
+        from models import TextBlock, TextRun
+        self.meta.blocks = [TextBlock(runs=[TextRun(type="text", text=text)])]
         self.setPos(QPointF(x, y))
         self.setData(ANN_ID_KEY, ann_id)
 
-        # Start with no text interaction - only select/move
-        # Double-click will enable editing
+        # Display-only — no inline text editing on the scene
         self.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self.setFlags(
             QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
@@ -1566,14 +1575,10 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
             | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
         )
 
-        # Use class-level default text color (contrasts with canvas background)
         self.text_color = QColor(MetaTextItem.default_text_color)
-        self.text_size_pt = 12  # default
-        self._editing = False
+        self.text_size_pt = 12
+        self._editing = False  # kept for compat checks in dock.py
         self._apply_text_style()
-
-        # Connect document changes to sync with properties
-        self.document().contentsChanged.connect(self._on_contents_changed)
 
     def _apply_text_style(self):
         self.setDefaultTextColor(self.text_color)
@@ -1581,21 +1586,52 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
         f.setPointSizeF(float(self.text_size_pt))
         self.setFont(f)
 
-    def _on_contents_changed(self):
-        """Called when text content changes during editing."""
-        if self._editing:
-            self.meta.note = self.toPlainText()
-            if MetaTextItem.on_text_changed:
-                MetaTextItem.on_text_changed(self.toPlainText())
+    def _render_from_meta(self):
+        """Rebuild the QTextDocument from meta blocks (or legacy text/note).
+
+        One-way render: reads font/colour from effective_default_format,
+        then sets the document HTML from blocks.  The Contents tab text
+        widget is the source of truth; this method is the display sink.
+        """
+        from PyQt6.QtGui import QFont as _QFont
+        from models import _blocks_to_legacy_text
+
+        meta = self.meta
+        _eff_fmt = meta.effective_default_format()
+
+        font_family = _eff_fmt.font_family
+        font_size = max(6, int(_eff_fmt.font_size or 12))
+        color_str = _eff_fmt.color or ""
+
+        if color_str:
+            from utils import hex_to_qcolor as _htq
+            self.text_color = _htq(color_str, self.text_color)
+
+        self.text_size_pt = font_size
+        fnt = _QFont(font_family) if font_family else _QFont()
+        fnt.setPointSize(font_size)
+        self.setFont(fnt)
+        self.setDefaultTextColor(self.text_color)
+
+        # Block contentsChanged during external update
+        self.document().blockSignals(True)
+
+        if meta.blocks is not None:
+            html_text = _blocks_to_legacy_text(meta.blocks)
+            self.setHtml(html_text if html_text else "")
+        elif getattr(meta, "text", ""):
+            self.setHtml(meta.text)
+        elif getattr(meta, "note", ""):
+            self.setPlainText(meta.note)
+        else:
+            self.setPlainText("")
+
+        self.document().blockSignals(False)
 
     def set_meta(self, meta: AnnotationMeta) -> None:
-        """Set metadata and update displayed text from meta.note."""
+        """Set metadata and render the document from blocks/text/note."""
         self.meta = meta
-        if meta.note and meta.note != self.toPlainText():
-            # Block contentsChanged signal during external update
-            self.document().blockSignals(True)
-            self.setPlainText(meta.note)
-            self.document().blockSignals(False)
+        self._render_from_meta()
 
     def itemChange(self, change, value):
         out = super().itemChange(change, value)
@@ -1604,70 +1640,16 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
         return out
 
     def mouseDoubleClickEvent(self, event):
-        """Double-click to enter edit mode."""
+        """Double-click → focus the Contents tab text widget for editing."""
         if event.button() == Qt.MouseButton.LeftButton:
-            self._start_editing()
-            # Position cursor at click location
-            super().mouseDoubleClickEvent(event)
+            if MetaTextItem.on_request_edit:
+                MetaTextItem.on_request_edit(self)
+            event.accept()
         else:
             super().mouseDoubleClickEvent(event)
 
-    def _start_editing(self):
-        """Enter text editing mode."""
-        if self._editing:
-            return
-        self._editing = True
-        self._text_before_edit = self.toPlainText()
-        self.setTextInteractionFlags(Qt.TextInteractionFlag.TextEditorInteraction)
-        self.setFocus(Qt.FocusReason.MouseFocusReason)
-        # Select all text for easy replacement
-        cursor = self.textCursor()
-        cursor.select(cursor.SelectionType.Document)
-        self.setTextCursor(cursor)
-        if MetaTextItem.on_editing_started:
-            MetaTextItem.on_editing_started()
-
-    def _stop_editing(self):
-        """Exit text editing mode."""
-        if not self._editing:
-            return
-        self._editing = False
-        self.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
-        # Clear selection
-        cursor = self.textCursor()
-        cursor.clearSelection()
-        self.setTextCursor(cursor)
-        # Sync the displayed text to meta.note
-        new_text = self.toPlainText()
-        self.meta.note = new_text
-        try:
-            self.text_size_pt = float(self.font().pointSizeF())
-        except Exception:
-            pass
-        self._notify_changed()
-        # Fire text edit undo callback if text changed
-        old_text = getattr(self, '_text_before_edit', None)
-        if old_text is not None and old_text != new_text:
-            if MetaTextItem.on_text_edit_finished:
-                MetaTextItem.on_text_edit_finished(self, old_text, new_text)
-        self._text_before_edit = None
-        if MetaTextItem.on_editing_finished:
-            MetaTextItem.on_editing_finished()
-
-    def focusOutEvent(self, event):
-        """Handle focus out - exit edit mode."""
-        super().focusOutEvent(event)
-        self._stop_editing()
-
     def to_record(self) -> Dict[str, Any]:
-        try:
-            self.text_size_pt = float(self.font().pointSizeF())
-        except Exception:
-            pass
-
         p = self.pos()
-        # Sync displayed text content into meta.note before serializing
-        self.meta.note = self.toPlainText()
         rec = {
             "id": self.ann_id,
             "kind": "text",
@@ -2699,6 +2681,8 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._vertex_editing = False
         self._active_vertex: Optional[int] = None
         self._vertex_dragging = False
+        self._active_ctrl_point: Optional[Tuple[int, str]] = None  # (vertex_idx, "cp"/"c1"/"c2")
+        self._ctrl_dragging = False
 
         self.pen_color = QColor(Qt.GlobalColor.darkCyan)
         self.pen_width = 2
@@ -2727,8 +2711,16 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         w, h = self._width, self._height
         p0 = self._rel_points[0]
         path.moveTo(p0[0] * w, p0[1] * h)
-        for rx, ry in self._rel_points[1:]:
-            path.lineTo(rx * w, ry * h)
+        for pt in self._rel_points[1:]:
+            rx, ry = pt[0], pt[1]
+            if len(pt) >= 5 and pt[2] == "Q":
+                cx, cy = pt[3], pt[4]
+                path.quadTo(cx * w, cy * h, rx * w, ry * h)
+            elif len(pt) >= 7 and pt[2] == "C":
+                c1x, c1y, c2x, c2y = pt[3], pt[4], pt[5], pt[6]
+                path.cubicTo(c1x * w, c1y * h, c2x * w, c2y * h, rx * w, ry * h)
+            else:
+                path.lineTo(rx * w, ry * h)
         path.closeSubpath()
         self.setPath(path)
 
@@ -2737,20 +2729,17 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
         Converts relative points that may be outside 0-1 range back into
         a new bounding box with all relative points normalized to 0-1.
+        Preserves curve type tags and control points.
         """
         if not self._rel_points:
             return
 
-        # Convert current relative points to absolute scene coordinates
         p = self.pos()
-        abs_pts = [
-            (p.x() + rx * self._width, p.y() + ry * self._height)
-            for rx, ry in self._rel_points
-        ]
+        w, h = self._width, self._height
 
-        # Compute new bounding box
-        xs = [pt[0] for pt in abs_pts]
-        ys = [pt[1] for pt in abs_pts]
+        # Compute new bounding box from anchor points only
+        xs = [p.x() + pt[0] * w for pt in self._rel_points]
+        ys = [p.y() + pt[1] * h for pt in self._rel_points]
         new_x = min(xs)
         new_y = min(ys)
         new_w = max(xs) - new_x
@@ -2762,11 +2751,24 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         if new_h < 1.0:
             new_h = 1.0
 
-        # Recompute relative points within new bounding box
-        self._rel_points = [
-            [(ax - new_x) / new_w, (ay - new_y) / new_h]
-            for ax, ay in abs_pts
-        ]
+        def _rescale(rx, ry):
+            ax = p.x() + rx * w
+            ay = p.y() + ry * h
+            return (ax - new_x) / new_w, (ay - new_y) / new_h
+
+        new_pts = []
+        for pt in self._rel_points:
+            new_rx, new_ry = _rescale(pt[0], pt[1])
+            if len(pt) >= 5 and pt[2] == "Q":
+                new_cx, new_cy = _rescale(pt[3], pt[4])
+                new_pts.append([new_rx, new_ry, "Q", new_cx, new_cy])
+            elif len(pt) >= 7 and pt[2] == "C":
+                new_c1x, new_c1y = _rescale(pt[3], pt[4])
+                new_c2x, new_c2y = _rescale(pt[5], pt[6])
+                new_pts.append([new_rx, new_ry, "C", new_c1x, new_c1y, new_c2x, new_c2y])
+            else:
+                new_pts.append([new_rx, new_ry])
+        self._rel_points = new_pts
 
         # Update position and dimensions
         self.prepareGeometryChange()
@@ -2825,16 +2827,37 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def _vertex_points_scene(self) -> list:
         """Return absolute scene positions of all vertices (rotation-aware)."""
         return [
-            self.mapToScene(QPointF(rx * self._width, ry * self._height))
-            for rx, ry in self._rel_points
+            self.mapToScene(QPointF(pt[0] * self._width, pt[1] * self._height))
+            for pt in self._rel_points
         ]
 
     def _vertex_points_local(self) -> list:
         """Return local positions of all vertices."""
         return [
-            QPointF(rx * self._width, ry * self._height)
-            for rx, ry in self._rel_points
+            QPointF(pt[0] * self._width, pt[1] * self._height)
+            for pt in self._rel_points
         ]
+
+    def _ctrl_point_info(self) -> list:
+        """Return list of (vertex_idx, label, local_QPointF) for all control points."""
+        result = []
+        w, h = self._width, self._height
+        for i, pt in enumerate(self._rel_points):
+            if len(pt) >= 5 and pt[2] == "Q":
+                result.append((i, "cp", QPointF(pt[3] * w, pt[4] * h)))
+            elif len(pt) >= 7 and pt[2] == "C":
+                result.append((i, "c1", QPointF(pt[3] * w, pt[4] * h)))
+                result.append((i, "c2", QPointF(pt[5] * w, pt[6] * h)))
+        return result
+
+    def _hit_test_ctrl_point(self, scene_pt: QPointF) -> Optional[Tuple[int, str]]:
+        """Return (vertex_idx, label) of control point near scene_pt, or None."""
+        hit_dist = _get_hit_distance()
+        for vi, label, lp in self._ctrl_point_info():
+            sp = self.mapToScene(lp)
+            if QLineF(scene_pt, sp).length() <= hit_dist:
+                return (vi, label)
+        return None
 
     def _hit_test_vertex(self, scene_pt: QPointF) -> Optional[int]:
         """Return index of vertex near scene_pt, or None."""
@@ -2873,6 +2896,119 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     # ---- Mouse interaction ----
 
+    # ---- Vertex context menu / type change ----
+
+    def _serialize_points(self) -> list:
+        """Serialize _rel_points preserving curve type and control points."""
+        result = []
+        for pt in self._rel_points:
+            if len(pt) >= 5 and pt[2] == "Q":
+                result.append([round(pt[0], 4), round(pt[1], 4), "Q",
+                                round(pt[3], 4), round(pt[4], 4)])
+            elif len(pt) >= 7 and pt[2] == "C":
+                result.append([round(pt[0], 4), round(pt[1], 4), "C",
+                                round(pt[3], 4), round(pt[4], 4),
+                                round(pt[5], 4), round(pt[6], 4)])
+            else:
+                result.append([round(pt[0], 4), round(pt[1], 4)])
+        return result
+
+    def _show_vertex_context_menu(self, screen_pos, idx: int):
+        """Show context menu for a vertex: change type, add, delete."""
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu()
+        pt = self._rel_points[idx]
+        cur_type = pt[2] if len(pt) >= 3 and isinstance(pt[2], str) else "L"
+
+        type_menu = menu.addMenu("Vertex Type")
+        for label, vtype in [("Straight (L)", "L"), ("Quadratic (Q)", "Q"), ("Cubic (C)", "C")]:
+            act = type_menu.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(cur_type == vtype)
+            act.triggered.connect(lambda checked, t=vtype: self._change_vertex_type(idx, t))
+
+        menu.addSeparator()
+        ins_act = menu.addAction("Add Node After")
+        ins_act.triggered.connect(lambda: self._insert_vertex_after(idx))
+
+        if len(self._rel_points) > 3:
+            del_act = menu.addAction("Delete Node")
+            del_act.triggered.connect(lambda: self._delete_vertex(idx))
+
+        menu.exec(screen_pos)
+
+    def _show_edge_context_menu(self, screen_pos, edge_idx: int, scene_pt: QPointF):
+        """Show context menu for an edge: insert vertex here."""
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu()
+        ins_act = menu.addAction("Insert Vertex Here")
+        ins_act.triggered.connect(lambda: self._insert_vertex_at(edge_idx, scene_pt))
+        menu.exec(screen_pos)
+
+    def _change_vertex_type(self, idx: int, new_type: str):
+        """Change a vertex's segment type, auto-generating control points."""
+        pt = self._rel_points[idx]
+        rx, ry = pt[0], pt[1]
+        old_type = pt[2] if len(pt) >= 3 and isinstance(pt[2], str) else "L"
+        if old_type == new_type:
+            return
+        prev_pt = self._rel_points[idx - 1] if idx > 0 else self._rel_points[-1]
+        px, py = prev_pt[0], prev_pt[1]
+        if new_type == "L":
+            self._rel_points[idx] = [rx, ry]
+        elif new_type == "Q":
+            cx = (px + rx) / 2
+            cy = (py + ry) / 2
+            self._rel_points[idx] = [rx, ry, "Q", cx, cy]
+        elif new_type == "C":
+            c1x = px + (rx - px) / 3
+            c1y = py + (ry - py) / 3
+            c2x = px + 2 * (rx - px) / 3
+            c2y = py + 2 * (ry - py) / 3
+            self._rel_points[idx] = [rx, ry, "C", c1x, c1y, c2x, c2y]
+        self.prepareGeometryChange()
+        self._update_path()
+        self._update_label_position()
+        self._update_transform_origin()
+        self._notify_changed()
+
+    def _insert_vertex_after(self, idx: int):
+        """Insert a new straight vertex midway between vertex idx and the next."""
+        next_idx = (idx + 1) % len(self._rel_points)
+        pt = self._rel_points[idx]
+        npt = self._rel_points[next_idx]
+        rx = (pt[0] + npt[0]) / 2
+        ry = (pt[1] + npt[1]) / 2
+        self.prepareGeometryChange()
+        self._rel_points.insert(idx + 1, [rx, ry])
+        self._update_path()
+        self._update_label_position()
+        self._update_transform_origin()
+        self._notify_changed()
+
+    def _insert_vertex_at(self, edge_idx: int, scene_pt: QPointF):
+        """Insert a vertex at the given scene position on edge edge_idx."""
+        local_pt = self.mapFromScene(scene_pt)
+        rx = local_pt.x() / self._width if self._width > 0 else 0.5
+        ry = local_pt.y() / self._height if self._height > 0 else 0.5
+        self.prepareGeometryChange()
+        self._rel_points.insert(edge_idx + 1, [rx, ry])
+        self._update_path()
+        self._update_label_position()
+        self._update_transform_origin()
+        self._notify_changed()
+
+    def _delete_vertex(self, idx: int):
+        """Delete a vertex (minimum 3 vertices)."""
+        if len(self._rel_points) <= 3:
+            return
+        self.prepareGeometryChange()
+        del self._rel_points[idx]
+        self._recalculate_bbox()
+        self._notify_changed()
+
+    # ---- Mouse interaction ----
+
     def hoverMoveEvent(self, event):
         if self._vertex_editing:
             idx = self._hit_test_vertex(event.scenePos())
@@ -2902,35 +3038,29 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.RightButton and self._vertex_editing:
             scene_pt = event.scenePos()
-            # Right-click on vertex: delete it (min 3 vertices)
             idx = self._hit_test_vertex(scene_pt)
             if idx is not None:
-                if len(self._rel_points) > 3:
-                    self.prepareGeometryChange()
-                    del self._rel_points[idx]
-                    self._recalculate_bbox()
-                    self._notify_changed()
+                self._show_vertex_context_menu(event.screenPos(), idx)
                 event.accept()
                 return
-            # Right-click on edge: insert a new vertex
             edge_idx = self._hit_test_edge(scene_pt)
             if edge_idx is not None:
-                local_pt = self.mapFromScene(scene_pt)
-                rx = local_pt.x() / self._width if self._width > 0 else 0.5
-                ry = local_pt.y() / self._height if self._height > 0 else 0.5
-                self.prepareGeometryChange()
-                self._rel_points.insert(edge_idx + 1, [rx, ry])
-                self._update_path()
-                self._update_label_position()
-                self._update_transform_origin()
-                self._notify_changed()
+                self._show_edge_context_menu(event.screenPos(), edge_idx, scene_pt)
                 event.accept()
                 return
 
         if event.button() == Qt.MouseButton.LeftButton:
             # Vertex editing takes priority
             if self._vertex_editing:
-                idx = self._hit_test_vertex(event.scenePos())
+                scene_pt = event.scenePos()
+                # Hit-test control points first
+                cp_hit = self._hit_test_ctrl_point(scene_pt)
+                if cp_hit is not None:
+                    self._active_ctrl_point = cp_hit
+                    self._ctrl_dragging = True
+                    event.accept()
+                    return
+                idx = self._hit_test_vertex(scene_pt)
                 if idx is not None:
                     self._begin_resize_tracking()
                     self._active_vertex = idx
@@ -2961,6 +3091,26 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         if self._rotating:
             self._handle_rotation_move(event)
             return
+        # Control point dragging
+        if self._ctrl_dragging and self._active_ctrl_point is not None:
+            vi, label = self._active_ctrl_point
+            local_pt = self.mapFromScene(event.scenePos())
+            rx = local_pt.x() / self._width if self._width > 0 else 0.5
+            ry = local_pt.y() / self._height if self._height > 0 else 0.5
+            pt = self._rel_points[vi]
+            if label == "cp" and len(pt) >= 5 and pt[2] == "Q":
+                self._rel_points[vi] = [pt[0], pt[1], "Q", rx, ry]
+            elif label == "c1" and len(pt) >= 7 and pt[2] == "C":
+                self._rel_points[vi] = [pt[0], pt[1], "C", rx, ry, pt[5], pt[6]]
+            elif label == "c2" and len(pt) >= 7 and pt[2] == "C":
+                self._rel_points[vi] = [pt[0], pt[1], "C", pt[3], pt[4], rx, ry]
+            self.prepareGeometryChange()
+            self._update_path()
+            self._update_label_position()
+            self._update_transform_origin()
+            self._notify_changed()
+            event.accept()
+            return
         # Vertex dragging — allow dragging outside the current bounding box
         if self._vertex_dragging and self._active_vertex is not None:
             # Map scene position to local coordinates (rotation-aware)
@@ -2968,7 +3118,13 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             # Compute unclamped relative position (can exceed 0-1 range)
             rx = local_pt.x() / self._width if self._width > 0 else 0.5
             ry = local_pt.y() / self._height if self._height > 0 else 0.5
-            self._rel_points[self._active_vertex] = [rx, ry]
+            pt = self._rel_points[self._active_vertex]
+            if len(pt) >= 5 and pt[2] == "Q":
+                self._rel_points[self._active_vertex] = [rx, ry, "Q", pt[3], pt[4]]
+            elif len(pt) >= 7 and pt[2] == "C":
+                self._rel_points[self._active_vertex] = [rx, ry, "C", pt[3], pt[4], pt[5], pt[6]]
+            else:
+                self._rel_points[self._active_vertex] = [rx, ry]
             self.prepareGeometryChange()
             self._update_path()
             self._update_label_position()
@@ -3000,6 +3156,13 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if self._ctrl_dragging:
+            self._ctrl_dragging = False
+            self._active_ctrl_point = None
+            self._recalculate_bbox()
+            self._notify_changed()
+            event.accept()
+            return
         if self._vertex_dragging:
             self._end_resize_tracking()
             self._vertex_dragging = False
@@ -3051,9 +3214,38 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             return
 
         if self._vertex_editing:
-            # Draw vertex knobs
             handle_size = _get_handle_size()
             half = handle_size / 2
+            w, h = self._width, self._height
+            # Draw control point handles first (behind vertex knobs)
+            cp_pen = QPen(QColor(100, 100, 200), 1, Qt.PenStyle.DashLine)
+            cp_brush = QBrush(QColor(100, 100, 220))
+            cp_pen_solid = QPen(QColor(50, 50, 180), 1)
+            for i, pt in enumerate(self._rel_points):
+                if len(pt) >= 5 and pt[2] == "Q":
+                    anchor = QPointF(pt[0] * w, pt[1] * h)
+                    cp = QPointF(pt[3] * w, pt[4] * h)
+                    painter.setPen(cp_pen)
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.drawLine(anchor, cp)
+                    painter.setPen(cp_pen_solid)
+                    painter.setBrush(cp_brush)
+                    painter.drawEllipse(QRectF(cp.x() - half, cp.y() - half, handle_size, handle_size))
+                elif len(pt) >= 7 and pt[2] == "C":
+                    anchor = QPointF(pt[0] * w, pt[1] * h)
+                    c1 = QPointF(pt[3] * w, pt[4] * h)
+                    c2 = QPointF(pt[5] * w, pt[6] * h)
+                    prev_pt = self._rel_points[i - 1] if i > 0 else self._rel_points[-1]
+                    prev_anchor = QPointF(prev_pt[0] * w, prev_pt[1] * h)
+                    painter.setPen(cp_pen)
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.drawLine(prev_anchor, c1)
+                    painter.drawLine(anchor, c2)
+                    painter.setPen(cp_pen_solid)
+                    painter.setBrush(cp_brush)
+                    painter.drawEllipse(QRectF(c1.x() - half, c1.y() - half, handle_size, handle_size))
+                    painter.drawEllipse(QRectF(c2.x() - half, c2.y() - half, handle_size, handle_size))
+            # Draw vertex knobs
             for i, vp in enumerate(self._vertex_points_local()):
                 if i == self._active_vertex:
                     painter.setPen(QPen(QColor(204, 102, 0), 1))
@@ -3096,7 +3288,7 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 "y": round1(p.y()),
                 "w": round1(self._width),
                 "h": round1(self._height),
-                "points": [[round(rx, 4), round(ry, 4)] for rx, ry in self._rel_points],
+                "points": self._serialize_points(),
             },
             **self._meta_dict(self.meta),
             **self._style_dict(),

@@ -404,6 +404,9 @@ class PropertyPanel(QWidget):
         self._current_item: Optional[QGraphicsItem] = None
         self._image_info: Dict[str, Any] = {}
         self.undo_stack = None  # Set from main.py after construction
+        self._text_contents_is_authoritative = False  # True while QTextEdit drives updates
+        self._text_content_just_changed = False       # True during textChanged processing
+        self._suppress_cursor_sync = False            # True during set_item to block deferred cursor signals
 
         if HAS_UI:
             self._init_from_ui()
@@ -1287,14 +1290,17 @@ class PropertyPanel(QWidget):
             self._set_button_fg(self.text_color_btn, color)
 
     def _set_button_fg(self, btn, color: QColor):
-        """Set a button's background color and a contrasting text color.
-
-        Blends the item color with the dock background (from the widget's
-        effective palette) to determine the actual visible color, then picks
-        black or white text for best contrast.
-        """
+        """Set a button's background color and a contrasting text color."""
         from PyQt6.QtGui import QPalette
         r, g, b, a = color.red(), color.green(), color.blue(), color.alpha()
+        if btn is self.text_color_btn:
+            import traceback, io
+            auth = "AUTH" if self._text_contents_is_authoritative else "norm"
+            print(f"[DBG _set_button_fg TEXT {auth}] #{r:02X}{g:02X}{b:02X}{a:02X}")
+            if r == 0xFF and g == 0xFF and b == 0x00:
+                buf = io.StringIO()
+                traceback.print_stack(limit=10, file=buf)
+                print(f"  *** YELLOW #{r:02X}{g:02X}{b:02X}{a:02X} STACK:\n{buf.getvalue()}")
         af = a / 255.0
         # Blend with the parent's background to get the visible color
         parent = btn.parentWidget() or btn
@@ -1590,7 +1596,7 @@ class PropertyPanel(QWidget):
                   self.flow_type_combo, self.edit_graphic_url,
                   self.spin_graphic_anchor, self.fill_opacity,
                   self.pen_opacity, self.text_opacity,
-                  self.divider_count_spin,
+                  self.divider_count_spin, self.combo_font,
                   self.chk_bold, self.chk_italic, self.chk_underline,
                   self.chk_strikethrough, *extra):
             w.blockSignals(block)
@@ -1810,16 +1816,19 @@ class PropertyPanel(QWidget):
             item._notify_changed()
 
     def set_item(self, item: Optional[QGraphicsItem]):
-        """Set the item to display/edit in the property panel.
-
-        Populates all schema-matched widgets from the item's attributes
-        and its ``meta`` (AnnotationContents) dataclass.  Prints
-        ``[PropPanel] NO WIDGET`` for schema values that have no matching
-        widget yet.
-        """
+        """Set the item to display/edit in the property panel."""
+        # Suppress _on_text_cursor_changed during population — setting
+        # HTML/text on the QTextEdit fires deferred cursor signals that
+        # would overwrite the freshly-set color widgets with a wrong value
+        # read from Qt's CSS-rendered charFormat.
+        self._suppress_cursor_sync = True
         is_new_item = item is not self._current_item
+        # Clear the authoritative flag when the selected item changes
+        if is_new_item:
+            self._text_contents_is_authoritative = False
         self._current_item = item
         if item is None or not hasattr(item, "meta"):
+            self._text_contents_is_authoritative = False
             self.kind_label.setText("-")
             self.dsl_label.setText("Generic")
             self.edit_id.setText("")
@@ -1827,6 +1836,7 @@ class PropertyPanel(QWidget):
             self._set_enabled(False)
             if HAS_UI and hasattr(self, "_save_default_btn"):
                 self._save_default_btn.setVisible(False)
+            self._suppress_cursor_sync = False
             return
 
         if HAS_UI and hasattr(self, "_save_default_btn"):
@@ -1905,8 +1915,9 @@ class PropertyPanel(QWidget):
         self.arrow_end_spin.setValue(arrow_size)
 
         # ── text color ──────────────────────────────────────────────
-        text_color = getattr(item, "text_color", pen_color)
-        self._set_color_widgets("text", text_color)
+        if not self._text_contents_is_authoritative:
+            text_color = getattr(item, "text_color", pen_color)
+            self._set_color_widgets("text", text_color)
 
         # ── contents — resolve effective frame and default_format ─────
         _eff_frame = meta.effective_frame()
@@ -1935,25 +1946,39 @@ class PropertyPanel(QWidget):
                 f"body, p {{ color: {_css_col}; }}"
             )
 
-        # For newly created items (no blocks, no text) snapshot default_format
-        # and frame immediately so they appear in the JSON editor right away.
+        # Capture whether this is a brand-new item that needs one-time format
+        # initialization (default_format absent).  Must be captured BEFORE the
+        # stamping block below sets meta.default_format, because the deferred
+        # _init_text_format_sync check at the end of set_item() needs to
+        # distinguish "truly new item" from "existing item re-selected".
+        _needs_format_init = (
+            is_new_item
+            and meta.default_format is None
+            and not getattr(meta, "text", "").strip()
+        )
+
+        # For newly created items snapshot default_format and frame immediately
+        # so they appear in the JSON editor right away.
+        # Triggers when default_format is None and no legacy flat text is set
+        # — covers both new shapes (blocks=None) and new text items (blocks set
+        # in __init__ but default_format not yet resolved from UI settings).
         # Uses the actual resolved font family from the QFont we just installed
         # (empty font_family → OS default → e.g. "Segoe UI").
-        if is_new_item and meta.blocks is None and not getattr(meta, "text", "").strip():
-            if meta.default_format is None:
-                _actual_family = _te_fnt.family()
-                meta.default_format = CharFormat(
-                    font_family=_actual_family if _actual_family else font_family,
-                    font_size=font_size,
-                    color=getattr(meta, "color", "") or "",
-                )
+        if _needs_format_init:
+            _actual_family = _te_fnt.family()
+            meta.default_format = CharFormat(
+                font_family=_actual_family if _actual_family else font_family,
+                font_size=font_size,
+                color=getattr(meta, "color", "") or "",
+            )
             if meta.frame is None:
                 meta.frame = _eff_frame
-            meta.blocks = []
+            if meta.blocks is None:
+                meta.blocks = []
             if hasattr(item, "_notify_changed"):
                 item._notify_changed()
 
-        if not self.text_contents.hasFocus():
+        if not self.text_contents.hasFocus() and not self._text_contents_is_authoritative:
             if meta.blocks is not None:
                 # Overlay-2.0: render from blocks
                 html = _blocks_to_html(meta.blocks, _eff_fmt, halign)
@@ -1968,31 +1993,34 @@ class PropertyPanel(QWidget):
                 else:
                     self.text_contents.clear()
 
-        halign_map = {"left": 0, "center": 1, "justified": 2, "right": 3}
-        valign_map = {"top": 0, "middle": 1, "bottom": 2}
-        self.text_halign_combo.setCurrentIndex(halign_map.get(halign, 1))
-        self.text_valign_combo.setCurrentIndex(valign_map.get(valign, 0))
-        self._apply_align_to_textedit(halign)
+        if self._text_contents_is_authoritative:
+            # The QTextEdit owns the state — do NOT touch format controls.
+            # They were set by the format handler (color picker, bold, etc.)
+            # or by _on_text_cursor_changed when the user moves the cursor.
+            print("[DBG set_item] AUTHORITATIVE — skipping format controls")
+            pass
+        else:
+            halign_map = {"left": 0, "center": 1, "justified": 2, "right": 3}
+            valign_map = {"top": 0, "middle": 1, "bottom": 2}
+            self.text_halign_combo.setCurrentIndex(halign_map.get(halign, 1))
+            self.text_valign_combo.setCurrentIndex(valign_map.get(valign, 0))
+            self._apply_align_to_textedit(halign)
 
-        self.spin_text_size.setValue(font_size)
-        # Always update the font combo — even when font_family is "" the OS
-        # default font is valid and should be reflected.
-        _actual_family = _te_fnt.family()
-        if _actual_family:
-            self.combo_font.setCurrentFont(_QFont(_actual_family))
+            self.spin_text_size.setValue(font_size)
+            _actual_family = _te_fnt.family()
+            if _actual_family:
+                self.combo_font.setCurrentFont(_QFont(_actual_family))
 
-        # Set the typing-format (format applied to newly typed characters) so
-        # that text the user types inherits the item's default font/size/color
-        # rather than whatever Qt's theme happens to provide.
-        _tf = _TCF()
-        if _actual_family:
-            _tf.setFontFamilies([_actual_family])
-        _tf.setFontPointSize(float(font_size))
-        if _def_color_hex:
-            _tc = hex_to_qcolor(_def_color_hex, QColor())
-            if _tc.isValid():
-                _tf.setForeground(_tc)
-        self.text_contents.setCurrentCharFormat(_tf)
+            # Set the typing-format so new characters inherit the item's defaults
+            _tf = _TCF()
+            if _actual_family:
+                _tf.setFontFamilies([_actual_family])
+            _tf.setFontPointSize(float(font_size))
+            if _def_color_hex:
+                _tc = hex_to_qcolor(_def_color_hex, QColor())
+                if _tc.isValid():
+                    _tf.setForeground(_tc)
+            self.text_contents.setCurrentCharFormat(_tf)
 
         self.chk_wrap.setChecked(getattr(meta, "wrap", True))
 
@@ -2074,6 +2102,47 @@ class PropertyPanel(QWidget):
             self._setup_group_controls(item, pen_color)
         else:
             pass
+        # Clear the suppress flag after deferred Qt signals have been processed.
+        # QTimer.singleShot(0) runs after the current event batch completes,
+        # so cursor signals queued by setHtml/setTextCursor during set_item
+        # are still blocked.
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(0, self._clear_suppress_cursor_sync)
+
+        # One-time initialization sync for NEWLY CREATED MetaTextItems only
+        # (_needs_format_init = default_format was absent when set_item() entered).
+        # After the QTextEdit is fully laid out, read back the OS-resolved font
+        # family/size and push to meta.default_format + re-render the canvas item.
+        # NOT triggered for existing items re-selected from the JSON editor —
+        # those already have default_format set and must not have their cursor
+        # position disrupted by the _notify_changed() call here.
+        if _needs_format_init and isinstance(item, MetaTextItem) and hasattr(item, "_render_from_meta"):
+            _item_ref = item
+
+            def _init_text_format_sync():
+                if self._current_item is not _item_ref:
+                    return
+                doc = self.text_contents.document()
+                doc_font = doc.defaultFont()
+                fam = doc_font.family()
+                pt = doc_font.pointSize()
+                meta = _item_ref.meta
+                # Rebuild default_format from the fully resolved document state
+                # so font family is the actual OS-resolved name (not empty string).
+                meta.default_format = CharFormat(
+                    font_family=fam if fam else getattr(meta, "font_family", ""),
+                    font_size=pt if pt > 0 else max(6, getattr(meta, "font_size", 12)),
+                    color=(meta.default_format.color if meta.default_format else "")
+                          or getattr(meta, "color", "") or "",
+                )
+                _item_ref._render_from_meta()
+                if hasattr(_item_ref, "_notify_changed"):
+                    _item_ref._notify_changed()
+
+            QTimer.singleShot(0, _init_text_format_sync)
+
+    def _clear_suppress_cursor_sync(self):
+        self._suppress_cursor_sync = False
 
     def _setup_rect_controls(self, item, pen_color):
         """Configure controls for rect items."""
@@ -2133,10 +2202,10 @@ class PropertyPanel(QWidget):
         self.text_box_width_spin.blockSignals(False)
 
     def _setup_text_controls(self, item, pen_color):
-        """Configure controls for text items."""
-        self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
-        if isinstance(item, MetaTextItem):
-            self.note_edit.setText(item.toPlainText())
+        """Configure controls for text items (same contents tab flow as shapes)."""
+        if not self._text_contents_is_authoritative:
+            self._set_preview(self.text_color_preview, getattr(item, "text_color", pen_color))
+        self._setup_text_layout_controls(item)
 
     def _setup_line_style_controls(self, item):
         """Configure line width and dash style controls."""
@@ -2520,51 +2589,32 @@ class PropertyPanel(QWidget):
             self.undo_stack.push(cmd)
 
     def _apply_run_color(self, item, color: QColor, saved_cursor=None):
-        """Apply *color* to the selected text run (or typing format).
-
-        ``meta.default_format`` is NEVER modified here — it is set once at
-        item creation and must not drift when individual runs are recolored.
-
-        If *saved_cursor* is provided (captured before a modal dialog stole
-        focus) it is used directly; otherwise the current cursor is read
-        from the text edit regardless of focus state.
-
-        When a selection exists, ``mergeCharFormat`` fires ``textChanged``
-        → ``_on_text_contents_changed``, which re-extracts blocks (with the
-        run's new color as a delta against the unchanged ``default_format``),
-        updates the canvas, and calls ``_notify_changed``.  This method only
-        needs to update the color-picker widgets in that path.
-
-        When there is no selection, ``setCharFormat`` sets the typing format
-        for the next character.  No canvas update is needed in that case
-        because no content has changed.
-
-        Args:
-            item: The current canvas item (must have a ``meta`` attribute).
-            color: The new text color.
-            saved_cursor: Optional QTextCursor captured before a dialog opened.
-        """
+        """Apply *color* to the selected text run (or typing format)."""
         from PyQt6.QtGui import QTextCharFormat as _TCF
+
+        r, g, b, a = color.red(), color.green(), color.blue(), color.alpha()
+        print(f"[DBG _apply_run_color] color=#{r:02X}{g:02X}{b:02X}{a:02X} saved_cursor={'yes' if saved_cursor else 'no'}")
+        self._dbg_cursor_state("applyRunColor-pre")
+
+        fmt = _TCF()
+        fmt.setForeground(color)
 
         cursor = saved_cursor if saved_cursor is not None else self.text_contents.textCursor()
 
         if cursor is not None:
-            fmt = _TCF()
-            fmt.setForeground(color)
             if cursor.hasSelection():
-                # Restore selection (focus may have moved to dialog), then apply.
-                # textChanged → _on_text_contents_changed handles blocks +
-                # canvas + notify — do NOT call them again here.
                 self.text_contents.setTextCursor(cursor)
                 cursor.mergeCharFormat(fmt)
                 self.text_contents.setTextCursor(cursor)
             else:
-                # No selection: set typing format for next character typed.
-                cursor.setCharFormat(fmt)
+                cursor.mergeCharFormat(fmt)
                 self.text_contents.setTextCursor(cursor)
+
+        self._dbg_cursor_state("applyRunColor-post")
 
         # Always reflect the chosen color in the color-picker widgets.
         self._set_color_widgets("text", color)
+        self._refocus_text_contents()
 
     def pick_text_color(self):
         """Pick text color via color dialog, applying to the current selection."""
@@ -2897,36 +2947,66 @@ class PropertyPanel(QWidget):
         m = re.search(r'<body[^>]*>(.*?)</body>', html, re.DOTALL | re.IGNORECASE)
         meta.text = m.group(1).strip() if m else self.text_contents.toPlainText()
 
-        if hasattr(item, "_update_label_text"):
-            item._update_label_text()
-        if hasattr(item, "_notify_changed"):
-            item._notify_changed()
+        self._dbg_cursor_state("textChanged-pre")
 
-    def _on_text_cursor_changed(self):
-        """Reflect the current run's format in the UI controls.
+        # The QTextEdit is authoritative for the lifetime of this editing session.
+        if isinstance(item, MetaTextItem):
+            self._text_contents_is_authoritative = True
 
-        Reads the ``QTextCharFormat`` at the cursor (or of the selection) and
-        the ``QTextBlockFormat`` of the current paragraph, then updates the
-        font, size, color, and alignment controls — without triggering the
-        format-change handlers that would write back to the document.
+        # Suppress _on_text_cursor_changed from re-reading format controls
+        # during the textChanged→notify→set_item round-trip.  The cursor
+        # position change that accompanies typing should NOT reset the picker.
+        self._text_content_just_changed = True
+        try:
+            if isinstance(item, MetaTextItem):
+                item._render_from_meta()
+            elif hasattr(item, "_update_label_text"):
+                item._update_label_text()
+            if hasattr(item, "_notify_changed"):
+                item._notify_changed()
+        finally:
+            self._text_content_just_changed = False
+
+        self._dbg_cursor_state("textChanged-post")
+
+    def _dbg_cursor_state(self, tag: str):
+        """Print the QTextEdit cursor's format state for debugging."""
+        from PyQt6.QtCore import Qt as _Qt
+        cursor = self.text_contents.textCursor()
+        cf = cursor.charFormat()
+        fg = cf.foreground()
+        fg_color = fg.color() if fg.style() != _Qt.BrushStyle.NoBrush else None
+        fg_hex = (f"#{fg_color.red():02X}{fg_color.green():02X}{fg_color.blue():02X}{fg_color.alpha():02X}"
+                  if fg_color else "none")
+        families = cf.fontFamilies()
+        family = (families[0] if isinstance(families, list) and families
+                  else families if isinstance(families, str) else "")
+        pt = cf.fontPointSize()
+        bold = cf.fontWeight() >= 700
+        italic = cf.fontItalic()
+        sel = f"sel[{cursor.selectionStart()}:{cursor.selectionEnd()}]" if cursor.hasSelection() else f"pos={cursor.position()}"
+        auth = "AUTH" if self._text_contents_is_authoritative else "norm"
+        focus = "FOCUS" if self.text_contents.hasFocus() else "no-focus"
+        print(f"[DBG {tag}] {auth} {focus} {sel} | color={fg_hex} size={pt} family={family!r} bold={bold} italic={italic}")
+
+    def _sync_format_controls_from_cursor(self):
+        """Read the QTextEdit cursor's char/block format and update all
+        format controls (font, size, color, bold, italic, alignment, etc.).
+
+        Called when the QTextEdit is authoritative (during MetaTextItem
+        editing) so the UI always reflects the cursor's actual state.
         """
-        if not self.text_contents.hasFocus():
-            return
         item = self._current_item
         if item is None or not hasattr(item, "meta"):
             return
+        self._dbg_cursor_state("syncFormatFromCursor")
 
-        from PyQt6.QtGui import QFont as _QFont, QTextCharFormat as _TCF
+        from PyQt6.QtGui import QFont as _QFont
         from PyQt6.QtCore import Qt as _Qt
 
-        # Effective defaults — used as fallback when the cursor sits on text
-        # that has no explicit char format (i.e. inherits from default_format).
         _eff_fmt = item.meta.effective_default_format()
 
         cursor = self.text_contents.textCursor()
-        # charFormat() on a cursor with a selection returns the format of
-        # the first character; charFormat() without selection returns
-        # the format at the insertion point (including typing format).
         char_fmt = cursor.charFormat()
         block_fmt = cursor.blockFormat()
 
@@ -2937,7 +3017,6 @@ class PropertyPanel(QWidget):
             family = (families[0] if isinstance(families, list) and families
                       else families if isinstance(families, str) else "")
             if not family:
-                # No explicit family on this run — show the document default.
                 family = self.text_contents.document().defaultFont().family()
             if not family:
                 family = _eff_fmt.font_family
@@ -2947,22 +3026,24 @@ class PropertyPanel(QWidget):
             # ── font size ─────────────────────────────────────────────
             pt = char_fmt.fontPointSize()
             if pt <= 0:
-                # No explicit size — show the document default.
                 pt = self.text_contents.document().defaultFont().pointSize()
             if pt <= 0:
                 pt = _eff_fmt.font_size or 12
             self.spin_text_size.setValue(int(round(pt)))
 
             # ── text color ────────────────────────────────────────────
-            fg = char_fmt.foreground()
-            if fg.style() != _Qt.BrushStyle.NoBrush:
-                self._set_color_widgets("text", fg.color())
+            # NEVER read color from charFormat().foreground().color() — Qt
+            # mangles 8-digit hex (#RRGGBBAA ↔ #AARRGGBB) when colors are
+            # inherited via CSS.  Always use the item's text_color attribute
+            # which was set correctly via hex_to_qcolor in _render_from_meta.
+            _item_tc = getattr(item, "text_color", None)
+            if _item_tc is not None and _item_tc.isValid():
+                self._set_color_widgets("text", _item_tc)
             elif _eff_fmt.color:
-                # No explicit color on this run — show the default_format color.
                 from utils import hex_to_qcolor
-                _dc = hex_to_qcolor(_eff_fmt.color, QColor())
-                if _dc.isValid():
-                    self._set_color_widgets("text", _dc)
+                _text_c = hex_to_qcolor(_eff_fmt.color, QColor())
+                if _text_c.isValid():
+                    self._set_color_widgets("text", _text_c)
 
             # ── bold / italic / underline / strikethrough ─────────────
             self.chk_bold.setChecked(char_fmt.fontWeight() >= 700)
@@ -2981,12 +3062,28 @@ class PropertyPanel(QWidget):
             elif alignment & _Qt.AlignmentFlag.AlignLeft:
                 halign = "left"
             else:
-                halign = _eff_fmt and item.meta.effective_frame().halign or ""
+                halign = item.meta.effective_frame().halign or ""
             if halign:
                 halign_map = {"left": 0, "center": 1, "justified": 2, "right": 3}
                 self.text_halign_combo.setCurrentIndex(halign_map.get(halign, 0))
         finally:
             self._block_format_signals(False)
+
+    def _on_text_cursor_changed(self):
+        """Reflect the current run's format in the UI controls.
+
+        Reads the ``QTextCharFormat`` at the cursor (or of the selection) and
+        the ``QTextBlockFormat`` of the current paragraph, then updates the
+        font, size, color, and alignment controls — without triggering the
+        format-change handlers that would write back to the document.
+        """
+        if not self.text_contents.hasFocus():
+            return
+        if self._text_contents_is_authoritative:
+            return
+        if self._suppress_cursor_sync:
+            return
+        self._sync_format_controls_from_cursor()
 
     def _apply_font_to_textedit(self):
         """Sync QTextEdit default font from current font_family/font_size widgets."""
@@ -3050,10 +3147,13 @@ class PropertyPanel(QWidget):
                 item.meta.frame = item.meta.effective_frame()
             item.meta.frame.halign = new_val
 
-            if hasattr(item, "_update_label_text"):
+            if isinstance(item, MetaTextItem):
+                item._render_from_meta()
+            elif hasattr(item, "_update_label_text"):
                 item._update_label_text()
             if hasattr(item, "_notify_changed"):
                 item._notify_changed()
+            self._refocus_text_contents()
             if self.undo_stack:
                 def update_func():
                     if hasattr(item, "_update_label_text"):
@@ -3062,19 +3162,13 @@ class PropertyPanel(QWidget):
                 self.undo_stack.push(cmd)
 
     def _on_font_size_changed(self, value: int):
-        """Handle font size change for the selected run.
-
-        ``meta.default_format`` is NEVER modified here — only the selected run
-        (or typing format) is affected.  When a selection exists, ``textChanged``
-        fires → ``_on_text_contents_changed`` handles blocks + canvas + notify.
-
-        Note: ``hasFocus()`` is NOT checked — the size spinner steals focus from
-        the text editor just like a color-picker dialog does, but the cursor
-        selection is preserved.  We use ``hasSelection()`` directly.
-        """
+        """Handle font size change for the selected run."""
         item = self._current_item
         if item is None or not hasattr(item, "meta"):
             return
+
+        print(f"[DBG _on_font_size_changed] value={value}")
+        self._dbg_cursor_state("fontSize-pre")
 
         from PyQt6.QtGui import QTextCharFormat as _TCF
         fmt = _TCF()
@@ -3082,31 +3176,28 @@ class PropertyPanel(QWidget):
 
         cursor = self.text_contents.textCursor()
         if cursor.hasSelection():
-            # Restore selection visibility, apply, restore again.
-            # textChanged → _on_text_contents_changed handles blocks + canvas + notify.
             self.text_contents.setTextCursor(cursor)
             cursor.mergeCharFormat(fmt)
             self.text_contents.setTextCursor(cursor)
+            self._dbg_cursor_state("fontSize-post-sel")
+            self._refocus_text_contents()
             return
-        # No selection: set typing format and refresh document display font.
-        cursor.setCharFormat(fmt)
+        cursor.mergeCharFormat(fmt)
         self.text_contents.setTextCursor(cursor)
-        self._apply_font_to_textedit()
+        self._dbg_cursor_state("fontSize-post-nosel")
+        if not self._text_contents_is_authoritative:
+            self._apply_font_to_textedit()
+        self._refocus_text_contents()
 
     def _on_font_changed(self, font):
-        """Handle font family change for the selected run.
-
-        ``meta.default_format`` is NEVER modified here — only the selected run
-        (or typing format) is affected.  When a selection exists, ``textChanged``
-        fires → ``_on_text_contents_changed`` handles blocks + canvas + notify.
-
-        Note: ``hasFocus()`` is NOT checked — the font combo steals focus from
-        the text editor, but the cursor selection is preserved.
-        """
+        """Handle font family change for the selected run."""
         item = self._current_item
         if item is None or not hasattr(item, "meta"):
             return
         new_val = font.family()
+
+        print(f"[DBG _on_font_changed] family={new_val!r}")
+        self._dbg_cursor_state("fontFamily-pre")
 
         from PyQt6.QtGui import QTextCharFormat as _TCF
         fmt = _TCF()
@@ -3114,29 +3205,38 @@ class PropertyPanel(QWidget):
 
         cursor = self.text_contents.textCursor()
         if cursor.hasSelection():
-            # Restore selection visibility, apply, restore again.
-            # textChanged → _on_text_contents_changed handles blocks + canvas + notify.
             self.text_contents.setTextCursor(cursor)
             cursor.mergeCharFormat(fmt)
             self.text_contents.setTextCursor(cursor)
+            self._refocus_text_contents()
             return
-        # No selection: set typing format and refresh document display font.
-        cursor.setCharFormat(fmt)
+        cursor.mergeCharFormat(fmt)
         self.text_contents.setTextCursor(cursor)
-        self._apply_font_to_textedit()
+        if not self._text_contents_is_authoritative:
+            self._apply_font_to_textedit()
+        self._refocus_text_contents()
+
+    def _refocus_text_contents(self):
+        """Return focus to the Contents tab text widget if editing a MetaTextItem.
+
+        Called after every format-change handler so keystrokes continue
+        going to the text editor instead of triggering toolbar shortcuts.
+        Also ensures the authoritative flag stays set for the session.
+        """
+        if isinstance(self._current_item, MetaTextItem):
+            self._text_contents_is_authoritative = True
+            self.text_contents.setFocus()
 
     # ── bold / italic / underline / strikethrough handlers ──────────
 
     def _apply_char_format_toggle(self, setter_name: str, value: bool):
-        """Apply a boolean char-format toggle to the selection or typing format.
-
-        Args:
-            setter_name: QTextCharFormat method name (e.g. 'setFontWeight').
-            value: The boolean state of the checkbox.
-        """
+        """Apply a boolean char-format toggle to the selection or typing format."""
         item = self._current_item
         if item is None or not hasattr(item, "meta"):
             return
+
+        print(f"[DBG _apply_char_format_toggle] {setter_name}={value}")
+        self._dbg_cursor_state("charToggle-pre")
 
         from PyQt6.QtGui import QTextCharFormat as _TCF, QFont as _QFont
         fmt = _TCF()
@@ -3150,10 +3250,14 @@ class PropertyPanel(QWidget):
             self.text_contents.setTextCursor(cursor)
             cursor.mergeCharFormat(fmt)
             self.text_contents.setTextCursor(cursor)
+            self._dbg_cursor_state("charToggle-post-sel")
+            self._refocus_text_contents()
             return
         # No selection: set typing format for subsequent input.
         cursor.mergeCharFormat(fmt)
         self.text_contents.setTextCursor(cursor)
+        self._dbg_cursor_state("charToggle-post-nosel")
+        self._refocus_text_contents()
 
     def _on_bold_changed(self, checked: bool):
         """Toggle bold on selected text or typing format."""
@@ -3182,6 +3286,7 @@ class PropertyPanel(QWidget):
             item._update_label_text()
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
+        self._refocus_text_contents()
         if self.undo_stack:
             def update_func():
                 if hasattr(item, "_update_label_text"):
@@ -3199,6 +3304,7 @@ class PropertyPanel(QWidget):
         item.meta.flow_type = flow_values[index] if 0 <= index < len(flow_values) else "none"
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
+        self._refocus_text_contents()
         if self.undo_stack:
             cmd = ChangeMetaCommand(item, {"flow_type": old_val}, {"flow_type": item.meta.flow_type}, lambda: None)
             self.undo_stack.push(cmd)
@@ -3235,6 +3341,7 @@ class PropertyPanel(QWidget):
             item._update_label_text()
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
+        self._refocus_text_contents()
         if self.undo_stack and old_vals != new_vals:
             def update_func():
                 if hasattr(item, "_update_label_text"):

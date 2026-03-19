@@ -935,27 +935,17 @@ class MainWindow(QMainWindow):
         self.draft.focus_mode_btn.setIcon(icon)
 
     def _setup_text_editing_callbacks(self):
-        """Set up callbacks to disable shortcuts during text editing."""
-        def on_editing_started():
-            # Disable mode shortcuts when editing text
-            for action in self.mode_actions:
-                action.setShortcut("")
+        """Set up callbacks for MetaTextItem and shape property changes."""
+        def on_request_edit(item):
+            """Double-click on scene text item → focus Contents tab text widget."""
+            self.props.tabs.setCurrentIndex(1)  # Switch to Contents tab
+            self.props.text_contents.setFocus()
+            # Select all so the user can start typing immediately
+            cursor = self.props.text_contents.textCursor()
+            cursor.select(cursor.SelectionType.Document)
+            self.props.text_contents.setTextCursor(cursor)
 
-        def on_editing_finished():
-            # Re-enable mode shortcuts when done editing
-            shortcuts = ["S", "R", "U", "E", "L", "T", "H", "Y", "A", "P", "V"]
-            for action, shortcut in zip(self.mode_actions, shortcuts):
-                action.setShortcut(shortcut)
-
-        def on_text_changed(text: str):
-            # Sync text changes to the Note field in properties panel
-            self.props.note_edit.blockSignals(True)
-            self.props.note_edit.setText(text)
-            self.props.note_edit.blockSignals(False)
-
-        MetaTextItem.on_editing_started = on_editing_started
-        MetaTextItem.on_editing_finished = on_editing_finished
-        MetaTextItem.on_text_changed = on_text_changed
+        MetaTextItem.on_request_edit = on_request_edit
 
         # Set up callbacks for shape property changes (adjust1/adjust2)
         MetaRoundedRectItem.on_adjust1_changed = self.props.update_adjust1_display
@@ -1040,7 +1030,11 @@ class MainWindow(QMainWindow):
 
     def set_mode(self, mode: str, from_item_created: bool = False):
         """Set the current drawing mode."""
-        self.scene.clearSelection()
+        # When returning to SELECT after item creation, keep the newly created
+        # item selected so the user can immediately inspect/move it.
+        # Clear selection only when the user explicitly switches drawing tools.
+        if not from_item_created:
+            self.scene.clearSelection()
         self.scene.set_mode(mode)
         mapping = {
             Mode.SELECT: self.act_select,
@@ -2494,11 +2488,15 @@ class MainWindow(QMainWindow):
             trace("No draft data, returning", "REBUILD")
             return
 
-        # Remember selected item ID to restore selection after rebuild
+        # Remember selected item ID to restore selection after rebuild.
+        # Also check the editor cursor's annotation — if the user is editing
+        # in the JSON editor, the cursor position identifies the active item.
         selected_id = None
         selected_items = self.scene.selectedItems()
         if selected_items:
             selected_id = selected_items[0].data(ANN_ID_KEY)
+        if not selected_id and hasattr(self, 'draft') and hasattr(self.draft, 'text'):
+            selected_id = self.draft.text._find_annotation_at_cursor()
 
         self._syncing_from_json = True
         try:
@@ -2669,7 +2667,7 @@ class MainWindow(QMainWindow):
 
         defs = get_settings().get_item_defaults(kind)
         _red = _QColor(Qt.GlobalColor.red)
-        _yellow = _QColor(Qt.GlobalColor.yellow)
+        _black = _QColor(0, 0, 0, 255)
 
         # ── Style ────────────────────────────────────────────────────────
         item.pen_color = _hq(defs.style.pen_color, _red)
@@ -2710,7 +2708,7 @@ class MainWindow(QMainWindow):
         if hasattr(item, "text_size_pt"):
             item.text_size_pt = defs.contents.font_size
         if hasattr(item, "text_color"):
-            item.text_color = _hq(defs.contents.color, _yellow)
+            item.text_color = _hq(defs.contents.color, _black)
 
     def _on_new_scene_item(self, item: QGraphicsItem):
         """Handle new item added to scene."""
@@ -2790,6 +2788,17 @@ class MainWindow(QMainWindow):
 
         self._rebuild_id_index()
         self._push_draft_data_to_editor(status="Added item from scene; draft JSON updated.", focus_id=rec["id"])
+
+        # Guarantee the newly created item is selected and the property panel
+        # reflects the fully initialised state (after _apply_item_defaults).
+        # Block signals during clearSelection so the panel doesn't flash None,
+        # then let setSelected fire normally to refresh props via selectionChanged.
+        # TEXT/PORT items already called setSelected(True) in scene.py, but
+        # before defaults were applied; this re-select picks up the final state.
+        self.scene.blockSignals(True)
+        self.scene.clearSelection()
+        self.scene.blockSignals(False)
+        item.setSelected(True)
 
         if isinstance(item, MetaTextItem):
             self.draft.jump_to_note_field_for_id(rec["id"])

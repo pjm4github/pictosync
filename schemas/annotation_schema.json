@@ -683,6 +683,22 @@
           "items": { "$ref": "#/$defs/textBlock" }
         },
 
+        "label": {
+          "type": "string",
+          "readOnly": true,
+          "description": "Convenience alias (read-only): plain text of block 0 runs concatenated. Derived from blocks[0]; edit via the Contents tab text widget."
+        },
+        "tech": {
+          "type": "string",
+          "readOnly": true,
+          "description": "Convenience alias (read-only): plain text of block 1 runs concatenated. Derived from blocks[1]; edit via the Contents tab text widget."
+        },
+        "note": {
+          "type": "string",
+          "readOnly": true,
+          "description": "Convenience alias (read-only): plain text of block 2 runs concatenated. Derived from blocks[2]; edit via the Contents tab text widget."
+        },
+
         "wrap": {
           "type": "boolean",
           "default": true,

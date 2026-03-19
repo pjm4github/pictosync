@@ -84,7 +84,7 @@ class MetaMixin:
         self.pen_color = QColor(Qt.GlobalColor.red)
         self.pen_width = 2
         self.brush_color = QColor(0, 0, 0, 0)  # transparent
-        self.text_color = QColor(Qt.GlobalColor.yellow)
+        self.text_color = QColor(0, 0, 0, 255)  # black — overridden by per-kind defaults
         self.text_size_pt = 12  # font size in points
         self.line_dash = "solid"  # solid | dashed
         self.dash_pattern_length = 30.0  # total length of one dash+gap cycle in pixels

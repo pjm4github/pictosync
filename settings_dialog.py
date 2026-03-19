@@ -63,40 +63,61 @@ CANVAS_ITEM_KINDS = [
 
 
 class ColorButton(QPushButton):
-    """A button that displays and allows selection of a color."""
+    """A button that displays and allows selection of a color (#RRGGBBAA).
 
-    def __init__(self, color: str = "#000000", parent=None):
+    The button background matches the stored color, and the text label
+    is rendered in a contrasting colour (black or white) so it remains
+    readable regardless of the chosen colour.  Alpha is blended against
+    a light-grey dock background for the luminance calculation.
+    """
+
+    def __init__(self, color: str = "#000000FF", parent=None):
         super().__init__(parent)
         self._color = color
         self._update_style()
         self.clicked.connect(self._pick_color)
-        self.setFixedWidth(60)
+        self.setFixedWidth(80)
 
     def _update_style(self):
-        """Update button appearance to show current color."""
-        # Determine text color based on luminance
-        qc = QColor(self._color)
-        luminance = 0.299 * qc.red() + 0.587 * qc.green() + 0.114 * qc.blue()
-        text_color = "#000000" if luminance > 128 else "#FFFFFF"
+        """Update button appearance to show current color with contrast text."""
+        from utils import hex_to_qcolor
+        qc = hex_to_qcolor(self._color, QColor(0, 0, 0, 255))
+        r, g, b, a = qc.red(), qc.green(), qc.blue(), qc.alpha()
+        af = a / 255.0
+        # Blend with assumed light background (240, 240, 240) for luminance
+        vis_r = int(r * af + 240 * (1 - af))
+        vis_g = int(g * af + 240 * (1 - af))
+        vis_b = int(b * af + 240 * (1 - af))
+        lum = 0.299 * vis_r + 0.587 * vis_g + 0.114 * vis_b
+        fg = "#000000" if lum > 140 else "#FFFFFF"
+        bg = f"rgba({r}, {g}, {b}, {af:.2f})"
         self.setStyleSheet(
-            f"background-color: {self._color}; color: {text_color}; "
-            f"border: 1px solid #888; padding: 2px 8px;"
+            f"background-color: {bg}; color: {fg}; "
+            f"border: 1px solid #888; padding: 2px 4px;"
         )
-        self.setText(self._color)
+        # Show short hex label
+        self.setText(f"#{r:02X}{g:02X}{b:02X}" if a == 255
+                     else f"#{r:02X}{g:02X}{b:02X}{a:02X}")
 
     def _pick_color(self):
-        """Open color picker dialog."""
-        color = QColorDialog.getColor(QColor(self._color), self, "Select Color")
+        """Open color picker dialog with alpha support."""
+        from utils import hex_to_qcolor
+        initial = hex_to_qcolor(self._color, QColor(0, 0, 0, 255))
+        color = QColorDialog.getColor(
+            initial, self, "Select Color",
+            QColorDialog.ColorDialogOption.ShowAlphaChannel,
+        )
         if color.isValid():
-            self._color = color.name()
+            r, g, b, a = color.red(), color.green(), color.blue(), color.alpha()
+            self._color = f"#{r:02X}{g:02X}{b:02X}{a:02X}"
             self._update_style()
 
     def color(self) -> str:
-        """Get current color as hex string."""
+        """Get current color as #RRGGBBAA hex string."""
         return self._color
 
     def setColor(self, color: str):
-        """Set current color from hex string."""
+        """Set current color from hex string (#RRGGBB or #RRGGBBAA)."""
         self._color = color
         self._update_style()
 
@@ -836,16 +857,31 @@ class SettingsDialog(QDialog):
         return outer
 
     def _load_item_defaults(self, s) -> None:
-        """Populate the item-kind widgets from *s.item_defaults*.
+        """Populate the item-kind widgets from the appropriate defaults.
+
+        When viewing the *user* layer (normal editing mode), the 3-tier
+        cascade (user → system kind → global) from
+        ``SettingsManager.get_item_defaults()`` is used so the dialog shows
+        the colours the user will actually see when creating items.
+
+        When viewing *builtin* or *system* layers the raw ``s.item_defaults``
+        dict is used (with ``SYSTEM_KIND_DEFAULTS`` fallback for builtin) so
+        each layer's own values are displayed accurately.
 
         Args:
             s: An ``AppSettings`` instance (may be merged, single-layer, or built-in).
         """
-        from settings import ItemDefaults
+        from settings import ItemDefaults, SYSTEM_KIND_DEFAULTS
         for kind, _label in CANVAS_ITEM_KINDS:
             if kind not in self._item_kind_widgets:
                 continue
-            id_obj = s.item_defaults.get(kind, ItemDefaults())
+            if self._active_layer == "user":
+                id_obj = self.settings_manager.get_item_defaults(kind)
+            elif self._active_layer == "builtin":
+                id_obj = SYSTEM_KIND_DEFAULTS.get(kind, ItemDefaults())
+            else:
+                id_obj = s.item_defaults.get(
+                    kind, SYSTEM_KIND_DEFAULTS.get(kind, ItemDefaults()))
             w = self._item_kind_widgets[kind]
             # Style
             w["pen_color"].setColor(id_obj.style.pen_color)

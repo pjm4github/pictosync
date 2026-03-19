@@ -427,6 +427,76 @@ class ItemDefaults:
     contents: DefaultContentsSettings = field(default_factory=DefaultContentsSettings)
 
 
+def _system_kind_style(pen: str, fill: str = "#00000000") -> DefaultStyleSettings:
+    return DefaultStyleSettings(pen_color=pen, fill_color=fill)
+
+
+def _system_kind_contents(color: str) -> DefaultContentsSettings:
+    return DefaultContentsSettings(color=color)
+
+
+# Built-in per-kind colours matching the original hardcoded item __init__ values.
+# These are the lowest-priority defaults — user settings override them.
+SYSTEM_KIND_DEFAULTS: Dict[str, ItemDefaults] = {
+    "rect": ItemDefaults(
+        style=_system_kind_style("#FF0000FF"),                      # red
+        contents=_system_kind_contents("#FF0000FF"),
+    ),
+    "roundedrect": ItemDefaults(
+        style=_system_kind_style("#FF00FFFF"),                      # magenta
+        contents=_system_kind_contents("#FF00FFFF"),
+    ),
+    "ellipse": ItemDefaults(
+        style=_system_kind_style("#00FF00FF"),                      # green
+        contents=_system_kind_contents("#00FF00FF"),
+    ),
+    "line": ItemDefaults(
+        style=_system_kind_style("#0000FFFF"),                      # blue
+        contents=_system_kind_contents("#0000FFFF"),
+    ),
+    "text": ItemDefaults(
+        style=DefaultStyleSettings(),
+        contents=_system_kind_contents("#1E293BFF"),                 # slate-800
+    ),
+    "hexagon": ItemDefaults(
+        style=_system_kind_style("#008080FF"),                      # darkCyan
+        contents=_system_kind_contents("#008080FF"),
+    ),
+    "cylinder": ItemDefaults(
+        style=_system_kind_style("#800080FF"),                      # darkMagenta
+        contents=_system_kind_contents("#800080FF"),
+    ),
+    "blockarrow": ItemDefaults(
+        style=_system_kind_style("#808000FF"),                      # darkYellow
+        contents=_system_kind_contents("#808000FF"),
+    ),
+    "polygon": ItemDefaults(
+        style=_system_kind_style("#008080FF"),                      # darkCyan
+        contents=_system_kind_contents("#008080FF"),
+    ),
+    "curve": ItemDefaults(
+        style=_system_kind_style("#800080FF"),                      # darkMagenta
+        contents=_system_kind_contents("#800080FF"),
+    ),
+    "orthocurve": ItemDefaults(
+        style=_system_kind_style("#800080FF"),                      # darkMagenta
+        contents=_system_kind_contents("#800080FF"),
+    ),
+    "isocube": ItemDefaults(
+        style=_system_kind_style("#000000FF", "#C8C8C8C8"),         # black, light grey semi-opaque
+        contents=_system_kind_contents("#000000FF"),
+    ),
+    "seqblock": ItemDefaults(
+        style=_system_kind_style("#9370DBFF", "#ECECFF40"),         # medium purple, light purple low-alpha
+        contents=_system_kind_contents("#333333FF"),
+    ),
+    "port": ItemDefaults(
+        style=_system_kind_style("#0066CCFF", "#CCE5FFFF"),         # bright blue, light blue
+        contents=_system_kind_contents("#333333FF"),
+    ),
+}
+
+
 # =============================================================================
 # Gemini AI Settings
 # =============================================================================
@@ -703,7 +773,12 @@ class SettingsManager:
         self.settings = self.load()
 
     def get_item_defaults(self, kind: str) -> "ItemDefaults":
-        """Return defaults for *kind*, falling back to global defaults.
+        """Return defaults for *kind*.
+
+        Cascade order (highest priority first):
+        1. User per-kind overrides  (``settings.item_defaults[kind]``)
+        2. System per-kind defaults (``SYSTEM_KIND_DEFAULTS[kind]``)
+        3. Global style + contents  (``settings.style`` / ``settings.defaults``)
 
         Args:
             kind: Canvas item kind string.
@@ -713,6 +788,8 @@ class SettingsManager:
         """
         if kind in self.settings.item_defaults:
             return self.settings.item_defaults[kind]
+        if kind in SYSTEM_KIND_DEFAULTS:
+            return SYSTEM_KIND_DEFAULTS[kind]
         return ItemDefaults(
             style=self.settings.style,
             contents=self.settings.defaults,

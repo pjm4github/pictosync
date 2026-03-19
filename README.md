@@ -4,7 +4,7 @@
 
 # PictoSync
 
-**v2.1** | Diagram Normalization & Agentic Specification IDE
+**v2.2** | Diagram Normalization & Agentic Specification IDE
 
 ---
 
@@ -90,7 +90,7 @@ The primary user is a senior engineer or architect working on systems where inte
 
 ---
 
-## Current Features (v2.0)
+## Current Features (v2.2)
 
 **For a comparison to other tools and their features see: [Round Tripping PNG Tools](png_json_comparison.md)**
 
@@ -113,7 +113,7 @@ All sources converge to the same JSON annotation schema — shapes, lines, curve
 - **Isometric Cube**: Container shape with configurable extrusion depth and angle (0-360); drag control handles to adjust depth and direction interactively
 - **Curve Tool**: Click-click placement of SVG path-like curves with node editing; supports cubic bezier (`C`), quadratic bezier (`Q`), arc (`A`), and line (`L`) segments; right-click nodes to change type; arrowhead support (none, start, end, both)
 - **Orthogonal Curve**: Curve variant restricted to horizontal/vertical segments (M/H/V nodes) with optional corner bend radius; Ctrl+click to extend; arrowhead support; last endpoint is an L node (freely draggable in both axes); bend radius applies to the final corner
-- **Polygon Tool**: Multi-click vertex placement with right-click to close; double-click to enter vertex editing mode with draggable control knobs; right-click vertices to delete, right-click edges to add vertices
+- **Polygon Tool**: Multi-click vertex placement with right-click to close; double-click to enter vertex editing mode with draggable vertex knobs; right-click a vertex to open a context menu to change vertex type (Straight/Quadratic/Cubic), add a node after, or delete the node; right-click an edge to insert a vertex at that position; quadratic and cubic bezier vertices show draggable blue control point handles with dashed guide lines
 - **Text Labels**: All shapes support label, tech, and note text with customizable formatting
 - **Text Alignment**: Vertical alignment (top/middle/bottom) and line spacing controls
 - **Rotation**: All shapes support rotation via drag handle (green knob) or property panel angle spinner (0-359); rotation-aware resize handles follow the rotated axis
@@ -160,7 +160,8 @@ All sources converge to the same JSON annotation schema — shapes, lines, curve
 - **Focus Mode**: Toggle to show only the selected annotation (lamp icon)
 - **Schema Check**: Toggle checkbox compares the focused annotation against `annotation_schema.json` — missing fields appear as gray ghost text, extra fields are highlighted in red
 - **Accept Ghost Fields**: Right-click a gray ghost field to make it permanent
-- **Smart Scrolling**: Clicking canvas items scrolls editor to the annotation's opening brace
+- **Smart Scrolling**: Clicking canvas items scrolls editor to the annotation's opening brace; clicking inside a text annotation's JSON selects the corresponding canvas item
+- **Read-Only Fields**: Computed fields (`ports`, `label`, `tech`, `note`) are shown in grey italic and block character input; schema-marked `readOnly: true`
 - **Gutter Highlight Bar**: Colored bar marks the full scope of the selected annotation
 
 ### Property Panel
@@ -361,6 +362,20 @@ See `schemas/annotation_schema.json` for the full specification.
 Additional Mermaid diagram types (Sequence, Class, ER, Gantt, Mindmap, etc.) have test data collected; parsers not yet implemented.
 
 ## Version History
+
+### v2.2 (2026-03-18)
+- **Polygon vertex types**: Right-click a polygon vertex in edit mode to change its segment type (Straight, Quadratic, Cubic Bezier); auto-generated control points with draggable blue handles and dashed guide lines; vertex context menu also supports Add Node After and Delete Node; edge right-click inserts a vertex at the click position
+- **Select-after-draw**: Newly created canvas items stay selected after the mouse is released; property panel reflects the fully initialized item state immediately
+- **Text item format init**: When a text item is first dropped on canvas, the QTextEdit's resolved font/color defaults are written back to the item's `default_format` in a one-time initialization pass
+- **Read-only fields in JSON editor**: `label`, `tech`, `note`, and `ports` are displayed in grey italic and block character input; marked `readOnly: true` in the annotation schema
+- **Text annotation cursor sync**: Clicking anywhere inside a text annotation's JSON block in the editor selects the corresponding canvas item
+
+### v2.1 (2026-03-17)
+- **Blocks/runs content model**: Overlay-2.0 `blocks` and `runs` structure for text items; `label` maps to block 0, `tech` to block 1, `note` to block 2
+- **Unified label rendering**: All shape kinds render labels from the blocks/runs model via a shared `_render_label_from_meta()` path
+- **Anchor dot on lines/curves**: Configurable anchor position (0–100%) along the path shown as a grey dot when selected; text box follows the anchor point
+- **Text box controls for lines/curves**: Orange resize handles on the floating text box; `text_box_width`/`text_box_height` stored in the annotation; 3×3 anchor grid in the property panel
+- **Theme arrow fixes**: Arrow styling consistent across all 7 built-in themes
 
 ### v2.0 (2026-03-14)
 - **Contents tab**: Rich-text editor in the property panel with run-level font family, font size, bold/italic/underline, text color, subscript/superscript, alignment, wrap toggle, and text flow type
