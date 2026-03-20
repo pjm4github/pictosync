@@ -60,6 +60,8 @@ class CharFormat:
     background_color: str = ""   # #RRGGBBAA hex; empty = none
     superscript: bool = False
     subscript: bool = False
+    spacing_type: str = "single"   # single|proportional|fixed|minimum|line_distance
+    spacing_value: float = 0.0     # 0 = auto (font height for single)
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "CharFormat":
@@ -160,6 +162,8 @@ class TextBlock:
     id: str = ""
     halign: str = ""       # empty = inherit from frame.halign
     line_spacing: float = 1.0
+    spacing_type: str = ""   # empty = inherit from default_format.spacing_type
+    spacing_value: float = 0.0
     space_before: float = 0.0
     space_after: float = 0.0
 
@@ -172,6 +176,8 @@ class TextBlock:
             id=d.get("id", ""),
             halign=d.get("halign", ""),
             line_spacing=d.get("line_spacing", 1.0),
+            spacing_type=d.get("spacing_type", ""),
+            spacing_value=d.get("spacing_value", 0.0),
             space_before=d.get("space_before", 0.0),
             space_after=d.get("space_after", 0.0),
             runs=runs,
@@ -185,6 +191,9 @@ class TextBlock:
             d["halign"] = self.halign
         if self.line_spacing != 1.0:
             d["line_spacing"] = self.line_spacing
+        if self.spacing_type:
+            d["spacing_type"] = self.spacing_type
+            d["spacing_value"] = self.spacing_value
         if self.space_before:
             d["space_before"] = self.space_before
         if self.space_after:
@@ -379,65 +388,9 @@ class AnnotationContents:
         if not isinstance(d, dict):
             return cls()
 
-        # ── 1. Legacy meta format (label/tech/note) ─────────────────
-        if bool(_OLD_META_KEYS & d.keys()):
-            label_val = d.get("label", "")
-            tech_val = d.get("tech", "")
-            note_val = d.get("note", "")
-            label_size = d.get("label_size", 12)
-            tech_size = d.get("tech_size", 10)
-            note_size = d.get("note_size", 10)
-            html = build_contents_text(label_val, tech_val, note_val,
-                                       label_size, tech_size, note_size)
-            halign = d.get("label_align", "center")
-            valign = d.get("text_valign", "top")
-            spacing = d.get("text_spacing", 0.0)
-            text_box_width = d.get("text_box_width", 0.0)
-            text_box_height = d.get("text_box_height", 0.0)
-            # Legacy label_align doubles as text_anchor for line items
-            text_anchor = d.get("text_anchor", d.get("label_align", "center"))
-            text_anchor_v = d.get("text_anchor_v", "middle")
-
-            # Build overlay-2.0 blocks from legacy fields
-            blocks: List[TextBlock] = [
-                TextBlock(runs=[TextRun(type="text", text=label_val,
-                                        format=CharFormat(bold=True, font_size=label_size))]),
-                TextBlock(runs=[TextRun(type="text", text=tech_val,
-                                        format=CharFormat(italic=True, font_size=tech_size))]),
-                TextBlock(runs=[TextRun(type="text", text=note_val,
-                                        format=CharFormat(font_size=note_size))]),
-            ]
-            frame = TextFrame(halign=halign, valign=valign)
-            default_format = CharFormat(font_size=label_size)
-
-            anchor_value = d.get("anchor_value", 50.0)
-            text_box_border = d.get("text_box_border", True)
-            text_box_border_color = d.get("text_box_border_color", "")
-            text_box_background_color = d.get("text_box_background_color", "")
-            old_all = _OLD_META_KEYS | {"text_box_width", "text_box_height",
-                                        "anchor_value", "text_anchor_v",
-                                        "text_box_border", "text_box_border_color",
-                                        "text_box_background_color", "dsl"}
-            extras: Dict[str, Any] = {k: v for k, v in d.items()
-                                       if k not in old_all}
-            if "dsl" in d:
-                extras["dsl"] = d["dsl"]
-            return cls(
-                frame=frame, default_format=default_format, blocks=blocks,
-                text=html, halign=halign, valign=valign, spacing=spacing,
-                font_size=label_size,
-                text_box_width=text_box_width, text_box_height=text_box_height,
-                text_anchor=text_anchor, text_anchor_v=text_anchor_v,
-                anchor_value=anchor_value,
-                text_box_border=text_box_border,
-                text_box_border_color=text_box_border_color,
-                text_box_background_color=text_box_background_color,
-                margin_left=frame.margin_left, margin_right=frame.margin_right,
-                margin_top=frame.margin_top, margin_bottom=frame.margin_bottom,
-                extras=extras,
-            )
-
-        # ── 2. Overlay-2.0 (has blocks or frame) ────────────────────
+        # ── 1. Overlay-2.0 (has blocks or frame) ────────────────────
+        # Check overlay-2.0 FIRST: when both ``blocks`` and legacy keys
+        # (label/tech/note) are present, blocks is authoritative.
         if "blocks" in d or "frame" in d:
             frame = TextFrame.from_dict(d.get("frame") or {})
             default_format = CharFormat.from_dict(d.get("default_format") or {})
@@ -481,6 +434,62 @@ class AnnotationContents:
                 text_box_background_color=text_box_background_color,
                 text=text, halign=halign, valign=valign,
                 color=color, font_family=font_family, font_size=font_size,
+                margin_left=frame.margin_left, margin_right=frame.margin_right,
+                margin_top=frame.margin_top, margin_bottom=frame.margin_bottom,
+                extras=extras,
+            )
+
+        # ── 2. Legacy meta format (label/tech/note without blocks) ──
+        if bool(_OLD_META_KEYS & d.keys()):
+            label_val = d.get("label", "")
+            tech_val = d.get("tech", "")
+            note_val = d.get("note", "")
+            label_size = d.get("label_size", 12)
+            tech_size = d.get("tech_size", 10)
+            note_size = d.get("note_size", 10)
+            html = build_contents_text(label_val, tech_val, note_val,
+                                       label_size, tech_size, note_size)
+            halign = d.get("label_align", "center")
+            valign = d.get("text_valign", "top")
+            spacing = d.get("text_spacing", 0.0)
+            text_box_width = d.get("text_box_width", 0.0)
+            text_box_height = d.get("text_box_height", 0.0)
+            text_anchor = d.get("text_anchor", d.get("label_align", "center"))
+            text_anchor_v = d.get("text_anchor_v", "middle")
+
+            blocks: List[TextBlock] = [
+                TextBlock(runs=[TextRun(type="text", text=label_val,
+                                        format=CharFormat(bold=True, font_size=label_size))]),
+                TextBlock(runs=[TextRun(type="text", text=tech_val,
+                                        format=CharFormat(italic=True, font_size=tech_size))]),
+                TextBlock(runs=[TextRun(type="text", text=note_val,
+                                        format=CharFormat(font_size=note_size))]),
+            ]
+            frame = TextFrame(halign=halign, valign=valign)
+            default_format = CharFormat(font_size=label_size)
+
+            anchor_value = d.get("anchor_value", 50.0)
+            text_box_border = d.get("text_box_border", True)
+            text_box_border_color = d.get("text_box_border_color", "")
+            text_box_background_color = d.get("text_box_background_color", "")
+            old_all = _OLD_META_KEYS | {"text_box_width", "text_box_height",
+                                        "anchor_value", "text_anchor_v",
+                                        "text_box_border", "text_box_border_color",
+                                        "text_box_background_color", "dsl"}
+            extras: Dict[str, Any] = {k: v for k, v in d.items()
+                                       if k not in old_all}
+            if "dsl" in d:
+                extras["dsl"] = d["dsl"]
+            return cls(
+                frame=frame, default_format=default_format, blocks=blocks,
+                text=html, halign=halign, valign=valign, spacing=spacing,
+                font_size=label_size,
+                text_box_width=text_box_width, text_box_height=text_box_height,
+                text_anchor=text_anchor, text_anchor_v=text_anchor_v,
+                anchor_value=anchor_value,
+                text_box_border=text_box_border,
+                text_box_border_color=text_box_border_color,
+                text_box_background_color=text_box_background_color,
                 margin_left=frame.margin_left, margin_right=frame.margin_right,
                 margin_top=frame.margin_top, margin_bottom=frame.margin_bottom,
                 extras=extras,
@@ -756,8 +765,10 @@ def _blocks_to_legacy_text(blocks: List[TextBlock]) -> str:
             "left": "left", "center": "center",
             "right": "right", "justified": "justify",
         }.get(blk.halign, "")
-        style = f" style='text-align:{align_css};'" if align_css else ""
-        parts.append(f"<p{style}>{runs_html}</p>")
+        styles = ["margin:0"]
+        if align_css:
+            styles.append(f"text-align:{align_css}")
+        parts.append(f"<p style='{';'.join(styles)}'>{runs_html}</p>")
     return "\n".join(parts)
 
 

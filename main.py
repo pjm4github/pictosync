@@ -2426,12 +2426,10 @@ class MainWindow(QMainWindow):
                     rec.setdefault("style", {
                         "pen": {"color": "#FF0000", "width": 2},
                         "fill": {"color": "#00000000"},
-                        "text": {"color": "#FFFF00", "size_pt": 12},
                     })
-                    if isinstance(rec["style"], dict):
-                        rec["style"].setdefault("text", {"color": "#FFFF00", "size_pt": 12})
-                        if isinstance(rec["style"].get("text"), dict):
-                            rec["style"]["text"].setdefault("size_pt", 12)
+                    # Legacy style.text is no longer injected — text color
+                    # now lives in contents.default_format.color (overlay-2.0).
+                    # Injecting #FFFF00 here would override the actual color.
 
             trace("Rebuilding ID index...", "SYNC")
             self._rebuild_id_index()
@@ -2489,14 +2487,16 @@ class MainWindow(QMainWindow):
             return
 
         # Remember selected item ID to restore selection after rebuild.
-        # Also check the editor cursor's annotation — if the user is editing
-        # in the JSON editor, the cursor position identifies the active item.
+        # Check multiple sources: scene selection, editor cursor annotation,
+        # and the property panel's current item (which survives focus changes).
         selected_id = None
         selected_items = self.scene.selectedItems()
         if selected_items:
             selected_id = selected_items[0].data(ANN_ID_KEY)
         if not selected_id and hasattr(self, 'draft') and hasattr(self.draft, 'text'):
             selected_id = self.draft.text._find_annotation_at_cursor()
+        if not selected_id and self.props._current_item is not None:
+            selected_id = getattr(self.props._current_item, 'ann_id', None)
 
         self._syncing_from_json = True
         try:

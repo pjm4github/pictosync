@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>941</width>
-    <height>527</height>
+    <width>1066</width>
+    <height>574</height>
    </rect>
   </property>
   <property name="minimumSize">
@@ -19,7 +19,7 @@
   <property name="windowTitle">
    <string>Properties</string>
   </property>
-  <layout class="QHBoxLayout" name="horizontalLayout_49">
+  <layout class="QVBoxLayout" name="verticalLayout_17">
    <item>
     <widget class="QTabWidget" name="tabs">
      <property name="sizePolicy">
@@ -1609,7 +1609,7 @@
       <attribute name="title">
        <string>Contents</string>
       </attribute>
-      <layout class="QHBoxLayout" name="horizontalLayout_56">
+      <layout class="QHBoxLayout" name="horizontalLayout_57">
        <item>
         <layout class="QHBoxLayout" name="horizontalLayout_53">
          <item>
@@ -1792,9 +1792,9 @@
             <property name="geometry">
              <rect>
               <x>0</x>
-              <y>0</y>
+              <y>-136</y>
               <width>251</width>
-              <height>615</height>
+              <height>725</height>
              </rect>
             </property>
             <layout class="QVBoxLayout" name="verticalLayout_12">
@@ -2467,35 +2467,81 @@
              </item>
              <item>
               <layout class="QHBoxLayout" name="horizontalLayout_47">
+               <property name="spacing">
+                <number>4</number>
+               </property>
                <property name="topMargin">
                 <number>6</number>
                </property>
                <item>
                 <widget class="QGroupBox" name="group_text_margins">
+                 <property name="sizePolicy">
+                  <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
+                   <horstretch>0</horstretch>
+                   <verstretch>0</verstretch>
+                  </sizepolicy>
+                 </property>
+                 <property name="maximumSize">
+                  <size>
+                   <width>140</width>
+                   <height>16777215</height>
+                  </size>
+                 </property>
                  <property name="title">
-                  <string>Margins</string>
+                  <string>Item Text Margins</string>
                  </property>
                  <layout class="QGridLayout" name="grid_text_margins">
                   <property name="leftMargin">
-                   <number>4</number>
+                   <number>2</number>
                   </property>
                   <property name="topMargin">
-                   <number>4</number>
+                   <number>2</number>
                   </property>
                   <property name="rightMargin">
-                   <number>4</number>
+                   <number>2</number>
                   </property>
                   <property name="bottomMargin">
-                   <number>4</number>
+                   <number>2</number>
                   </property>
                   <property name="horizontalSpacing">
-                   <number>4</number>
+                   <number>2</number>
                   </property>
                   <property name="verticalSpacing">
                    <number>3</number>
                   </property>
-                  <item row="0" column="3">
-                   <widget class="QSpinBox" name="margin_right">
+                  <item row="0" column="0">
+                   <widget class="QLabel" name="label_margin_left">
+                    <property name="text">
+                     <string>L:</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="1" column="3">
+                   <widget class="QSpinBox" name="margin_bottom">
+                    <property name="suffix">
+                     <string> pt</string>
+                    </property>
+                    <property name="maximum">
+                     <number>100</number>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="1" column="0">
+                   <widget class="QLabel" name="label_margin_top">
+                    <property name="text">
+                     <string>T:</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="0" column="2">
+                   <widget class="QLabel" name="label_margin_right">
+                    <property name="text">
+                     <string>R:</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="0" column="1">
+                   <widget class="QSpinBox" name="margin_left">
                     <property name="suffix">
                      <string> pt</string>
                     </property>
@@ -2511,27 +2557,6 @@
                     </property>
                    </widget>
                   </item>
-                  <item row="0" column="2">
-                   <widget class="QLabel" name="label_margin_right">
-                    <property name="text">
-                     <string>R:</string>
-                    </property>
-                   </widget>
-                  </item>
-                  <item row="0" column="0">
-                   <widget class="QLabel" name="label_margin_left">
-                    <property name="text">
-                     <string>L:</string>
-                    </property>
-                   </widget>
-                  </item>
-                  <item row="1" column="0">
-                   <widget class="QLabel" name="label_margin_top">
-                    <property name="text">
-                     <string>T:</string>
-                    </property>
-                   </widget>
-                  </item>
                   <item row="1" column="1">
                    <widget class="QSpinBox" name="margin_top">
                     <property name="suffix">
@@ -2542,18 +2567,8 @@
                     </property>
                    </widget>
                   </item>
-                  <item row="1" column="3">
-                   <widget class="QSpinBox" name="margin_bottom">
-                    <property name="suffix">
-                     <string> pt</string>
-                    </property>
-                    <property name="maximum">
-                     <number>100</number>
-                    </property>
-                   </widget>
-                  </item>
-                  <item row="0" column="1">
-                   <widget class="QSpinBox" name="margin_left">
+                  <item row="0" column="3">
+                   <widget class="QSpinBox" name="margin_right">
                     <property name="suffix">
                      <string> pt</string>
                     </property>
@@ -2567,6 +2582,168 @@
                </item>
                <item>
                 <spacer name="horizontalSpacer_6">
+                 <property name="orientation">
+                  <enum>Qt::Horizontal</enum>
+                 </property>
+                 <property name="sizeHint" stdset="0">
+                  <size>
+                   <width>40</width>
+                   <height>20</height>
+                  </size>
+                 </property>
+                </spacer>
+               </item>
+              </layout>
+             </item>
+             <item>
+              <layout class="QHBoxLayout" name="horizontalLayout_56">
+               <item>
+                <widget class="QGroupBox" name="groupBox_6">
+                 <property name="title">
+                  <string>Spacing</string>
+                 </property>
+                 <layout class="QHBoxLayout" name="horizontalLayout_49">
+                  <property name="spacing">
+                   <number>2</number>
+                  </property>
+                  <property name="leftMargin">
+                   <number>2</number>
+                  </property>
+                  <property name="topMargin">
+                   <number>1</number>
+                  </property>
+                  <property name="rightMargin">
+                   <number>2</number>
+                  </property>
+                  <property name="bottomMargin">
+                   <number>2</number>
+                  </property>
+                  <item>
+                   <widget class="QGroupBox" name="groupBox_5">
+                    <property name="title">
+                     <string>Paragraph</string>
+                    </property>
+                    <layout class="QGridLayout" name="gridLayout_6">
+                     <property name="leftMargin">
+                      <number>2</number>
+                     </property>
+                     <property name="topMargin">
+                      <number>1</number>
+                     </property>
+                     <property name="rightMargin">
+                      <number>2</number>
+                     </property>
+                     <property name="bottomMargin">
+                      <number>2</number>
+                     </property>
+                     <property name="horizontalSpacing">
+                      <number>2</number>
+                     </property>
+                     <property name="verticalSpacing">
+                      <number>3</number>
+                     </property>
+                     <item row="0" column="0">
+                      <widget class="QLabel" name="label_5">
+                       <property name="text">
+                        <string>Before</string>
+                       </property>
+                      </widget>
+                     </item>
+                     <item row="0" column="1">
+                      <widget class="QSpinBox" name="space_before">
+                       <property name="suffix">
+                        <string> pt</string>
+                       </property>
+                      </widget>
+                     </item>
+                     <item row="1" column="0">
+                      <widget class="QLabel" name="label_6">
+                       <property name="text">
+                        <string>After</string>
+                       </property>
+                      </widget>
+                     </item>
+                     <item row="1" column="1">
+                      <widget class="QSpinBox" name="space_after">
+                       <property name="suffix">
+                        <string> pt</string>
+                       </property>
+                      </widget>
+                     </item>
+                    </layout>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QGroupBox" name="groupBox_3">
+                    <property name="title">
+                     <string>Wrap</string>
+                    </property>
+                    <layout class="QGridLayout" name="gridLayout_4">
+                     <property name="leftMargin">
+                      <number>2</number>
+                     </property>
+                     <property name="topMargin">
+                      <number>2</number>
+                     </property>
+                     <property name="rightMargin">
+                      <number>2</number>
+                     </property>
+                     <property name="bottomMargin">
+                      <number>2</number>
+                     </property>
+                     <property name="horizontalSpacing">
+                      <number>2</number>
+                     </property>
+                     <property name="verticalSpacing">
+                      <number>3</number>
+                     </property>
+                     <item row="1" column="0">
+                      <widget class="QSpinBox" name="spacing_value">
+                       <property name="suffix">
+                        <string> pt</string>
+                       </property>
+                       <property name="value">
+                        <number>12</number>
+                       </property>
+                      </widget>
+                     </item>
+                     <item row="0" column="0">
+                      <widget class="QComboBox" name="spacing_type">
+                       <item>
+                        <property name="text">
+                         <string>Single</string>
+                        </property>
+                       </item>
+                       <item>
+                        <property name="text">
+                         <string>Proportional</string>
+                        </property>
+                       </item>
+                       <item>
+                        <property name="text">
+                         <string>Fixed</string>
+                        </property>
+                       </item>
+                       <item>
+                        <property name="text">
+                         <string>Minimum</string>
+                        </property>
+                       </item>
+                       <item>
+                        <property name="text">
+                         <string>LineDistance</string>
+                        </property>
+                       </item>
+                      </widget>
+                     </item>
+                    </layout>
+                   </widget>
+                  </item>
+                 </layout>
+                </widget>
+               </item>
+               <item>
+                <spacer name="horizontalSpacer_14">
                  <property name="orientation">
                   <enum>Qt::Horizontal</enum>
                  </property>

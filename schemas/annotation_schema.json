@@ -884,7 +884,19 @@
           "description": "Character highlight / background color."
         },
         "superscript": { "type": "boolean", "description": "Superscript vertical alignment. Mutually exclusive with subscript." },
-        "subscript":   { "type": "boolean", "description": "Subscript vertical alignment. Mutually exclusive with superscript." }
+        "subscript":   { "type": "boolean", "description": "Subscript vertical alignment. Mutually exclusive with superscript." },
+        "spacing_type": {
+          "type": "string",
+          "enum": ["single", "proportional", "fixed", "minimum", "line_distance"],
+          "default": "single",
+          "description": "Line height type. Maps to QTextBlockFormat.LineHeightTypes: single (0) = font-height spacing, proportional (1) = percentage of single, fixed (2) = exact pixel height, minimum (3) = minimum pixel height, line_distance (4) = extra pixels between lines. When set in default_format, applies to all blocks unless overridden."
+        },
+        "spacing_value": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "description": "Line height value. Interpretation depends on spacing_type: proportional = percentage (100 = single), fixed/minimum/line_distance = pixels. Ignored when spacing_type is 'single'. When set in default_format, applies to all blocks unless overridden."
+        }
       },
       "additionalProperties": false
     },
@@ -908,7 +920,19 @@
           "minimum": 0.5,
           "maximum": 4.0,
           "default": 1.0,
-          "description": "Line height multiplier. 1.0 = single spacing, 2.0 = double. Maps to QTextBlockFormat.setLineHeight(value * 100, ProportionalHeight)."
+          "description": "[DEPRECATED] Line height multiplier. Superseded by spacing_type/spacing_value."
+        },
+        "spacing_type": {
+          "type": "string",
+          "enum": ["single", "proportional", "fixed", "minimum", "line_distance"],
+          "default": "single",
+          "description": "Per-paragraph line height type override. When present, overrides default_format.spacing_type for this block only. See charFormat.spacing_type for enum values."
+        },
+        "spacing_value": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "description": "Per-paragraph line height value override. Interpretation depends on spacing_type. When present, overrides default_format.spacing_value for this block only."
         },
         "space_before": {
           "type": "number",

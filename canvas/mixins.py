@@ -203,6 +203,38 @@ class MetaMixin:
         if meta.blocks is not None:
             html_text = _blocks_to_legacy_text(meta.blocks)
             self._label_item.setHtml(html_text if html_text else "")
+            # Apply line spacing to the label's document blocks.
+            _spacing_type_map = {
+                "single": 0, "proportional": 1, "fixed": 2,
+                "minimum": 3, "line_distance": 4,
+            }
+            _eff_fmt = meta.effective_default_format()
+            _def_sp_type = getattr(_eff_fmt, "spacing_type", "single")
+            _def_sp_val = getattr(_eff_fmt, "spacing_value", 0.0)
+            from PyQt6.QtGui import QTextCursor as _QTC
+            doc = self._label_item.document()
+            blk = doc.begin()
+            blk_idx = 0
+            while blk.isValid():
+                sp_type = _def_sp_type
+                sp_val = _def_sp_val
+                if meta.blocks and blk_idx < len(meta.blocks):
+                    mb = meta.blocks[blk_idx]
+                    if getattr(mb, "spacing_type", ""):
+                        sp_type = mb.spacing_type
+                        sp_val = getattr(mb, "spacing_value", 0.0)
+                qt_type = _spacing_type_map.get(sp_type, 0)
+                _qt_val = 0.0 if qt_type == 0 else float(sp_val)
+                c = _QTC(doc)
+                c.setPosition(blk.position())
+                bf = c.blockFormat()
+                bf.setLineHeight(_qt_val, qt_type)
+                if meta.blocks and blk_idx < len(meta.blocks):
+                    bf.setTopMargin(getattr(meta.blocks[blk_idx], "space_before", 0.0))
+                    bf.setBottomMargin(getattr(meta.blocks[blk_idx], "space_after", 0.0))
+                c.setBlockFormat(bf)
+                blk = blk.next()
+                blk_idx += 1
         elif getattr(meta, "text", ""):
             self._label_item.setHtml(meta.text)
         else:
@@ -667,6 +699,39 @@ class MetaMixin:
         if self.meta.blocks is not None:
             html_text = _blocks_to_legacy_text(self.meta.blocks)
             self._label_item.setHtml(html_text if html_text else "")
+            # Apply line spacing to the label's document blocks.
+            # setHtml doesn't carry line-height; we must set it per-block.
+            _spacing_type_map = {
+                "single": 0, "proportional": 1, "fixed": 2,
+                "minimum": 3, "line_distance": 4,
+            }
+            _def_sp_type = _eff_fmt.spacing_type if hasattr(_eff_fmt, "spacing_type") else "single"
+            _def_sp_val = _eff_fmt.spacing_value if hasattr(_eff_fmt, "spacing_value") else 0.0
+            from PyQt6.QtGui import QTextCursor as _QTC
+            doc = self._label_item.document()
+            blk = doc.begin()
+            blk_idx = 0
+            while blk.isValid():
+                # Resolve: per-block override → default_format
+                sp_type = _def_sp_type
+                sp_val = _def_sp_val
+                if self.meta.blocks and blk_idx < len(self.meta.blocks):
+                    mb = self.meta.blocks[blk_idx]
+                    if getattr(mb, "spacing_type", ""):
+                        sp_type = mb.spacing_type
+                        sp_val = getattr(mb, "spacing_value", 0.0)
+                qt_type = _spacing_type_map.get(sp_type, 0)
+                _qt_val = 0.0 if qt_type == 0 else float(sp_val)
+                c = _QTC(doc)
+                c.setPosition(blk.position())
+                bf = c.blockFormat()
+                bf.setLineHeight(_qt_val, qt_type)
+                if self.meta.blocks and blk_idx < len(self.meta.blocks):
+                    bf.setTopMargin(getattr(self.meta.blocks[blk_idx], "space_before", 0.0))
+                    bf.setBottomMargin(getattr(self.meta.blocks[blk_idx], "space_after", 0.0))
+                c.setBlockFormat(bf)
+                blk = blk.next()
+                blk_idx += 1
         elif getattr(self.meta, "text", ""):
             self._label_item.setHtml(self.meta.text)
         else:

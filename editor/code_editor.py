@@ -901,7 +901,7 @@ class JsonCodeEditor(QPlainTextEdit):
             cursor_rect = self.cursorRect()
             global_pos = self.mapToGlobal(cursor_rect.bottomLeft())
             QToolTip.showText(global_pos,
-                              "These are read-only ports. To remove or change a port, edit the port ID itself.",
+                              "This field is read-only. Edit the blocks/runs text instead.",
                               self, self.cursorRect(), 2000)
             event.accept()
             return
