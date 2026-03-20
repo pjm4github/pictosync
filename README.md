@@ -4,7 +4,7 @@
 
 # PictoSync
 
-**v2.2** | Diagram Normalization & Agentic Specification IDE
+**v2.3** | Diagram Normalization & Agentic Specification IDE
 
 ---
 
@@ -362,6 +362,17 @@ See `schemas/annotation_schema.json` for the full specification.
 Additional Mermaid diagram types (Sequence, Class, ER, Gantt, Mindmap, etc.) have test data collected; parsers not yet implemented.
 
 ## Version History
+
+### v2.3 (2026-03-19)
+- **JSON→QTextEdit round-trip**: Editing text in `blocks[].runs[].text` in the JSON editor now correctly updates the Contents tab and canvas label; fixed overlay-2.0 format detection order in `from_dict`
+- **Line spacing controls**: Per-block spacing type (Single/Proportional/Fixed/Minimum/LineDistance) and value; spacing applied to selected blocks as delta from `default_format`; round-trips through JSON
+- **Paragraph spacing**: Space Before / Space After controls (per-block top/bottom margins); applied to QTextEdit and canvas label
+- **Canvas label spacing**: `_render_label_from_meta` applies `setLineHeight` and `setTopMargin`/`setBottomMargin` per-block on the `QGraphicsTextItem` document
+- **Vertical alignment fix**: Changing valign (Top/Middle/Bottom) now correctly positions text within shape bounding boxes; writes to both flat field and `frame.valign`
+- **Alignment persistence**: `_apply_align_to_textedit` sets cursor block format so typed text inherits center alignment; `_qtextdoc_to_blocks` suppresses redundant block halign
+- **Yellow color fix**: Removed legacy `style.text.color: #FFFF00` default injection; text color now comes from `contents.default_format.color`
+- **HTML margin fix**: `margin:0` on `<p>` tags in both HTML generators so canvas label and QTextEdit spacing match
+- **Schema**: `spacing_type`/`spacing_value` added to `charFormat`, `textBlock`; `space_before`/`space_after` on `textBlock`
 
 ### v2.2 (2026-03-18)
 - **Polygon vertex types**: Right-click a polygon vertex in edit mode to change its segment type (Straight, Quadratic, Cubic Bezier); auto-generated control points with draggable blue handles and dashed guide lines; vertex context menu also supports Add Node After and Delete Node; edge right-click inserts a vertex at the click position

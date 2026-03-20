@@ -2942,7 +2942,12 @@ class PropertyPanel(QWidget):
         valign_values = ["top", "middle", "bottom"]
         if 0 <= index < len(valign_values):
             old_val = getattr(item.meta, "valign", getattr(item.meta, "text_valign", "top"))
-            item.meta.valign = valign_values[index]
+            new_val = valign_values[index]
+            # Write to both flat field and nested frame
+            item.meta.valign = new_val
+            if item.meta.frame is None:
+                item.meta.frame = item.meta.effective_frame()
+            item.meta.frame.valign = new_val
             if hasattr(item, "_update_label_position"):
                 item._update_label_position()
             item.update()
@@ -2955,7 +2960,7 @@ class PropertyPanel(QWidget):
                         item._update_label_position()
                     item.update()
                 cmd = ChangeMetaCommand(
-                    item, {"valign": old_val}, {"valign": valign_values[index]}, update_func)
+                    item, {"valign": old_val}, {"valign": new_val}, update_func)
                 self.undo_stack.push(cmd)
 
     def _on_text_contents_changed(self):
