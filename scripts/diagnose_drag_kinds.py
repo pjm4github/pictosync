@@ -1,4 +1,21 @@
-"""Diagnostic: check which item kinds update JSON during drag."""
+"""Diagnostic: check which item kinds update JSON geometry during drag.
+
+Loads a test PlantUML file, iterates through the canvas items, simulates
+a 10px drag on each kind, and reports whether the JSON annotation's geom
+was updated.  Use this to verify that the on_change callback and
+bidirectional sync are working for all item kinds after refactoring.
+
+When to run:
+  - After modifying _notify_changed, on_change callbacks, or itemChange
+  - After adding a new item kind to verify it participates in JSON sync
+  - When drag-based geometry updates stop working for a specific kind
+
+Usage:
+    .venv/Scripts/python scripts/diagnose_drag_kinds.py
+
+Requires a GUI environment (not headless).  The script creates a
+MainWindow, loads test_seq1.puml, and prints diagnostic output to stdout.
+"""
 import sys, json, os
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QPointF

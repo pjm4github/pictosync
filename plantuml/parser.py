@@ -146,6 +146,38 @@ def _parse_label(raw: str) -> Tuple[str, str, str]:
         label = m.group(1).strip()
         tech = m.group(2).strip()
 
+    return _dedup_label_tech_note(label, tech, note)
+
+
+def _dedup_label_tech_note(label: str, tech: str, note: str) -> Tuple[str, str, str]:
+    """Remove duplicate text across label, tech, and note fields.
+
+    Priority order: label > tech > note.  If tech duplicates label it is
+    cleared.  If note duplicates label or tech it is cleared.  Comparison
+    is case-insensitive and whitespace-normalised.
+
+    Args:
+        label: Primary display text.
+        tech:  Technology / stereotype text.
+        note:  Description / note text.
+
+    Returns:
+        Tuple of (label, tech, note) with duplicates removed.
+    """
+    def _norm(s: str) -> str:
+        return " ".join(s.split()).lower().strip()
+
+    nl = _norm(label)
+    nt = _norm(tech)
+    nn = _norm(note)
+
+    if nt and nt == nl:
+        tech = ""
+        nt = ""
+    if nn:
+        if nn == nl or nn == nt:
+            note = ""
+
     return label, tech, note
 
 
@@ -403,6 +435,91 @@ def _path_bbox(d: str) -> Tuple[float, float, float, float]:
     min_x, max_x = min(xs), max(xs)
     min_y, max_y = min(ys), max(ys)
     return (round(min_x, 2), round(min_y, 2), round(max_x - min_x, 2), round(max_y - min_y, 2))
+
+
+def _path_to_curve_polygon(
+    d: str, bx: float, by: float, bw: float, bh: float,
+) -> list:
+    """Extract SVG path M/C/L commands as polygon points with curve annotations.
+
+    Produces the extended ``_rel_points`` format used by MetaPolygonItem:
+    - ``[rx, ry]`` for straight segments (M, L)
+    - ``[rx, ry, "C", c1x, c1y, c2x, c2y]`` for cubic bezier (C)
+    - ``[rx, ry, "Q", cx, cy]`` for quadratic bezier (Q)
+
+    All coordinates are relative (0-1) within the bounding box.
+
+    Args:
+        d: SVG path ``d`` attribute string.
+        bx, by, bw, bh: Bounding box of the path.
+
+    Returns:
+        List of point entries in the extended polygon format.
+    """
+    if bw < 1e-6 or bh < 1e-6:
+        return []
+
+    def _rel(x: float, y: float) -> Tuple[float, float]:
+        return (round((x - bx) / bw, 4), round((y - by) / bh, 4))
+
+    points: list = []
+    # Parse M (moveto) and L (lineto) — straight segments
+    for m in re.finditer(r'[ML]\s*([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)', d):
+        rx, ry = _rel(float(m.group(1)), float(m.group(2)))
+        points.append([rx, ry])
+
+    # Parse C (cubic bezier) — replace the last straight point with curve
+    for m in re.finditer(
+        r'C\s*([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)\s+'
+        r'([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)\s+'
+        r'([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)',
+        d,
+    ):
+        c1x, c1y = _rel(float(m.group(1)), float(m.group(2)))
+        c2x, c2y = _rel(float(m.group(3)), float(m.group(4)))
+        rx, ry = _rel(float(m.group(5)), float(m.group(6)))
+        points.append([rx, ry, "C", c1x, c1y, c2x, c2y])
+
+    # Parse Q (quadratic bezier)
+    for m in re.finditer(
+        r'Q\s*([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)\s+'
+        r'([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)',
+        d,
+    ):
+        cx, cy = _rel(float(m.group(1)), float(m.group(2)))
+        rx, ry = _rel(float(m.group(3)), float(m.group(4)))
+        points.append([rx, ry, "Q", cx, cy])
+
+    # Re-sort by order of appearance in the path string to maintain
+    # the correct vertex sequence.  Each regex match has a start position.
+    # Instead, let's walk the path in order.
+    # --- Redo: walk commands sequentially ---
+    points = []
+    pos = 0
+    cmd_pat = re.compile(
+        r'([MLCQZz])\s*'
+        r'((?:[-+]?\d*\.?\d+[,\s]*)*)',
+    )
+    for cm in cmd_pat.finditer(d):
+        cmd = cm.group(1)
+        coords_str = cm.group(2).strip()
+        nums = [float(x) for x in re.findall(r'[-+]?\d*\.?\d+', coords_str)]
+
+        if cmd in ('M', 'L') and len(nums) >= 2:
+            rx, ry = _rel(nums[0], nums[1])
+            points.append([rx, ry])
+        elif cmd == 'C' and len(nums) >= 6:
+            c1x, c1y = _rel(nums[0], nums[1])
+            c2x, c2y = _rel(nums[2], nums[3])
+            rx, ry = _rel(nums[4], nums[5])
+            points.append([rx, ry, "C", c1x, c1y, c2x, c2y])
+        elif cmd == 'Q' and len(nums) >= 4:
+            cx, cy = _rel(nums[0], nums[1])
+            rx, ry = _rel(nums[2], nums[3])
+            points.append([rx, ry, "Q", cx, cy])
+        # Z/z — close path, no coordinates needed
+
+    return points
 
 
 def _path_points(d: str) -> List[List[float]]:
@@ -1775,6 +1892,52 @@ def _parse_sequence_diagram_svg(
 # ───────────────────────────────────────────────
 
 
+def _is_node_box_polygon(pts: list) -> bool:
+    """Detect PlantUML "node" 3D-box polygon shape.
+
+    PlantUML renders ``node`` elements as a 7-point polygon with a diagonal
+    tab in the top-left corner (the 3D extrusion effect).  The pattern is:
+
+    ::
+
+        p0=(x, y+tab)  p1=(x+tab, y)  p2=(x+w, y)
+        p6=(x, y+h)                    p3=(x+w, y+h-tab)
+                                       p4=(x+w-tab, y+h)
+
+    Returns True when the polygon matches this 7-point rectangular-tab
+    pattern within a small tolerance.
+    """
+    if len(pts) not in (7, 8):  # 7 unique + optional close-repeat
+        return False
+    xs = [p[0] for p in pts[:7]]
+    ys = [p[1] for p in pts[:7]]
+    x_min, x_max = min(xs), max(xs)
+    y_min, y_max = min(ys), max(ys)
+    w = x_max - x_min
+    h = y_max - y_min
+    if w < 5 or h < 5:
+        return False
+    # Check that the bounding box is roughly rectangular and the tab
+    # size is a small fraction (5-25%) of the total dimensions.
+    tab_sizes = set()
+    for p in pts[:7]:
+        dx = abs(p[0] - x_min) + abs(p[0] - x_max)
+        dy = abs(p[1] - y_min) + abs(p[1] - y_max)
+        # Points not on the bounding box edge indicate the tab
+        if dx > w + 2 and dy > h + 2:
+            return False  # point too far from edges
+    # Count points near each edge to validate the rectangular shape
+    tol = max(w, h) * 0.02 + 1
+    on_left = sum(1 for p in pts[:7] if abs(p[0] - x_min) < tol)
+    on_right = sum(1 for p in pts[:7] if abs(p[0] - x_max) < tol)
+    on_top = sum(1 for p in pts[:7] if abs(p[1] - y_min) < tol)
+    on_bottom = sum(1 for p in pts[:7] if abs(p[1] - y_max) < tol)
+    # A node box: left side has 2 pts, right side has 2 pts,
+    # top has 2 pts, bottom has 2 pts, with 1 diagonal tab point
+    return (on_left >= 2 and on_right >= 2 and
+            on_top >= 1 and on_bottom >= 1)
+
+
 def _parse_description_diagram_svg(
     tree: ET.ElementTree,
 ) -> Dict[str, Any]:
@@ -1911,7 +2074,21 @@ def _parse_description_diagram_svg(
                              round((float(py) - y) / h, 4)]
                             for px, py in pts
                         ]
-                    kind = "polygon"
+                    # Detect PlantUML "node" 3D-box shape → isocube
+                    abs_pts = [(float(p[0]), float(p[1])) for p in pts]
+                    if _is_node_box_polygon(abs_pts):
+                        kind = "isocube"
+                        # Compute tab size (extrusion depth) from the
+                        # diagonal offset between p0 and p1
+                        tab_x = abs(abs_pts[1][0] - abs_pts[0][0])
+                        tab_y = abs(abs_pts[1][1] - abs_pts[0][1])
+                        tab = max(tab_x, tab_y)
+                        geom["adjust1"] = 14
+                        geom["adjust2"] = 220
+                        # Remove points — isocube uses adjust params
+                        geom.pop("points", None)
+                    else:
+                        kind = "polygon"
                 fill = polygon_el.get("fill", "#FFFFFF")
                 stroke_color, stroke_width = _extract_stroke(polygon_el)
 
@@ -1920,12 +2097,15 @@ def _parse_description_diagram_svg(
                 has_curves = bool(re.search(r'[CcSsQqTt]', d))
                 bx, by, bw, bh = _path_bbox(d)
                 geom = {"x": bx, "y": by, "w": bw, "h": bh}
+                kind = "polygon"
                 if has_curves:
-                    # Cloud shape — use ellipse kind with bounding box
-                    kind = "ellipse"
+                    # Cloud shape — extract cubic bezier curve vertices
+                    # as polygon points with "C" curve type annotations.
+                    rel_pts = _path_to_curve_polygon(d, bx, by, bw, bh)
+                    if rel_pts:
+                        geom["points"] = rel_pts
                 else:
-                    # Package / frame tab — polygon with path points
-                    kind = "polygon"
+                    # Package / frame tab — polygon with straight points
                     rel_pts = _path_points(d)
                     if rel_pts:
                         geom["points"] = rel_pts
@@ -1942,13 +2122,14 @@ def _parse_description_diagram_svg(
                 fill = rect_el.get("fill", "#FFFFFF")
                 stroke_color, stroke_width = _extract_stroke(rect_el)
 
-            # Text labels
+            # Text labels (dedup across label/tech/note)
             texts = [t.text for t in g.findall(f"{{{ns}}}text") if t.text]
             label = texts[0] if texts else (
                 qname.rsplit(".", 1)[-1] if qname else ""
             )
             tech = texts[1] if len(texts) > 1 else ""
             note = " ".join(texts[2:]) if len(texts) > 2 else ""
+            label, tech, note = _dedup_label_tech_note(label, tech, note)
 
             cluster_info[ent_id] = {
                 "kind": kind,
@@ -2041,15 +2222,53 @@ def _parse_description_diagram_svg(
                 stroke_color, stroke_width = _extract_stroke(path_el)
 
             else:
-                continue  # No recognizable shape
+                # Check for polygon-based entity (deployment node without
+                # children is rendered as entity, not cluster)
+                polygon_el = g.find(f"{{{ns}}}polygon")
+                if polygon_el is not None:
+                    pts_str = polygon_el.get("points", "")
+                    pts = re.findall(
+                        r'([-+]?\d*\.?\d+),([-+]?\d*\.?\d+)', pts_str,
+                    )
+                    if pts:
+                        xs = [float(p[0]) for p in pts]
+                        ys = [float(p[1]) for p in pts]
+                        x, y = min(xs), min(ys)
+                        w, h = max(xs) - x, max(ys) - y
+                        geom = {
+                            "x": round(x, 2), "y": round(y, 2),
+                            "w": round(w, 2), "h": round(h, 2),
+                        }
+                        abs_pts = [(float(p[0]), float(p[1])) for p in pts]
+                        if _is_node_box_polygon(abs_pts):
+                            kind = "isocube"
+                            tab_x = abs(abs_pts[1][0] - abs_pts[0][0])
+                            tab_y = abs(abs_pts[1][1] - abs_pts[0][1])
+                            geom["adjust1"] = 14
+                            geom["adjust2"] = 220
+                        else:
+                            kind = "polygon"
+                            if w > 0 and h > 0:
+                                geom["points"] = [
+                                    [round((float(px) - x) / w, 4),
+                                     round((float(py) - y) / h, 4)]
+                                    for px, py in pts
+                                ]
+                        fill = polygon_el.get("fill", "#FFFFFF")
+                        stroke_color, stroke_width = _extract_stroke(polygon_el)
+                    else:
+                        continue  # No recognizable shape
+                else:
+                    continue  # No recognizable shape
 
-            # Text labels
+            # Text labels (dedup across label/tech/note)
             texts = [t.text for t in g.findall(f"{{{ns}}}text") if t.text]
             label = texts[0] if texts else (
                 qname.rsplit(".", 1)[-1] if qname else ""
             )
             tech = texts[1] if len(texts) > 1 else ""
             note = " ".join(texts[2:]) if len(texts) > 2 else ""
+            label, tech, note = _dedup_label_tech_note(label, tech, note)
 
             entity_info[ent_id] = {
                 "kind": kind,
@@ -2501,6 +2720,7 @@ def _parse_state_diagram_svg(
                 label = name_parts[0] if name_parts else ""
                 tech = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
                 note = "\n".join(desc_parts)
+                label, tech, note = _dedup_label_tech_note(label, tech, note)
 
                 cluster_info[ent_id] = {
                     "kind": "roundedrect",
@@ -2541,6 +2761,7 @@ def _parse_state_diagram_svg(
 
                 label = texts[0] if texts else ""
                 note_text = "\n".join(texts)
+                label, _tech, note_text = _dedup_label_tech_note(label, "", note_text)
 
                 note_info[ent_id] = {
                     "kind": "roundedrect",
@@ -2807,7 +3028,7 @@ def _parse_state_diagram_svg(
             "id": ann_id,
             "kind": "ellipse",
             "geom": dict(ell["geom"]),
-            "meta": {"label": "Start", "tech": "", "note": "Start"},
+            "meta": {"label": "Start", "tech": "", "note": ""},
             "style": {
                 "pen": {"color": "#222222", "width": 1, "dash": "solid"},
                 "fill": {"color": _safe_fill(ell["fill"])},
@@ -3206,7 +3427,8 @@ def _build_element_annotation(
     ann: Dict[str, Any] = {
         "id": ann_id,
         "kind": kind,
-        "meta": {"label": label, "tech": tech, "note": note or text},
+        "meta": dict(zip(("label", "tech", "note"),
+                         _dedup_label_tech_note(label, tech, note or text))),
         "style": style,
     }
 

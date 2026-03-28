@@ -81,6 +81,68 @@ def get_alpha(hex_color: str) -> int:
     return 255
 
 
+def _get_contents(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract the contents/meta dict from an annotation record.
+
+    Handles both overlay-2.0 (``contents`` key with ``blocks``) and
+    legacy (``meta`` key with flat ``label``/``tech``/``note`` fields).
+    """
+    return record.get("contents") or record.get("meta") or {}
+
+
+def _get_blocks(record: Dict[str, Any]) -> list:
+    """Extract blocks list from an annotation record.
+
+    Returns the ``blocks`` array from overlay-2.0 ``contents`` dict,
+    or builds a synthetic 3-block list from legacy ``meta`` fields.
+
+    Each returned block is a dict: ``{"runs": [...], "halign": "..."}``
+    """
+    contents = _get_contents(record)
+    if "blocks" in contents and contents["blocks"]:
+        return contents["blocks"]
+    # Build synthetic blocks from legacy fields
+    blocks = []
+    label = contents.get("label", "")
+    tech = contents.get("tech", "")
+    note = contents.get("note", "")
+    if label:
+        blocks.append({"runs": [{"type": "text", "text": label,
+                                  "format": {"bold": True}}]})
+    if tech:
+        blocks.append({"runs": [{"type": "text", "text": f"[{tech}]",
+                                  "format": {"italic": True}}]})
+    if note:
+        blocks.append({"runs": [{"type": "text", "text": note}]})
+    return blocks
+
+
+def _get_default_format(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Get the default_format from contents, or build from legacy/style."""
+    contents = _get_contents(record)
+    df = contents.get("default_format", {})
+    if df:
+        return df
+    style = record.get("style", {})
+    text_style = style.get("text", {})
+    return {
+        "font_family": contents.get("font_family", ""),
+        "font_size": contents.get("font_size", 12),
+        "color": contents.get("color", text_style.get("color", "#000000")),
+    }
+
+
+def _get_frame(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Get the frame from contents, or build from legacy fields."""
+    contents = _get_contents(record)
+    if "frame" in contents and contents["frame"]:
+        return contents["frame"]
+    return {
+        "halign": contents.get("halign", contents.get("label_align", "center")),
+        "valign": contents.get("valign", contents.get("text_valign", "top")),
+    }
+
+
 def has_alpha_transparency(hex_color: str) -> bool:
     """
     Check if a hex color has alpha transparency (not fully opaque).
@@ -187,23 +249,35 @@ def _apply_rotation(shape, geom: Dict[str, Any]):
         shape.rotation = float(angle)
 
 
-def _add_text_to_shape(shape, meta: Dict[str, Any], text_style: Dict[str, Any]):
-    """
-    Add text content (label, tech, note) to a shape's text frame.
+def _add_text_to_shape(shape, record: Dict[str, Any], text_style: Dict[str, Any]):
+    """Add text content from blocks/runs to a shape's text frame.
+
+    Reads the overlay-2.0 ``contents.blocks`` structure or falls back
+    to legacy ``meta.label``/``tech``/``note`` fields.  Each block maps
+    to a PowerPoint paragraph; each run within a block maps to a
+    PowerPoint text run with per-run formatting (bold, italic, color,
+    font family, font size).
 
     Args:
-        shape: The PowerPoint shape
-        meta: Metadata dict containing label, tech, note
-        text_style: Text style with color and size
+        shape: The PowerPoint shape (must have text_frame).
+        record: The full annotation record dict.
+        text_style: Fallback text style from ``style.text``.
     """
     if not shape.has_text_frame:
         return
 
+    blocks = _get_blocks(record)
+    if not blocks:
+        return
+
+    df = _get_default_format(record)
+    frame = _get_frame(record)
+
     tf = shape.text_frame
     tf.word_wrap = True
 
-    # Set vertical alignment (python-pptx 1.0.2 uses vertical_anchor, not anchor)
-    valign = meta.get("text_valign", "top")
+    # Vertical alignment
+    valign = frame.get("valign", "top")
     if valign == "middle":
         tf.vertical_anchor = MSO_ANCHOR.MIDDLE
     elif valign == "bottom":
@@ -211,55 +285,94 @@ def _add_text_to_shape(shape, meta: Dict[str, Any], text_style: Dict[str, Any]):
     else:
         tf.vertical_anchor = MSO_ANCHOR.TOP
 
-    # Get text color
-    text_color = text_style.get("color", "#000000")
-    rgb = hex_to_rgb(text_color)
+    # Default text properties
+    def_color = df.get("color", text_style.get("color", "#000000"))
+    def_rgb = hex_to_rgb(def_color)
+    def_size = df.get("font_size", 12)
+    def_family = df.get("font_family", "")
+    def_halign = frame.get("halign", "center")
 
-    # Paragraph spacing from meta (in lines: 0, 0.5, 1, 1.5, 2)
-    text_spacing = meta.get("text_spacing", 0.0)
-    spacing_pt = Pt(int(text_spacing * 12)) if text_spacing else None
+    _align_map = {"left": PP_ALIGN.LEFT, "right": PP_ALIGN.RIGHT,
+                  "center": PP_ALIGN.CENTER, "justified": PP_ALIGN.JUSTIFY}
 
-    # Collect text lines
-    lines = []
-    if meta.get("label"):
-        lines.append(("label", meta["label"], meta.get("label_align", "center"), meta.get("label_size", 12), True))
-    if meta.get("tech"):
-        lines.append(("tech", f"[{meta['tech']}]", meta.get("tech_align", "center"), meta.get("tech_size", 10), False))
-    if meta.get("note"):
-        lines.append(("note", meta["note"], meta.get("note_align", "center"), meta.get("note_size", 10), False))
+    first_para = True
+    for blk in blocks:
+        runs_data = blk.get("runs", []) if isinstance(blk, dict) else getattr(blk, "runs", [])
+        # Skip empty blocks
+        if not runs_data:
+            continue
+        has_text = any(
+            (r.get("text", "") if isinstance(r, dict) else getattr(r, "text", ""))
+            for r in runs_data
+            if (r.get("type", "text") if isinstance(r, dict) else getattr(r, "type", "text")) == "text"
+        )
+        if not has_text:
+            continue
 
-    if not lines:
-        return
-
-    # Add first line to existing paragraph
-    first = True
-    for line_type, text, align, size, bold in lines:
-        if first:
+        if first_para:
             p = tf.paragraphs[0]
-            first = False
+            first_para = False
         else:
             p = tf.add_paragraph()
-
-        # Use explicit run creation to reliably override theme defaults
         p.clear()
-        run = p.add_run()
-        run.text = text
-        run.font.size = Pt(size)
-        run.font.bold = bold
-        if rgb:
-            run.font.color.rgb = RGBColor(*rgb)
 
-        # Set alignment
-        if align == "left":
-            p.alignment = PP_ALIGN.LEFT
-        elif align == "right":
-            p.alignment = PP_ALIGN.RIGHT
-        else:
-            p.alignment = PP_ALIGN.CENTER
+        # Block-level alignment
+        blk_halign = (blk.get("halign", "") if isinstance(blk, dict)
+                      else getattr(blk, "halign", "")) or def_halign
+        p.alignment = _align_map.get(blk_halign, PP_ALIGN.CENTER)
 
-        # Apply inter-paragraph spacing
-        if spacing_pt:
-            p.space_before = spacing_pt
+        # Block-level spacing
+        sb = (blk.get("space_before", 0) if isinstance(blk, dict)
+              else getattr(blk, "space_before", 0))
+        sa = (blk.get("space_after", 0) if isinstance(blk, dict)
+              else getattr(blk, "space_after", 0))
+        if sb:
+            p.space_before = Pt(int(sb))
+        if sa:
+            p.space_after = Pt(int(sa))
+
+        # Add runs
+        for run_data in runs_data:
+            if isinstance(run_data, dict):
+                rtype = run_data.get("type", "text")
+                rtext = run_data.get("text", "")
+                rfmt = run_data.get("format", {}) or {}
+            else:
+                rtype = getattr(run_data, "type", "text")
+                rtext = getattr(run_data, "text", "")
+                rf = getattr(run_data, "format", None)
+                rfmt = rf.to_dict() if rf and hasattr(rf, "to_dict") else {}
+
+            if rtype != "text" or not rtext:
+                continue
+
+            run = p.add_run()
+            run.text = rtext
+
+            # Per-run formatting (sparse overrides of default_format)
+            run_size = rfmt.get("font_size", def_size)
+            run.font.size = Pt(int(run_size))
+
+            run_bold = rfmt.get("bold", False)
+            if run_bold:
+                run.font.bold = True
+
+            run_italic = rfmt.get("italic", False)
+            if run_italic:
+                run.font.italic = True
+
+            run_underline = rfmt.get("underline", False)
+            if run_underline:
+                run.font.underline = True
+
+            run_color = rfmt.get("color", "")
+            run_rgb = hex_to_rgb(run_color) if run_color else def_rgb
+            if run_rgb:
+                run.font.color.rgb = RGBColor(*run_rgb)
+
+            run_family = rfmt.get("font_family", def_family)
+            if run_family:
+                run.font.name = run_family
 
 
 def _add_rectangle(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -276,8 +389,7 @@ def _add_rectangle(slide, record: Dict[str, Any], scale_x: float, scale_y: float
     _apply_line_style(shape.line, style)
     _apply_fill_style(shape.fill, style)
 
-    meta = record.get("meta", {})
-    _add_text_to_shape(shape, meta, style.get("text", {}))
+    _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
 
 
@@ -309,8 +421,7 @@ def _add_rounded_rectangle(slide, record: Dict[str, Any], scale_x: float, scale_
     _apply_line_style(shape.line, style)
     _apply_fill_style(shape.fill, style)
 
-    meta = record.get("meta", {})
-    _add_text_to_shape(shape, meta, style.get("text", {}))
+    _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
 
 
@@ -328,8 +439,7 @@ def _add_ellipse(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
     _apply_line_style(shape.line, style)
     _apply_fill_style(shape.fill, style)
 
-    meta = record.get("meta", {})
-    _add_text_to_shape(shape, meta, style.get("text", {}))
+    _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
 
 
@@ -383,48 +493,72 @@ def _add_line(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
             tail_end.set("type", "triangle")
 
     # Add text label as a text box at the midpoint of the line
-    meta = record.get("meta", {})
-    label = meta.get("label", "")
-    if label:
-        text_style = style.get("text", {})
-        font_size = text_style.get("size_pt", 10)
-        text_color = text_style.get("color", "#000000")
-        rgb = hex_to_rgb(text_color)
+    _add_line_curve_textbox(slide, record, geom, scale_x, scale_y)
 
+
+def _add_line_curve_textbox(slide, record: Dict[str, Any],
+                            geom: Dict[str, Any],
+                            scale_x: float, scale_y: float,
+                            mid_x: float | None = None,
+                            mid_y: float | None = None):
+    """Add a floating text box for a line or curve annotation.
+
+    Creates a textbox at the midpoint of the line/curve and populates it
+    from ``contents.blocks.runs`` (or legacy ``meta.label``/``tech``/``note``).
+
+    Args:
+        slide: The PowerPoint slide.
+        record: Full annotation record.
+        geom: Geometry dict (for line: x1/y1/x2/y2; for curve: x/y/w/h).
+        scale_x, scale_y: Pixel-to-slide scale factors.
+        mid_x, mid_y: Pre-computed midpoint in pixels (for curves).
+                       If None, computed from line endpoints.
+    """
+    blocks = _get_blocks(record)
+    if not blocks:
+        return
+
+    df = _get_default_format(record)
+    def_size = df.get("font_size", 12)
+    def_color = df.get("color", "#000000")
+    def_rgb = hex_to_rgb(def_color)
+
+    # Compute midpoint if not provided
+    if mid_x is None or mid_y is None:
         mid_x = (geom.get("x1", 0) + geom.get("x2", 0)) / 2
         mid_y = (geom.get("y1", 0) + geom.get("y2", 0)) / 2
 
-        # Size from meta text_box dimensions or estimate from text
-        box_w = meta.get("text_box_width", 0)
+    # Estimate text box dimensions
+    contents = _get_contents(record)
+    box_w = contents.get("text_box_width", 0)
+    box_h = contents.get("text_box_height", 0)
+    if not box_w or not box_h:
+        # Estimate from block text
+        all_text = ""
+        n_lines = 0
+        for blk in blocks:
+            runs = blk.get("runs", []) if isinstance(blk, dict) else getattr(blk, "runs", [])
+            line_text = ""
+            for r in runs:
+                t = r.get("text", "") if isinstance(r, dict) else getattr(r, "text", "")
+                line_text += t
+            if line_text:
+                n_lines += 1
+                if len(line_text) > len(all_text):
+                    all_text = line_text
         if not box_w:
-            box_w = max(50, len(label) * font_size * 0.6 + 20)
-        box_h = meta.get("text_box_height", 0)
+            box_w = max(50, len(all_text) * def_size * 0.6 + 20)
         if not box_h:
-            box_h = font_size * 1.5 + 10
+            box_h = n_lines * def_size * 1.5 + 10
 
-        tx = px_to_emu((mid_x - box_w / 2) * scale_x)
-        ty = px_to_emu((mid_y - box_h / 2) * scale_y)
-        tw = px_to_emu(box_w * scale_x)
-        th = px_to_emu(box_h * scale_y)
+    tx = px_to_emu((mid_x - box_w / 2) * scale_x)
+    ty = px_to_emu((mid_y - box_h / 2) * scale_y)
+    tw = px_to_emu(box_w * scale_x)
+    th = px_to_emu(box_h * scale_y)
 
-        tbox = slide.shapes.add_textbox(tx, ty, tw, th)
-        tf = tbox.text_frame
-        tf.word_wrap = True
-        p = tf.paragraphs[0]
-        p.clear()
-        run = p.add_run()
-        run.text = label
-        run.font.size = Pt(font_size)
-        if rgb:
-            run.font.color.rgb = RGBColor(*rgb)
-
-        align = meta.get("label_align", "center")
-        if align == "left":
-            p.alignment = PP_ALIGN.LEFT
-        elif align == "right":
-            p.alignment = PP_ALIGN.RIGHT
-        else:
-            p.alignment = PP_ALIGN.CENTER
+    tbox = slide.shapes.add_textbox(tx, ty, tw, th)
+    # Reuse the shape text renderer
+    _add_text_to_shape(tbox, record, record.get("style", {}).get("text", {}))
 
 
 def _add_text(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -514,8 +648,7 @@ def _add_hexagon(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
     _apply_line_style(shape.line, style)
     _apply_fill_style(shape.fill, style)
 
-    meta = record.get("meta", {})
-    _add_text_to_shape(shape, meta, style.get("text", {}))
+    _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
 
 
@@ -540,8 +673,7 @@ def _add_cylinder(slide, record: Dict[str, Any], scale_x: float, scale_y: float)
     _apply_line_style(shape.line, style)
     _apply_fill_style(shape.fill, style)
 
-    meta = record.get("meta", {})
-    _add_text_to_shape(shape, meta, style.get("text", {}))
+    _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
 
 
@@ -571,8 +703,7 @@ def _add_blockarrow(slide, record: Dict[str, Any], scale_x: float, scale_y: floa
     _apply_line_style(shape.line, style)
     _apply_fill_style(shape.fill, style)
 
-    meta = record.get("meta", {})
-    _add_text_to_shape(shape, meta, style.get("text", {}))
+    _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
 
 
@@ -609,8 +740,7 @@ def _add_polygon(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
     _apply_line_style(shape.line, style)
     _apply_fill_style(shape.fill, style)
 
-    meta = record.get("meta", {})
-    _add_text_to_shape(shape, meta, style.get("text", {}))
+    _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
 
 
@@ -743,99 +873,52 @@ def _add_curve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
             tail_end.set("type", "triangle")
 
     # ── Text label at curve midpoint ──
-    meta = record.get("meta", {})
-    text_style = style.get("text", {})
-    text_color = text_style.get("color", "#000000")
-    rgb = hex_to_rgb(text_color)
+    # Evaluate the actual curve midpoint (halfway along the path)
+    geom = record.get("geom", {})
+    gx = geom.get("x", 0)
+    gy = geom.get("y", 0)
+    gw = geom.get("w", 0)
+    gh = geom.get("h", 0)
 
-    # Collect label / tech / note lines
-    text_lines: List[Tuple[str, float, bool]] = []  # (text, size_pt, bold)
-    if meta.get("label"):
-        text_lines.append((meta["label"], meta.get("label_size", 12), True))
-    if meta.get("tech"):
-        text_lines.append((f"[{meta['tech']}]", meta.get("tech_size", 10), False))
-    if meta.get("note"):
-        text_lines.append((meta["note"], meta.get("note_size", 10), False))
+    segments: List[Tuple[Tuple[float, float], Dict[str, Any]]] = []
+    cur_x, cur_y = nodes[0].get("x", 0), nodes[0].get("y", 0)
+    for nd in nodes[1:]:
+        cmd = nd.get("cmd", "L")
+        if cmd == "Z":
+            continue
+        segments.append(((cur_x, cur_y), nd))
+        cur_x, cur_y = nd.get("x", cur_x), nd.get("y", cur_y)
 
-    if text_lines:
-        # Estimate text box size from the longest line
-        max_size = max(sz for _, sz, _ in text_lines)
-        longest = max(text_lines, key=lambda t: len(t[0]))[0]
-        box_w = max(50, len(longest) * max_size * 0.6 + 20)
-        box_h = sum(sz * 1.5 for _, sz, _ in text_lines) + 10
-
-        # Evaluate the actual curve midpoint (halfway along the path)
-        geom = record.get("geom", {})
-        gx = geom.get("x", 0)
-        gy = geom.get("y", 0)
-        gw = geom.get("w", 0)
-        gh = geom.get("h", 0)
-
-        segments: List[Tuple[Tuple[float, float], Dict[str, Any]]] = []
-        cur_x, cur_y = nodes[0].get("x", 0), nodes[0].get("y", 0)
-        for nd in nodes[1:]:
-            cmd = nd.get("cmd", "L")
-            if cmd == "Z":
-                continue
-            segments.append(((cur_x, cur_y), nd))
-            cur_x, cur_y = nd.get("x", cur_x), nd.get("y", cur_y)
-
-        if segments:
-            # Pick the middle segment and evaluate at t=0.5
-            seg_start, seg_node = segments[len(segments) // 2]
-            cmd = seg_node.get("cmd", "L")
-            t = 0.5
-            if cmd == "C":
-                # Cubic bezier: B(t) = (1-t)^3*P0 + 3(1-t)^2*t*P1
-                #                     + 3(1-t)*t^2*P2 + t^3*P3
-                p0x, p0y = seg_start
-                p1x, p1y = seg_node["c1x"], seg_node["c1y"]
-                p2x, p2y = seg_node["c2x"], seg_node["c2y"]
-                p3x, p3y = seg_node["x"], seg_node["y"]
-                u = 1 - t
-                rx = u**3*p0x + 3*u**2*t*p1x + 3*u*t**2*p2x + t**3*p3x
-                ry = u**3*p0y + 3*u**2*t*p1y + 3*u*t**2*p2y + t**3*p3y
-            elif cmd == "Q":
-                # Quadratic bezier: B(t) = (1-t)^2*P0 + 2(1-t)*t*P1 + t^2*P2
-                p0x, p0y = seg_start
-                p1x, p1y = seg_node["cx"], seg_node["cy"]
-                p2x, p2y = seg_node["x"], seg_node["y"]
-                u = 1 - t
-                rx = u**2*p0x + 2*u*t*p1x + t**2*p2x
-                ry = u**2*p0y + 2*u*t*p1y + t**2*p2y
-            else:
-                # Line: midpoint
-                rx = (seg_start[0] + seg_node.get("x", 0)) / 2
-                ry = (seg_start[1] + seg_node.get("y", 0)) / 2
-            mid_x = (gx + rx * gw) * scale_x
-            mid_y = (gy + ry * gh) * scale_y
+    if segments:
+        seg_start, seg_node = segments[len(segments) // 2]
+        cmd = seg_node.get("cmd", "L")
+        t = 0.5
+        if cmd == "C":
+            p0x, p0y = seg_start
+            p1x, p1y = seg_node["c1x"], seg_node["c1y"]
+            p2x, p2y = seg_node["c2x"], seg_node["c2y"]
+            p3x, p3y = seg_node["x"], seg_node["y"]
+            u = 1 - t
+            rx = u**3*p0x + 3*u**2*t*p1x + 3*u*t**2*p2x + t**3*p3x
+            ry = u**3*p0y + 3*u**2*t*p1y + 3*u*t**2*p2y + t**3*p3y
+        elif cmd == "Q":
+            p0x, p0y = seg_start
+            p1x, p1y = seg_node["cx"], seg_node["cy"]
+            p2x, p2y = seg_node["x"], seg_node["y"]
+            u = 1 - t
+            rx = u**2*p0x + 2*u*t*p1x + t**2*p2x
+            ry = u**2*p0y + 2*u*t*p1y + t**2*p2y
         else:
-            mid_x = (gx + gw / 2) * scale_x
-            mid_y = (gy + gh / 2) * scale_y
+            rx = (seg_start[0] + seg_node.get("x", 0)) / 2
+            ry = (seg_start[1] + seg_node.get("y", 0)) / 2
+        mid_x = gx + rx * gw
+        mid_y = gy + ry * gh
+    else:
+        mid_x = gx + gw / 2
+        mid_y = gy + gh / 2
 
-        tx = px_to_emu(mid_x - box_w * scale_x / 2)
-        ty = px_to_emu(mid_y - box_h * scale_y / 2)
-        tw = px_to_emu(box_w * scale_x)
-        th = px_to_emu(box_h * scale_y)
-
-        tbox = slide.shapes.add_textbox(tx, ty, tw, th)
-        tf = tbox.text_frame
-        tf.word_wrap = True
-        first = True
-        for text, size, bold in text_lines:
-            if first:
-                p = tf.paragraphs[0]
-                first = False
-            else:
-                p = tf.add_paragraph()
-            p.clear()
-            run = p.add_run()
-            run.text = text
-            run.font.size = Pt(size)
-            run.font.bold = bold
-            if rgb:
-                run.font.color.rgb = RGBColor(*rgb)
-            p.alignment = PP_ALIGN.CENTER
+    _add_line_curve_textbox(slide, record, geom, scale_x, scale_y,
+                            mid_x=mid_x, mid_y=mid_y)
 
 
 def _add_seqblock(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -1088,8 +1171,7 @@ def _add_isocube(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
     _apply_line_style(shape.line, style)
     _apply_fill_style(shape.fill, style)
 
-    meta = record.get("meta", {})
-    _add_text_to_shape(shape, meta, style.get("text", {}))
+    _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
 
 
@@ -1178,56 +1260,14 @@ def _add_orthocurve(slide, record: Dict[str, Any], scale_x: float, scale_y: floa
             tail_end.set("type", "triangle")
 
     # ── Text label at polyline midpoint ──
-    meta = record.get("meta", {})
-    text_style = style.get("text", {})
-    text_color = text_style.get("color", "#000000")
-    rgb = hex_to_rgb(text_color)
-
-    text_lines: List[Tuple[str, float, bool]] = []  # (text, size_pt, bold)
-    if meta.get("label"):
-        text_lines.append((meta["label"], meta.get("label_size", 12), True))
-    if meta.get("tech"):
-        text_lines.append((f"[{meta['tech']}]", meta.get("tech_size", 10), False))
-    if meta.get("note"):
-        text_lines.append((meta["note"], meta.get("note_size", 10), False))
-
-    if text_lines:
-        max_size = max(sz for _, sz, _ in text_lines)
-        longest = max(text_lines, key=lambda t: len(t[0]))[0]
-        box_w = max(50, len(longest) * max_size * 0.6 + 20)
-        box_h = sum(sz * 1.5 for _, sz, _ in text_lines) + 10
-
-        # Midpoint of polyline (middle segment midpoint)
-        mid_idx = len(points) // 2
-        prev_idx = max(0, mid_idx - 1)
-        mid_rx = (points[prev_idx][0] + points[mid_idx][0]) / 2
-        mid_ry = (points[prev_idx][1] + points[mid_idx][1]) / 2
-        mid_x = (geom.get("x", 0) + mid_rx * geom.get("w", 0)) * scale_x
-        mid_y = (geom.get("y", 0) + mid_ry * geom.get("h", 0)) * scale_y
-
-        tx = px_to_emu(mid_x - box_w * scale_x / 2)
-        ty = px_to_emu(mid_y - box_h * scale_y / 2)
-        tw = px_to_emu(box_w * scale_x)
-        th = px_to_emu(box_h * scale_y)
-
-        tbox = slide.shapes.add_textbox(tx, ty, tw, th)
-        tf = tbox.text_frame
-        tf.word_wrap = True
-        first = True
-        for text, size, bold in text_lines:
-            if first:
-                p = tf.paragraphs[0]
-                first = False
-            else:
-                p = tf.add_paragraph()
-            p.clear()
-            run = p.add_run()
-            run.text = text
-            run.font.size = Pt(size)
-            run.font.bold = bold
-            if rgb:
-                run.font.color.rgb = RGBColor(*rgb)
-            p.alignment = PP_ALIGN.CENTER
+    mid_idx = len(points) // 2
+    prev_idx = max(0, mid_idx - 1)
+    mid_rx = (points[prev_idx][0] + points[mid_idx][0]) / 2
+    mid_ry = (points[prev_idx][1] + points[mid_idx][1]) / 2
+    mid_x = geom.get("x", 0) + mid_rx * geom.get("w", 0)
+    mid_y = geom.get("y", 0) + mid_ry * geom.get("h", 0)
+    _add_line_curve_textbox(slide, record, geom, scale_x, scale_y,
+                            mid_x=mid_x, mid_y=mid_y)
 
 
 def export_to_pptx(

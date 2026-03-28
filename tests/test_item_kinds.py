@@ -20,9 +20,7 @@ import sys
 import pytest
 from PyQt6.QtCore import QPointF
 from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QApplication
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from canvas.items import (
     MetaRectItem,
@@ -38,7 +36,6 @@ from canvas.items import (
     MetaOrthoCurveItem,
     MetaIsoCubeItem,
 )
-from settings import SettingsManager
 
 # ============================================================================
 # Item config table: kind -> (ItemClass, constructor_args)
@@ -106,25 +103,6 @@ TEXT_KINDS = {"text"}
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-@pytest.fixture(scope="session")
-def qapp():
-    """Provide a single QApplication for the entire test session."""
-    app = QApplication.instance() or QApplication(sys.argv)
-    yield app
-
-
-@pytest.fixture()
-def main_window(qapp):
-    """Create a fresh MainWindow for each test."""
-    from main import MainWindow
-    sm = SettingsManager()
-    mw = MainWindow(sm)
-    mw.show()
-    qapp.processEvents()
-    yield mw
-    mw.close()
-
 
 # ---------------------------------------------------------------------------
 # Helpers

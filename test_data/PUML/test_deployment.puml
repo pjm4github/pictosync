@@ -1,0 +1,16 @@
+@startuml
+cloud "Cloud" {
+  node "Cloud Server" as cloud_server {
+    artifact "AWS IoT Core"
+    artifact "Analytics Service"
+  }
+}
+node "Edge Gateway" as edge {
+  artifact "Local Processor"
+}
+node "IoT Device 1"  as device1
+node "IoT Device 2"  as device2
+device1 --> edge : Sensor Data
+device2 --> edge : Sensor Data
+edge --> cloud_server : MQTT
+@enduml

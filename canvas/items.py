@@ -2652,9 +2652,11 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._width = max(w, 1.0)
         self._height = max(h, 1.0)
 
-        # Relative points (0-1 within bounding box)
+        # Relative points (0-1 within bounding box).
+        # Preserve the extended format: [rx, ry] for straight,
+        # [rx, ry, "Q", cx, cy] for quadratic, [rx, ry, "C", c1x, c1y, c2x, c2y] for cubic.
         if points and len(points) >= 3:
-            self._rel_points = [[float(p[0]), float(p[1])] for p in points]
+            self._rel_points = [list(p) for p in points]
         else:
             self._rel_points = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
 

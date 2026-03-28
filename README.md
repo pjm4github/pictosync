@@ -4,7 +4,7 @@
 
 # PictoSync
 
-**v2.3** | Diagram Normalization & Agentic Specification IDE
+**v2.4** | Diagram Normalization & Agentic Specification IDE
 
 ---
 
@@ -90,7 +90,7 @@ The primary user is a senior engineer or architect working on systems where inte
 
 ---
 
-## Current Features (v2.2)
+## Current Features (v2.4)
 
 **For a comparison to other tools and their features see: [Round Tripping PNG Tools](png_json_comparison.md)**
 
@@ -255,25 +255,30 @@ python main.py
 
 ## Testing
 
-PictoSync includes an automated test suite under `tests/` using pytest. Tests require a GUI environment (not headless).
+PictoSync includes a comprehensive test suite of **1375 tests** across **31 test files** using pytest. See [`tests/README.md`](tests/README.md) for the full test directory structure, shared fixtures, design patterns, and coverage/reporting instructions.
 
 ```bash
 # Run all tests
-python -m pytest tests/ -v
+.venv/Scripts/python -m pytest tests/ -v
 
 # Run a specific test file
-python -m pytest tests/test_scroll_preservation.py -v
+.venv/Scripts/python -m pytest tests/test_scroll_preservation.py -v
+
+# Run by keyword
+.venv/Scripts/python -m pytest tests/ -k "roundtrip" -v
 ```
 
 ### Test Coverage
 
-| Test Module | What It Covers |
-|-------------|---------------|
-| `test_item_kinds.py` | All 13 item kinds end-to-end: creation/JSON field correctness, property panel meta editing, pen color changes, and no duplicate IDs |
-| `test_adjust_roundtrip.py` | Schema-driven adjust control labels, suffixes, ranges; adjust value round-trips through panel/JSON/canvas |
-| `test_scroll_preservation.py` | Editor scroll stays frozen during canvas drag; JSON geometry values update live during drag; PUML import produces correct annotations |
-| `test_ungroup_drag.py` | Ungroup preserves index integrity; no duplicate IDs after ungroup; children retain callbacks; geometry updates during drag |
-| `test_flow_ungroup.py` | Move-then-ungroup-then-drag on flow/activity diagrams; index integrity and duplicate ID checks |
+| Category | Test Files | What They Cover |
+|----------|-----------|----------------|
+| **Canvas Items** | `test_item_kinds`, `test_port_item`, `test_group_item`, `test_seqblock_item` | All 13 item kinds: creation, JSON fields, meta editing, pen color, parent attachment |
+| **Round-Trips** | `test_to_record_roundtrip`, `test_polygon_curve_vertices`, `test_rotation_roundtrip`, `test_blocks_runs_roundtrip`, `test_style_fill_roundtrip`, `test_adjust_roundtrip` | Serialize/reconstruct/serialize for all kinds, formatting, vertices, rotation, fill |
+| **Data Models** | `test_text_dedup`, `test_kind_alias` | Block deduplication, kind alias resolution |
+| **UI Framework** | `test_undo_redo`, `test_drawing_modes`, `test_context_menu_zorder`, `test_json_editor`, `test_properties_panel`, `test_keyboard_shortcuts`, `test_canvas_view`, `test_drag_drop`, `test_settings_dialog`, `test_menu_system` | Undo/redo commands, mode switching, z-order, editor features, property panel, shortcuts, zoom, drag-drop, settings, menus |
+| **Integration** | `test_scroll_preservation`, `test_ungroup_drag`, `test_flow_ungroup` | Editor scroll during drag, ungroup integrity, flow diagram sequences |
+| **Parsers** | `test_mermaid_parser`, `test_c4_source_parser`, `test_c4_merger`, `test_sequence_source_parser`, `test_sequence_merger` | Mermaid SVG/source parsing, C4 and sequence diagram pipelines |
+| **Export** | `test_pptx_export` | PowerPoint export with blocks/runs text and per-run formatting |
 
 ## Project Structure
 
@@ -320,7 +325,8 @@ pictosync/
 │   └── worker.py        # Threaded alignment workers
 ├── domains/             # Domain-specific DSL plugins (e.g. ns3/)
 ├── icons/               # Theme-aware SVG icons
-├── tests/               # Automated test suite (pytest)
+├── tests/               # Automated test suite — 1375 tests, 31 files (see [tests/README.md](tests/README.md))
+├── scripts/             # Diagnostic scripts (see [scripts/README.md](scripts/README.md))
 ├── test_data/           # Test fixture data (PUML, Mermaid SVG)
 └── requirements.txt
 ```
@@ -362,6 +368,16 @@ See `schemas/annotation_schema.json` for the full specification.
 Additional Mermaid diagram types (Sequence, Class, ER, Gantt, Mindmap, etc.) have test data collected; parsers not yet implemented.
 
 ## Version History
+
+### v2.4 (2026-03-28)
+- **Comprehensive test suite**: 1375 tests across 31 files; 20 new test files covering canvas items, round-trips, data models, UI framework, parsers, and export
+- **Shared test fixtures**: Centralized `conftest.py` with session-scoped `qapp`, function-scoped `main_window` and `scene` fixtures; offscreen Qt platform
+- **UI framework tests**: Undo/redo commands, drawing mode switching, context menu z-order, JSON editor features, property panel per-kind controls, keyboard shortcuts, canvas zoom, drag-drop acceptance, settings dialog, and menu system
+- **Test documentation**: `tests/README.md` with directory structure, design patterns, fixture usage, coverage/reporting instructions, and new-test template
+- **Diagnostic scripts**: `scripts/` directory with `diagnose_drag_kinds.py` and `scripts/README.md`
+- **PlantUML deployment diagrams**: ANTLR4 grammar, isocube detection (3D-box polygons), cloud shape as polygon with cubic bezier curves
+- **Text deduplication**: `_dedup_blocks` and `_dedup_label_tech_note` remove duplicate text across label/tech/note fields
+- **PPTX blocks/runs export**: PowerPoint text export reads from `contents.blocks.runs` with per-run formatting (bold, italic, underline, color, font)
 
 ### v2.3 (2026-03-19)
 - **JSON→QTextEdit round-trip**: Editing text in `blocks[].runs[].text` in the JSON editor now correctly updates the Contents tab and canvas label; fixed overlay-2.0 format detection order in `from_dict`

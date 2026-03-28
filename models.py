@@ -205,6 +205,35 @@ class TextBlock:
         return "".join(r.text for r in self.runs if r.type == "text")
 
 
+def _dedup_blocks(blocks: List[TextBlock]) -> List[TextBlock]:
+    """Remove duplicate text across blocks (label/tech/note slots).
+
+    Priority: block 0 (label) > block 1 (tech) > block 2 (note).
+    If a block's plain text matches a higher-priority block, its runs are
+    cleared.  Comparison is case-insensitive and whitespace-normalised.
+
+    Args:
+        blocks: List of TextBlock objects (typically 1-3 blocks).
+
+    Returns:
+        The same list, mutated in place, with duplicate runs cleared.
+    """
+    if len(blocks) < 2:
+        return blocks
+
+    def _norm(s: str) -> str:
+        return " ".join(s.split()).lower().strip()
+
+    seen: list = []
+    for blk in blocks:
+        pt = _norm(blk.plain_text())
+        if pt and pt in seen:
+            blk.runs = []
+        elif pt:
+            seen.append(pt)
+    return blocks
+
+
 # ── Deprecated flat keys (overlay-1.0) ────────────────────────────────────
 # These are present in contents dicts written before overlay-2.0.
 # Used by from_dict migration and by schemas/__init__.py expected-template
@@ -424,6 +453,7 @@ class AnnotationContents:
                                    "text_box_border", "text_box_border_color",
                                    "text_box_background_color",
                                    "label", "tech", "note"}}
+            _dedup_blocks(blocks)
             return cls(
                 frame=frame, default_format=default_format, blocks=blocks,
                 wrap=wrap, text_box_width=text_box_width,
@@ -480,6 +510,7 @@ class AnnotationContents:
                                        if k not in old_all}
             if "dsl" in d:
                 extras["dsl"] = d["dsl"]
+            _dedup_blocks(blocks)
             return cls(
                 frame=frame, default_format=default_format, blocks=blocks,
                 text=html, halign=halign, valign=valign, spacing=spacing,
