@@ -1,0 +1,217 @@
+@startuml 05_parser_stress_test
+title Parser Stress Test — Mixed Node Types, Stereotypes, Queues, JSON, Frames
+
+' Tests: actor, node, component, database, artifact, file, queue, frame,
+'        cloud, storage, collections, boundary, interface, card
+' Link styles: -->, <--, <-->, .., ..>, <.., --, ~~, -[hidden]->
+' Stereotypes: multiple per element  
+' Skinparam overrides per element type
+' Special chars in labels, multiline labels, numbers in stereotypes
+
+skinparam defaultFontSize 11
+skinparam backgroundColor transparent
+
+skinparam actor {
+    BackgroundColor #FFF9C4
+    BorderColor #F57F17
+}
+skinparam queue {
+    BackgroundColor #F3E5F5
+    BorderColor #7B1FA2
+    FontColor #4A148C
+}
+skinparam storage {
+    BackgroundColor #ECEFF1
+    BorderColor #607D8B
+}
+skinparam collections {
+    BackgroundColor #E8F5E9
+    BorderColor #388E3C
+}
+skinparam card {
+    BackgroundColor #E3F2FD
+    BorderColor #1976D2
+}
+skinparam file {
+    BackgroundColor #FFF8E1
+    BorderColor #FFA000
+}
+skinparam boundary {
+    BackgroundColor #FFEBEE
+    BorderColor #C62828
+}
+skinparam interface {
+    BackgroundColor #E8EAF6
+    BorderColor #3949AB
+}
+
+' ─── Actors ──────────────────────────────────────────────────────────────────
+actor "Alice\n(End User)" as ALICE
+actor "Bob\n(Admin)" as BOB <<admin>> <<privileged>>
+actor "External Partner\nPartner Corp Ltd." as PARTNER <<external>> <<trusted>>
+actor "Automated Agent\nCI/CD Bot" as CI_AGENT <<bot>> <<non_human>>
+
+' ─── Boundary ────────────────────────────────────────────────────────────────
+boundary "System Boundary\nv2.4.1-rc3" as SYS_BOUNDARY
+
+' ─── Frame: trust zone ───────────────────────────────────────────────────────
+frame "Trusted Execution Zone\n(TEE — SGX Enclave)" as TEE_FRAME <<tee>> {
+
+    node "Confidential Node\n10.0.0.5:8080" as CONF_NODE <<sgx_node>> <<cip_asset>> {
+        component "Sealed Service\nAES-256-GCM" as SEALED_SVC <<enclave_component>>
+        artifact "Sealed Blob\nencrypted_state.bin" as SEALED_BLOB <<encrypted>>
+        database "In-Memory DB\n(ephemeral — no persist)" as MEM_DB <<volatile>>
+    }
+
+}
+
+' ─── Cloud node ──────────────────────────────────────────────────────────────
+cloud "Public Cloud\nAWS + GCP Multi-Cloud" as PUB_CLOUD <<multi_cloud>> {
+
+    node "Serverless Layer" as SERVERLESS <<faas>> {
+        component "Lambda: auth-token-validator\nRuntime: python3.12\nMemory: 256MB / Timeout: 10s" as LAMBDA_AUTH <<lambda>> <<cold_start_risk>>
+        component "Cloud Run: pdf-generator\n:8080 — auto-scale 0-100" as CR_PDF <<cloud_run>>
+        component "Cloud Function: image-resize\nTrigger: GCS bucket" as CF_RESIZE <<cloud_function>>
+    }
+
+    node "Managed Services Cluster" as MGMT_SVC <<managed>> {
+        database "Firestore (NoSQL)\nProject: prod-alpha\nCollection: events" as FIRESTORE <<nosql>> <<multi_region>>
+        database "BigQuery Dataset\nbq://prod-alpha.analytics" as BQ <<data_warehouse>> <<columnar>>
+        storage "GCS Bucket\ngs://prod-alpha-assets\nStorageClass: STANDARD" as GCS <<object_store>>
+        queue "Cloud Pub/Sub\ntopic: user-events\n(10M msg/day)" as PUBSUB_EVT <<pubsub>> <<at_least_once>>
+        queue "Cloud Tasks Queue\nmax-dispatches: 500/s" as CLOUD_TASKS <<task_queue>>
+    }
+}
+
+' ─── On-premise node ─────────────────────────────────────────────────────────
+node "On-Premises Data Centre\nRack: U12-U24" as ONPREM_DC <<datacenter>> <<tier3>> {
+
+    collections "Server Pool\n(16 × HP DL380 Gen10)" as SERVER_POOL <<bare_metal>>
+
+    node "Legacy Application Host\nWindows Server 2019" as LEGACY_HOST <<legacy>> <<eol_2026>> {
+        component "COBOL Mainframe Bridge\n:3270/tcp TN3270" as COBOL_BRIDGE <<mainframe_adapter>>
+        component "ODBC Data Pump\nSQL Server 2014" as ODBC_PUMP <<etl>>
+        database "SQL Server 2014\n(EOL — migration pending)" as MSSQL <<rdbms>> <<eol>>
+        file "Batch Report\nexport_daily_%Y%m%d.csv" as BATCH_FILE <<scheduled>>
+    }
+
+    node "Message Broker Cluster\n3-node RabbitMQ 3.12" as RABBIT_CLUSTER <<amqp_cluster>> {
+        queue "Queue: order.inbound\nDurable, Quorum" as Q_ORDER <<quorum_queue>>
+        queue "Queue: order.dlq\nDead-Letter Exchange" as Q_DLQ <<dlq>>
+        queue "Exchange: order.fanout\ntype: fanout" as EX_ORDER <<exchange>>
+        component "Shovel Plugin\nRabbitMQ → Kafka" as SHOVEL <<bridge>>
+    }
+
+    node "API Gateway — On-Prem\nKong 3.4 / :443" as KONG_GW <<api_gateway>> {
+        component "Plugin: JWT Auth" as KONG_JWT <<plugin>>
+        component "Plugin: Rate Limit\n100 req/min" as KONG_RL <<plugin>>
+        component "Plugin: mTLS\nclient cert validation" as KONG_MTLS <<plugin>>
+        interface "Admin API\n:8444/tcp" as KONG_ADMIN
+    }
+}
+
+' ─── Queues outside nodes ─────────────────────────────────────────────────────
+queue "Dead Letter Archive\nSQS FIFO :443" as SQS_DLQ <<aws_sqs>> <<fifo>>
+queue "Event Bus\nAzure Service Bus\nNamespace: prod-sb" as ASB <<azure_sb>> <<premium_tier>>
+
+' ─── Card: configuration artifact ────────────────────────────────────────────
+card "Deployment Manifest\napp: v2.4.1" as DEPLOY_CARD <<kubernetes_manifest>> {
+    artifact "values.yaml\nenv: production" as HELM_VALUES
+    artifact "kustomization.yaml" as KUSTOMIZE
+    file "Dockerfile\nmulti-stage build" as DOCKERFILE
+}
+
+' ─── Interface ───────────────────────────────────────────────────────────────
+interface "REST API v3\nOpenAPI 3.1 spec" as REST_IFACE <<openapi>>
+interface "GraphQL Endpoint\n/graphql :4000" as GQL_IFACE <<graphql>>
+interface "gRPC Service\nproto: v2 :50051" as GRPC_IFACE <<protobuf>>
+
+' ─── Storage ─────────────────────────────────────────────────────────────────
+storage "NAS Array\nNetApp AFF A400\n200TB raw" as NAS <<nas>> <<nfs_v4>>
+storage "Tape Library\nSpectraLogic TFinity\n(DR archive)" as TAPE <<tape_library>> <<worm>>
+
+' ─── Collections ─────────────────────────────────────────────────────────────
+collections "CDN Edge Nodes\n(Cloudflare 200+ PoPs)" as CDN_NODES <<cdn>> <<anycast>>
+collections "IoT Device Fleet\n1,247 registered sensors" as IOT_FLEET <<iot>> <<mqtt_v5>>
+
+' ──────────────────────────────────────────────────────────────────────────────
+' LINK STYLES — cover all PlantUML deployment link variants
+' ──────────────────────────────────────────────────────────────────────────────
+
+' Standard arrow (-->)
+ALICE --> REST_IFACE : "HTTPS GET /resource"
+BOB --> KONG_ADMIN : "Admin API :8444"
+PARTNER --> KONG_GW : "mTLS :443"
+CI_AGENT --> DEPLOY_CARD : "helm upgrade"
+
+' Reverse arrow (<--)
+GQL_IFACE <-- ALICE : "GraphQL subscription\nWebSocket"
+
+' Bidirectional (<-->)
+GRPC_IFACE <--> CONF_NODE : "gRPC bidirectional\nstreaming :50051"
+
+' Dependency (..)
+LAMBDA_AUTH ..> FIRESTORE : "Firestore SDK"
+CF_RESIZE ..> GCS : "GCS trigger"
+
+' Dotted arrow (..>)
+ALICE ..> CDN_NODES : "cached asset"
+IOT_FLEET ..> PUBSUB_EVT : "MQTT-to-PubSub\nbridged"
+
+' Note / association (--)
+NAS -- LEGACY_HOST : "NFS v4 mount"
+TAPE -- NAS : "backup job\n02:00 UTC daily"
+
+' Thick link (~~)
+SERVER_POOL ~~> RABBIT_CLUSTER : "10GbE bonded\nLACP"
+
+' Hidden dependency (for layout)
+ALICE -[hidden]-> BOB
+
+' Boundary crossing
+SYS_BOUNDARY --> KONG_GW : "entry point"
+
+' Cross-cloud queue links
+PUBSUB_EVT --> ASB : "GCP→Azure bridge\nDataflow"
+Q_DLQ --> SQS_DLQ : "SHOVEL :5671"
+SHOVEL --> Q_ORDER : "consume"
+SHOVEL ..> ASB : "forward :443 AMQP"
+
+' Multi-hop chains
+KONG_GW --> REST_IFACE : "route: /api/v3/*"
+KONG_GW --> GQL_IFACE : "route: /graphql"
+KONG_GW --> GRPC_IFACE : "route: /grpc/*"
+KONG_JWT ..> LAMBDA_AUTH : "validate token"
+KONG_RL ..> CLOUD_TASKS : "rate-limit queue"
+REST_IFACE --> SEALED_SVC : "internal forward"
+GQL_IFACE --> SEALED_SVC : "resolver"
+SEALED_SVC --> MEM_DB : "in-memory R/W"
+SEALED_SVC --> SEALED_BLOB : "seal/unseal"
+SEALED_SVC --> ODBC_PUMP : "legacy data fetch"
+ODBC_PUMP --> MSSQL : "ODBC :1433"
+MSSQL --> BATCH_FILE : "nightly export"
+BATCH_FILE --> NAS : "copy to NAS"
+
+' EX_ORDER fan-out
+EX_ORDER --> Q_ORDER : "bind: routing-key=#"
+EX_ORDER --> Q_DLQ : "bind: x-dead-letter"
+CR_PDF --> EX_ORDER : "AMQP publish"
+Q_ORDER --> COBOL_BRIDGE : "consume"
+
+' Observability / log chains (dotted)
+CONF_NODE ..> SQS_DLQ : "error events :443"
+LEGACY_HOST ..> SQS_DLQ : "error events"
+
+' Data warehouse
+ODBC_PUMP --> BQ : "Datastream CDC"
+FIRESTORE ..> BQ : "BQ export"
+GCS ..> CF_RESIZE : "object notification"
+CF_RESIZE --> GCS : "put resized asset"
+GCS ..> CDN_NODES : "origin serve"
+
+' Deploy / IaC
+HELM_VALUES ..> KONG_GW : "configure"
+KUSTOMIZE ..> SERVERLESS : "apply"
+DOCKERFILE ..> CR_PDF : "build image"
+
+@enduml

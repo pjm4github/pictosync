@@ -85,7 +85,7 @@ diagram
     ;
 
 filenameHint
-    : ID ( '.' ID )*
+    : ( ID | INT )+ ( '.' ( ID | INT )+ )*
     | QUOTED_STRING
     ;
 
@@ -281,6 +281,8 @@ restOfLine
       | COLON | COMMA | STAR | BANG | FSLASH | LPAREN | RPAREN
       | LBRACK | RBRACK | AT | DOLLAR
       | STEREOTYPE_OPEN | STEREOTYPE_CLOSE
+      | BRACKET_COMP | ACTOR_COLON | USECASE_PAREN
+      | ARROW_SPEC
       | KW_AS | KW_OF | KW_TO | KW_LEFT | KW_RIGHT | KW_TOP | KW_BOTTOM
       | KW_CENTER | KW_X | KW_DIRECTION
       | elementKeyword
@@ -378,11 +380,18 @@ skinparamBlock
     ;
 
 skinparamPath
-    : ID ( '.' ID )*
+    : skinparamWord ( '.' skinparamWord )*
+    ;
+
+// A skinparam path segment — can be an ID or an element keyword
+// (e.g., `skinparam actor { ... }`, `skinparam node.BackgroundColor #FFF`)
+skinparamWord
+    : ID
+    | elementKeyword
     ;
 
 skinparamEntry
-    : ID restOfLine NEWLINE+
+    : skinparamWord restOfLine NEWLINE+
     | NEWLINE+
     ;
 
@@ -432,6 +441,7 @@ legendAlign : KW_LEFT | KW_RIGHT | KW_CENTER ;
 
 pragmaStmt
     : BANG KW_PRAGMA ID restOfLine?
+    | BANG ID restOfLine?           // !define, !include, !ifdef, etc.
     ;
 
 scaleStmt
@@ -457,7 +467,7 @@ BRACKET_COMP
 // ── Actor colon notation :Name: ─────────────────────────────────────────
 
 ACTOR_COLON
-    : ':' ~[:\r\n]+ ':'
+    : ':' ~[:\r\n"]+ ':'
     ;
 
 // ── Usecase paren notation (Name) ───────────────────────────────────────

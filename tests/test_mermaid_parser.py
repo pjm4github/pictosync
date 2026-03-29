@@ -386,15 +386,17 @@ class TestAnnotationValidity:
 
     @pytest.mark.parametrize("svg_file", ALL_SVG_FILES)
     def test_has_meta(self, svg_file: str) -> None:
-        """Every annotation has a meta dict."""
+        """Every annotation has a meta or contents dict."""
         data = parse_mermaid_svg_to_annotations(_svg_path(svg_file))
         for ann in data["annotations"]:
-            assert "meta" in ann, (
-                f"{svg_file}/{ann['id']}: missing 'meta'"
+            has = "meta" in ann or "contents" in ann
+            assert has, (
+                f"{svg_file}/{ann['id']}: missing 'meta' or 'contents'"
             )
-            assert isinstance(ann["meta"], dict), (
-                f"{svg_file}/{ann['id']}: meta is {type(ann['meta']).__name__}, "
-                f"expected dict"
+            md = ann.get("meta") or ann.get("contents")
+            assert isinstance(md, dict), (
+                f"{svg_file}/{ann['id']}: meta/contents is "
+                f"{type(md).__name__}, expected dict"
             )
 
     @pytest.mark.parametrize("svg_file", ALL_SVG_FILES)

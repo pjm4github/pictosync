@@ -1,4 +1,4 @@
-# Generated from PlantUMLDeployment.g4 by ANTLR 4.13.0
+# Generated from plantuml/grammar/PlantUMLDeployment.g4 by ANTLR 4.13.0
 from antlr4 import *
 if "." in __name__:
     from .PlantUMLDeploymentParser import PlantUMLDeploymentParser
@@ -176,6 +176,11 @@ class PlantUMLDeploymentVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by PlantUMLDeploymentParser#skinparamPath.
     def visitSkinparamPath(self, ctx:PlantUMLDeploymentParser.SkinparamPathContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by PlantUMLDeploymentParser#skinparamWord.
+    def visitSkinparamWord(self, ctx:PlantUMLDeploymentParser.SkinparamWordContext):
         return self.visitChildren(ctx)
 
 

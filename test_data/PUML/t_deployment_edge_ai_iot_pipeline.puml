@@ -1,0 +1,214 @@
+@startuml 04_edge_ai_iot_pipeline
+title Edge AI / IoT Field Deployment — Multi-Tier Data Pipeline
+
+skinparam defaultFontSize 11
+skinparam component {
+    BackgroundColor #E8F5E9
+    BorderColor #1B5E20
+}
+skinparam node {
+    BackgroundColor #EDE7F6
+    BorderColor #4527A0
+}
+skinparam database {
+    BackgroundColor #E1F5FE
+    BorderColor #0277BD
+}
+skinparam artifact {
+    BackgroundColor #FFF3E0
+    BorderColor #BF360C
+}
+skinparam queue {
+    BackgroundColor #FCE4EC
+    BorderColor #880E4F
+}
+
+' ─── Physical layer ───────────────────────────────────────────────────────────
+node "Field Site A — Substation 7" as SITE_A <<field_site>> {
+
+    node "Process Bus\n(IEC 61850 L2 VLAN 100)" as PROC_BUS_A <<ethernet_segment>> {
+        component "Merging Unit A1\nIEC 61850-9-2 SV\nMAC: 01:0C:CD:04:00:01" as MU_A1 <<ied>>
+        component "Merging Unit A2\n9-2 LE @ 80 samp/cyc" as MU_A2 <<ied>>
+        component "GOOSE Publisher A\n01:0C:CD:01:00:01" as GOOSE_A <<ied>>
+    }
+
+    node "Station Bus\n(IEC 61850 L3 VLAN 200)" as STN_BUS_A <<ethernet_segment>> {
+        component "IED: Diff Protection\nSEL-411L :102/tcp" as IED_DIFF <<ied>>
+        component "IED: Overcurrent\nREX640 :102/tcp" as IED_OC <<ied>>
+        component "RTU — DNP3 Master\n:20000/tcp" as RTU_A <<rtu>>
+    }
+
+    node "ISS Edge Box — Site A\nIntel NUC 13 Pro / i7-1360P" as ISS_A <<ot_edge>> {
+
+        node "Container Runtime: containerd" as CTR_A <<container_runtime>> {
+            component "sv-decoder\nIEC 61850-9-2 → flatbuf" as SV_DEC
+            component "goose-decoder\nGOOSE → JSON events" as GOOSE_DEC
+            component "dnp3-adapter\nDNP3 :20000 → NATS" as DNP3_ADAP
+            component "ieee2035-agent\nDER :8443 REST" as AGENT_2035
+            component "inference-svc\nllama.cpp Phi-4-mini" as INFER_A
+            component "fusion-engine\nEphemeral Fusion Arch." as FUSION_A <<patented>>
+            component "nats-server\n:4222 leafnode" as NATS_A
+            component "telegraf\nmetrics :9273" as TELEGRAF_A
+        }
+
+        database "EdgeDB\nlocal event ring buffer\n72-hour retention" as EDGEDB_A
+        database "MinIO Object Store\nCOMTRADE / PCAP archives" as MINIO_A
+        artifact "Model Weights\nphi-4-mini-q4.gguf\n2.4 GB" as WEIGHTS_A
+        artifact "IEC 61850 SCD\nsubstation_a.scd" as SCD_A
+    }
+}
+
+node "Field Site B — Feeder 12" as SITE_B <<field_site>> {
+
+    node "ISS Edge Box — Site B\nRaspberry Pi CM4 / 8GB" as ISS_B <<ot_edge>> {
+        component "sv-decoder" as SV_DEC_B
+        component "modbus-adapter\n:502/tcp Modbus TCP" as MOD_ADAP_B
+        component "nats-server\n:4222 leafnode" as NATS_B
+        component "inference-svc\nwhisper.cpp" as INFER_B
+        database "SQLite ring buffer" as SQLITE_B
+    }
+
+    node "Solar Inverter Array\nSunSpec Modbus" as INV_ARRAY <<der_array>> {
+        component "Inverter-1\nSMA Sunny Boy :502" as INV1
+        component "Inverter-2\nFronius Symo :502" as INV2
+        component "Inverter-3\nEnphase IQ :502" as INV3
+    }
+}
+
+' ─── Aggregation tier ────────────────────────────────────────────────────────
+node "Regional Aggregator — SCADA DMZ\n10.128.0.0/24" as REGION_AGG <<aggregation_tier>> {
+
+    node "NATS Cluster\n3-node JetStream" as NATS_CLUSTER <<message_cluster>> {
+        component "nats-server-1\n:4222 :6222 :8222" as NATS1
+        component "nats-server-2\n:4222 :6222 :8222" as NATS2
+        component "nats-server-3\n:4222 :6222 :8222" as NATS3
+        component "JetStream KV\n— ephemeral state" as JS_KV
+    }
+
+    node "Stream Processing\nApache Flink 1.18" as FLINK <<stream_processor>> {
+        component "SV Aggregator Job\n100ms tumbling window" as FLINK_SV
+        component "Fault Detection Job\nCEP pattern match" as FLINK_FAULT
+        component "DER Setpoint Job\nIEEE 2030.5 DR" as FLINK_DER
+    }
+
+    node "Telemetry Store" as TEL_STORE <<time_series_cluster>> {
+        database "InfluxDB 3\nField measurements\n90-day hot tier" as INFLUX
+        database "ClickHouse\nAnalytics & COMTRADE\n3-year cold tier" as CLICKHOUSE
+    }
+
+    node "AI/ML Platform\nMLflow + Ray Serve" as ML_PLATFORM <<ml_ops>> {
+        component "Anomaly Detector\n(LSTM autoencoder)" as ANOMALY_ML
+        component "Setpoint Optimizer\n(PPO RL agent)" as OPTIM_ML
+        component "Model Registry\nMLflow :5000" as MODEL_REG
+    }
+}
+
+' ─── Enterprise tier ─────────────────────────────────────────────────────────
+node "Enterprise Zone\n(Corp LAN / Extranet)" as ENTERPRISE <<enterprise_tier>> {
+
+    node "SCADA / EMS Platform" as SCADA_PLATFORM <<control_centre>> {
+        component "GE AREVA e-terra\nEMS :8080" as EMS_PLAT
+        component "OSIsoft PI Server\n:5450" as PI_SRV
+        component "ICCP TASE.2\nBilateral Table" as ICCP
+    }
+
+    node "Operator Consoles" as OPS_CONSOLES <<hmi_cluster>> {
+        component "HMI Workstation A\nInTouch :2101" as HMI_A
+        component "HMI Workstation B\nWinCC :2101" as HMI_B
+        component "Mobile Supervisor\nHTTPS :443" as MOBILE_SUP
+    }
+
+    node "Cybersecurity Stack" as CYBER_STACK <<security_cluster>> {
+        component "Claroty CTD\nOT asset discovery" as CLAROTY
+        component "Splunk SIEM\n:8089 / :9997" as SPLUNK
+        component "CrowdStrike Falcon\nEDR agents" as CS_EDR
+    }
+}
+
+' ─── External / utility ──────────────────────────────────────────────────────
+node "ISO/RTO Interface\nNERC E-Tag / OASIS" as ISO_RTO <<external_grid>> {
+    component "ICCP Link\nTASE.2 :102" as ISO_ICCP
+    component "E-Tag API\nREST :443" as ETAG_API
+}
+
+node "Weather / Forecast API" as WEATHER_API <<external_service>> {
+    component "NOAA REST :443" as NOAA
+    component "SolarEdge Forecast\n:443" as SOLAR_FC
+}
+
+' ─── Field → Edge connections ────────────────────────────────────────────────
+MU_A1 --> PROC_BUS_A : "SV multicast"
+MU_A2 --> PROC_BUS_A : "SV multicast"
+GOOSE_A --> PROC_BUS_A : "GOOSE multicast"
+PROC_BUS_A --> SV_DEC : "raw Ethernet frames"
+PROC_BUS_A --> GOOSE_DEC : "raw Ethernet frames"
+IED_DIFF --> STN_BUS_A : "MMS :102"
+IED_OC --> STN_BUS_A : "MMS :102"
+RTU_A --> STN_BUS_A : "DNP3/TCP :20000"
+STN_BUS_A --> DNP3_ADAP : "DNP3 poll"
+
+' ─── Edge internal ───────────────────────────────────────────────────────────
+SV_DEC --> NATS_A : "publish: ots.sv.siteA.*"
+GOOSE_DEC --> NATS_A : "publish: ots.goose.siteA.*"
+DNP3_ADAP --> NATS_A : "publish: ots.dnp3.siteA.*"
+AGENT_2035 --> NATS_A : "publish: der.siteA.*"
+NATS_A --> FUSION_A : "subscribe: ots.*"
+FUSION_A --> INFER_A : "context prompt"
+FUSION_A --> EDGEDB_A : "persist"
+INFER_A ..> WEIGHTS_A : "load model"
+SCD_A ..> SV_DEC : "schema config"
+TELEGRAF_A --> NATS_A : "metrics"
+
+' ─── Site B internal ─────────────────────────────────────────────────────────
+INV1 --> MOD_ADAP_B : "Modbus FC03 :502"
+INV2 --> MOD_ADAP_B : "Modbus FC03 :502"
+INV3 --> MOD_ADAP_B : "Modbus FC03 :502"
+MOD_ADAP_B --> NATS_B : "publish: der.siteB.*"
+SV_DEC_B --> NATS_B : "publish: ots.sv.siteB.*"
+NATS_B --> SQLITE_B : "write-behind"
+
+' ─── Edge → Aggregator (NATS leaf nodes) ─────────────────────────────────────
+NATS_A --> NATS1 : "NATS leaf :4222\n(TLS 1.3 + JWT)"
+NATS_B --> NATS2 : "NATS leaf :4222"
+NATS1 -- NATS2
+NATS2 -- NATS3
+NATS3 -- NATS1
+
+' ─── NATS → Stream Processing ────────────────────────────────────────────────
+NATS1 --> FLINK_SV : "NATS source connector"
+NATS1 --> FLINK_FAULT : "NATS source connector"
+NATS2 --> FLINK_DER : "NATS source connector"
+JS_KV --> FLINK_FAULT : "ephemeral state"
+
+' ─── Flink → Store ───────────────────────────────────────────────────────────
+FLINK_SV --> INFLUX : "line protocol :8086"
+FLINK_FAULT --> CLICKHOUSE : "insert :8123"
+FLINK_DER --> INFLUX : "line protocol"
+MINIO_A --> CLICKHOUSE : "S3-compatible ingest"
+
+' ─── ML Platform ─────────────────────────────────────────────────────────────
+INFLUX --> ANOMALY_ML : "training dataset"
+ANOMALY_ML --> MODEL_REG : "register model"
+MODEL_REG --> INFER_A : "model update pull"
+OPTIM_ML --> FLINK_DER : "setpoint commands"
+WEATHER_API --> OPTIM_ML : "forecast input"
+NOAA --> OPTIM_ML : "NWP data"
+SOLAR_FC --> OPTIM_ML : "irradiance forecast"
+
+' ─── Aggregator → Enterprise ─────────────────────────────────────────────────
+INFLUX --> PI_SRV : "PI Web API :443"
+CLICKHOUSE --> EMS_PLAT : "JDBC :8123"
+FLINK_FAULT ..> SPLUNK : "alert events :9997"
+CLAROTY --> NATS1 : "passive tap"
+
+' ─── Enterprise internal ─────────────────────────────────────────────────────
+PI_SRV --> HMI_A : "AF SDK :5450"
+PI_SRV --> HMI_B : "AF SDK :5450"
+EMS_PLAT --> MOBILE_SUP : "HTTPS :443"
+EMS_PLAT --> ICCP : "TASE.2"
+ICCP --> ISO_ICCP : "ICCP bilateral :102"
+EMS_PLAT --> ETAG_API : "E-Tag :443"
+SPLUNK --> CS_EDR : "telemetry"
+CLAROTY ..> CYBER_STACK : "OT asset inventory"
+
+@enduml

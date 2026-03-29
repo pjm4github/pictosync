@@ -1,0 +1,178 @@
+@startuml 02_ot_substation_iss
+title Intelligent Substation System (ISS) — IEC 61850 / NERC-CIP Deployment
+
+skinparam defaultFontSize 11
+skinparam padding 6
+skinparam node {
+    BackgroundColor #F3E5F5
+    BorderColor #6A1B9A
+}
+skinparam component {
+    BackgroundColor #E3F2FD
+    BorderColor #1565C0
+}
+skinparam database {
+    BackgroundColor #E8F5E9
+    BorderColor #2E7D32
+}
+skinparam artifact {
+    BackgroundColor #FFF3E0
+    BorderColor #E65100
+}
+skinparam frame {
+    BackgroundColor #FAFAFA
+    BorderColor #9E9E9E
+}
+
+actor "Grid Operator\n(HMI Console)" as OPERATOR
+actor "NERC-CIP Auditor" as AUDITOR
+
+node "Electronic Security Perimeter (ESP)\nNERC CIP-006 / CIP-007" as ESP <<security_perimeter>> {
+
+    frame "Control Zone — CIP Cyber Asset" as CZ {
+
+        node "Engineering Workstation\nWindows 11 / IEC 61850 Tooling" as EWS <<workstation>> {
+            component "IEC 61850 SCL Editor\n(ICD / SSD / SCD)" as SCL_EDITOR
+            component "COMTRADE Analyser" as COMTRADE
+            artifact "Station Configuration\nsubstation.scd" as SCD_FILE
+        }
+
+        node "Station Bus Switch\nIEC 61850-8-1 MMS/GOOSE" as STN_BUS <<managed_switch>> {
+            component "VLAN 10 — Protection" as VLAN10
+            component "VLAN 20 — Metering" as VLAN20
+            component "VLAN 30 — Control" as VLAN30
+            component "Port Mirror → TAP" as PORT_TAP
+        }
+
+        node "ISS Edge AI Enclosure\nTier-3 OT Edge — Fanless" as ISS_BOX <<ot_edge_device>> {
+            component "IEC 61850 Publisher\n(R-GOOSE / R-SV :102/tcp)" as IEC_PUB
+            component "IEEE 2030.5 Gateway\nDER Aggregator :8443/tcp" as IEEE2035
+            component "Edge LLM Inference\nPhi-4-mini (llama.cpp)" as EDGE_LLM
+            component "Ephemeral Fusion Engine\nOT/IT Correlation" as EFE <<patent>>
+            component "NATS Broker\n:4222/tcp — CUPID" as NATS_BROKER
+            component "DNP3 Master\nDNP3/TCP :20000" as DNP3_MASTER
+            component "Faster-Whisper\nVoice Recognition" as WHISPER
+            database "TimescaleDB\nEvent Store" as TSDB
+        }
+
+        node "Substation Automation Controller\nABB RET670 / SEL-411L" as SAC <<iec61850_ied>> {
+            component "XCBR — Circuit Breaker LN" as XCBR
+            component "XSWI — Disconnector LN" as XSWI
+            component "PDIS — Distance Protection LN" as PDIS
+            component "MMXU — Measurement LN" as MMXU
+            component "GGIO — Generic I/O LN" as GGIO
+        }
+
+        node "Merging Unit Array (SV Publishers)" as MU_ARRAY <<process_bus_node>> {
+            component "MU-1: Bay A\nIEC 61850-9-2 LE SV" as MU1
+            component "MU-2: Bay B\nIEC 61850-9-2 LE SV" as MU2
+            component "MU-3: Bay C\nIEC 61850-9-2 LE SV" as MU3
+        }
+
+        node "Protection IED Cluster" as IED_CLUSTER <<ied_cluster>> {
+            component "IED-1: Differential\nPSL-400 :102/tcp" as IED1
+            component "IED-2: Overcurrent\nSEL-351 :102/tcp" as IED2
+            component "IED-3: Voltage Reg.\nBECO 2200 :102/tcp" as IED3
+        }
+
+        database "Historian\nOSIsoft PI / InfluxDB 2" as HISTORIAN <<process_historian>>
+    }
+
+    frame "DMZ — Routable Access" as DMZ {
+        node "Jump Server\nBastion Host" as JUMP <<dmz_host>> {
+            component "SSH :22 + MFA" as SSH_MFA
+            component "RDP Gateway :3389" as RDP_GW
+        }
+        node "Syslog / SIEM Forwarder" as SIEM_FWD <<log_collector>> {
+            component "Syslog-ng :514 UDP" as SYSLOG
+            component "Splunk HF Agent" as SPLUNK_HF
+        }
+        artifact "CIP-007 Log Archive\n(90-day rolling)" as CIP_LOG
+    }
+}
+
+node "Corporate WAN / MPLS" as CORP_WAN <<wan_node>> {
+    component "SD-WAN Controller\nVeloCloud" as SDWAN
+}
+
+node "SCADA Control Centre\n(Remote)" as SCADA_CC <<control_centre>> {
+    component "OSIsoft PI Server\nHistorian" as PI_SERVER
+    component "EMS / ADMS Platform\nGE AREVA e-terrasource" as EMS
+    component "Incident Response\nConsole" as IR_CONSOLE
+}
+
+node "DER Aggregation Layer\n(IEEE 2030.5 / OpenADR)" as DER_AGG <<der_aggregator>> {
+    component "CSIP-AUS VEN\nOpenADR 2.0b :8443" as VEN
+    component "DER Registration\nSunSpec Modbus :502" as DER_REG
+}
+
+node "External NTP/PTP" as TIME_SRC <<time_source>> {
+    component "GPS-disciplined\nPTP Grandmaster :319/320 UDP" as PTP_GM
+}
+
+' ─── Process bus (SV multicast) ──────────────────────────────────────────────
+MU1 --> STN_BUS : "SV multicast\n01:0C:CD:04:xx (VLAN10)"
+MU2 --> STN_BUS : "SV multicast"
+MU3 --> STN_BUS : "SV multicast"
+STN_BUS --> IED1 : "SV subscriber"
+STN_BUS --> IED2 : "SV subscriber"
+STN_BUS --> IED3 : "SV subscriber"
+STN_BUS --> SAC : "SV + GOOSE sub"
+
+' ─── Station bus (MMS / GOOSE) ───────────────────────────────────────────────
+SAC --> STN_BUS : "GOOSE trip cmd\n01:0C:CD:01:xx (VLAN10)"
+IED1 --> STN_BUS : "GOOSE"
+IED2 --> STN_BUS : "GOOSE"
+STN_BUS --> IEC_PUB : "IEC 61850 MMS :102"
+
+' ─── DNP3 ────────────────────────────────────────────────────────────────────
+DNP3_MASTER --> SAC : "DNP3/TCP :20000"
+DNP3_MASTER --> IED3 : "DNP3/TCP :20000"
+
+' ─── ISS internal ────────────────────────────────────────────────────────────
+IEC_PUB --> NATS_BROKER : "NATS subject:\nots.sv.bay.*"
+IEC_PUB --> EFE : "frame events"
+NATS_BROKER --> EFE : "subscribe: ots.*"
+NATS_BROKER --> IEEE2035 : "subscribe: der.*"
+EFE --> EDGE_LLM : "context vectors"
+EFE --> TSDB : "persist fusion record"
+EDGE_LLM --> NATS_BROKER : "publish: ai.insight"
+WHISPER --> NATS_BROKER : "publish: voice.cmd"
+DNP3_MASTER --> TSDB : "DNP3 analog/binary"
+
+' ─── Historian ───────────────────────────────────────────────────────────────
+TSDB --> HISTORIAN : "JDBC/Postgres :5432"
+IEC_PUB --> HISTORIAN : "OPC-UA :4840"
+
+' ─── EWS tooling ─────────────────────────────────────────────────────────────
+SCL_EDITOR ..> SCD_FILE : "write SCD"
+SCD_FILE ..> SAC : "upload via MMS"
+PORT_TAP --> COMTRADE : "promiscuous capture"
+
+' ─── CIP logging ─────────────────────────────────────────────────────────────
+ISS_BOX ..> SYSLOG : "syslog CIP-007"
+SAC ..> SYSLOG : "syslog"
+SYSLOG --> CIP_LOG : "write archive"
+SPLUNK_HF --> SIEM_FWD : "batch forward"
+
+' ─── DMZ → WAN ───────────────────────────────────────────────────────────────
+JUMP --> SDWAN : "IPsec VPN\nGRE :47"
+HISTORIAN --> SDWAN : "PI-to-PI :5450"
+SDWAN --> PI_SERVER : "PI-to-PI"
+SDWAN --> EMS : "ICCP TASE.2 :102"
+SDWAN --> IR_CONSOLE : "HTTPS :443"
+
+' ─── IEEE 2030.5 ─────────────────────────────────────────────────────────────
+IEEE2035 --> VEN : "IEEE 2030.5 REST :8443"
+VEN --> DER_REG : "Modbus :502"
+
+' ─── Timing ──────────────────────────────────────────────────────────────────
+PTP_GM --> STN_BUS : "PTP/E2E :319"
+PTP_GM --> ISS_BOX : "PTP client"
+
+' ─── Operator / Auditor ──────────────────────────────────────────────────────
+OPERATOR --> RDP_GW : "RDP :3389 + MFA"
+OPERATOR --> WHISPER : "voice command"
+AUDITOR --> CIP_LOG : "read-only audit access"
+
+@enduml

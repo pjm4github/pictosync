@@ -4,7 +4,7 @@
 
 # PictoSync
 
-**v2.4** | Diagram Normalization & Agentic Specification IDE
+**v2.5** | Diagram Normalization & Agentic Specification IDE
 
 ---
 
@@ -90,7 +90,7 @@ The primary user is a senior engineer or architect working on systems where inte
 
 ---
 
-## Current Features (v2.4)
+## Current Features (v2.5)
 
 **For a comparison to other tools and their features see: [Round Tripping PNG Tools](png_json_comparison.md)**
 
@@ -368,6 +368,22 @@ See `schemas/annotation_schema.json` for the full specification.
 Additional Mermaid diagram types (Sequence, Class, ER, Gantt, Mindmap, etc.) have test data collected; parsers not yet implemented.
 
 ## Version History
+
+### v2.5 (2026-03-29)
+- **Polygon vertex editing UX**: Select-then-act interaction model — hover shows outline change, click selects (fill change), right-click on selected vertex opens context menu; double-click on vertex/edge stays in edit mode
+- **Polygon curve rendering**: Closing edge renders with vertex 0's Q/C curve data instead of straight `closeSubpath()`; bbox auto-recalculates from path extent when curves exceed anchor bounds
+- **Polygon edge hit detection**: Curve-aware edge hit testing samples actual bezier curves (20 points); edge hits rejected near vertex endpoints so vertex knobs take priority; `shape()` uses `hit_distance` radius for all knob/edge areas
+- **Port placement on curved polygons**: Perimeter system samples Q/C bezier edges (16 segments) for port placement and sliding; ports follow actual curve path, not straight-line approximation
+- **Rotation knob fix**: Label `QGraphicsTextItem` children set `setAcceptHoverEvents(False)` on all shapes so they don't intercept hover events meant for rotation knob and resize handles
+- **Rotation cursor**: Custom circular-arrow cursor shown when hovering the rotation knob on all rotatable shapes; directional resize cursors already rotation-aware
+- **Crosshair+plus cursor**: Custom cursor shown when hovering polygon edges in vertex edit mode (indicates "Insert Vertex Here" on right-click)
+- **Scene right-click fix**: Parent walk-up traverses to nearest selectable item (not just `MetaGroupItem`), fixing right-click on child labels deselecting the parent shape
+- **ANTLR4 deployment grammar integration**: Source text parsed for element keywords and stereotypes; merged into SVG annotations as `contents.dsl.puml_type` and `contents.dsl.stereotype`
+- **Grammar fixes**: `ACTOR_COLON` excludes `"` (colons in quoted labels), `skinparamPath` accepts element keywords, `restOfLine` includes `USECASE_PAREN`/`BRACKET_COMP`/`ARROW_SPEC`, `!define`/`!include` preprocessor support
+- **Overlay-2.0 parser output**: `_normalize_annotations` converts flat `meta: {label, tech, note}` to `contents: {blocks, frame, default_format}` — JSON editor shows modern format from import
+- **Line/curve text box fill**: `style.fill.color` sets text box background on lines and curves; fill opacity slider triggers immediate repaint via `item.update()`
+- **Text box border**: Border only drawn when item is selected; hidden when unselected (was always showing gray `#C8C8C8` border)
+- **Grammar diagnostic tool**: `scripts/diagnose_deployment_grammar.py` compares ANTLR vs regex extraction to find unparsed elements/connections
 
 ### v2.4 (2026-03-28)
 - **Comprehensive test suite**: 1375 tests across 31 files; 20 new test files covering canvas items, round-trips, data models, UI framework, parsers, and export

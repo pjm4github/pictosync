@@ -1047,6 +1047,7 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
 
         self.pen_color = QColor(Qt.GlobalColor.blue)
         self.pen_width = 2
+        self.brush_color = QColor(255, 255, 255)  # Text box background fill
         self.text_color = QColor(self.pen_color)  # Default text color matches border
         self.arrow_mode = self.ARROW_NONE
         self._apply_pen()
@@ -1287,14 +1288,14 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
             bg_hex = getattr(self.meta, "text_box_background_color", "")
             if bg_hex:
                 from utils import hex_to_qcolor
-                bg_c = hex_to_qcolor(bg_hex, QColor(255, 255, 255))
+                bg_c = hex_to_qcolor(bg_hex, self.brush_color)
             else:
-                bg_c = QColor(255, 255, 255)
+                bg_c = QColor(self.brush_color)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QBrush(bg_c))
             painter.drawRect(self._text_box_rect)
 
-            if getattr(self.meta, "text_box_border", True):
+            if self._should_paint_handles():
                 border_hex = getattr(self.meta, "text_box_border_color", "")
                 if border_hex:
                     from utils import hex_to_qcolor as _h2q
@@ -3647,7 +3648,7 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         # Style
         self.pen_color = QColor(Qt.GlobalColor.darkMagenta)
         self.pen_width = 2
-        self.brush_color = QColor(0, 0, 0, 0)
+        self.brush_color = QColor(255, 255, 255)  # Text box background fill
         self.text_color = QColor(self.pen_color)
         self.line_dash = "solid"
         cached = _CachedCanvasSettings.get()
@@ -4918,14 +4919,14 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             bg_hex = getattr(self.meta, "text_box_background_color", "")
             if bg_hex:
                 from utils import hex_to_qcolor
-                bg_c = hex_to_qcolor(bg_hex, QColor(255, 255, 255))
+                bg_c = hex_to_qcolor(bg_hex, self.brush_color)
             else:
-                bg_c = QColor(255, 255, 255)
+                bg_c = QColor(self.brush_color)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QBrush(bg_c))
             painter.drawRect(self._text_box_rect)
 
-            if getattr(self.meta, "text_box_border", True):
+            if self._should_paint_handles():
                 border_hex = getattr(self.meta, "text_box_border_color", "")
                 if border_hex:
                     from utils import hex_to_qcolor as _h2q

@@ -114,7 +114,7 @@ def parse_file(filepath: str):
 if __name__ == "__main__":
     test_file = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        "test_data", "PUML", "test_deployment.puml"
+        "test_data", "PUML", "t_deployment.puml"
     )
     if not os.path.exists(test_file):
         print(f"Test file not found: {test_file}")

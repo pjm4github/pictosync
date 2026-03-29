@@ -1383,7 +1383,6 @@ class PropertyPanel(QWidget):
         item = self._current_item
         if item is None or not hasattr(item, "brush_color"):
             return
-        old_color = QColor(item.brush_color)
         item.brush_color.setAlpha(value)
         self.fill_alpha_edit.setText("{:02X}".format(value))
         r, g, b = item.brush_color.red(), item.brush_color.green(), item.brush_color.blue()
@@ -1391,6 +1390,7 @@ class PropertyPanel(QWidget):
         self._set_preview(self.fill_color_preview, item.brush_color)
         if hasattr(item, "_apply_pen_brush"):
             item._apply_pen_brush()
+        item.update()
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
 
@@ -1452,6 +1452,7 @@ class PropertyPanel(QWidget):
         self._set_preview(self.fill_color_preview, item.brush_color)
         if hasattr(item, "_apply_pen_brush"):
             item._apply_pen_brush()
+        item.update()
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
 
@@ -1502,6 +1503,7 @@ class PropertyPanel(QWidget):
         self._set_preview(self.fill_color_preview, c)
         if hasattr(item, "_apply_pen_brush"):
             item._apply_pen_brush()
+        item.update()
         if hasattr(item, "_notify_changed"):
             item._notify_changed()
 
@@ -2643,6 +2645,7 @@ class PropertyPanel(QWidget):
         setattr(item, "brush_color", c)
         if hasattr(item, "_apply_pen_brush"):
             item._apply_pen_brush()
+        item.update()
         self._set_color_widgets("fill", c)
         if hasattr(item, "_notify_changed"):
             item._notify_changed()

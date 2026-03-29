@@ -20,15 +20,76 @@ from models import normalize_meta
 
 
 def _normalize_annotations(annotations: List[Dict[str, Any]]) -> None:
-    """Apply formatting defaults to all annotation meta dicts in place."""
+    """Convert flat meta dicts to overlay-2.0 contents with blocks/runs.
+
+    Replaces the ``meta`` key with ``contents`` containing ``blocks``,
+    ``frame``, and ``default_format``.  The legacy ``label``, ``tech``,
+    and ``note`` fields are preserved as read-only computed fields.
+    """
     for ann in annotations:
         if isinstance(ann, dict) and "meta" in ann:
-            kind = ann.get("kind", "")
-            ann["meta"] = normalize_meta(ann["meta"], kind)
+            _meta_to_contents(ann)
         for child in ann.get("children", []):
             if isinstance(child, dict) and "meta" in child:
-                kind = child.get("kind", "")
-                child["meta"] = normalize_meta(child["meta"], kind)
+                _meta_to_contents(child)
+
+
+def _meta_to_contents(ann: Dict[str, Any]) -> None:
+    """Convert a single annotation's flat meta to overlay-2.0 contents."""
+    from models import (AnnotationContents, CharFormat, TextBlock,
+                        TextRun, TextFrame)
+    meta = ann.get("meta", {})
+    kind = ann.get("kind", "")
+
+    label = meta.get("label", "")
+    tech = meta.get("tech", "")
+    note = meta.get("note", "")
+    dsl = meta.get("dsl")
+
+    label_size = meta.get("label_size", 12)
+    tech_size = meta.get("tech_size", 10)
+    note_size = meta.get("note_size", 10)
+
+    blocks = []
+    if label:
+        blocks.append(TextBlock(runs=[TextRun(
+            type="text", text=label,
+            format=CharFormat(bold=True, font_size=label_size))]))
+    if tech:
+        blocks.append(TextBlock(runs=[TextRun(
+            type="text", text=tech,
+            format=CharFormat(italic=True, font_size=tech_size))]))
+    if note and note != label:
+        blocks.append(TextBlock(runs=[TextRun(
+            type="text", text=note,
+            format=CharFormat(font_size=note_size))]))
+
+    halign = meta.get("label_align", "center")
+    valign = meta.get("text_valign", "top")
+    frame = TextFrame(halign=halign, valign=valign)
+    default_format = CharFormat(font_size=label_size)
+
+    contents: Dict[str, Any] = {
+        "frame": frame.to_dict(),
+        "default_format": default_format.to_dict(),
+        "blocks": [b.to_dict() for b in blocks],
+        "wrap": meta.get("wrap", True),
+    }
+
+    # Preserve extra fields (dsl, text_box_*, anchor_*)
+    for key in ("text_box_width", "text_box_height", "text_anchor",
+                "text_anchor_v", "anchor_value"):
+        if key in meta:
+            contents[key] = meta[key]
+    if dsl:
+        contents["dsl"] = dsl
+
+    # Apply formatting defaults
+    contents = normalize_meta(contents, kind)
+
+    # Replace meta with contents
+    ann["contents"] = contents
+    del ann["meta"]
 
 
 # ───────────────────────────────────────────────
@@ -1938,8 +1999,114 @@ def _is_node_box_polygon(pts: list) -> bool:
             on_top >= 1 and on_bottom >= 1)
 
 
+# ───────────────────────────────────────────────
+# ANTLR4-based PlantUML deployment source parser
+# ───────────────────────────────────────────────
+
+def _parse_deployment_source(puml_text: str) -> Dict[str, Dict[str, Any]]:
+    """Parse PlantUML deployment source with the ANTLR4 grammar.
+
+    Returns a dict keyed by element name (lowercase) with values::
+
+        {
+            "keyword": "node",          # PlantUML element keyword
+            "name": "WebServer",        # original name
+            "alias": "ws",              # declared alias or ""
+            "stereotype": "<<Docker>>", # stereotype text or ""
+            "children": [...],          # child element names
+        }
+
+    Returns an empty dict if the grammar is unavailable or parsing fails.
+    """
+    try:
+        from antlr4 import CommonTokenStream, InputStream
+        from plantuml.grammar.generated.PlantUMLDeploymentLexer import PlantUMLDeploymentLexer
+        from plantuml.grammar.generated.PlantUMLDeploymentParser import PlantUMLDeploymentParser
+        from plantuml.grammar.generated.PlantUMLDeploymentVisitor import PlantUMLDeploymentVisitor
+    except ImportError:
+        return {}
+
+    class _Visitor(PlantUMLDeploymentVisitor):
+        def __init__(self):
+            self.elements: Dict[str, Dict[str, Any]] = {}
+
+        def _extract_name(self, ctx) -> str:
+            if ctx.elementName():
+                return ctx.elementName().getText()
+            if ctx.BRACKET_COMP():
+                raw = ctx.BRACKET_COMP().getText()
+                return raw.strip("[]")
+            if ctx.ACTOR_COLON():
+                raw = ctx.ACTOR_COLON().getText()
+                return raw.strip(":")
+            if hasattr(ctx, "USECASE_PAREN") and ctx.USECASE_PAREN():
+                raw = ctx.USECASE_PAREN().getText()
+                return raw.strip("()")
+            if hasattr(ctx, "CIRCLE_IFACE") and ctx.CIRCLE_IFACE():
+                raw = ctx.CIRCLE_IFACE().getText()
+                return raw.strip('() "')
+            return ""
+
+        def _extract_stereotype(self, ctx) -> str:
+            mods = ctx.elementModifier() if hasattr(ctx, "elementModifier") else []
+            for mod in mods:
+                sc = mod.stereotypeClause() if hasattr(mod, "stereotypeClause") else None
+                if sc:
+                    return sc.getText()
+            return ""
+
+        def _store(self, name: str, keyword: str, alias: str, stereotype: str):
+            if not name:
+                return
+            # Strip quotes from names
+            clean_name = name.strip('"')
+            clean_alias = alias.strip('"')
+            key = (clean_alias or clean_name).lower()
+            self.elements[key] = {
+                "keyword": keyword,
+                "name": clean_name,
+                "alias": clean_alias,
+                "stereotype": stereotype,
+            }
+
+        def visitElementDecl(self, ctx):
+            name = self._extract_name(ctx)
+            keyword = ctx.elementKeyword().getText() if ctx.elementKeyword() else ""
+            alias = ""
+            if ctx.aliasClause():
+                alias = ctx.aliasClause().elementName().getText()
+            stereotype = self._extract_stereotype(ctx)
+            self._store(name, keyword, alias, stereotype)
+            return self.visitChildren(ctx)
+
+        def visitElementBlock(self, ctx):
+            keyword = ctx.elementKeyword().getText() if ctx.elementKeyword() else ""
+            name = ctx.elementName().getText() if ctx.elementName() else ""
+            alias = ""
+            if ctx.aliasClause():
+                alias = ctx.aliasClause().elementName().getText()
+            stereotype = self._extract_stereotype(ctx)
+            self._store(name, keyword, alias, stereotype)
+            return self.visitChildren(ctx)
+
+    try:
+        input_stream = InputStream(puml_text)
+        lexer = PlantUMLDeploymentLexer(input_stream)
+        token_stream = CommonTokenStream(lexer)
+        parser = PlantUMLDeploymentParser(token_stream)
+        tree = parser.diagram()
+        if parser.getNumberOfSyntaxErrors() > 0:
+            return {}
+        visitor = _Visitor()
+        visitor.visit(tree)
+        return visitor.elements
+    except Exception:
+        return {}
+
+
 def _parse_description_diagram_svg(
     tree: ET.ElementTree,
+    puml_text: str = "",
 ) -> Dict[str, Any]:
     """Parse a DESCRIPTION diagram SVG into PictoSync annotations.
 
@@ -2551,11 +2718,60 @@ def _parse_description_diagram_svg(
         top_level.sort(key=_child_y)
 
     _normalize_annotations(top_level)
+
+    # ── Enrich with ANTLR deployment source semantics ──
+    if puml_text:
+        src_info = _parse_deployment_source(puml_text)
+        if src_info:
+            _merge_deployment_source_info(top_level, src_info, id_to_qname)
+
     return {
         "version": "draft-1",
         "image": {"width": canvas_w, "height": canvas_h},
         "annotations": top_level,
     }
+
+
+def _merge_deployment_source_info(
+    annotations: List[Dict[str, Any]],
+    src_info: Dict[str, Dict[str, Any]],
+    id_to_qname: Dict[str, str],
+) -> None:
+    """Merge ANTLR-parsed deployment source info into SVG annotations.
+
+    Adds ``meta.dsl.puml_type`` (element keyword) and ``meta.dsl.stereotype``
+    for each annotation whose label or qualified name matches a source element.
+    Recurses into group children.
+    """
+    # Build a reverse index: name → info (for matching by display name)
+    name_index: Dict[str, Dict[str, Any]] = {}
+    for info in src_info.values():
+        name_index[info["name"].lower()] = info
+        if info["alias"]:
+            name_index[info["alias"].lower()] = info
+
+    def _enrich(ann: Dict[str, Any]) -> None:
+        meta = ann.get("meta", {})
+        label = meta.get("label", "").strip()
+
+        # Try matching by label, alias, or name (case-insensitive)
+        match = (src_info.get(label.lower())
+                 or name_index.get(label.lower())
+                 or name_index.get(label.strip('"').lower()))
+
+        if match:
+            dsl = meta.setdefault("dsl", {})
+            if match["keyword"]:
+                dsl["puml_type"] = match["keyword"]
+            if match["stereotype"]:
+                dsl["stereotype"] = match["stereotype"]
+
+        # Recurse into group children
+        for child in ann.get("children", []):
+            _enrich(child)
+
+    for ann in annotations:
+        _enrich(ann)
 
 
 # ───────────────────────────────────────────────
@@ -3656,7 +3872,7 @@ def parse_puml_to_annotations(
         if tree.getroot().get("data-diagram-type") == "SEQUENCE":
             return _parse_sequence_diagram_svg(tree)
         if tree.getroot().get("data-diagram-type") == "DESCRIPTION":
-            return _parse_description_diagram_svg(tree)
+            return _parse_description_diagram_svg(tree, puml_text)
         if tree.getroot().get("data-diagram-type") == "STATE":
             return _parse_state_diagram_svg(tree)
 
