@@ -113,6 +113,36 @@ def _get_selection_color() -> QColor:
     return _CachedCanvasSettings.get().selection_color
 
 
+_crosshair_plus_cursor = None
+
+def _get_crosshair_plus_cursor():
+    """Return a cached crosshair cursor with a small '+' at lower-right."""
+    global _crosshair_plus_cursor
+    if _crosshair_plus_cursor is not None:
+        return _crosshair_plus_cursor
+    from PyQt6.QtGui import QPixmap, QCursor
+    size = 24
+    hot = 8  # hotspot at the crosshair center
+    pix = QPixmap(size, size)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+    pen = QPen(QColor(0, 0, 0), 1)
+    p.setPen(pen)
+    # Crosshair lines (centered at hotspot)
+    p.drawLine(hot, 0, hot, hot - 3)       # top
+    p.drawLine(hot, hot + 3, hot, hot + 7)  # bottom
+    p.drawLine(0, hot, hot - 3, hot)        # left
+    p.drawLine(hot + 3, hot, hot + 7, hot)  # right
+    # '+' symbol at lower-right (offset from crosshair)
+    px, py = hot + 9, hot + 9
+    p.drawLine(px - 3, py, px + 3, py)     # horizontal
+    p.drawLine(px, py - 3, px, py + 3)     # vertical
+    p.end()
+    _crosshair_plus_cursor = QCursor(pix, hot, hot)
+    return _crosshair_plus_cursor
+
+
 def _find_nearby_port(scene, scene_pt: QPointF,
                       threshold: float = 0) -> Optional['MetaPortItem']:
     """Return the nearest MetaPortItem within *threshold* pixels of *scene_pt*.
@@ -2660,6 +2690,7 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         else:
             self._rel_points = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
 
+        self._in_bbox_recalc = False  # recursion guard (before first _update_path)
         self.setPos(QPointF(x, y))
         self.setData(ANN_ID_KEY, ann_id)
         self._update_path()
@@ -2685,6 +2716,9 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._vertex_dragging = False
         self._active_ctrl_point: Optional[Tuple[int, str]] = None  # (vertex_idx, "cp"/"c1"/"c2")
         self._ctrl_dragging = False
+        self._selected_vertex: Optional[int] = None   # left-click selected vertex
+        self._hover_vertex: Optional[int] = None       # hover-highlighted vertex
+        self._in_bbox_recalc = False                    # recursion guard
 
         self.pen_color = QColor(Qt.GlobalColor.darkCyan)
         self.pen_width = 2
@@ -2723,14 +2757,35 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 path.cubicTo(c1x * w, c1y * h, c2x * w, c2y * h, rx * w, ry * h)
             else:
                 path.lineTo(rx * w, ry * h)
-        path.closeSubpath()
+        # Close using vertex 0's curve data (closeSubpath is always straight)
+        if len(p0) >= 5 and p0[2] == "Q":
+            cx, cy = p0[3], p0[4]
+            path.quadTo(cx * w, cy * h, p0[0] * w, p0[1] * h)
+        elif len(p0) >= 7 and p0[2] == "C":
+            c1x, c1y, c2x, c2y = p0[3], p0[4], p0[5], p0[6]
+            path.cubicTo(c1x * w, c1y * h, c2x * w, c2y * h, p0[0] * w, p0[1] * h)
+        else:
+            path.closeSubpath()
         self.setPath(path)
 
-    def _recalculate_bbox(self):
-        """Recalculate bounding box to tightly enclose all vertices.
+        # Auto-recalculate bbox if the rendered curve extends beyond
+        # the current (0, 0, _width, _height) coordinate space.
+        if not self._in_bbox_recalc:
+            pr = path.boundingRect()
+            tol = 1.0  # pixel tolerance
+            if (pr.x() < -tol or pr.y() < -tol
+                    or pr.right() > self._width + tol
+                    or pr.bottom() > self._height + tol):
+                self._in_bbox_recalc = True
+                self._recalculate_bbox()
+                self._in_bbox_recalc = False
 
-        Converts relative points that may be outside 0-1 range back into
-        a new bounding box with all relative points normalized to 0-1.
+    def _recalculate_bbox(self):
+        """Recalculate bounding box to tightly enclose the rendered curve.
+
+        Uses the QPainterPath bounding rect (which accounts for bezier
+        curve extent) rather than just anchor points.  Converts relative
+        points back into a new bounding box with all values normalized.
         Preserves curve type tags and control points.
         """
         if not self._rel_points:
@@ -2739,13 +2794,32 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         p = self.pos()
         w, h = self._width, self._height
 
-        # Compute new bounding box from anchor points only
-        xs = [p.x() + pt[0] * w for pt in self._rel_points]
-        ys = [p.y() + pt[1] * h for pt in self._rel_points]
-        new_x = min(xs)
-        new_y = min(ys)
-        new_w = max(xs) - new_x
-        new_h = max(ys) - new_y
+        # Build a temporary path to get the actual curve bounding rect
+        tmp = QPainterPath()
+        p0 = self._rel_points[0]
+        tmp.moveTo(p0[0] * w, p0[1] * h)
+        for pt in self._rel_points[1:]:
+            rx, ry = pt[0], pt[1]
+            if len(pt) >= 5 and pt[2] == "Q":
+                tmp.quadTo(pt[3] * w, pt[4] * h, rx * w, ry * h)
+            elif len(pt) >= 7 and pt[2] == "C":
+                tmp.cubicTo(pt[3] * w, pt[4] * h, pt[5] * w, pt[6] * h, rx * w, ry * h)
+            else:
+                tmp.lineTo(rx * w, ry * h)
+        # Close using vertex 0's curve data
+        if len(p0) >= 5 and p0[2] == "Q":
+            tmp.quadTo(p0[3] * w, p0[4] * h, p0[0] * w, p0[1] * h)
+        elif len(p0) >= 7 and p0[2] == "C":
+            tmp.cubicTo(p0[3] * w, p0[4] * h, p0[5] * w, p0[6] * h, p0[0] * w, p0[1] * h)
+        else:
+            tmp.closeSubpath()
+
+        # Use the path's bounding rect (includes curve extent)
+        pr = tmp.boundingRect()
+        new_x = p.x() + pr.x()
+        new_y = p.y() + pr.y()
+        new_w = pr.width()
+        new_h = pr.height()
 
         # Enforce minimum size
         if new_w < 1.0:
@@ -2853,48 +2927,125 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         return result
 
     def _hit_test_ctrl_point(self, scene_pt: QPointF) -> Optional[Tuple[int, str]]:
-        """Return (vertex_idx, label) of control point near scene_pt, or None."""
-        hit_dist = _get_hit_distance()
+        """Return (vertex_idx, label) of control point near scene_pt, or None.
+
+        Uses QPainterPath circle containment for consistency with shape().
+        """
+        hit_r = _get_hit_distance()
+        local_pt = self.mapFromScene(scene_pt)
         for vi, label, lp in self._ctrl_point_info():
-            sp = self.mapToScene(lp)
-            if QLineF(scene_pt, sp).length() <= hit_dist:
+            circle = QPainterPath()
+            circle.addEllipse(lp, hit_r, hit_r)
+            if circle.contains(local_pt):
                 return (vi, label)
         return None
 
     def _hit_test_vertex(self, scene_pt: QPointF) -> Optional[int]:
-        """Return index of vertex near scene_pt, or None."""
-        hit_dist = _get_hit_distance()
-        for i, vp in enumerate(self._vertex_points_scene()):
-            if QLineF(scene_pt, vp).length() <= hit_dist:
+        """Return index of vertex near scene_pt, or None.
+
+        Uses QPainterPath circle containment for consistency with shape().
+        Tests in reverse order so the last-drawn vertex wins when
+        vertices overlap (matching visual stacking).
+        """
+        hit_r = _get_hit_distance()
+        local_pt = self.mapFromScene(scene_pt)
+        verts = self._vertex_points_local()
+        # Reverse iteration: last vertex is drawn on top, so test it first
+        for i in range(len(verts) - 1, -1, -1):
+            circle = QPainterPath()
+            circle.addEllipse(verts[i], hit_r, hit_r)
+            if circle.contains(local_pt):
                 return i
         return None
 
     def _hit_test_edge(self, scene_pt: QPointF) -> Optional[int]:
         """Return index of edge near scene_pt, or None.
 
-        Edge i connects vertex i to vertex (i+1) % n.
-        Returns the edge index where a new vertex should be inserted after.
+        Edge i is the segment arriving at vertex (i+1) % n from vertex i.
+        For curved edges (Q/C), the actual curve path is sampled.
+        Hits near vertex endpoints (t < 0.15 or t > 0.85) are rejected
+        so that vertex knobs take priority over edge hits.
         """
         hit_dist = _get_hit_distance()
-        verts = self._vertex_points_scene()
-        n = len(verts)
+        n = len(self._rel_points)
+        if n < 2:
+            return None
+        w, h = self._width, self._height
+        # Pre-compute local test point once
+        local_pt = self.mapFromScene(scene_pt)
+
         for i in range(n):
-            a = verts[i]
-            b = verts[(i + 1) % n]
-            # Distance from point to line segment
-            line = QLineF(a, b)
-            length = line.length()
-            if length < 1e-6:
-                continue
-            # Project scene_pt onto line segment
-            dx = b.x() - a.x()
-            dy = b.y() - a.y()
-            t = ((scene_pt.x() - a.x()) * dx + (scene_pt.y() - a.y()) * dy) / (length * length)
-            t = max(0.0, min(1.0, t))
-            proj = QPointF(a.x() + t * dx, a.y() + t * dy)
-            if QLineF(scene_pt, proj).length() <= hit_dist:
+            j = (i + 1) % n
+            pt_j = self._rel_points[j]
+            # Build sample points along this edge in local coords
+            a = QPointF(self._rel_points[i][0] * w, self._rel_points[i][1] * h)
+            b = QPointF(pt_j[0] * w, pt_j[1] * h)
+
+            if len(pt_j) >= 7 and pt_j[2] == "C":
+                # Cubic bezier: sample the curve
+                c1 = QPointF(pt_j[3] * w, pt_j[4] * h)
+                c2 = QPointF(pt_j[5] * w, pt_j[6] * h)
+                samples = self._sample_cubic(a, c1, c2, b, 20)
+            elif len(pt_j) >= 5 and pt_j[2] == "Q":
+                # Quadratic bezier: sample the curve
+                cp = QPointF(pt_j[3] * w, pt_j[4] * h)
+                samples = self._sample_quadratic(a, cp, b, 20)
+            else:
+                # Straight line: just use endpoints
+                samples = [a, b]
+
+            # Find closest point on this edge's sample segments
+            best_dist = float("inf")
+            best_t_global = 0.0
+            total_segs = len(samples) - 1
+            for si in range(total_segs):
+                sa = samples[si]
+                sb = samples[si + 1]
+                seg_dx = sb.x() - sa.x()
+                seg_dy = sb.y() - sa.y()
+                seg_len_sq = seg_dx * seg_dx + seg_dy * seg_dy
+                if seg_len_sq < 1e-12:
+                    continue
+                t_seg = ((local_pt.x() - sa.x()) * seg_dx +
+                         (local_pt.y() - sa.y()) * seg_dy) / seg_len_sq
+                t_seg = max(0.0, min(1.0, t_seg))
+                proj = QPointF(sa.x() + t_seg * seg_dx, sa.y() + t_seg * seg_dy)
+                d = QLineF(local_pt, proj).length()
+                if d < best_dist:
+                    best_dist = d
+                    best_t_global = (si + t_seg) / total_segs
+
+            if best_dist <= hit_dist and 0.15 <= best_t_global <= 0.85:
                 return i
         return None
+
+    @staticmethod
+    def _sample_cubic(p0: QPointF, c1: QPointF, c2: QPointF, p3: QPointF,
+                      n: int) -> list:
+        """Return n+1 sample points along a cubic bezier."""
+        pts = []
+        for k in range(n + 1):
+            t = k / n
+            u = 1.0 - t
+            x = (u*u*u * p0.x() + 3*u*u*t * c1.x() +
+                 3*u*t*t * c2.x() + t*t*t * p3.x())
+            y = (u*u*u * p0.y() + 3*u*u*t * c1.y() +
+                 3*u*t*t * c2.y() + t*t*t * p3.y())
+            pts.append(QPointF(x, y))
+        return pts
+
+    @staticmethod
+    def _sample_quadratic(p0: QPointF, cp: QPointF, p2: QPointF,
+                          n: int) -> list:
+        """Return n+1 sample points along a quadratic bezier."""
+        pts = []
+        for k in range(n + 1):
+            t = k / n
+            u = 1.0 - t
+            x = u*u * p0.x() + 2*u*t * cp.x() + t*t * p2.x()
+            y = u*u * p0.y() + 2*u*t * cp.y() + t*t * p2.y()
+            pts.append(QPointF(x, y))
+        return pts
 
     # ---- Mouse interaction ----
 
@@ -3013,11 +3164,22 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def hoverMoveEvent(self, event):
         if self._vertex_editing:
-            idx = self._hit_test_vertex(event.scenePos())
+            scene_pt = event.scenePos()
+            idx = self._hit_test_vertex(scene_pt)
+            old_hover = self._hover_vertex
             if idx is not None:
+                self._hover_vertex = idx
                 self.setCursor(Qt.CursorShape.CrossCursor)
             else:
-                self.setCursor(Qt.CursorShape.ArrowCursor)
+                self._hover_vertex = None
+                if self._hit_test_ctrl_point(scene_pt) is not None:
+                    self.setCursor(Qt.CursorShape.CrossCursor)
+                elif self._hit_test_edge(scene_pt) is not None:
+                    self.setCursor(_get_crosshair_plus_cursor())
+                else:
+                    self.setCursor(Qt.CursorShape.ArrowCursor)
+            if old_hover != self._hover_vertex:
+                self.update()  # repaint to show/hide hover highlight
         else:
             h = self._hit_test_handle(event.scenePos())
             if h == "rotate":
@@ -3030,7 +3192,19 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self._vertex_editing = not self._vertex_editing
+            if self._vertex_editing:
+                # In edit mode: only exit if double-click is on empty space.
+                scene_pt = event.scenePos()
+                if (self._hit_test_vertex(scene_pt) is not None
+                        or self._hit_test_ctrl_point(scene_pt) is not None
+                        or self._hit_test_edge(scene_pt) is not None):
+                    event.accept()
+                    return
+                self._vertex_editing = False
+                self._selected_vertex = None
+                self._hover_vertex = None
+            else:
+                self._vertex_editing = True
             self.prepareGeometryChange()
             self.update()
             event.accept()
@@ -3040,38 +3214,52 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.RightButton and self._vertex_editing:
             scene_pt = event.scenePos()
-            idx = self._hit_test_vertex(scene_pt)
-            if idx is not None:
-                self._show_vertex_context_menu(event.screenPos(), idx)
-                event.accept()
-                return
+            if self._selected_vertex is not None:
+                idx = self._hit_test_vertex(scene_pt)
+                if idx is not None and idx == self._selected_vertex:
+                    self._show_vertex_context_menu(event.screenPos(), idx)
+                    event.accept()
+                    return
             edge_idx = self._hit_test_edge(scene_pt)
             if edge_idx is not None:
                 self._show_edge_context_menu(event.screenPos(), edge_idx, scene_pt)
                 event.accept()
                 return
+            event.accept()
+            return
 
         if event.button() == Qt.MouseButton.LeftButton:
-            # Vertex editing takes priority
             if self._vertex_editing:
                 scene_pt = event.scenePos()
-                # Hit-test control points first
                 cp_hit = self._hit_test_ctrl_point(scene_pt)
                 if cp_hit is not None:
+                    self._selected_vertex = None
                     self._active_ctrl_point = cp_hit
                     self._ctrl_dragging = True
+                    self.update()
                     event.accept()
                     return
                 idx = self._hit_test_vertex(scene_pt)
                 if idx is not None:
+                    self._selected_vertex = idx
                     self._begin_resize_tracking()
                     self._active_vertex = idx
-                    self._vertex_dragging = True
                     self._press_scene = event.scenePos()
+                    self.update()
                     event.accept()
                     return
+                edge_idx = self._hit_test_edge(scene_pt)
+                if edge_idx is not None:
+                    self._selected_vertex = None
+                    self._insert_vertex_at(edge_idx, scene_pt)
+                    self.update()
+                    event.accept()
+                    return
+                self._selected_vertex = None
+                self.update()
+                event.accept()
+                return
 
-            # Bounding-box handle resize
             h = self._hit_test_handle(event.scenePos())
             if h == "rotate":
                 self._begin_rotation()
@@ -3113,6 +3301,10 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             self._notify_changed()
             event.accept()
             return
+        # Promote click-to-select into drag once the mouse moves
+        if (not self._vertex_dragging and self._active_vertex is not None
+                and self._press_scene is not None):
+            self._vertex_dragging = True
         # Vertex dragging — allow dragging outside the current bounding box
         if self._vertex_dragging and self._active_vertex is not None:
             # Map scene position to local coordinates (rotation-aware)
@@ -3161,16 +3353,29 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         if self._ctrl_dragging:
             self._ctrl_dragging = False
             self._active_ctrl_point = None
+            self._selected_vertex = None
             self._recalculate_bbox()
             self._notify_changed()
+            self.update()
             event.accept()
             return
         if self._vertex_dragging:
+            # Actual drag happened — deselect after release
             self._end_resize_tracking()
             self._vertex_dragging = False
             self._active_vertex = None
+            self._selected_vertex = None
             self._recalculate_bbox()
             self._notify_changed()
+            self.update()
+            event.accept()
+            return
+        if self._active_vertex is not None:
+            # Click-only (no drag) — keep vertex selected, clean up press state
+            self._active_vertex = None
+            self._press_scene = None
+            self._end_resize_tracking()
+            self.update()
             event.accept()
             return
         if self._rotating:
@@ -3196,15 +3401,25 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         if self._should_paint_handles() and not self._vertex_editing:
             return shape_with_handles(base, self._handle_points_local())
         if self._should_paint_handles() and self._vertex_editing:
-            # Add vertex hit areas
-            hit_r = _get_handle_size() / 2 + 1
-            for vp in self._vertex_points_local():
+            # Use hit_distance for knob areas so shape matches hit testing
+            hit_r = _get_hit_distance()
+            verts = self._vertex_points_local()
+            # Add vertex knob hit areas
+            for vp in verts:
                 base.addEllipse(vp, hit_r, hit_r)
+            # Add control point hit areas
+            for _vi, _label, cp in self._ctrl_point_info():
+                base.addEllipse(cp, hit_r, hit_r)
+            # Add edge stroke areas using the actual polygon path (curves included)
+            from PyQt6.QtGui import QPainterPathStroker
+            stroker = QPainterPathStroker()
+            stroker.setWidth(max(hit_r * 2, 12))
+            base = base.united(stroker.createStroke(self.path()))
         return base
 
     def boundingRect(self) -> QRectF:
         r = super().boundingRect()
-        margin = _get_handle_size() / 2 + 1
+        margin = max(_get_handle_size() / 2 + 1, _get_hit_distance() + 1)
         return r.adjusted(-margin, -margin, margin, margin)
 
     def paint(self, painter: QPainter, option, widget=None):
@@ -3249,12 +3464,18 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                     painter.drawEllipse(QRectF(c2.x() - half, c2.y() - half, handle_size, handle_size))
             # Draw vertex knobs
             for i, vp in enumerate(self._vertex_points_local()):
-                if i == self._active_vertex:
-                    painter.setPen(QPen(QColor(204, 102, 0), 1))
-                    painter.setBrush(QBrush(QColor(255, 165, 0)))  # Orange for active
+                if i == self._selected_vertex or i == self._active_vertex:
+                    # Selected / dragging: orange fill + orange outline
+                    painter.setPen(QPen(QColor(204, 102, 0), 2))
+                    painter.setBrush(QBrush(QColor(255, 165, 0)))
+                elif i == self._hover_vertex:
+                    # Hover: green fill + thick orange outline
+                    painter.setPen(QPen(QColor(204, 102, 0), 2))
+                    painter.setBrush(QBrush(QColor(0, 200, 0)))
                 else:
+                    # Normal: green fill + thin green outline
                     painter.setPen(QPen(QColor(0, 128, 0), 1))
-                    painter.setBrush(QBrush(QColor(0, 200, 0)))  # Green
+                    painter.setBrush(QBrush(QColor(0, 200, 0)))
                 painter.drawEllipse(QRectF(vp.x() - half, vp.y() - half,
                                            handle_size, handle_size))
         else:
@@ -3276,6 +3497,8 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             if not value:
                 self._vertex_editing = False
+                self._selected_vertex = None
+                self._hover_vertex = None
             self.prepareGeometryChange()
         return out
 

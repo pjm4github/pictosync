@@ -284,8 +284,9 @@ class AnnotatorScene(QGraphicsScene):
                 return
 
             item = self.itemAt(event.scenePos(), self.views()[0].transform() if self.views() else None)
-            # Walk up to top-level selectable item (may be a group)
-            while item and item.parentItem() and isinstance(item.parentItem(), MetaGroupItem):
+            # Walk up to the nearest selectable annotation item
+            # (child items like QGraphicsTextItem labels → parent shape/group)
+            while item and not (item.flags() & QGraphicsItem.GraphicsItemFlag.ItemIsSelectable):
                 item = item.parentItem()
             # Check if the item is one of our annotation items (not background)
             if item and self._is_annotation_item(item) and item.isSelected():
