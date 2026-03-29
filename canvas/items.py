@@ -143,6 +143,37 @@ def _get_crosshair_plus_cursor():
     return _crosshair_plus_cursor
 
 
+_rotate_cursor = None
+
+def _get_rotate_cursor():
+    """Return a cached rotation cursor (circular arrow)."""
+    global _rotate_cursor
+    if _rotate_cursor is not None:
+        return _rotate_cursor
+    from PyQt6.QtGui import QPixmap, QCursor
+    size = 24
+    hot = 12
+    pix = QPixmap(size, size)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    pen = QPen(QColor(0, 0, 0), 1.5)
+    p.setPen(pen)
+    # Draw a 270° arc (open circle)
+    from PyQt6.QtCore import QRectF as _QRectF
+    arc_rect = _QRectF(3, 3, 18, 18)
+    # Qt angles: 16ths of a degree, 0=3 o'clock, positive=counter-clockwise
+    p.drawArc(arc_rect, 45 * 16, 270 * 16)
+    # Arrowhead at the end of the arc (pointing clockwise at ~315°/bottom-right)
+    import math
+    ax, ay = hot + 6.4, hot + 6.4  # end of arc at 315°
+    p.drawLine(int(ax), int(ay), int(ax - 4), int(ay))
+    p.drawLine(int(ax), int(ay), int(ax), int(ay - 4))
+    p.end()
+    _rotate_cursor = QCursor(pix, hot, hot)
+    return _rotate_cursor
+
+
 def _find_nearby_port(scene, scene_pt: QPointF,
                       threshold: float = 0) -> Optional['MetaPortItem']:
     """Return the nearest MetaPortItem within *threshold* pixels of *scene_pt*.
@@ -227,15 +258,18 @@ def draw_handles(painter: QPainter, handle_positions: Dict[str, QPointF], handle
         painter.drawRect(QRectF(pos.x() - half, pos.y() - half, handle_size, handle_size))
 
 
-def shape_with_handles(base_shape: QPainterPath, handle_positions: Dict[str, QPointF], handle_size: Optional[float] = None) -> QPainterPath:
-    """Create a shape path that includes handle hit areas."""
-    # Hit distance from settings. Default: 10.0 pixels
+def shape_with_handles(base_shape: QPainterPath, handle_positions: Dict[str, QPointF],
+                       handle_size: Optional[float] = None,
+                       rotation_knob_local: Optional[QPointF] = None) -> QPainterPath:
+    """Create a shape path that includes handle and rotation knob hit areas."""
     if handle_size is None:
         handle_size = _get_hit_distance()
     result = QPainterPath(base_shape)
     half = handle_size / 2
     for pos in handle_positions.values():
         result.addRect(QRectF(pos.x() - half, pos.y() - half, handle_size, handle_size))
+    if rotation_knob_local is not None:
+        result.addEllipse(rotation_knob_local, half, half)
     return result
 
 
@@ -285,6 +319,7 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
         # Embedded text for C4 properties
         trace("  Creating label item", "ITEM_INIT")
         self._label_item = QGraphicsTextItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         trace("  Updating label position", "ITEM_INIT")
@@ -333,7 +368,7 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
         if h == "rotate":
-            self.setCursor(Qt.CursorShape.CrossCursor)
+            self.setCursor(_get_rotate_cursor())
         elif h:
             self.setCursor(self._cursor_for_handle(h))
         else:
@@ -387,7 +422,8 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
         """Return shape including handle areas when selected."""
         base = super().shape()
         if self._should_paint_handles():
-            return shape_with_handles(base, self._handle_points_local())
+            return shape_with_handles(base, self._handle_points_local(),
+                                      rotation_knob_local=self._rotation_knob_local() if self._is_rotatable() else None)
         return base
 
     def boundingRect(self) -> QRectF:
@@ -516,6 +552,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
         # Embedded text for C4 properties
         self._label_item = QGraphicsTextItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self._update_label_position()
@@ -584,7 +621,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
         if h == "rotate":
-            self.setCursor(Qt.CursorShape.CrossCursor)
+            self.setCursor(_get_rotate_cursor())
         elif h == "adjust1":
             self.setCursor(Qt.CursorShape.SizeHorCursor)
         elif h:
@@ -660,7 +697,8 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         """Return shape including handle areas when selected."""
         base = super().shape()
         if self._should_paint_handles():
-            return shape_with_handles(base, self._handle_points_local())
+            return shape_with_handles(base, self._handle_points_local(),
+                                      rotation_knob_local=self._rotation_knob_local() if self._is_rotatable() else None)
         return base
 
     def boundingRect(self) -> QRectF:
@@ -792,6 +830,7 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
 
         # Embedded label
         self._label_item = QGraphicsTextItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._update_label_position()
 
@@ -843,7 +882,7 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
         if h == "rotate":
-            self.setCursor(Qt.CursorShape.CrossCursor)
+            self.setCursor(_get_rotate_cursor())
         elif h:
             self.setCursor(self._cursor_for_handle(h))
         else:
@@ -897,7 +936,8 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         """Return shape including handle areas when selected."""
         base = super().shape()
         if self._should_paint_handles():
-            return shape_with_handles(base, self._handle_points_local())
+            return shape_with_handles(base, self._handle_points_local(),
+                                      rotation_knob_local=self._rotation_knob_local() if self._is_rotatable() else None)
         return base
 
     def boundingRect(self) -> QRectF:
@@ -1022,14 +1062,17 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
 
         # Embedded text labels for label, tech, and note (stacked vertically)
         self._label_item = QGraphicsTextItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
 
         self._tech_item = QGraphicsTextItem(self)
+        self._tech_item.setAcceptHoverEvents(False)
         self._tech_item.setDefaultTextColor(self.text_color)
         self._tech_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
 
         self._note_item = QGraphicsTextItem(self)
+        self._note_item.setAcceptHoverEvents(False)
         self._note_item.setDefaultTextColor(self.text_color)
         self._note_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
 
@@ -1751,6 +1794,7 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
         # Embedded text for C4 properties
         self._label_item = QGraphicsTextItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self._update_label_position()
@@ -1834,7 +1878,7 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
         if h == "rotate":
-            self.setCursor(Qt.CursorShape.CrossCursor)
+            self.setCursor(_get_rotate_cursor())
         elif h == "adjust1":
             self.setCursor(Qt.CursorShape.SizeHorCursor)
         elif h:
@@ -1908,7 +1952,8 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def shape(self) -> QPainterPath:
         base = super().shape()
         if self._should_paint_handles():
-            return shape_with_handles(base, self._handle_points_local())
+            return shape_with_handles(base, self._handle_points_local(),
+                                      rotation_knob_local=self._rotation_knob_local() if self._is_rotatable() else None)
         return base
 
     def boundingRect(self) -> QRectF:
@@ -2043,6 +2088,7 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._apply_pen_brush()
 
         self._label_item = QGraphicsTextItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self._update_label_position()
@@ -2131,7 +2177,7 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
         if h == "rotate":
-            self.setCursor(Qt.CursorShape.CrossCursor)
+            self.setCursor(_get_rotate_cursor())
         elif h == "adjust1":
             self.setCursor(Qt.CursorShape.SizeVerCursor)
         elif h:
@@ -2204,7 +2250,8 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def shape(self) -> QPainterPath:
         base = super().shape()
         if self._should_paint_handles():
-            return shape_with_handles(base, self._handle_points_local())
+            return shape_with_handles(base, self._handle_points_local(),
+                                      rotation_knob_local=self._rotation_knob_local() if self._is_rotatable() else None)
         return base
 
     def boundingRect(self) -> QRectF:
@@ -2375,6 +2422,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._apply_pen_brush()
 
         self._label_item = QGraphicsTextItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self._update_label_position()
@@ -2479,7 +2527,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
         if h == "rotate":
-            self.setCursor(Qt.CursorShape.CrossCursor)
+            self.setCursor(_get_rotate_cursor())
         elif h == "adjust1":
             self.setCursor(Qt.CursorShape.SizeVerCursor)
         elif h == "adjust2":
@@ -2572,7 +2620,8 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def shape(self) -> QPainterPath:
         base = super().shape()
         if self._should_paint_handles():
-            return shape_with_handles(base, self._handle_points_local())
+            return shape_with_handles(base, self._handle_points_local(),
+                                      rotation_knob_local=self._rotation_knob_local() if self._is_rotatable() else None)
         return base
 
     def boundingRect(self) -> QRectF:
@@ -2732,6 +2781,7 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
         # Embedded text for C4 properties
         self._label_item = QGraphicsTextItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self._update_label_position()
@@ -3120,9 +3170,7 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             c2y = py + 2 * (ry - py) / 3
             self._rel_points[idx] = [rx, ry, "C", c1x, c1y, c2x, c2y]
         self.prepareGeometryChange()
-        self._update_path()
-        self._update_label_position()
-        self._update_transform_origin()
+        self._recalculate_bbox()
         self._notify_changed()
 
     def _insert_vertex_after(self, idx: int):
@@ -3183,7 +3231,7 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         else:
             h = self._hit_test_handle(event.scenePos())
             if h == "rotate":
-                self.setCursor(Qt.CursorShape.CrossCursor)
+                self.setCursor(_get_rotate_cursor())
             elif h:
                 self.setCursor(self._cursor_for_handle(h))
             else:
@@ -3399,7 +3447,8 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def shape(self) -> QPainterPath:
         base = super().shape()
         if self._should_paint_handles() and not self._vertex_editing:
-            return shape_with_handles(base, self._handle_points_local())
+            return shape_with_handles(base, self._handle_points_local(),
+                                      rotation_knob_local=self._rotation_knob_local() if self._is_rotatable() else None)
         if self._should_paint_handles() and self._vertex_editing:
             # Use hit_distance for knob areas so shape matches hit testing
             hit_r = _get_hit_distance()
@@ -3612,6 +3661,7 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
         # Embedded text for C4 properties
         self._label_item = QGraphicsTextItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
 
@@ -5639,6 +5689,7 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._apply_pen_brush()
 
         self._label_item = QGraphicsTextItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self._update_label_position()
@@ -5835,7 +5886,7 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         """Update cursor based on handle under mouse."""
         h = self._hit_test_handle(event.scenePos())
         if h == "rotate":
-            self.setCursor(Qt.CursorShape.CrossCursor)
+            self.setCursor(_get_rotate_cursor())
         elif h in ("adjust1", "adjust2"):
             self.setCursor(Qt.CursorShape.CrossCursor)
         elif h:
@@ -5937,7 +5988,8 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         """Return shape including handle hit areas when selected."""
         base = super().shape()
         if self._should_paint_handles():
-            return shape_with_handles(base, self._handle_points_local())
+            return shape_with_handles(base, self._handle_points_local(),
+                                      rotation_knob_local=self._rotation_knob_local() if self._is_rotatable() else None)
         return base
 
     def boundingRect(self) -> QRectF:
@@ -6543,6 +6595,7 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._section_items: List[QGraphicsTextItem] = []
         for _ in range(4):
             ti = QGraphicsTextItem(self)
+            ti.setAcceptHoverEvents(False)
             ti.setDefaultTextColor(self.text_color)
             ti.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
             ti.setVisible(False)
@@ -6776,7 +6829,7 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
         if h == "rotate":
-            self.setCursor(Qt.CursorShape.CrossCursor)
+            self.setCursor(_get_rotate_cursor())
         elif h in ("adjust1", "adjust2", "adjust3"):
             self.setCursor(Qt.CursorShape.SizeVerCursor)
         elif h:
@@ -6960,7 +7013,8 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def shape(self) -> QPainterPath:
         base = super().shape()
         if self._should_paint_handles():
-            return shape_with_handles(base, self._handle_points_local())
+            return shape_with_handles(base, self._handle_points_local(),
+                                      rotation_knob_local=self._rotation_knob_local() if self._is_rotatable() else None)
         return base
 
     def boundingRect(self) -> QRectF:

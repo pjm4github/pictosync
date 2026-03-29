@@ -378,9 +378,81 @@ def _blockarrow_vertices(w: float, h: float,
     ]
 
 
-def _polygon_vertices_from_rel(rel_points: List[Tuple[float, float]],
-                                w: float, h: float) -> List[Tuple[float, float]]:
-    return [(rx * w, ry * h) for rx, ry in rel_points]
+_CURVE_SAMPLES = 16  # samples per bezier edge for perimeter approximation
+
+
+def _polygon_vertices_from_rel(rel_points, w: float, h: float) -> List[Tuple[float, float]]:
+    """Convert polygon rel_points to a dense polyline, sampling bezier curves.
+
+    Straight edges produce a single segment (two endpoints).
+    Quadratic/cubic edges are sampled into _CURVE_SAMPLES line segments.
+    The closing edge (last vertex → first vertex) uses vertex 0's curve data.
+    """
+    if not rel_points:
+        return []
+    n = len(rel_points)
+    result: List[Tuple[float, float]] = []
+    ns = _CURVE_SAMPLES
+
+    # Start at vertex 0
+    result.append((rel_points[0][0] * w, rel_points[0][1] * h))
+
+    # Edges from vertex i to vertex i+1 (for i = 0..n-2)
+    for i in range(1, n):
+        pt = rel_points[i]
+        ax, ay = rel_points[i - 1][0] * w, rel_points[i - 1][1] * h
+        bx, by = pt[0] * w, pt[1] * h
+        if len(pt) >= 5 and pt[2] == "Q":
+            cx, cy = pt[3] * w, pt[4] * h
+            for k in range(1, ns + 1):
+                t = k / ns
+                u = 1.0 - t
+                x = u * u * ax + 2 * u * t * cx + t * t * bx
+                y = u * u * ay + 2 * u * t * cy + t * t * by
+                result.append((x, y))
+        elif len(pt) >= 7 and pt[2] == "C":
+            c1x, c1y = pt[3] * w, pt[4] * h
+            c2x, c2y = pt[5] * w, pt[6] * h
+            for k in range(1, ns + 1):
+                t = k / ns
+                u = 1.0 - t
+                x = (u*u*u * ax + 3*u*u*t * c1x +
+                     3*u*t*t * c2x + t*t*t * bx)
+                y = (u*u*u * ay + 3*u*u*t * c1y +
+                     3*u*t*t * c2y + t*t*t * by)
+                result.append((x, y))
+        else:
+            result.append((bx, by))
+
+    # Closing edge: last vertex → vertex 0, using vertex 0's curve data
+    p0 = rel_points[0]
+    last = rel_points[-1]
+    ax, ay = last[0] * w, last[1] * h
+    bx, by = p0[0] * w, p0[1] * h
+    if len(p0) >= 5 and p0[2] == "Q":
+        cx, cy = p0[3] * w, p0[4] * h
+        for k in range(1, ns + 1):
+            t = k / ns
+            u = 1.0 - t
+            x = u * u * ax + 2 * u * t * cx + t * t * bx
+            y = u * u * ay + 2 * u * t * cy + t * t * by
+            result.append((x, y))
+    elif len(p0) >= 7 and p0[2] == "C":
+        c1x, c1y = p0[3] * w, p0[4] * h
+        c2x, c2y = p0[5] * w, p0[6] * h
+        for k in range(1, ns + 1):
+            t = k / ns
+            u = 1.0 - t
+            x = (u*u*u * ax + 3*u*u*t * c1x +
+                 3*u*t*t * c2x + t*t*t * bx)
+            y = (u*u*u * ay + 3*u*u*t * c1y +
+                 3*u*t*t * c2y + t*t*t * by)
+            result.append((x, y))
+    else:
+        # Straight close — vertex 0 already in result[0], don't duplicate
+        pass
+
+    return result
 
 
 def _ensure_cw_screen(verts: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
