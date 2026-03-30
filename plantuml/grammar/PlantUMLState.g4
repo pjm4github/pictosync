@@ -120,8 +120,25 @@ diagram
     ;
 
 filenameHint
-    : ID
+    : ( ID | INT )+ ( '.' ( ID | INT )+ )*
     | QUOTED_STRING
+    ;
+
+// ── Generic rest-of-line — consumes mixed tokens until NEWLINE ───────────
+// Used for label text, descriptions, skinparam values, note bodies, etc.
+
+restOfLine
+    : ( ID | QUOTED_STRING | INT | COLOR_STYLE | FREE_TEXT
+      | COLON | BANG | LBRACK | RBRACK
+      | PSEUDO_STATE | HISTORY | DEEP_HISTORY | STEREO
+      | TRANSITION_ARROW | CONCURRENT_H | CONCURRENT_V
+      | DOTTED_ID
+      | KW_STATE | KW_AS | KW_NOTE | KW_ON | KW_LINK
+      | KW_LEFT | KW_RIGHT | KW_TOP | KW_BOTTOM | KW_OF
+      | KW_HIDE | KW_SHOW | KW_TO | KW_DIRECTION
+      | KW_SCALE | KW_TITLE | KW_HEADER | KW_FOOTER | KW_CAPTION
+      | KW_SKINPARAM | KW_PRAGMA | KW_END
+      )+
     ;
 
 // ── Statement dispatcher ──────────────────────────────────────────────────
@@ -166,7 +183,7 @@ statement
 // ═══════════════════════════════════════════════════════════════════════════
 
 stateDecl
-    : KW_STATE stateName aliasClause? colorStyle? stereotypeClause?
+    : KW_STATE stateName aliasClause? colorStyle? stereotypeClause? ( COLON restOfLine )?
     ;
 
 stateName
@@ -250,7 +267,7 @@ concurrentSep
 // ═══════════════════════════════════════════════════════════════════════════
 
 transitionStmt
-    : transitionEnd TRANSITION_ARROW transitionEnd ( COLON FREE_TEXT )?
+    : transitionEnd TRANSITION_ARROW transitionEnd ( COLON restOfLine )?
     ;
 
 transitionEnd
@@ -275,7 +292,7 @@ transitionEnd
 // ═══════════════════════════════════════════════════════════════════════════
 
 descriptionStmt
-    : stateRef COLON FREE_TEXT
+    : stateRef COLON restOfLine
     ;
 
 stateRef
@@ -308,7 +325,7 @@ stateRef
 // ═══════════════════════════════════════════════════════════════════════════
 
 noteStmt
-    : KW_NOTE noteSide KW_OF stateRef ( COLON FREE_TEXT )?
+    : KW_NOTE noteSide KW_OF stateRef ( COLON restOfLine )?
     | KW_NOTE QUOTED_STRING KW_AS ID
     ;
 
@@ -329,7 +346,7 @@ noteSide
     ;
 
 noteBodyLine
-    : FREE_TEXT NEWLINE+
+    : restOfLine NEWLINE+
     | NEWLINE+
     ;
 
@@ -342,7 +359,7 @@ noteBodyLine
 // ═══════════════════════════════════════════════════════════════════════════
 
 hideStmt
-    : ( KW_HIDE | KW_SHOW ) FREE_TEXT
+    : ( KW_HIDE | KW_SHOW ) restOfLine
     ;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -355,13 +372,13 @@ directionStmt
     ;
 
 scaleStmt
-    : KW_SCALE FREE_TEXT
+    : KW_SCALE restOfLine
     ;
 
-titleStmt   : KW_TITLE   FREE_TEXT? ;
-headerStmt  : KW_HEADER  FREE_TEXT? ;
-footerStmt  : KW_FOOTER  FREE_TEXT? ;
-captionStmt : KW_CAPTION FREE_TEXT? ;
+titleStmt   : KW_TITLE   restOfLine? ;
+headerStmt  : KW_HEADER  restOfLine? ;
+footerStmt  : KW_FOOTER  restOfLine? ;
+captionStmt : KW_CAPTION restOfLine? ;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SKINPARAM
@@ -371,17 +388,23 @@ captionStmt : KW_CAPTION FREE_TEXT? ;
 // ═══════════════════════════════════════════════════════════════════════════
 
 skinparamStmt
-    : KW_SKINPARAM ID FREE_TEXT?
+    : KW_SKINPARAM skinparamName restOfLine?
     ;
 
 skinparamBlock
-    : KW_SKINPARAM ID LBRACE NEWLINE+
+    : KW_SKINPARAM skinparamName LBRACE NEWLINE+
           skinparamEntry*
       RBRACE NEWLINE+
     ;
 
+// Skinparam name — can be ID or a keyword like 'state', 'note', etc.
+skinparamName
+    : ID
+    | KW_STATE | KW_NOTE
+    ;
+
 skinparamEntry
-    : ID FREE_TEXT NEWLINE+
+    : skinparamName restOfLine NEWLINE+
     | NEWLINE+
     ;
 
@@ -403,7 +426,8 @@ styleBlock
 // ── Pragma ────────────────────────────────────────────────────────────────
 
 pragmaStmt
-    : BANG KW_PRAGMA ID FREE_TEXT?
+    : BANG KW_PRAGMA ID restOfLine?
+    | BANG ID restOfLine?
     ;
 
 
@@ -595,8 +619,12 @@ COMMENT_MULTI
 // Catch-all for transition labels, description text, skinparam values, etc.
 // Declared last so all structural tokens have priority.
 
+// Free text — must NOT start with a character that could begin a structural
+// token (letter, digit, quote, bracket, paren, #, <, @, !, {, }, :, ').
+// This prevents FREE_TEXT from consuming keyword-led lines.
 FREE_TEXT
-    : ~[\r\n]+
+    : ~[a-zA-Z0-9_"'()[\]{}<>#$@!:,*/~=\-.\r\n \t|] ~[\r\n]*
+    | [&%^;?\\`+] ~[\r\n]*
     ;
 
 // ── Newline ───────────────────────────────────────────────────────────────

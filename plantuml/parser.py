@@ -2092,8 +2092,10 @@ def _parse_deployment_source(puml_text: str) -> Dict[str, Dict[str, Any]]:
     try:
         input_stream = InputStream(puml_text)
         lexer = PlantUMLDeploymentLexer(input_stream)
+        lexer.removeErrorListeners()
         token_stream = CommonTokenStream(lexer)
         parser = PlantUMLDeploymentParser(token_stream)
+        parser.removeErrorListeners()
         tree = parser.diagram()
         if parser.getNumberOfSyntaxErrors() > 0:
             return {}
@@ -2775,11 +2777,398 @@ def _merge_deployment_source_info(
 
 
 # ───────────────────────────────────────────────
+# ANTLR4-based PlantUML state source parser
+# ───────────────────────────────────────────────
+
+def _parse_state_source(puml_text: str) -> Dict[str, Dict[str, Any]]:
+    """Parse PlantUML state source with the ANTLR4 grammar.
+
+    Returns a dict keyed by state name/alias (lowercase) with values::
+
+        {
+            "name": "ActiveState",
+            "alias": "active",
+            "stereotype": "<<choice>>",
+            "descriptions": ["entry / init", "do / process"],
+            "is_composite": True,
+            "has_concurrent": False,
+        }
+
+    Returns an empty dict if the grammar is unavailable or parsing fails.
+    """
+    try:
+        from antlr4 import CommonTokenStream, InputStream
+        from plantuml.grammar.generated.PlantUMLStateLexer import PlantUMLStateLexer
+        from plantuml.grammar.generated.PlantUMLStateParser import PlantUMLStateParser
+        from plantuml.grammar.generated.PlantUMLStateVisitor import PlantUMLStateVisitor
+    except ImportError:
+        return {}
+
+    class _Visitor(PlantUMLStateVisitor):
+        def __init__(self):
+            self.elements: Dict[str, Dict[str, Any]] = {}
+            self._descriptions: Dict[str, List[str]] = defaultdict(list)
+            self._parent_stack: List[str] = []  # stack of composite state keys
+            self.children: Dict[str, List[str]] = defaultdict(list)  # parent → [child keys]
+
+        def _store(self, ctx, name, alias, stereotype="",
+                   is_composite=False, has_concurrent=False):
+            if not name:
+                return
+            clean_name = name.strip('"')
+            clean_alias = alias.strip('"') if alias else ""
+            key = (clean_alias or clean_name).lower()
+            existing = self.elements.get(key)
+            if existing:
+                # Merge: keep richer data from earlier declaration
+                if clean_name and len(clean_name) > len(existing["name"]):
+                    existing["name"] = clean_name
+                if clean_alias and not existing["alias"]:
+                    existing["alias"] = clean_alias
+                if stereotype and not existing["stereotype"]:
+                    existing["stereotype"] = stereotype
+                if is_composite:
+                    existing["is_composite"] = True
+                if has_concurrent:
+                    existing["has_concurrent"] = True
+            else:
+                self.elements[key] = {
+                    "name": clean_name,
+                    "alias": clean_alias,
+                    "stereotype": stereotype,
+                    "descriptions": [],
+                    "is_composite": is_composite,
+                    "has_concurrent": has_concurrent,
+                    "children": [],
+                    "parent": "",
+                }
+            # Record parent-child relationship
+            if self._parent_stack:
+                parent_key = self._parent_stack[-1]
+                self.elements[key].setdefault("parent", "")
+                if not self.elements[key]["parent"]:
+                    self.elements[key]["parent"] = parent_key
+                if key not in self.children[parent_key]:
+                    self.children[parent_key].append(key)
+
+        def visitStateDecl(self, ctx):
+            name = ctx.stateName().getText() if ctx.stateName() else ""
+            alias = ""
+            if ctx.aliasClause():
+                alias = ctx.aliasClause().stateName().getText()
+            stereotype = ctx.stereotypeClause().getText() if ctx.stereotypeClause() else ""
+            self._store(ctx, name, alias, stereotype)
+            # Inline description: state Name <<stereo>> : text
+            if ctx.COLON() and ctx.restOfLine():
+                clean_name = name.strip('"')
+                clean_alias = alias.strip('"') if alias else ""
+                key = (clean_alias or clean_name).lower()
+                self._descriptions[key].append(ctx.restOfLine().getText().strip())
+            return self.visitChildren(ctx)
+
+        def visitCompositeBlock(self, ctx):
+            name = ctx.stateName().getText() if ctx.stateName() else ""
+            alias = ""
+            if ctx.aliasClause():
+                alias = ctx.aliasClause().stateName().getText()
+            stereotype = ctx.stereotypeClause().getText() if ctx.stereotypeClause() else ""
+            has_concurrent = False
+            for stmt in (ctx.statement() or []):
+                if stmt.concurrentSep():
+                    has_concurrent = True
+                    break
+            self._store(ctx, name, alias, stereotype,
+                        is_composite=True, has_concurrent=has_concurrent)
+            # Push onto parent stack so child states record this as parent
+            clean_alias = alias.strip('"') if alias else ""
+            clean_name = name.strip('"')
+            key = (clean_alias or clean_name).lower()
+            self._parent_stack.append(key)
+            result = self.visitChildren(ctx)
+            self._parent_stack.pop()
+            # Copy children list into element
+            if key in self.elements:
+                self.elements[key]["children"] = list(self.children.get(key, []))
+            return result
+
+        def visitDescriptionStmt(self, ctx):
+            try:
+                ref = ctx.stateRef().getText().strip('"')
+                desc = ctx.restOfLine().getText().strip() if ctx.restOfLine() else ""
+                if ref and desc:
+                    self._descriptions[ref.lower()].append(desc)
+            except Exception:
+                pass
+            return self.visitChildren(ctx)
+
+        def finalize(self):
+            """Merge collected descriptions into elements."""
+            for key, descs in self._descriptions.items():
+                if key in self.elements:
+                    self.elements[key]["descriptions"] = descs
+                else:
+                    self.elements[key] = {
+                        "name": key, "alias": "", "stereotype": "",
+                        "descriptions": descs,
+                        "is_composite": False, "has_concurrent": False,
+                        "children": [], "parent": "",
+                    }
+
+    try:
+        input_stream = InputStream(puml_text)
+        lexer = PlantUMLStateLexer(input_stream)
+        lexer.removeErrorListeners()
+        token_stream = CommonTokenStream(lexer)
+        parser = PlantUMLStateParser(token_stream)
+        parser.removeErrorListeners()
+        tree = parser.diagram()
+        if parser.getNumberOfSyntaxErrors() > 0:
+            # Parse with errors — still try to extract what we can
+            pass
+        visitor = _Visitor()
+        visitor.visit(tree)
+        visitor.finalize()
+        return visitor.elements
+    except Exception:
+        return {}
+
+
+def _merge_state_source_info(
+    annotations: List[Dict[str, Any]],
+    src_info: Dict[str, Dict[str, Any]],
+) -> None:
+    """Merge ANTLR-parsed state source info into SVG annotations.
+
+    Adds ``contents.dsl.stereotype``, ``contents.dsl.descriptions``,
+    ``contents.dsl.is_composite``, and ``contents.dsl.has_concurrent``
+    for each annotation whose label matches a source element.
+    Recurses into group children.
+    """
+    # Build reverse index: name/alias/full-name → info
+    name_index: Dict[str, Dict[str, Any]] = {}
+    for info in src_info.values():
+        name_index[info["name"].lower()] = info
+        if info["alias"]:
+            name_index[info["alias"].lower()] = info
+        # Also index with \n as literal for multiline matching
+        if "\\n" in info["name"]:
+            name_index[info["name"].lower()] = info
+
+    def _enrich(ann: Dict[str, Any]) -> None:
+        contents = ann.get("contents") or ann.get("meta") or {}
+
+        # Collect all text parts from blocks (label, tech, etc.)
+        blocks = contents.get("blocks", [])
+        text_parts = []
+        for b in blocks:
+            for r in b.get("runs", []):
+                t = r.get("text", "").strip()
+                if t:
+                    text_parts.append(t)
+
+        label = text_parts[0] if text_parts else contents.get("label", "")
+        # Build full name by joining label + tech lines (for multiline states)
+        full_text = "\\n".join(text_parts[:2]) if len(text_parts) >= 2 else label
+
+        match = (src_info.get(label.lower())
+                 or name_index.get(label.lower())
+                 or name_index.get(label.strip('"').lower()))
+
+        # Try matching by full multiline name (label + tech combined)
+        if not match and full_text != label:
+            match = name_index.get(full_text.lower())
+
+        # Try matching ANTLR name (with \n) against SVG combined text
+        if not match:
+            for info in src_info.values():
+                antlr_name = info["name"].replace("\\n", "\\n")
+                if antlr_name.lower() == full_text.lower():
+                    match = info
+                    break
+
+        # Fallback: match by first line only (when no ambiguity)
+        if not match:
+            first_line_matches = []
+            for info in src_info.values():
+                first_line = info["name"].split("\\n")[0].strip()
+                if first_line.lower() == label.lower():
+                    first_line_matches.append(info)
+            if len(first_line_matches) == 1:
+                match = first_line_matches[0]
+
+        if match:
+            matched_keys.add((match.get("alias") or match["name"]).lower())
+            # Get or create dsl dict in the right location
+            if "contents" in ann:
+                dsl = ann["contents"].setdefault("dsl", {})
+            elif "meta" in ann:
+                dsl = ann["meta"].setdefault("dsl", {})
+            else:
+                return
+            if match["stereotype"]:
+                dsl["stereotype"] = match["stereotype"]
+            if match["descriptions"]:
+                dsl["descriptions"] = match["descriptions"]
+            if match["is_composite"]:
+                dsl["is_composite"] = True
+            if match["has_concurrent"]:
+                dsl["has_concurrent"] = True
+
+        # Recurse into group children
+        for child in ann.get("children", []):
+            _enrich(child)
+
+    matched_keys: set = set()
+
+    for ann in annotations:
+        _enrich(ann)
+
+    # ── Create synthetic groups for missing composite states ──
+    # Build ann lookup by label (lowercase) for child matching
+    ann_by_label: Dict[str, Dict[str, Any]] = {}
+    def _index_ann(ann: Dict[str, Any]) -> None:
+        c = ann.get("contents") or ann.get("meta") or {}
+        blocks = c.get("blocks", [])
+        if blocks:
+            for b in blocks:
+                for r in b.get("runs", []):
+                    t = r.get("text", "").strip()
+                    if t:
+                        ann_by_label[t.lower()] = ann
+                        break
+                break
+        for child in ann.get("children", []):
+            _index_ann(child)
+    for ann in annotations:
+        _index_ann(ann)
+
+    def _nesting_depth(key: str) -> int:
+        """Compute nesting depth from ANTLR parent chain."""
+        depth = 0
+        cur = key
+        seen: set = set()
+        while cur in src_info and src_info[cur].get("parent") and cur not in seen:
+            seen.add(cur)
+            cur = src_info[cur]["parent"]
+            depth += 1
+        return depth
+
+    # Find composites with children that ARE in the SVG but the composite itself is NOT
+    missing_composite_keys = []
+    for key, info in src_info.items():
+        if not info.get("is_composite") or not info.get("children"):
+            continue
+        if key in matched_keys:
+            continue
+        first_line = info["name"].split("\\n")[0].strip().lower()
+        if first_line in matched_keys:
+            continue
+        missing_composite_keys.append(key)
+
+    # Sort by depth (deepest first) so inner groups are created before outer
+    missing_composite_keys.sort(key=lambda x: _nesting_depth(x), reverse=True)
+
+    for key in missing_composite_keys:
+        info = src_info[key]
+        # Find child annotations (lookup at synthesis time so earlier synthetics are found)
+        child_anns = []
+        for child_key in info["children"]:
+            child_info = src_info.get(child_key, {})
+            child_name = child_info.get("name", child_key)
+            child_alias = child_info.get("alias", "")
+            ca = (ann_by_label.get(child_name.lower())
+                  or ann_by_label.get(child_alias.lower())
+                  or ann_by_label.get(child_key.lower())
+                  or ann_by_label.get(child_name.split("\\n")[0].strip().lower()))
+            if ca:
+                child_anns.append(ca)
+        if not child_anns:
+            print(f"[STATE] ANTLR composite not found in SVG (no children matched): "
+                  f"name={info['name']!r} alias={info['alias']!r}")
+            continue
+        # Compute bounding box from children
+        min_x = min(a["geom"]["x"] for a in child_anns)
+        min_y = min(a["geom"]["y"] for a in child_anns)
+        max_x = max(a["geom"]["x"] + a["geom"].get("w", 0) for a in child_anns)
+        max_y = max(a["geom"]["y"] + a["geom"].get("h", 0) for a in child_anns)
+        pad = 20  # padding around children
+        group_geom = {
+            "x": round(min_x - pad, 2),
+            "y": round(min_y - pad - 20, 2),  # extra top for label
+            "w": round(max_x - min_x + 2 * pad, 2),
+            "h": round(max_y - min_y + 2 * pad + 20, 2),
+        }
+
+        depth = _nesting_depth(key)
+        # Outer composites behind inner: deeper nesting = higher z (in front)
+        # depth 0 (outermost) = z=-10, depth 1 = z=-9, etc.
+        max_depth = max(_nesting_depth(k) for k in missing_composite_keys) if missing_composite_keys else 0
+        z_order = -(max_depth - depth) - 1
+
+        group_id = f"g_synth_{key}"
+        label = info["name"].split("\\n")[0].strip()
+        stereotype = info.get("stereotype", "")
+
+        # Build the group annotation as a roundedrect (not a PictoSync group)
+        # so it renders as a visible container behind its children.
+        # Use contents format directly since _normalize_annotations already ran.
+        from models import CharFormat, TextBlock, TextRun, TextFrame
+        tech_text = stereotype.strip("<>") if stereotype else ""
+        synth_blocks = [
+            TextBlock(runs=[TextRun(type="text", text=label,
+                                     format=CharFormat(bold=True, font_size=11))]),
+        ]
+        if tech_text:
+            synth_blocks.append(
+                TextBlock(runs=[TextRun(type="text", text=tech_text,
+                                         format=CharFormat(italic=True, font_size=9))]),
+            )
+        group_ann: Dict[str, Any] = {
+            "id": group_id,
+            "kind": "roundedrect",
+            "geom": group_geom,
+            "contents": {
+                "frame": TextFrame(halign="center", valign="top").to_dict(),
+                "default_format": CharFormat(font_size=11).to_dict(),
+                "blocks": [b.to_dict() for b in synth_blocks],
+                "wrap": True,
+                "dsl": {
+                    "is_composite": True,
+                    "synthesized": True,
+                },
+            },
+            "style": {
+                "pen": {"color": "#888888", "width": 1, "dash": "dashed"},
+                "fill": {"color": "#F8F8F820"},
+                "text": {"color": "#555555", "size_pt": 11.0},
+            },
+        }
+        if stereotype:
+            group_ann["contents"]["dsl"]["stereotype"] = stereotype
+        if z_order != 0:
+            group_ann["z"] = z_order
+
+        # Remove children from top_level and add the group
+        child_set = set(id(a) for a in child_anns)
+        annotations[:] = [a for a in annotations if id(a) not in child_set]
+        annotations.append(group_ann)
+        # Re-add children after the group (higher z = in front)
+        annotations.extend(child_anns)
+
+        # Register for further parent lookups
+        ann_by_label[label.lower()] = group_ann
+        matched_keys.add(key)
+        print(f"[STATE] Synthesized composite: {label!r} with "
+              f"{len(child_anns)} children, z={z_order}")
+
+
+# ───────────────────────────────────────────────
 # STATE diagram SVG parser
 # ───────────────────────────────────────────────
 
 def _parse_state_diagram_svg(
     tree: ET.ElementTree,
+    puml_text: str = "",
 ) -> Dict[str, Any]:
     """Parse a STATE diagram SVG into PictoSync annotations.
 
@@ -2959,40 +3348,130 @@ def _parse_state_diagram_svg(
                     continue
 
                 path_el = child.find(f"{{{ns}}}path")
-                if path_el is None:
-                    continue
+                rect_el = child.find(f"{{{ns}}}rect")
 
-                d = path_el.get("d", "")
-                bx, by, bw, bh = _path_bbox(d)
-                geom = {"x": bx, "y": by, "w": bw, "h": bh}
-                fill = path_el.get("fill", "#FEFFDD")
-                stroke_color, stroke_width = _extract_stroke(path_el)
+                if path_el is not None:
+                    # Note shape (path-based, e.g. folded corner)
+                    d = path_el.get("d", "")
+                    bx, by, bw, bh = _path_bbox(d)
+                    geom = {"x": bx, "y": by, "w": bw, "h": bh}
+                    fill = path_el.get("fill", "#FEFFDD")
+                    stroke_color, stroke_width = _extract_stroke(path_el)
 
-                # Collect texts, skip NBSP-only entries
-                texts: List[str] = []
-                for t in child.findall(f"{{{ns}}}text"):
-                    txt = (t.text or "").replace("\xa0", "").strip()
-                    if txt:
-                        texts.append(txt)
+                    texts: List[str] = []
+                    for t in child.findall(f"{{{ns}}}text"):
+                        txt = (t.text or "").replace("\xa0", "").strip()
+                        if txt:
+                            texts.append(txt)
 
-                label = texts[0] if texts else ""
-                note_text = "\n".join(texts)
-                label, _tech, note_text = _dedup_label_tech_note(label, "", note_text)
+                    label = texts[0] if texts else ""
+                    note_text = "\n".join(texts)
+                    label, _tech, note_text = _dedup_label_tech_note(label, "", note_text)
 
-                note_info[ent_id] = {
-                    "kind": "roundedrect",
-                    "geom": geom,
-                    "fill": fill,
-                    "label": label,
-                    "tech": "",
-                    "note": note_text,
-                    "stroke_color": stroke_color,
-                    "stroke_width": stroke_width,
-                }
-                all_geom[ent_id] = {
-                    "x": geom["x"], "y": geom["y"],
-                    "w": geom["w"], "h": geom["h"],
-                }
+                    note_info[ent_id] = {
+                        "kind": "roundedrect",
+                        "geom": geom,
+                        "fill": fill,
+                        "label": label,
+                        "tech": "",
+                        "note": note_text,
+                        "stroke_color": stroke_color,
+                        "stroke_width": stroke_width,
+                    }
+                    all_geom[ent_id] = {
+                        "x": geom["x"], "y": geom["y"],
+                        "w": geom["w"], "h": geom["h"],
+                    }
+
+                elif rect_el is not None:
+                    # Regular state (rect-based entity — same structure as
+                    # unnamed states but with class="entity" and an id)
+                    line_el = child.find(f"{{{ns}}}line")
+                    text_els = child.findall(f"{{{ns}}}text")
+                    geom = {
+                        "x": round(float(rect_el.get("x", 0)), 2),
+                        "y": round(float(rect_el.get("y", 0)), 2),
+                        "w": round(float(rect_el.get("width", 0)), 2),
+                        "h": round(float(rect_el.get("height", 0)), 2),
+                    }
+                    fill = rect_el.get("fill", "#F1F1F1")
+                    stroke_color, stroke_width = _extract_stroke(rect_el)
+
+                    div_y = float(line_el.get("y1", 9999)) if line_el is not None else 9999
+                    name_parts = []
+                    desc_parts = []
+                    for t in text_els:
+                        ty = float(t.get("y", 0))
+                        txt = (t.text or "").strip()
+                        if not txt:
+                            continue
+                        if ty < div_y:
+                            name_parts.append(txt)
+                        else:
+                            desc_parts.append(txt)
+
+                    label = name_parts[0] if name_parts else ""
+                    tech = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+                    note_text = "\n".join(desc_parts)
+                    label, tech, note_text = _dedup_label_tech_note(label, tech, note_text)
+
+                    unnamed_states.append({
+                        "kind": "roundedrect",
+                        "geom": geom,
+                        "fill": fill,
+                        "label": label,
+                        "tech": tech,
+                        "note": note_text,
+                        "stroke_color": stroke_color,
+                        "stroke_width": stroke_width,
+                        "name_parts": name_parts,
+                        "ent_id": ent_id,
+                    })
+                    all_geom[ent_id] = {
+                        "x": geom["x"], "y": geom["y"],
+                        "w": geom["w"], "h": geom["h"],
+                    }
+
+            elif cls in ("start_entity", "end_entity"):
+                # [*] pseudo-state wrapped in a <g class="start_entity"> or "end_entity"
+                # Use a synthetic key to avoid colliding with entity IDs
+                # (PlantUML reuses ent_id for both the [*] and a regular entity)
+                ent_id = child.get("id", "")
+                ells = child.findall(f"{{{ns}}}ellipse")
+                ell = ells[0] if ells else None
+                if ell is not None:
+                    cx = float(ell.get("cx", 0))
+                    cy = float(ell.get("cy", 0))
+                    # Use outermost ellipse for geometry
+                    rx = max(float(e.get("rx", 10)) for e in ells)
+                    ry = max(float(e.get("ry", 10)) for e in ells)
+                    is_end = cls == "end_entity"
+                    prefix = "__end_" if is_end else "__start_"
+                    fill = "#222222"
+                    if is_end:
+                        # End entity: inner ellipse is filled, outer has stroke
+                        for e in ells:
+                            if e.get("fill", "").startswith("#") and e.get("fill") != "none":
+                                fill = e.get("fill", "#222222")
+                                break
+                    else:
+                        fill = ell.get("fill", "#222222")
+                    synth_id = f"{prefix}{ent_id}" if ent_id else f"{prefix}_"
+                    geom = {
+                        "x": round(cx - rx, 2),
+                        "y": round(cy - ry, 2),
+                        "w": round(rx * 2, 2),
+                        "h": round(ry * 2, 2),
+                    }
+                    initial_ellipses.append({
+                        "kind": "ellipse",
+                        "geom": geom,
+                        "fill": fill,
+                        "ent_id": synth_id,
+                        "svg_ent_id": ent_id,
+                        "is_end": is_end,
+                    })
+                    all_geom[synth_id] = dict(geom)
 
             elif cls == "link":
                 src_id = child.get("data-entity-1", "")
@@ -3095,11 +3574,19 @@ def _parse_state_diagram_svg(
 
         elif tag_local == "ellipse":
             # Bare ellipse — initial [*] marker
+            # Skip if a start_entity at same position was already found
             rx = float(child.get("rx", 0))
             ry = float(child.get("ry", 0))
             if rx <= 12 and ry <= 12:
                 cx = float(child.get("cx", 0))
                 cy = float(child.get("cy", 0))
+                dup = any(
+                    abs(e["geom"]["x"] - (cx - rx)) < 1
+                    and abs(e["geom"]["y"] - (cy - ry)) < 1
+                    for e in initial_ellipses
+                )
+                if dup:
+                    continue
                 initial_ellipses.append({
                     "kind": "ellipse",
                     "geom": {
@@ -3143,11 +3630,22 @@ def _parse_state_diagram_svg(
     # Match aliases to unnamed states by label
     state_to_ent_id: Dict[int, str] = {}
     matched_ent_ids: set = set()
+
+    # Pre-populate for entity-based states that already have an ent_id
+    for idx, state in enumerate(unnamed_states):
+        eid = state.get("ent_id", "")
+        if eid:
+            state_to_ent_id[idx] = eid
+            matched_ent_ids.add(eid)
+
     unmatched_ent_ids = (
         set(ent_id_to_alias.keys()) - set(cluster_info.keys())
+        - matched_ent_ids
     )
 
     for idx, state in enumerate(unnamed_states):
+        if idx in state_to_ent_id:
+            continue  # Already mapped by ent_id
         parts = state.get("name_parts", [])
         full_name = " ".join(parts)
 
@@ -3235,22 +3733,41 @@ def _parse_state_diagram_svg(
             },
         }
 
-    # Initial [*] ellipses
+    # Initial [*] and final [*] ellipses (start_entity / end_entity)
     ellipse_anns: List[Dict[str, Any]] = []
+    # Map from SVG ent_id → synthetic id for start/end entities
+    start_id_remap: Dict[str, str] = {}
     for ell in initial_ellipses:
         ann_id = f"p{counter:06d}"
         counter += 1
-        ellipse_anns.append({
+        is_end = ell.get("is_end", False)
+        ann = {
             "id": ann_id,
             "kind": "ellipse",
             "geom": dict(ell["geom"]),
-            "meta": {"label": "Start", "tech": "", "note": ""},
+            "meta": {
+                "label": "[*]",
+                "tech": "end" if is_end else "start",
+                "note": "",
+            },
             "style": {
-                "pen": {"color": "#222222", "width": 1, "dash": "solid"},
+                "pen": {
+                    "color": "#222222",
+                    "width": 2 if is_end else 1,
+                    "dash": "solid",
+                },
                 "fill": {"color": _safe_fill(ell["fill"])},
                 "text": {"color": "#FFFFFF", "size_pt": 8.0},
             },
-        })
+        }
+        ellipse_anns.append(ann)
+        synth_id = ell.get("ent_id", "")
+        svg_ent_id = ell.get("svg_ent_id", "")
+        if synth_id:
+            id_to_ann[synth_id] = ann
+        # Remap links that reference the SVG ent_id to the synthetic id
+        if svg_ent_id and synth_id != svg_ent_id:
+            start_id_remap[svg_ent_id] = synth_id
 
     # Unnamed states
     for idx, state in enumerate(unnamed_states):
@@ -3378,6 +3895,13 @@ def _parse_state_diagram_svg(
         grouped_ids.update(child_ids)
 
     # ── Connector annotations ────────────────────────
+    # Remap start entity IDs in links to synthetic IDs
+    for link in link_list:
+        if link["src_id"] in start_id_remap:
+            link["src_id"] = start_id_remap[link["src_id"]]
+        if link["dst_id"] in start_id_remap:
+            link["dst_id"] = start_id_remap[link["dst_id"]]
+
     line_anns: List[Dict[str, Any]] = []
     for link in link_list:
         pen_color = "#808080"
@@ -3465,9 +3989,11 @@ def _parse_state_diagram_svg(
     top_level.extend(ellipse_anns)
 
     # States and clusters not consumed as group children
+    # (ellipses already added via ellipse_anns — skip their synthetic IDs)
+    ellipse_ids = {e.get("ent_id", "") for e in initial_ellipses}
     seen_ids: set = set()
     for ent_id in id_to_ann:
-        if ent_id in grouped_ids or ent_id in seen_ids:
+        if ent_id in grouped_ids or ent_id in seen_ids or ent_id in ellipse_ids:
             continue
         seen_ids.add(ent_id)
         top_level.append(id_to_ann[ent_id])
@@ -3485,6 +4011,13 @@ def _parse_state_diagram_svg(
         top_level.sort(key=_child_y)
 
     _normalize_annotations(top_level)
+
+    # ── Enrich with ANTLR state source semantics ──
+    if puml_text:
+        src_info = _parse_state_source(puml_text)
+        if src_info:
+            _merge_state_source_info(top_level, src_info)
+
     return {
         "version": "draft-1",
         "image": {"width": canvas_w, "height": canvas_h},
@@ -3874,7 +4407,7 @@ def parse_puml_to_annotations(
         if tree.getroot().get("data-diagram-type") == "DESCRIPTION":
             return _parse_description_diagram_svg(tree, puml_text)
         if tree.getroot().get("data-diagram-type") == "STATE":
-            return _parse_state_diagram_svg(tree)
+            return _parse_state_diagram_svg(tree, puml_text)
 
     elements = _extract_elements(puml_text)
     known_aliases = {e["alias"] for e in elements}

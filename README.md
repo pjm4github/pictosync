@@ -4,7 +4,7 @@
 
 # PictoSync
 
-**v2.5** | Diagram Normalization & Agentic Specification IDE
+**v2.6** | Diagram Normalization & Agentic Specification IDE
 
 ---
 
@@ -90,7 +90,7 @@ The primary user is a senior engineer or architect working on systems where inte
 
 ---
 
-## Current Features (v2.5)
+## Current Features (v2.6)
 
 **For a comparison to other tools and their features see: [Round Tripping PNG Tools](png_json_comparison.md)**
 
@@ -368,6 +368,19 @@ See `schemas/annotation_schema.json` for the full specification.
 Additional Mermaid diagram types (Sequence, Class, ER, Gantt, Mindmap, etc.) have test data collected; parsers not yet implemented.
 
 ## Version History
+
+### v2.6 (2026-03-30)
+- **ANTLR4 state diagram grammar**: Generated PlantUML state grammar (Lexer/Parser/Visitor); `FREE_TEXT` restricted to non-structural start chars; `restOfLine` pattern for labels/descriptions; `skinparamName` accepts keywords; `stateDecl` supports inline descriptions
+- **State grammar integration**: `_parse_state_source()` extracts states, stereotypes, descriptions, composite/concurrent flags, and parent-child nesting from source text; `_merge_state_source_info()` enriches SVG annotations with ANTLR semantics
+- **Missing composite state synthesis**: Composites absent from SVG (PlantUML renders them flat) are reconstructed from ANTLR nesting — bounding box computed from children, dashed border, semi-transparent fill, z-order stacked (outer behind inner)
+- **State SVG parser: entity-based states**: `class="entity"` with `<rect>` now detected as regular states (was only handling path-based notes); entity `ent_id` preserved for link resolution
+- **Start/end pseudo-states**: `class="start_entity"` and `class="end_entity"` (`[*]` nodes) extracted with synthetic IDs to avoid collision with reused PlantUML entity IDs; links remapped; duplicate bare ellipses deduplicated
+- **ANTLR duplicate declaration merging**: `state "Name" as alias` followed by `state alias { }` merges name/alias/stereotype from the richer declaration
+- **State multiline name matching**: SVG label + tech combined and matched against ANTLR `\n`-separated names; ambiguous first-line matches only used when unambiguous
+- **ANTLR error suppression**: `removeErrorListeners()` on both lexer and parser for deployment and state grammars — no stderr noise on import
+- **Deployment grammar fixes**: `ACTOR_COLON` excludes `"` for quoted labels with colons; `skinparamPath` accepts element keywords; `restOfLine` includes `USECASE_PAREN`/`BRACKET_COMP`/`ARROW_SPEC`; preprocessor `!define`/`!include` support
+- **Line/curve text box fill**: `style.fill.color` sets text box background; fill opacity slider triggers immediate repaint via `item.update()`; text box border only drawn when item is selected
+- **Grammar diagnostic tools**: `scripts/diagnose_state_grammar.py` and `scripts/diagnose_deployment_grammar.py` — compare ANTLR vs regex extraction with coverage percentages
 
 ### v2.5 (2026-03-29)
 - **Polygon vertex editing UX**: Select-then-act interaction model — hover shows outline change, click selects (fill change), right-click on selected vertex opens context menu; double-click on vertex/edge stays in edit mode
