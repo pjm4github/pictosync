@@ -1,0 +1,232 @@
+@startuml t_component_05_allowmixing_sprites_creole
+title Component Diagram — Sprites, Creole Labels\n(sprite declarations, rich text in labels, special characters)
+
+skinparam component {
+    BackgroundColor #F8F9FA
+    BorderColor #495057
+    FontSize 11
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. SPRITE DECLARATIONS
+'    sprite $name [WxH/depth] { hex-rows }
+' ══════════════════════════════════════════════════════════════════════════
+
+sprite $cloud [16x16/16] {
+    0000000FF0000000
+    000000FFF0000000
+    00000FFFFF000000
+    0000FFFFFFF00000
+    000FFFFFFFFF0000
+    00FFFFFFFFFFF000
+    0FFFFFFFFFFFFF00
+    FFFFFFFFFFFFFFF0
+    FFFFFFFFFFFFFFF0
+    0FFFFFFFFFFFFF00
+    00FFFFFFFFFFF000
+    000FFFFFFFFF0000
+    0000FFFFFFF00000
+    00000FFFFF000000
+    000000FFF0000000
+    0000000FF0000000
+}
+
+sprite $db [16x16/8] {
+    00000FFFFFF00000
+    0000FFFFFFFF0000
+    000FFFFFFFFFF000
+    000FFFFFFFFFF000
+    0000FFFFFFFF0000
+    00000FFFFFF00000
+    00000FFFFFF00000
+    0000FFFFFFFF0000
+    000FFFFFFFFFF000
+    000FFFFFFFFFF000
+    0000FFFFFFFF0000
+    00000FFFFFF00000
+    00000FFFFFF00000
+    0000FFFFFFFF0000
+    000FFFFFFFFFF000
+    00000FFFFFF00000
+}
+
+sprite $gear [12x12/8] {
+    000FFF000000
+    00FFFFF00000
+    0FFFFFFF0000
+    FFFFFFFFF000
+    FFFFFFFFF000
+    0FFFFFFF0000
+    00FFFFF00000
+    000FFF000000
+    000FFF000000
+    0FFFFFFF0000
+    FFFFFFFFF000
+    000FFF000000
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. COMPONENTS WITH SPRITE STEREOTYPES  <<$spriteName>>
+' ══════════════════════════════════════════════════════════════════════════
+
+component "Cloud Gateway" as CGW <<$cloud>>
+component "Data Store" as DS <<$db>>
+component "Config Engine" as CFG <<$gear>>
+component "API Service" <<$cloud>> <<service>>
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. COMPONENT SYSTEM — actors and databases as components
+' ══════════════════════════════════════════════════════════════════════════
+
+component "End User" as USR <<actor>>
+component "Admin" as ADM <<admin>>
+
+component "App Server\n(Tomcat 10)" as APPSVR <<server>>
+component "Worker Node\n(k8s)" as WRKR <<server>>
+
+component "PostgreSQL 15" as PGDB <<database>>
+component "Redis Cache\n:6379" as REDIS <<cache>>
+
+component "Submit Order" as UC1 <<usecase>>
+component "View Dashboard" as UC2 <<usecase>>
+
+[OrderService] as ORDSVC <<microservice>>
+[AuthService] as AUTHSVC <<microservice>>
+[ReportService] as REPSVC <<microservice>>
+
+() "Order API\nv2" as OAPI
+() "Auth API\nv1" as AAPI
+interface IReporting as IREP
+
+package "Frontend Layer" as FE_LAYER #FFF8E1 {
+    [WebApp] <<spa>>
+    [MobileApp] <<ios>>
+    [AdminConsole] <<react>>
+}
+
+package "Service Mesh" as SVC_MESH #E8F4FD {
+    [Envoy Proxy] as EnvoyProxy <<sidecar>>
+    [ServiceRegistry] <<consul>>
+    [LoadBalancer] <<nginx>>
+}
+
+package "External SaaS" as EXT_SAAS #F1F8E9 {
+    [Stripe] <<payment>> <<external>>
+    [Twilio] <<sms>> <<external>>
+    [SendGrid] <<email>> <<external>>
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. CREOLE MARKUP IN COMPONENT LABELS
+' ══════════════════════════════════════════════════════════════════════════
+
+component "**Bold** Service" as BOLD_SVC
+component "//Italic// Component" as ITALIC_SVC
+component "**Bold** + //Italic//" as COMBO_SVC
+component "Size: <size:14>Large</size>" as SIZE_SVC
+component "<color:red>Red</color> Label" as COLOR_LBL
+component "<back:yellow>Highlighted</back>" as HILITE
+component "Line1\nLine2\nLine3" as MULTILINE
+component "Monospace: ""code""" as MONO_SVC
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. QUOTED NAMES WITH SPECIAL CHARACTERS
+' ══════════════════════════════════════════════════════════════════════════
+
+component "Service/v2" as SVC_SLASH
+component "My-Service" as SVC_DASH
+component "Service.Core" as SVC_DOT
+component "Service (legacy)" as SVC_PAREN
+component "API: port 8080" as API_COLON
+component "v1.2.3-beta" as SVC_SEMVER
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. RELATIONSHIPS between elements
+' ══════════════════════════════════════════════════════════════════════════
+
+' Actor -> usecase
+USR --> UC1
+USR --> UC2
+ADM --> UC2
+
+' Component -> component
+USR --> [WebApp]
+ADM --> [AdminConsole]
+
+' Component -> server
+[WebApp] --> APPSVR : HTTP/2
+[MobileApp] --> APPSVR : HTTPS
+APPSVR --> WRKR : gRPC
+
+' Component -> interface
+ORDSVC -- OAPI : provides
+AUTHSVC -- AAPI : provides
+[WebApp] --( OAPI : consumes
+[MobileApp] --( OAPI : consumes
+[AdminConsole] --( AAPI : consumes
+
+' Interface -> DB
+OAPI --> PGDB : JDBC :5432
+OAPI --> REDIS : RESP :6379
+
+' Component -> database
+ORDSVC --> PGDB : write
+REPSVC --> PGDB : read-only
+AUTHSVC --> REDIS : session cache
+REPSVC -- IREP
+
+' Service mesh
+[LoadBalancer] --> ORDSVC
+[LoadBalancer] --> AUTHSVC
+[LoadBalancer] --> REPSVC
+EnvoyProxy --> [LoadBalancer]
+[ServiceRegistry] --> EnvoyProxy : discovery
+
+' External
+ORDSVC ..> [Stripe] : REST :443
+ORDSVC ..> [Twilio] : REST :443
+ORDSVC ..> [SendGrid] : SMTP :587
+
+' Sprite-annotated links
+CGW --> DS : persist
+DS --> CFG : config read
+CGW ..> "API Service" : forward
+
+' Creole-labeled components linked
+BOLD_SVC --> ITALIC_SVC : demo link
+COMBO_SVC ..> SIZE_SVC
+COLOR_LBL --> HILITE
+
+' ══════════════════════════════════════════════════════════════════════════
+' 7. NOTES
+' ══════════════════════════════════════════════════════════════════════════
+
+note right of APPSVR
+    **Server components** using
+    <<server>> stereotype instead of
+    node keyword (no allowmixing needed).
+end note
+
+note bottom of EXT_SAAS
+    **External package** with
+    components. <<external>> stereotype
+    applies custom skinparam styling.
+end note
+
+note as SPRITE_NOTE
+    **Sprite declarations tested:**
+    sprite $name [WxH/depth] { hex }
+    Used as <<$spriteName>> stereotype.
+    Width x Height / color-depth format.
+end note
+
+SPRITE_NOTE .. CGW
+
+note right of BOLD_SVC
+    **Creole in component labels:**
+    **bold** //italic// ""mono""
+    <color:X> <back:X> <size:N>
+    \n for line breaks in labels
+end note
+
+@enduml

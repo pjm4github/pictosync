@@ -1,0 +1,158 @@
+@startuml t_component_02_arrow_styles
+title Component Diagram — Arrow & Link Styles\n(direction hints, solid, dotted, bidirectional, colored, labeled)
+
+skinparam component {
+    BackgroundColor #F8F9FA
+    BorderColor #495057
+    FontSize 11
+}
+skinparam arrow {
+    Color #555555
+    Thickness 1.5
+}
+
+' ── Source components ────────────────────────────────────────────────────
+[Source] as SRC
+[Target] as TGT
+[Left]   as LFT
+[Right]  as RGT
+[Up]     as UPP
+[Down]   as DWN
+[Alpha]  as A
+[Beta]   as B
+[Gamma]  as G
+[Delta]  as D
+[Epsilon] as E
+[Zeta]   as Z
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. SOLID ARROW VARIANTS  -->  ->  --->
+' ══════════════════════════════════════════════════════════════════════════
+package "Solid Arrows" #EEF2FF {
+    [S1] --> [S2] : standard
+    [S3] -> [S4] : short solid
+    [S5] ---> [S6] : long solid
+    [S7] --> [S8] : labeled\nwith newline
+    [S9] <-- [S10] : reverse solid
+    [S11] <--> [S12] : bidirectional solid
+    [S13] -[#FF0000]-> [S14] : colored red
+    [S15] -[#0000FF,bold]-> [S16] : blue bold
+    [S17] -[#008800,dashed]-> [S18] : green dashed
+    [S19] -[#AA00FF,dotted]-> [S20] : purple dotted
+    [S21] -[thickness=3]-> [S22] : thick
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. DOTTED / DEPENDENCY ARROW VARIANTS  ..>  .>  ...>
+' ══════════════════════════════════════════════════════════════════════════
+package "Dotted Arrows" #FFF8E1 {
+    [D1] ..> [D2] : dependency
+    [D3] .> [D4] : short dot
+    [D5] ...> [D6] : long dot
+    [D7] <.. [D8] : reverse dot
+    [D9] <..> [D10] : bidirectional dot
+    [D11] ..> [D12] : <<uses>>
+    [D13] ..> [D14] : <<realizes>>
+    [D15] -[#CC0000,dotted]-> [D16] : colored dotted
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. DIRECTION HINT ARROWS  -left->  -right->  -up->  -down->
+'    and abbreviations:      -l->    -r->       -u->   -d->
+' ══════════════════════════════════════════════════════════════════════════
+package "Direction Hints" #E8F5E9 {
+    [DH_C] as DHC
+
+    DHC -left-> [DH_L] : left
+    DHC -right-> [DH_R] : right
+    DHC -up-> [DH_U] : up
+    DHC -down-> [DH_D] : down
+
+    ' Short form abbreviations
+    [DH2_C] as DH2C
+    DH2C -l-> [DH2_L] : l abbrev
+    DH2C -r-> [DH2_R] : r abbrev
+    DH2C -u-> [DH2_U] : u abbrev
+    DH2C -d-> [DH2_D] : d abbrev
+
+    ' Dotted with direction
+    [DH3_C] as DH3C
+    DH3C -left.> [DH3_L] : dot-left
+    DH3C -right.> [DH3_R] : dot-right
+    DH3C -up.> [DH3_U] : dot-up
+    DH3C -down.> [DH3_D] : dot-down
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. LOLLIPOP / INTERFACE LINK FORMS
+'    --( required interface
+'    --  plain association
+'    -- named interface
+' ══════════════════════════════════════════════════════════════════════════
+package "Interface Links" #FCE4EC {
+    () "IFace_A" as IFA
+    () "IFace_B" as IFB
+    () "IFace_C" as IFC
+    interface IFD
+    interface IFE
+
+    [Provider] -- IFA : provides
+    [Consumer] --( IFA : requires
+    [Provider] -- IFB
+    IFB --( [Consumer2]
+    [Comp_X] -- IFD
+    IFE --( [Comp_Y]
+    IFC -- [Provider] : plain assoc
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. LABEL STYLES on arrows
+' ══════════════════════════════════════════════════════════════════════════
+package "Label Styles" #F3E5F5 {
+    [LA] --> [LB] : plain label
+    [LC] --> [LD] : **bold label**
+    [LE] --> [LF] : //italic label//
+    [LG] --> [LH] : ""monospace""
+    [LI] --> [LJ] : <color:red>colored label</color>
+    [LK] --> [LL] : <<stereotype label>>
+    [LM] --> [LN] : label with\nnewline
+    [LO] --> [LP] : [guard condition]
+    [LQ] -[#blue]-> [LR] : colored arrow\nwith label
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. MIXED / EDGE CASES
+' ══════════════════════════════════════════════════════════════════════════
+package "Edge Cases" #E0F7FA {
+    ' No label
+    [EC1] --> [EC2]
+    ' Self-link
+    [EC3] --> [EC3] : self
+    ' Chain (two lines)
+    [EC4] --> [EC5]
+    [EC5] --> [EC6]
+    ' Multiple arrows same pair
+    [EC7] --> [EC8] : forward
+    [EC7] <-- [EC8] : backward
+    [EC7] ..> [EC8] : also dotted
+    ' Long label
+    [EC9] --> [EC10] : this is a very long label\nthat wraps to multiple\nlines in the diagram
+}
+
+note top of "Solid Arrows"
+    Parser must distinguish:
+    --> vs -> vs --->
+    <-- vs <--> 
+    -[#color]-> vs -[style]->
+    -[#color,style]->
+end note
+
+note top of "Direction Hints"
+    Parser must handle:
+    -left- / -right- / -up- / -down-
+    -l- / -r- / -u- / -d-
+    with both -> and .> endings
+    and optional color/style modifiers
+end note
+
+@enduml

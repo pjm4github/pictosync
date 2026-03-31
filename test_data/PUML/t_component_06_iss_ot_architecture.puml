@@ -1,0 +1,350 @@
+@startuml t_component_06_iss_ot_architecture
+title ISS OT/IT Architecture — Full Grammar Stress Test\n(all component grammar features combined in realistic topology)
+
+allowmixing
+
+' ══════════════════════════════════════════════════════════════════════════
+' SKINPARAM — full block configuration
+' ══════════════════════════════════════════════════════════════════════════
+
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam backgroundColor #FEFEFE
+
+skinparam component {
+    BackgroundColor #E8F4FD
+    BorderColor #1565C0
+    FontSize 11
+    RoundCorner 6
+    BorderThickness 1.2
+}
+skinparam component<<ied>> {
+    BackgroundColor #FFF3E0
+    BorderColor #E65100
+}
+skinparam component<<microservice>> {
+    BackgroundColor #E8F5E9
+    BorderColor #2E7D32
+}
+skinparam component<<ai>> {
+    BackgroundColor #EDE7F6
+    BorderColor #4527A0
+}
+skinparam component<<legacy>> {
+    BackgroundColor #ECEFF1
+    BorderColor #546E7A
+    FontStyle italic
+}
+skinparam component<<external>> {
+    BackgroundColor #FFF9C4
+    BorderColor #F9A825
+}
+skinparam component<<patented>> {
+    BackgroundColor #FCE4EC
+    BorderColor #880E4F
+    FontStyle bold
+}
+skinparam package {
+    BackgroundColor #FAFAFA
+    BorderColor #9E9E9E
+    RoundCorner 8
+}
+skinparam node {
+    BackgroundColor #E3F2FD
+    BorderColor #0D47A1
+}
+skinparam database {
+    BackgroundColor #F1F8E9
+    BorderColor #1B5E20
+}
+skinparam cloud {
+    BackgroundColor #F9FBE7
+    BorderColor #827717
+}
+skinparam frame {
+    BackgroundColor #FFF8E1
+    BorderColor #F57F17
+}
+skinparam note {
+    BackgroundColor #FFFDE7
+    BorderColor #F57F17
+    FontSize 10
+}
+skinparam arrow {
+    Color #444444
+    Thickness 1.2
+    FontSize 9
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' PROCESS BUS LAYER — IED + Merging Units
+' ══════════════════════════════════════════════════════════════════════════
+
+frame "IEC 61850 Process Bus\n(VLAN 100 — L2 Multicast)" as PROC_BUS $ot_layer {
+
+    component "MU-1: Bay A\nIEC 61850-9-2 LE SV\n80 samp/cyc" as MU1 <<ied>> $sv_publisher
+    component "MU-2: Bay B\nIEC 61850-9-2 LE SV" as MU2 <<ied>> $sv_publisher
+    component "MU-3: Bay C\nIEC 61850-9-2 LE SV" as MU3 <<ied>> $sv_publisher
+
+    component "GOOSE Publisher A\n01:0C:CD:01:00:01\nXCBR trip command" as GOOSE_A <<ied>> $goose_pub
+    component "GOOSE Publisher B\nXSWI position" as GOOSE_B <<ied>> $goose_pub
+
+    component "Managed Switch\nIEC 61850 Station Bus" as STN_SW <<ied>> {
+        port svPort
+        port goosePort
+        port mmsPort
+        portout tapPort
+    }
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' PROTECTION IED LAYER
+' ══════════════════════════════════════════════════════════════════════════
+
+package "Protection IED Cluster" as IED_CLUSTER $ot_layer {
+
+    component "IED-1: SEL-411L\nDifferential Prot.\nPDIF XCBR MMXU\n:102/tcp MMS" as IED1 <<ied>> $protection
+    component "IED-2: REX640\nOvercurrent 51P\nPTOC XCBR\n:102/tcp MMS" as IED2 <<ied>> $protection
+    component "IED-3: BECO 2200\nVoltage Regulator\nATCC MMXU" as IED3 <<ied>> $protection
+
+    () "MMS :102" as MMS_IFACE
+    () "GOOSE Sub" as GOOSE_SUB_IFACE
+    interface IED_DNP3 <<provided>>
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' ISS EDGE AI ENCLOSURE
+' ══════════════════════════════════════════════════════════════════════════
+
+node "ISS Edge AI Enclosure\nIntel NUC 13 Pro — Fanless\nNERC CIP Tier-3" as ISS_BOX $iss_edge {
+
+    package "Protocol Adapters" as PROTO_ADAP #EEF2FF {
+        component "IEC 61850 Publisher\nR-GOOSE / R-SV :102/tcp\nSMV subscriber" as IEC_PUB <<microservice>> $adapter
+        component "DNP3 Master\n:20000/tcp\nDNP3/TCP poll" as DNP3_M <<microservice>> $adapter
+        component "IEEE 2030.5 Agent\nCSIP-AUS VEN\n:8443 REST mTLS" as IEEE2035_A <<microservice>> $adapter
+        component "Modbus Master\n:502/tcp\nSunSpec FC03" as MOD_M <<microservice>> $adapter
+    }
+
+    package "NATS Message Bus\n(CUPID Pattern)" as NATS_LAYER #FFF8E1 {
+        component "NATS Server\n:4222 leafnode\nJetStream KV" as NATS_SRV <<microservice>> $messaging
+        component "JetStream KV\nephemeral state" as JS_KV <<microservice>> $messaging
+        NATS_SRV --> JS_KV : in-process
+    }
+
+    package "AI / Inference Layer" as AI_LAYER #EDE7F6 {
+        component "Ephemeral Fusion Engine\nOT/IT Correlation\nAES-256 volatix spatium" as EFE <<patented>> $ai $core
+        component "Edge LLM Inference\nllama.cpp Phi-4-mini\nq4_K_M 2.4GB" as EDGE_LLM <<ai>> $ai
+        component "faster-whisper\nVoice Recognition\nint8 quantized" as WHISPER <<ai>> $ai
+        component "Anomaly Detector\nLSTM autoencoder\nONNX runtime" as ANOMALY <<ai>> $ai
+    }
+
+    package "Data Persistence" as DATA_LAYER #E8F5E9 {
+        database "TimescaleDB\nevent ring buffer\n72h retention" as TSDB <<microservice>> $storage
+        database "MinIO Object\nCOMTRADE / PCAP\nS3-compatible" as MINIO <<microservice>> $storage
+        component "Telegraf\nmetrics :9273\nOpenTelemetry" as TELEGRAF <<microservice>> $observability
+    }
+
+    package "Security Layer" as SEC_LAYER #FCE4EC {
+        component "CIP-007 Log Agent\nsyslog-ng :514\nNERC CIP audit" as CIP_LOG <<microservice>> $security
+        component "mTLS Terminator\ncert-manager\nVault PKI" as MTLS <<microservice>> $security
+        component "Key Manager\nHashiCorp Vault\nagent injector" as VAULT_A <<microservice>> $security
+    }
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' SCADA / ENTERPRISE INTEGRATION
+' ══════════════════════════════════════════════════════════════════════════
+
+cloud "Corporate WAN / MPLS\nSD-WAN: VeloCloud" as CORP_WAN $enterprise {
+
+    node "SCADA Control Centre" as SCADA_CC {
+        component "OSIsoft PI Server\n:5450 PI-to-PI" as PI_SRV <<legacy>> $historian
+        component "GE AREVA e-terra\nEMS/ADMS :8080" as EMS <<legacy>> $ems
+        component "ICCP TASE.2\nBilateral :102" as ICCP <<legacy>> $protocol
+        component "Splunk SIEM\n:8089 / :9997" as SPLUNK $security
+    }
+
+    node "DER Aggregation\nIEEE 2030.5 / OpenADR" as DER_AGG {
+        component "CSIP-AUS VEN\nOpenADR 2.0b :8443" as VEN <<microservice>> $der
+        component "DER Registration\nSunSpec Modbus :502" as DER_REG <<microservice>> $der
+        component "Setpoint Optimizer\nPPO RL Agent\nRay Serve" as OPTIM <<ai>> $der $ai
+    }
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' EXTERNAL ACTORS / SYSTEMS
+' ══════════════════════════════════════════════════════════════════════════
+
+actor "Grid Operator\n(HMI Console)" as OP_ACTOR
+actor "NERC-CIP Auditor" as AUDIT_ACTOR
+actor "DER Owner\n(Customer)" as DER_ACTOR
+
+component "GPS-Disciplined\nPTP Grandmaster\n:319/320 UDP" as PTP_GM <<external>> $timing
+component "ISO/RTO Interface\nNERC E-Tag :443" as ISO_RTO <<external>> $grid
+component "Weather Forecast\nNOAA REST :443" as WEATHER <<external>> $external
+
+' ══════════════════════════════════════════════════════════════════════════
+' INTERFACES
+' ══════════════════════════════════════════════════════════════════════════
+
+() "SV Multicast\n01:0C:CD:04:xx" as SV_MCAST
+() "GOOSE Multicast\n01:0C:CD:01:xx" as GOOSE_MCAST
+() "MMS :102/tcp" as MMS_PORT
+() "NATS Subject\nots.sv.siteA.*" as NATS_OTS
+() "NATS Subject\nder.siteA.*" as NATS_DER
+() "NATS Subject\nai.insight" as NATS_AI
+interface IEC61850_SCL <<provided>>
+interface OTEL_IFACE <<provided>>
+
+' ══════════════════════════════════════════════════════════════════════════
+' LINKS — Process Bus
+' ══════════════════════════════════════════════════════════════════════════
+
+MU1 --> svPort : SV L2 multicast
+MU2 --> svPort : SV L2 multicast
+MU3 --> svPort : SV L2 multicast
+GOOSE_A --> goosePort : GOOSE L2
+GOOSE_B --> goosePort : GOOSE L2
+
+svPort --> SV_MCAST : switched
+goosePort --> GOOSE_MCAST : switched
+mmsPort --> MMS_PORT : routed
+tapPort --> IEC_PUB : promiscuous
+
+SV_MCAST --> IED1 : SV subscriber
+SV_MCAST --> IED2 : SV subscriber
+GOOSE_MCAST --> IED1 : GOOSE subscriber
+GOOSE_MCAST --> IED3 : GOOSE subscriber
+MMS_PORT --> IED1 : MMS client
+IED1 -- MMS_IFACE : provides
+IED2 -- MMS_IFACE
+IED3 -- IED_DNP3 : DNP3 outstation
+IED1 -- GOOSE_SUB_IFACE
+
+' ══════════════════════════════════════════════════════════════════════════
+' LINKS — Protocol Adapters → NATS
+' ══════════════════════════════════════════════════════════════════════════
+
+MMS_IFACE --( IEC_PUB : MMS :102
+IEC_PUB --> NATS_SRV : publish ots.sv.*
+IEC_PUB --> NATS_OTS : produces
+DNP3_M --( IED_DNP3 : DNP3 :20000
+DNP3_M --> NATS_SRV : publish ots.dnp3.*
+IEEE2035_A --> NATS_SRV : publish der.*
+IEEE2035_A --> NATS_DER : produces
+MOD_M --> NATS_SRV : publish der.modbus.*
+
+' ══════════════════════════════════════════════════════════════════════════
+' LINKS — NATS → AI Layer
+' ══════════════════════════════════════════════════════════════════════════
+
+NATS_OTS --( EFE : subscribe ots.*
+NATS_DER --( EFE : subscribe der.*
+NATS_SRV --> EFE : fan-out
+EFE --> EDGE_LLM : context vectors
+EFE --> ANOMALY : feature stream
+EFE --> TSDB : persist fusion record
+EDGE_LLM --> NATS_AI : publish ai.insight
+NATS_AI --> NATS_SRV : routed back
+WHISPER --> NATS_SRV : publish voice.cmd
+ANOMALY --> NATS_SRV : publish ai.alert
+
+' ══════════════════════════════════════════════════════════════════════════
+' LINKS — Data Persistence
+' ══════════════════════════════════════════════════════════════════════════
+
+DNP3_M --> TSDB : DNP3 analog values
+IEC_PUB --> MINIO : COMTRADE archive
+TSDB --> TELEGRAF : metrics scrape
+TELEGRAF -- OTEL_IFACE : OTLP :4317
+
+' ══════════════════════════════════════════════════════════════════════════
+' LINKS — Security
+' ══════════════════════════════════════════════════════════════════════════
+
+EFE ..> CIP_LOG : syslog events
+IEC_PUB ..> CIP_LOG : access log
+MTLS --> IEEE2035_A : TLS termination
+VAULT_A --> MTLS : cert injection
+VAULT_A --> EFE : key provision
+
+' ══════════════════════════════════════════════════════════════════════════
+' LINKS — Enterprise / WAN
+' ══════════════════════════════════════════════════════════════════════════
+
+TSDB --> PI_SRV : PI Web API :443
+IEC_PUB --> EMS : OPC-UA :4840
+ICCP --> ISO_RTO : TASE.2 :102
+CIP_LOG --> SPLUNK : syslog :9997
+EFE ..> EMS : alert forward
+
+' DER integration
+IEEE2035_A --> VEN : IEEE 2030.5 REST :8443
+VEN --> DER_REG : Modbus :502
+OPTIM --> VEN : setpoint commands
+WEATHER --> OPTIM : forecast input
+
+' Timing
+PTP_GM --> STN_SW : PTP/E2E :319
+PTP_GM --> ISS_BOX : PTP client
+
+' Actors
+OP_ACTOR --> EMS : HMI :8080
+OP_ACTOR --> WHISPER : voice cmd
+AUDIT_ACTOR --> CIP_LOG : read audit
+DER_ACTOR --> VEN : DER registration
+
+' SCL config
+IEC61850_SCL --( IEC_PUB : config
+IEC61850_SCL --( IED1
+
+' ══════════════════════════════════════════════════════════════════════════
+' NOTES
+' ══════════════════════════════════════════════════════════════════════════
+
+note right of ISS_BOX
+    **ISS Edge AI Enclosure:**
+    - NERC CIP-007 compliant
+    - Air-gapped capable
+    - Ephemeral Fusion Architecture (patent)
+    - Phi-4-mini inference (2.4GB q4_K_M)
+    - faster-whisper voice recognition
+    - NATS JetStream CUPID pattern
+end note
+
+note bottom of IED_CLUSTER
+    **IEC 61850 Logical Nodes:**
+    XCBR — Circuit Breaker
+    XSWI — Disconnector
+    PDIF — Differential Protection
+    PTOC — Overcurrent Protection
+    MMXU — Measurement Unit
+    ATCC — Voltage Regulator
+end note
+
+note left of PROC_BUS
+    **IEC 61850 Process Bus:**
+    SV: Sampled Values (9-2 LE)
+    GOOSE: Generic Object Oriented
+           Substation Event
+    MMS: Manufacturing Message Spec.
+    All on L2 VLAN — no IP routing
+end note
+
+note as TAG_NOTE
+    **Tag legend ($tags used):**
+    $ot_layer — OT field devices
+    $iss_edge — ISS enclosure
+    $adapter  — protocol adapters
+    $messaging — NATS bus
+    $ai       — AI/ML components
+    $storage  — data persistence
+    $security — CIP / crypto
+    $enterprise — corporate zone
+    $der      — DER aggregation
+    $external — outside boundary
+end note
+
+TAG_NOTE .. ISS_BOX
+
+@enduml

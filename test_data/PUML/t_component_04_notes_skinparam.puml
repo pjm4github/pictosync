@@ -1,0 +1,257 @@
+@startuml t_component_04_notes_skinparam
+title Component Diagram — Notes, Skinparam & Visual Directives\n(all note forms, skinparam block+inline, hide/remove/restore, tags)
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. SKINPARAM — BLOCK FORM per element type
+' ══════════════════════════════════════════════════════════════════════════
+
+skinparam backgroundColor #FEFEFE
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+
+skinparam component {
+    BackgroundColor #E8F4FD
+    BorderColor #1565C0
+    FontSize 12
+    FontStyle bold
+    RoundCorner 8
+    BorderThickness 1.5
+    shadowing false
+}
+
+skinparam interface {
+    BackgroundColor #E8F5E9
+    BorderColor #2E7D32
+    FontSize 11
+}
+
+skinparam package {
+    BackgroundColor #FFF9C4
+    BorderColor #F9A825
+    FontSize 13
+    RoundCorner 6
+}
+
+skinparam note {
+    BackgroundColor #FFFDE7
+    BorderColor #F57F17
+    FontSize 10
+    FontColor #4E342E
+}
+
+skinparam arrow {
+    Color #444444
+    FontSize 10
+    Thickness 1.2
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. SKINPARAM — INLINE / STEREOTYPE-SPECIFIC FORM
+' ══════════════════════════════════════════════════════════════════════════
+
+skinparam component<<service>> {
+    BackgroundColor #FCE4EC
+    BorderColor #C62828
+}
+skinparam component<<repository>> {
+    BackgroundColor #E8F5E9
+    BorderColor #1B5E20
+}
+skinparam component<<gateway>> {
+    BackgroundColor #EDE7F6
+    BorderColor #4527A0
+}
+skinparam component<<external>> {
+    BackgroundColor #ECEFF1
+    BorderColor #546E7A
+    FontStyle italic
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. COMPONENTS for note attachment targets
+' ══════════════════════════════════════════════════════════════════════════
+
+[ComponentA] as CA
+[ComponentB] as CB <<service>>
+[ComponentC] as CC <<repository>>
+[ComponentD] as CD <<gateway>>
+[ComponentE] as CE <<external>>
+[ComponentF] as CF
+[ComponentG] as CG
+
+() "InterfaceA" as IA
+() "InterfaceB" as IB
+interface InterfaceC as IC
+
+package "System Core" as CORE #EEF2FF {
+    [CoreService] as CS <<service>>
+    [CoreRepo] as CR <<repository>>
+    [CoreGateway] as CGW <<gateway>>
+}
+
+package "External Layer" as EXT_LAYER #ECEFF1 {
+    [ExtService1] as ES1 <<external>>
+    [ExtService2] as ES2 <<external>>
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. NOTE FORMS — all positional variants
+' ══════════════════════════════════════════════════════════════════════════
+
+' Single-line positional notes
+note top of CA : Single line top note
+note bottom of CB : Single line bottom note
+note left of CC : Single line left note
+note right of CD : Single line right note
+
+' Multi-line positional notes
+note top of CE
+    Multi-line top note
+    with two lines
+end note
+
+note bottom of CF
+    Multi-line bottom note
+    line one
+    line two
+    line three
+end note
+
+note left of CG
+    Multi-line left note
+    with content
+end note
+
+note right of CORE
+    **Multi-line right of package**
+    This note attaches to
+    the package container itself.
+    Parser must handle: note right of ALIAS
+end note
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. FLOATING NOTES  (note as N ... end note)
+' ══════════════════════════════════════════════════════════════════════════
+
+note as FLOAT_1
+    Floating note — no attachment.
+    Declared with: note as ALIAS
+    Can be linked via .. to components.
+end note
+
+note as FLOAT_2 #FFE0B2
+    Colored floating note.
+    Background color applied inline.
+end note
+
+note as FLOAT_3
+    **Creole markup in note:**
+    - **bold** text
+    - //italic// text
+    - ""monospace"" text
+    - --strikethrough-- text
+    - <color:red>colored</color> text
+    - <back:yellow>highlighted</back>
+    - <size:14>larger font</size>
+    ====
+    Horizontal rule above
+end note
+
+' Link floating notes to components
+FLOAT_1 .. CA
+FLOAT_2 .. CB
+FLOAT_3 .. CORE
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. NOTE ON LINK
+' ══════════════════════════════════════════════════════════════════════════
+
+CA --> CB : first link
+note on link
+    Note on the CA-->CB link.
+    Attaches to the most recently
+    declared arrow above.
+end note
+
+CB ..> CC : second link
+note on link #E8F5E9
+    Colored note on link.
+    Color applied to note background.
+end note
+
+CC --> CD
+note on link : Single line note on link
+
+' ══════════════════════════════════════════════════════════════════════════
+' 7. TAG SYSTEM — $tag declarations + hide/remove/restore
+' ══════════════════════════════════════════════════════════════════════════
+
+component "Tagged Alpha" as TA $alpha $shared
+component "Tagged Beta"  as TB $beta  $shared
+component "Tagged Gamma" as TG $gamma
+component "Untagged"     as TU
+
+TA --> TB : alpha-to-beta
+TB --> TG : beta-to-gamma
+TG --> TU : gamma-to-untagged
+
+' Tag-based visibility directives (grammar productions to parse):
+' hide $alpha       -- hides all $alpha tagged elements
+' remove $beta      -- removes all $beta tagged elements
+' restore $shared   -- restores all $shared tagged elements
+' hide @unlinked    -- hides all unlinked elements
+' remove @unlinked  -- removes unlinked elements
+' remove *          -- removes all elements (then restore selectively)
+'
+' NOTE: We declare but don't activate hide/remove here so the diagram
+' renders fully — the grammar must parse these as valid directives.
+' Uncomment to test rendering suppression:
+' hide $alpha
+' remove $beta
+' restore $shared
+' hide @unlinked
+
+' ══════════════════════════════════════════════════════════════════════════
+' 8. DIRECTION DIRECTIVE
+' ══════════════════════════════════════════════════════════════════════════
+
+' left to right direction
+' (commented out — activating changes layout globally;
+'  grammar must parse it as a valid top-level directive)
+
+' ══════════════════════════════════════════════════════════════════════════
+' 9. SYSTEM LINKS
+' ══════════════════════════════════════════════════════════════════════════
+
+CS --> CR : JDBC
+CS --> CGW : REST
+CGW ..> ES1 : HTTP
+CGW ..> ES2 : HTTPS
+CS -- IA : provides
+IB --( CS : requires
+IC -- CR
+
+ES1 --> IA
+IA --( CB
+
+note right of EXT_LAYER
+    **skinparam<<stereotype>> tested:**
+    <<external>> components get
+    italic gray styling via
+    skinparam component<<external>>
+    block form.
+end note
+
+note bottom of TA
+    **Tag directive grammar:**
+    hide $tagName
+    remove $tagName
+    restore $tagName
+    hide @unlinked
+    remove @unlinked
+    remove *
+    These are top-level statements
+    parsed before rendering.
+end note
+
+@enduml
