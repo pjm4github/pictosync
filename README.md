@@ -4,7 +4,7 @@
 
 # PictoSync
 
-**v2.6** | Diagram Normalization & Agentic Specification IDE
+**v2.7** | Diagram Normalization & Agentic Specification IDE
 
 ---
 
@@ -90,7 +90,7 @@ The primary user is a senior engineer or architect working on systems where inte
 
 ---
 
-## Current Features (v2.6)
+## Current Features (v2.7)
 
 **For a comparison to other tools and their features see: [Round Tripping PNG Tools](png_json_comparison.md)**
 
@@ -368,6 +368,18 @@ See `schemas/annotation_schema.json` for the full specification.
 Additional Mermaid diagram types (Sequence, Class, ER, Gantt, Mindmap, etc.) have test data collected; parsers not yet implemented.
 
 ## Version History
+
+### v2.7 (2026-03-30)
+- **State pseudo-state shapes**: `<<choice>>` extracted as diamond polygon; `<<fork>>`/`<<join>>` as dark gray bars; `<<entryPoint>>`/`<<exitPoint>>` as small white ellipses; `<<inputPin>>`/`<<outputPin>>` as 12x12 squares; `<<expansionInput>>`/`<<expansionOutput>>` as 48x12 rectangles
+- **End state styling**: `->[*]` final states render with white fill and pen width 8 (thick black border bullseye); start states unchanged (solid dark fill, pen width 1)
+- **Deferred pseudo-state matching**: Pins, expansions, and points matched in a second pass — SVG annotations sorted by position, paired with ANTLR entries in declaration order (fixes label swapping)
+- **Composite state geometry from SVG**: Bare `<rect fill="none">` at root level detected as composite containers with exact SVG geometry, corner radius, and text formatting; replaces ANTLR-synthesized approximations
+- **Degenerate curve fallback**: Vertical/horizontal bezier paths (zero width or height) extracted as straight lines from SVG path endpoints — fixes missing transitions to/from `[*]`, choice, fork, join pseudo-states
+- **SVG text formatting extraction**: `_extract_text_format()` reads `fill`, `font-size`, `font-family` from SVG `<text>` elements; flows into `contents.default_format` and per-run `CharFormat`; removed redundant `style.text` dict
+- **Per-kind text color defaults**: `_meta_to_contents` uses `get_item_defaults(kind)` cascade (SVG → per-kind settings → global settings) for text color, font family, and font size
+- **Scene rect management**: New PNG load resets scene rect to PNG extent; `_update_scene_rect()` called after rebuild to expand for annotations; not called during PNG load to avoid inheriting old scene bounds
+- **Rubber band selection fix**: Guard checks `_handle_points_local` (not `_handle_points_scene`) to avoid crash on `MetaTextItem` which lacks resize handles
+- **PlantUML PNG size limit**: `-DPLANTUML_LIMIT_SIZE=16384` added to Java command — raises default 4096px truncation limit for large diagrams
 
 ### v2.6 (2026-03-30)
 - **ANTLR4 state diagram grammar**: Generated PlantUML state grammar (Lexer/Parser/Visitor); `FREE_TEXT` restricted to non-structural start chars; `restOfLine` pattern for labels/descriptions; `skinparamName` accepts keywords; `stateDecl` supports inline descriptions

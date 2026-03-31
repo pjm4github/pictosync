@@ -1,0 +1,221 @@
+@startuml t_state_order_lifecycle_concurrent
+title E-Commerce Order Lifecycle\n(Concurrent Regions + History States)
+
+skinparam state {
+    BackgroundColor #F8F9FA
+    BorderColor #495057
+    FontSize 11
+}
+skinparam state<<PAYMENT>> {
+    BackgroundColor #E8F4FD
+    BorderColor #0056B3
+}
+skinparam state<<FULFILLMENT>> {
+    BackgroundColor #E8F5E9
+    BorderColor #1B5E20
+}
+skinparam state<<EXCEPTION>> {
+    BackgroundColor #FFF3E0
+    BorderColor #E65100
+}
+skinparam state<<TERMINAL>> {
+    BackgroundColor #ECEFF1
+    BorderColor #546E7A
+}
+
+[*] --> CART_ACTIVE
+
+' ─── Cart phase ──────────────────────────────────────────────────────────────
+state "CART_ACTIVE" as CART_ACTIVE {
+    state "BROWSING" as BROWSING
+    state "ITEM_SELECTED" as ITEM_SELECTED
+    state "COUPON_VALIDATION" as COUPON_VALIDATION
+
+    [*] --> BROWSING
+    BROWSING --> ITEM_SELECTED : add_to_cart(itemId, qty)
+    ITEM_SELECTED --> BROWSING : remove_item\nor continue_shopping
+    ITEM_SELECTED --> COUPON_VALIDATION : apply_coupon(code)
+    COUPON_VALIDATION --> ITEM_SELECTED : coupon_valid / apply_discount\nor coupon_invalid / show_error
+    ITEM_SELECTED --> [*] : proceed_to_checkout
+}
+
+CART_ACTIVE --> CHECKOUT : checkout_initiated\n[cart.itemCount > 0]
+
+' ─── Checkout phase ──────────────────────────────────────────────────────────
+state "CHECKOUT" as CHECKOUT {
+    state "ADDRESS_ENTRY" as ADDR
+    state "SHIPPING_SELECTION" as SHIP
+    state "PAYMENT_ENTRY" as PAY_ENTRY
+    state "ORDER_REVIEW" as REVIEW
+
+    [*] --> ADDR
+    ADDR --> SHIP : address_validated\n[addressService.verify()==OK]
+    SHIP --> PAY_ENTRY : shipping_method_selected\n/ calculate_total()
+    PAY_ENTRY --> REVIEW : payment_method_entered\n[paymentToken != null]
+    REVIEW --> [*] : confirm_order
+    REVIEW --> PAY_ENTRY : edit_payment
+    REVIEW --> ADDR : edit_address
+}
+
+CHECKOUT --> ORDER_PROCESSING : order_confirmed\n/ assign orderId\n/ reserve inventory
+
+' ─── Main processing: concurrent regions ─────────────────────────────────────
+state "ORDER_PROCESSING" as ORDER_PROCESSING {
+
+    ' Region 1: Payment pipeline
+    state "Payment Pipeline" as PAYMENT_PIPELINE <<PAYMENT>> {
+        state "PAYMENT_AUTHORIZED" as PAY_AUTH
+        state "PAYMENT_CAPTURED" as PAY_CAP
+        state "PAYMENT_SETTLED" as PAY_SETTLE
+        state "REFUND_PENDING" as REFUND_PEND <<EXCEPTION>>
+        state "REFUNDED" as REFUNDED <<EXCEPTION>>
+
+        [*] --> PAY_AUTH
+        PAY_AUTH : entry / call PSP.authorize(token, amount)\n          start authTimeout(30s)
+        PAY_AUTH : do / poll PSP webhook
+        PAY_AUTH --> PAY_CAP : auth_success [fraud_score < 0.3]\n/ capture_funds()
+        PAY_AUTH --> REFUND_PEND : auth_failed\nor fraud_score >= 0.3\n/ void_authorization()
+        PAY_CAP : entry / call PSP.capture(authId)\n          emit PaymentCapturedEvent
+        PAY_CAP --> PAY_SETTLE : settlement_confirmed\n[T+1 banking day]
+        PAY_SETTLE --> [*] : settled
+        REFUND_PEND --> REFUNDED : refund_processed\n[PSP.refund()==OK]
+        REFUNDED --> [*] : terminal
+    }
+
+    ' Separator between concurrent regions
+    --
+
+    ' Region 2: Fulfillment pipeline
+    state "Fulfillment Pipeline" as FULFILLMENT_PIPELINE <<FULFILLMENT>> {
+        state "INVENTORY_RESERVED" as INV_RES
+        state "PICKING" as PICKING
+        state "PACKING" as PACKING
+        state "READY_TO_SHIP" as RTS
+        state "SHIPPED" as SHIPPED
+        state "IN_TRANSIT" as IN_TRANSIT
+        state "OUT_FOR_DELIVERY" as OFD
+        state "DELIVERED" as DELIVERED <<TERMINAL>>
+        state "BACKORDER" as BACKORDER <<EXCEPTION>>
+
+        [*] --> INV_RES
+        INV_RES --> PICKING : inventory_confirmed\n[warehouseAlloc==OK]
+        INV_RES --> BACKORDER : stockout\n[qty_available < qty_ordered]
+        BACKORDER --> INV_RES : restock_received\n/ reallocate_inventory()
+        BACKORDER --> [*] : order_cancelled_by_customer
+
+        PICKING : entry / assign picker, print label\n          emit PickingStartedEvent
+        PICKING : do / scan each item via barcode
+        PICKING --> PACKING : all_items_picked\n[picklist.complete==true]
+
+        PACKING : do / weigh, dimension-scan\n         generate shipping label
+        PACKING --> RTS : packed\n/ label_printed\n/ manifest_generated
+
+        RTS --> SHIPPED : carrier_collected\n[trackingId assigned]
+        SHIPPED --> IN_TRANSIT : first_carrier_scan
+        IN_TRANSIT --> OFD : out_for_delivery_scan
+        IN_TRANSIT --> IN_TRANSIT : transit_scan\n/ update ETA
+
+        OFD --> DELIVERED : delivery_confirmed\n[signature or photo_POD]
+        OFD --> IN_TRANSIT : delivery_attempted_failed\n/ leave notice
+        DELIVERED --> [*] : complete
+    }
+}
+
+' ─── Post-processing ─────────────────────────────────────────────────────────
+ORDER_PROCESSING --> POST_ORDER : both_regions_complete
+
+state "POST_ORDER" as POST_ORDER {
+    state "REVIEW_SOLICITATION" as REV_SOL
+    state "WARRANTY_ACTIVE" as WARR
+    state "RETURN_WINDOW_OPEN" as RET_WIN
+
+    state "RETURN_FLOW" as RETURN_FLOW <<EXCEPTION>> {
+        state "RETURN_REQUESTED" as RET_REQ
+        state "RETURN_LABEL_ISSUED" as RET_LABEL
+        state "RETURN_IN_TRANSIT" as RET_TRANSIT
+        state "RETURN_RECEIVED" as RET_RECV
+        state "RETURN_INSPECTED" as RET_INSP
+        state "RETURN_REFUND_ISSUED" as RET_REFUND
+
+        [*] --> RET_REQ
+        RET_REQ --> RET_LABEL : approved\n[within return window]\n/ generate_RMA()
+        RET_REQ --> [*] : denied [outside window\nor non-returnable]
+        RET_LABEL --> RET_TRANSIT : carrier_pickup_scan
+        RET_TRANSIT --> RET_RECV : warehouse_received_scan
+        RET_RECV --> RET_INSP : inspection_started
+        RET_INSP --> RET_REFUND : condition_acceptable\n/ initiate_refund()
+        RET_INSP --> [*] : condition_unacceptable\n/ return_to_customer
+        RET_REFUND --> [*] : refund_confirmed
+    }
+
+    [*] --> REV_SOL
+    [*] --> WARR
+    [*] --> RET_WIN
+
+    REV_SOL --> [*] : review_submitted\nor solicitation_expired(14d)
+    WARR --> [*] : warranty_expired
+    RET_WIN --> RETURN_FLOW : return_requested\n[within 30d]
+    RET_WIN --> [*] : return_window_closed(30d)
+    RETURN_FLOW --> [*] : return_complete
+}
+
+POST_ORDER --> COMPLETED : all_post_order_complete
+
+state "COMPLETED" as COMPLETED <<TERMINAL>> {
+    COMPLETED : entry / archive order record\n            update customer LTV\n            emit OrderCompletedEvent
+}
+
+COMPLETED --> [*]
+
+' ─── Global exception transitions ────────────────────────────────────────────
+state "CANCELLED" as CANCELLED <<TERMINAL>> {
+    CANCELLED : entry / release inventory reservation\n            void payment if captured\n            emit OrderCancelledEvent
+    CANCELLED : do / calculate cancellation reason\n          update analytics
+}
+
+state "DISPUTED" as DISPUTED <<EXCEPTION>> {
+    state "CHARGEBACK_RECEIVED" as CB_RECV
+    state "EVIDENCE_SUBMISSION" as CB_EVID
+    state "AWAITING_RULING" as CB_AWAIT
+    state "DISPUTE_WON" as CB_WON
+    state "DISPUTE_LOST" as CB_LOST
+
+    [*] --> CB_RECV
+    CB_RECV --> CB_EVID : dispute_acknowledged\n/ gather_evidence()
+    CB_EVID --> CB_AWAIT : evidence_submitted\n[to PSP within 7d]
+    CB_AWAIT --> CB_WON : ruling_in_seller_favor
+    CB_AWAIT --> CB_LOST : ruling_in_buyer_favor\n/ accept_chargeback()
+    CB_WON --> [*]
+    CB_LOST --> [*]
+}
+
+CART_ACTIVE --> CANCELLED : abandon_cart [timeout=72h]
+CHECKOUT --> CANCELLED : payment_timeout\nor user_cancelled
+ORDER_PROCESSING --> CANCELLED : cancellation_requested\n[before_shipped]\n/ [fulfillment.state != SHIPPED]
+ORDER_PROCESSING --> DISPUTED : chargeback_received\n/ freeze_fulfillment()
+DISPUTED --> COMPLETED : dispute_resolved_won
+DISPUTED --> CANCELLED : dispute_resolved_lost
+
+' ─── History state ───────────────────────────────────────────────────────────
+CHECKOUT --> CHECKOUT[H] : session_restored\n(browser refresh / reconnect)
+
+note right of ORDER_PROCESSING
+    **Concurrent region sync:**
+    ORDER_PROCESSING completes only when
+    BOTH Payment Pipeline AND
+    Fulfillment Pipeline reach [*].
+    If payment refunded, fulfillment
+    is halted via cancellation signal.
+end note
+
+note left of CANCELLED
+    **Cancellation eligibility:**
+    - CART_ACTIVE: always
+    - CHECKOUT: always
+    - ORDER_PROCESSING: only if
+      fulfillment < SHIPPED state
+    - POST_ORDER: not allowed
+      (use return flow instead)
+end note
+
+@enduml

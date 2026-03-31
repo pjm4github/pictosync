@@ -331,6 +331,16 @@ class MainWindow(QMainWindow):
         self._focus_align_thread: Optional[QThread] = None
         self._focus_align_worker: Optional[FocusedAlignWorker] = None
 
+    def _update_scene_rect(self):
+        """Expand scene rect to include all items (PNG + annotations)."""
+        items_rect = self.scene.itemsBoundingRect()
+        current = self.scene.sceneRect()
+        if not items_rect.isNull():
+            combined = current.united(items_rect)
+            margin = 50
+            combined = combined.adjusted(-margin, -margin, margin, margin)
+            self.scene.setSceneRect(combined)
+
     def _build_menus(self):
         """Build the application menu bar."""
         menubar = self.menuBar()
@@ -1704,6 +1714,7 @@ class MainWindow(QMainWindow):
         self.scene.addItem(self.bg_item)
 
         self.bg_path = path
+        # Reset scene rect to the new PNG extent (not expanded by old items)
         self.scene.setSceneRect(QRectF(pm.rect()))
         self.view.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
 
@@ -2640,6 +2651,9 @@ class MainWindow(QMainWindow):
         finally:
             self._syncing_from_json = False
 
+        # Expand scene rect to cover all items (annotations may extend beyond PNG)
+        self._update_scene_rect()
+
         # After syncing is done, update the editor highlight/scroll for restored selection.
         # This must happen after _syncing_from_json is False so the handlers don't bail out.
         if restored_id:
@@ -2883,6 +2897,10 @@ class MainWindow(QMainWindow):
 
         if item in self.scene.selectedItems():
             self.props.set_item(item)
+
+        # Expand scene rect if item moved outside current bounds
+        if not interacting:
+            self._update_scene_rect()
 
     def _do_group_items(self, items):
         """Group selected items into a MetaGroupItem."""
