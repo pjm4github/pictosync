@@ -4,7 +4,7 @@
 
 # PictoSync
 
-**v2.7** | Diagram Normalization & Agentic Specification IDE
+**v2.8** | Diagram Normalization & Agentic Specification IDE
 
 ---
 
@@ -90,7 +90,7 @@ The primary user is a senior engineer or architect working on systems where inte
 
 ---
 
-## Current Features (v2.7)
+## Current Features (v2.8)
 
 **For a comparison to other tools and their features see: [Round Tripping PNG Tools](png_json_comparison.md)**
 
@@ -368,6 +368,19 @@ See `schemas/annotation_schema.json` for the full specification.
 Additional Mermaid diagram types (Sequence, Class, ER, Gantt, Mindmap, etc.) have test data collected; parsers not yet implemented.
 
 ## Version History
+
+### v2.8 (2026-03-31)
+- **ANTLR4 component grammar**: Complete `PlantUMLComponent.g4` with zero parse errors on all 7 test files; restricted `FREE_TEXT`, `restOfLine` pattern, combined `componentFullDecl` rule avoiding LL(*) ambiguity
+- **Grammar features**: Bracket `[Name]` and keyword `component Name` forms; `componentBodyDesc` for `[...]` description blocks; `componentBlockDecl` for `{ port ... }` blocks; `groupBlock` with optional block body for standalone `database`/`node`/`actor` etc.
+- **Arrow/link support**: `ARROW_SPEC` covers solid (`-->`, `->`, `-left->`), dotted (`..>`, `.>`), mixed direction-dotted (`-left.>`), inline color/style (`-[#red,bold]->`), bidirectional (`<-->`); `LOLLIPOP` token for `--(` required interface
+- **Sprite declarations**: `sprite $name [WxH/depth] { hex }` with `SPRITE_ROW` (min 8 hex chars to avoid matching short IDs); `spriteDimension` accepts `INT ID` for `16x16` pattern
+- **Skinparam blocks**: `skinparamBlock` with stereotype (`skinparam component<<stereo>> { }`), `skinparamName` accepts keywords (`component`, `interface`, `note`, `database`, etc.); `skinparamEntry` uses `restOfLine` for flexible values including `1.5`
+- **Note support**: Positional (`note left of X`), floating (`note as N`), on-link (`note on link : text`), multi-line (`end note`); optional `COLOR` on all note forms; body accepts `{ }` tokens
+- **Stereotype body**: Accepts keywords as stereotype names (`<<database>>`, `<<actor>>`, `<<usecase>>`, `<<service>>`)
+- **Element naming**: `elementName` and `relationRef` accept keyword tokens as aliases (`left`, `right`, `note`, etc.)
+- **Quoted strings**: Handle `""` PlantUML monospace delimiter inside quoted names
+- **Component test file fixes**: Removed `allowmixing` where not needed; converted bracket to keyword form where required; fixed attribute ordering, body blocks, chained arrows, note targets
+- **Generated Python files**: `PlantUMLComponentLexer.py`, `PlantUMLComponentParser.py`, `PlantUMLComponentVisitor.py` in `plantuml/grammar/generated/`
 
 ### v2.7 (2026-03-30)
 - **State pseudo-state shapes**: `<<choice>>` extracted as diamond polygon; `<<fork>>`/`<<join>>` as dark gray bars; `<<entryPoint>>`/`<<exitPoint>>` as small white ellipses; `<<inputPin>>`/`<<outputPin>>` as 12x12 squares; `<<expansionInput>>`/`<<expansionOutput>>` as 48x12 rectangles
