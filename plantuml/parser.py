@@ -72,15 +72,13 @@ def _normalize_annotations(annotations: List[Dict[str, Any]]) -> None:
     """Convert flat meta dicts to overlay-2.0 contents with blocks/runs.
 
     Replaces the ``meta`` key with ``contents`` containing ``blocks``,
-    ``frame``, and ``default_format``.  The legacy ``label``, ``tech``,
-    and ``note`` fields are preserved as read-only computed fields.
+    ``frame``, and ``default_format``.  Recurses into group children.
     """
     for ann in annotations:
         if isinstance(ann, dict) and "meta" in ann:
             _meta_to_contents(ann)
-        for child in ann.get("children", []):
-            if isinstance(child, dict) and "meta" in child:
-                _meta_to_contents(child)
+        # Recurse into children (nested groups)
+        _normalize_annotations(ann.get("children", []))
 
 
 def _meta_to_contents(ann: Dict[str, Any]) -> None:
@@ -210,6 +208,30 @@ def _normalize_color(color: str) -> str:
         color = "#" + color
     # Ensure uppercase hex
     return color.upper()
+
+
+def _detect_arrow_mode(polys, path_id: str = "", link_type: str = "") -> str:
+    """Determine arrow mode from SVG polygon arrowheads and path ID.
+
+    Args:
+        polys: List of ``<polygon>`` elements (arrowhead markers).
+        path_id: The SVG path ``id`` attribute (e.g. ``"A-to-B"`` or ``"A-backto-B"``).
+        link_type: The ``data-link-type`` attribute (e.g. ``"association"``).
+
+    Returns:
+        Arrow mode: ``"none"``, ``"start"``, ``"end"``, or ``"both"``.
+    """
+    if link_type == "association":
+        return "none"
+    n = len(polys) if polys is not None else 0
+    if n == 0:
+        return "none"
+    if n >= 2:
+        return "both"
+    # Single polygon — check if it's a reverse arrow
+    if "backto" in path_id.lower():
+        return "start"
+    return "end"
 
 
 def _make_line_style(
@@ -975,6 +997,7 @@ def _parse_svg_positions(svg_path: str) -> Dict[str, Any]:
         path_el = g.find(f"{{{ns}}}path")
         style = path_el.get("style", "") if path_el is not None else ""
         d_attr = path_el.get("d", "") if path_el is not None else ""
+        path_id = path_el.get("id", "") if path_el is not None else ""
         polys = g.findall(f"{{{ns}}}polygon")
 
         svg_links.append({
@@ -984,6 +1007,7 @@ def _parse_svg_positions(svg_path: str) -> Dict[str, Any]:
             "style": style,
             "path_d": d_attr,
             "has_arrowhead": len(polys) > 0,
+            "arrow_mode": _detect_arrow_mode(polys, path_id),
         })
 
     return {
@@ -1013,12 +1037,659 @@ def _apply_svg_link_style(conn: Dict[str, Any], svg_style: str) -> None:
 
 
 # ───────────────────────────────────────────────
+# Activity diagram ANTLR source parser
+# ───────────────────────────────────────────────
+
+
+def _parse_activity_source(puml_text: str) -> Dict[str, Any]:
+    """Parse PlantUML activity source with the ANTLR4 grammar.
+
+    Returns a dict with extracted semantic information::
+
+        {
+            "title": "Diagram Title",
+            "actions": [
+                {"text": "Action label", "color": "#Red", "stereotype": "<<input>>",
+                 "swimlane": "Customer"},
+                ...
+            ],
+            "conditions": [
+                {"type": "if", "condition": "x?", "then_label": "yes",
+                 "else_label": "no", "branches": [...]},
+                ...
+            ],
+            "loops": [
+                {"type": "repeat"|"while", "condition": "done?",
+                 "backward": "Retry action", ...},
+                ...
+            ],
+            "forks": [
+                {"type": "fork"|"split", "branches": 3, "join_spec": "and"},
+                ...
+            ],
+            "containers": [
+                {"type": "partition", "name": "MyPartition", "color": "#E8F5E9"},
+                ...
+            ],
+            "swimlanes": [
+                {"name": "Customer", "color": "#FFE0B2"},
+                ...
+            ],
+            "connectors": ["A", "B", "C"],
+            "labels": ["retryPoint", "jumpTarget1"],
+            "notes": [
+                {"side": "right", "text": "Note text", "color": ""},
+                ...
+            ],
+            "arrows": [
+                {"style": "", "label": "arrow label"},
+                ...
+            ],
+            "controls": ["start", "stop", "end", "detach", "kill", "break"],
+        }
+
+    Returns an empty dict if the grammar is unavailable or parsing fails.
+    """
+    try:
+        from antlr4 import CommonTokenStream, InputStream
+        from plantuml.grammar.generated.PlantUMLActivityLexer import PlantUMLActivityLexer
+        from plantuml.grammar.generated.PlantUMLActivityParser import PlantUMLActivityParser
+        from plantuml.grammar.generated.PlantUMLActivityVisitor import PlantUMLActivityVisitor
+    except ImportError:
+        return {}
+
+    class _Visitor(PlantUMLActivityVisitor):
+        def __init__(self):
+            self.title = ""
+            self.actions: List[Dict[str, Any]] = []
+            self.conditions: List[Dict[str, Any]] = []
+            self.loops: List[Dict[str, Any]] = []
+            self.forks: List[Dict[str, Any]] = []
+            self.containers: List[Dict[str, Any]] = []
+            self.swimlanes: List[Dict[str, Any]] = []
+            self.connectors: List[str] = []
+            self.labels: List[str] = []
+            self.notes: List[Dict[str, Any]] = []
+            self.arrows: List[Dict[str, Any]] = []
+            self.controls: List[str] = []
+            self._current_swimlane = ""
+
+        # ── Helpers ────────────────────────────────────────
+
+        @staticmethod
+        def _parse_action_token(token_text: str) -> Dict[str, str]:
+            """Parse ACTION token text like '#Red:Action text;' or ':text;'.
+
+            Returns dict with 'text', 'color', and 'bullet' keys.
+            """
+            t = token_text.strip()
+            color = ""
+            if t.startswith("#"):
+                # #color:text;  — find the first ':' after '#'
+                colon_idx = t.index(":")
+                color = t[: colon_idx]
+                t = t[colon_idx:]
+            # Strip leading ':' and trailing ';'
+            if t.startswith(":"):
+                t = t[1:]
+            if t.endswith(";"):
+                t = t[:-1]
+            text = t.strip()
+            # Detect embedded bullet lines
+            bullet = ""
+            for line in text.split("\n"):
+                stripped = line.strip()
+                if stripped.startswith("- ") or stripped.startswith("* ") or stripped.startswith("** "):
+                    bullet = stripped[0]  # '-' or '*'
+                    break
+            return {"text": text, "color": color, "bullet": bullet}
+
+        @staticmethod
+        def _parse_swimlane_token(token_text: str) -> Dict[str, str]:
+            """Parse SWIMLANE token '|#color|Name|' or '|Name|'.
+
+            Returns dict with 'name' and 'color' keys.
+            """
+            t = token_text.strip()
+            # Strip outer pipes
+            if t.startswith("|"):
+                t = t[1:]
+            if t.endswith("|"):
+                t = t[:-1]
+            # Trailing text after last | (title for alias form)
+            parts = t.split("|")
+            color = ""
+            name = ""
+            if len(parts) >= 2 and parts[0].startswith("#"):
+                color = parts[0]
+                name = parts[1].strip()
+            elif len(parts) >= 1:
+                name = parts[0].strip()
+            return {"name": name, "color": color}
+
+        @staticmethod
+        def _parse_arrow_token(token_text: str) -> str:
+            """Extract style info from ARROW token like '-[#red,bold]->'."""
+            t = token_text.strip()
+            if "[" in t and "]" in t:
+                return t[t.index("[") + 1: t.index("]")]
+            return ""
+
+        @staticmethod
+        def _paren_text(ctx) -> str:
+            """Extract text from a parenContent context."""
+            if ctx is None:
+                return ""
+            return ctx.getText().strip()
+
+        @staticmethod
+        def _parse_note_token(token_text: str) -> Dict[str, str]:
+            """Parse NOTE_INLINE_TOKEN or NOTE_BLOCK_TOKEN.
+
+            Returns dict with 'side', 'text', 'color'.
+            """
+            t = token_text.strip()
+            side = ""
+            color = ""
+            text = ""
+
+            # Inline: note left|right [#color] : text
+            if ":" in t:
+                before_colon, _, text = t.partition(":")
+                text = text.strip()
+                before_colon = before_colon.strip()
+            else:
+                # Block: note [left|right] [#color]\n...\nend note
+                # Find first newline — everything after is body
+                nl_idx = t.find("\n")
+                if nl_idx >= 0:
+                    before_colon = t[:nl_idx].strip()
+                    body = t[nl_idx + 1:]
+                    # Strip trailing 'end note'
+                    end_idx = body.rfind("end note")
+                    if end_idx >= 0:
+                        body = body[:end_idx]
+                    text = body.strip()
+                else:
+                    before_colon = t
+                    text = ""
+
+            lower = before_colon.lower()
+            if "right" in lower:
+                side = "right"
+            elif "left" in lower:
+                side = "left"
+
+            # Extract #color
+            import re as _re
+            cm = _re.search(r'#[a-zA-Z0-9]+', before_colon)
+            if cm:
+                color = cm.group(0)
+
+            return {"side": side, "text": text, "color": color}
+
+        # ── Visitor overrides ──────────────────────────────
+
+        def visitTitleStmt(self, ctx):
+            if ctx.restOfLine():
+                self.title = ctx.restOfLine().getText().strip()
+            return self.visitChildren(ctx)
+
+        def visitActionStmt(self, ctx):
+            action_tok = ctx.ACTION()
+            if action_tok:
+                info = self._parse_action_token(action_tok.getText())
+                stereo = ctx.STEREO()
+                if stereo:
+                    info["stereotype"] = stereo.getText().strip()
+                else:
+                    info["stereotype"] = ""
+                info["swimlane"] = self._current_swimlane
+                self.actions.append(info)
+            return self.visitChildren(ctx)
+
+        def visitListActionStmt(self, ctx):
+            bullet = ""
+            if ctx.BULLET_DASH():
+                bullet = "-"
+            elif ctx.BULLET_STAR():
+                bullet = ctx.BULLET_STAR().getText()
+            text = ctx.restOfLine().getText().strip() if ctx.restOfLine() else ""
+            self.actions.append({
+                "text": text, "color": "", "stereotype": "",
+                "swimlane": self._current_swimlane,
+                "bullet": bullet,
+            })
+            return self.visitChildren(ctx)
+
+        def visitControlStmt(self, ctx):
+            text = ctx.getText().strip()
+            self.controls.append(text)
+            return self.visitChildren(ctx)
+
+        def visitSwimlaneStmt(self, ctx):
+            tok = ctx.SWIMLANE()
+            if tok:
+                info = self._parse_swimlane_token(tok.getText())
+                self._current_swimlane = info["name"]
+                # Add to swimlanes list if not already present
+                if not any(s["name"] == info["name"] for s in self.swimlanes):
+                    self.swimlanes.append(info)
+            return self.visitChildren(ctx)
+
+        def visitConnectorStmt(self, ctx):
+            id_tok = ctx.ID()
+            if id_tok:
+                name = id_tok.getText()
+                if name not in self.connectors:
+                    self.connectors.append(name)
+            return self.visitChildren(ctx)
+
+        def visitArrowStmt(self, ctx):
+            arrow_tok = ctx.ARROW()
+            style = self._parse_arrow_token(arrow_tok.getText()) if arrow_tok else ""
+            label = ""
+            if ctx.arrowLabel():
+                label = ctx.arrowLabel().getText().strip()
+                if label.endswith(";"):
+                    label = label[:-1].strip()
+            self.arrows.append({"style": style, "label": label})
+            return self.visitChildren(ctx)
+
+        def visitIfBlock(self, ctx):
+            cond = self._paren_text(ctx.condExpr().parenContent()) if ctx.condExpr() else ""
+            then_label = ""
+            cond_op = ctx.condOp()
+            if cond_op and cond_op.thenLabel() and cond_op.thenLabel().parenContent():
+                then_label = self._paren_text(cond_op.thenLabel().parenContent())
+
+            # Count branches
+            elseif_count = len(ctx.elseifBranch()) if ctx.elseifBranch() else 0
+            has_else = ctx.elseBranch() is not None
+            else_label = ""
+            if has_else and ctx.elseBranch().parenContent():
+                else_label = self._paren_text(ctx.elseBranch().parenContent())
+
+            self.conditions.append({
+                "type": "if",
+                "condition": cond,
+                "then_label": then_label,
+                "else_label": else_label,
+                "elseif_count": elseif_count,
+                "has_else": has_else,
+            })
+            return self.visitChildren(ctx)
+
+        def visitSwitchBlock(self, ctx):
+            cond = self._paren_text(ctx.condExpr().parenContent()) if ctx.condExpr() else ""
+            case_count = len(ctx.caseBranch()) if ctx.caseBranch() else 0
+            case_labels = []
+            for cb in (ctx.caseBranch() or []):
+                if cb.parenContent():
+                    case_labels.append(self._paren_text(cb.parenContent()))
+            self.conditions.append({
+                "type": "switch",
+                "condition": cond,
+                "case_count": case_count,
+                "case_labels": case_labels,
+            })
+            return self.visitChildren(ctx)
+
+        def visitRepeatBlock(self, ctx):
+            start_action = ""
+            if ctx.ACTION():
+                start_action = self._parse_action_token(ctx.ACTION().getText())["text"]
+            cond = ""
+            rw = ctx.condExpr()
+            if rw and rw.parenContent():
+                cond = self._paren_text(rw.parenContent())
+            backward = ""
+            bc = ctx.backwardClause()
+            if bc and bc.ACTION():
+                backward = self._parse_action_token(bc.ACTION().getText())["text"]
+            # is/not labels
+            is_label = ""
+            not_label = ""
+            rwl = ctx.repeatWhileLabels()
+            if rwl:
+                for pc in (rwl.parenContent() or []):
+                    text = self._paren_text(pc)
+                    # First parenContent after KW_IS, second after KW_NOT
+                    if not is_label and rwl.KW_IS():
+                        is_label = text
+                    elif not not_label:
+                        not_label = text
+            self.loops.append({
+                "type": "repeat",
+                "condition": cond,
+                "start_action": start_action,
+                "backward": backward,
+                "is_label": is_label,
+                "not_label": not_label,
+            })
+            return self.visitChildren(ctx)
+
+        def visitWhileBlock(self, ctx):
+            cond = ""
+            if ctx.condExpr() and ctx.condExpr().parenContent():
+                cond = self._paren_text(ctx.condExpr().parenContent())
+            is_label = ""
+            # while (cond) is (label) — parenContent after KW_IS
+            pcs = ctx.parenContent()
+            if pcs:
+                # Could be list, get first
+                if isinstance(pcs, list):
+                    is_label = self._paren_text(pcs[0]) if pcs else ""
+                else:
+                    is_label = self._paren_text(pcs)
+            backward = ""
+            bc = ctx.backwardClause()
+            if bc and bc.ACTION():
+                backward = self._parse_action_token(bc.ACTION().getText())["text"]
+            end_label = ""
+            # endwhile (label) — parenContent at end
+            # The endwhile label parenContent is the last one outside the is()
+            # Get it from the raw children after KW_ENDWHILE
+            for i, child in enumerate(ctx.children or []):
+                tok_text = getattr(child, 'symbol', None)
+                if tok_text and hasattr(tok_text, 'text') and tok_text.text == 'endwhile':
+                    # Look for LPAREN...RPAREN after endwhile
+                    for j in range(i + 1, len(ctx.children)):
+                        c = ctx.children[j]
+                        pc_ctx = getattr(c, 'getRuleIndex', None)
+                        if pc_ctx is not None:
+                            try:
+                                from plantuml.grammar.generated.PlantUMLActivityParser import PlantUMLActivityParser
+                                if c.getRuleIndex() == PlantUMLActivityParser.RULE_parenContent:
+                                    end_label = self._paren_text(c)
+                            except Exception:
+                                pass
+                            break
+                    break
+            self.loops.append({
+                "type": "while",
+                "condition": cond,
+                "is_label": is_label,
+                "backward": backward,
+                "end_label": end_label,
+            })
+            return self.visitChildren(ctx)
+
+        def visitForkBlock(self, ctx):
+            branch_count = 1 + len(ctx.forkAgainBranch() or [])
+            join_spec = ""
+            term = ctx.forkTerminator()
+            if term:
+                if term.KW_END_MERGE():
+                    join_spec = "merge"
+                elif term.joinSpec():
+                    join_spec = term.joinSpec().ID().getText() if term.joinSpec().ID() else ""
+                elif term.KW_ENDFORK():
+                    join_spec = ""
+            self.forks.append({
+                "type": "fork",
+                "branches": branch_count,
+                "join_spec": join_spec,
+            })
+            return self.visitChildren(ctx)
+
+        def visitSplitBlock(self, ctx):
+            branch_count = 1 + len(ctx.splitAgainBranch() or [])
+            self.forks.append({
+                "type": "split",
+                "branches": branch_count,
+                "join_spec": "",
+            })
+            return self.visitChildren(ctx)
+
+        def visitContainerBlock(self, ctx):
+            kw = ctx.containerKeyword().getText() if ctx.containerKeyword() else ""
+            name = ""
+            if ctx.containerName():
+                name = ctx.containerName().getText().strip().strip('"')
+            color = ctx.COLOR().getText() if ctx.COLOR() else ""
+            self.containers.append({
+                "type": kw,
+                "name": name,
+                "color": color,
+            })
+            return self.visitChildren(ctx)
+
+        def visitNoteStmt(self, ctx):
+            tok = ctx.NOTE_INLINE_TOKEN()
+            if tok:
+                info = self._parse_note_token(tok.getText())
+                self.notes.append(info)
+            return self.visitChildren(ctx)
+
+        def visitNoteBlock(self, ctx):
+            tok = ctx.NOTE_BLOCK_TOKEN()
+            if tok:
+                info = self._parse_note_token(tok.getText())
+                self.notes.append(info)
+            return self.visitChildren(ctx)
+
+        def visitLabelStmt(self, ctx):
+            id_tok = ctx.ID()
+            if id_tok:
+                name = id_tok.getText()
+                if name not in self.labels:
+                    self.labels.append(name)
+            return self.visitChildren(ctx)
+
+        def visitGotoStmt(self, ctx):
+            # Gotos reference labels — tracked in labels
+            return self.visitChildren(ctx)
+
+    try:
+        input_stream = InputStream(puml_text)
+        lexer = PlantUMLActivityLexer(input_stream)
+        lexer.removeErrorListeners()
+        token_stream = CommonTokenStream(lexer)
+        parser = PlantUMLActivityParser(token_stream)
+        parser.removeErrorListeners()
+        tree = parser.diagram()
+
+        visitor = _Visitor()
+        visitor.visit(tree)
+
+        return {
+            "title": visitor.title,
+            "actions": visitor.actions,
+            "conditions": visitor.conditions,
+            "loops": visitor.loops,
+            "forks": visitor.forks,
+            "containers": visitor.containers,
+            "swimlanes": visitor.swimlanes,
+            "connectors": visitor.connectors,
+            "labels": visitor.labels,
+            "notes": visitor.notes,
+            "arrows": visitor.arrows,
+            "controls": visitor.controls,
+        }
+    except Exception:
+        return {}
+
+
+def _merge_activity_source_info(
+    annotations: List[Dict[str, Any]],
+    src_info: Dict[str, Any],
+) -> None:
+    """Merge ANTLR-parsed activity source info into SVG annotations.
+
+    Enriches ``contents.dsl`` (or ``meta.dsl``) with activity-specific
+    semantic data from the ANTLR parse: stereotypes, swimlane membership,
+    condition expressions, loop types, fork join specs, container types,
+    notes, connectors, labels, and arrows.
+
+    Args:
+        annotations: List of annotation dicts (mutated in-place).
+        src_info: Dict returned by ``_parse_activity_source()``.
+    """
+    if not src_info:
+        return
+
+    actions = list(src_info.get("actions", []))
+    conditions = list(src_info.get("conditions", []))
+    loops = list(src_info.get("loops", []))
+    forks = list(src_info.get("forks", []))
+    containers = list(src_info.get("containers", []))
+    swimlanes = src_info.get("swimlanes", [])
+    notes_list = list(src_info.get("notes", []))
+    arrows_list = list(src_info.get("arrows", []))
+    controls = list(src_info.get("controls", []))
+    connectors = src_info.get("connectors", [])
+    labels = src_info.get("labels", [])
+
+    # Build swimlane name→color index
+    lane_colors: Dict[str, str] = {}
+    for sl in swimlanes:
+        if sl.get("color"):
+            lane_colors[sl["name"]] = sl["color"]
+
+    # Build action text → info index for matching
+    action_index: Dict[str, Dict[str, Any]] = {}
+    for a in actions:
+        key = a["text"].strip().lower()
+        # Use first line for matching (multi-line actions)
+        first_line = key.split("\n")[0].strip()
+        if first_line:
+            action_index[first_line] = a
+        if key != first_line and key:
+            action_index[key] = a
+
+    def _get_label(ann: Dict[str, Any]) -> str:
+        """Extract label text from annotation (contents or meta)."""
+        contents = ann.get("contents") or ann.get("meta") or {}
+        blocks = contents.get("blocks", [])
+        if blocks:
+            for b in blocks:
+                for r in b.get("runs", []):
+                    t = r.get("text", "").strip()
+                    if t:
+                        return t
+        return contents.get("label", "")
+
+    def _set_dsl(ann: Dict[str, Any], dsl_data: Dict[str, Any]) -> None:
+        """Set dsl data on annotation's contents or meta."""
+        target = ann.get("contents") or ann.get("meta")
+        if target is None:
+            return
+        existing_dsl = target.get("dsl", {})
+        existing_dsl.update(dsl_data)
+        target["dsl"] = existing_dsl
+
+    def _enrich(ann_list: List[Dict[str, Any]]) -> None:
+        for ann in ann_list:
+            kind = ann.get("kind", "")
+            label = _get_label(ann).lower()
+            first_line = label.split("\n")[0].strip()
+
+            # Match activities (roundedrect) to ANTLR actions
+            if kind == "roundedrect" and first_line:
+                match = action_index.get(first_line) or action_index.get(label)
+                if match:
+                    dsl: Dict[str, Any] = {"element_type": "action"}
+                    if match.get("stereotype"):
+                        dsl["stereotype"] = match["stereotype"]
+                    if match.get("color"):
+                        dsl["action_color"] = match["color"]
+                    if match.get("swimlane"):
+                        dsl["swimlane"] = match["swimlane"]
+                        if match["swimlane"] in lane_colors:
+                            dsl["swimlane_color"] = lane_colors[match["swimlane"]]
+                    if match.get("bullet"):
+                        dsl["bullet"] = match["bullet"]
+                    _set_dsl(ann, dsl)
+
+            # Match ellipses (start/stop/end nodes) to controls
+            elif kind == "ellipse":
+                if controls:
+                    ctrl = controls[0]
+                    if label.lower() in ("start", "end", "stop"):
+                        _set_dsl(ann, {"element_type": ctrl})
+                        # Don't pop — there might be multiple start/stop
+
+            # Match diamonds (conditions) to ANTLR conditions
+            elif kind == "diamond":
+                if conditions:
+                    cond = conditions.pop(0)
+                    dsl = {"element_type": cond["type"],
+                           "condition": cond.get("condition", "")}
+                    if cond["type"] == "if":
+                        dsl["then_label"] = cond.get("then_label", "")
+                        dsl["else_label"] = cond.get("else_label", "")
+                        dsl["elseif_count"] = cond.get("elseif_count", 0)
+                    elif cond["type"] == "switch":
+                        dsl["case_labels"] = cond.get("case_labels", [])
+                    _set_dsl(ann, dsl)
+
+            # Match partition rects to containers
+            elif kind == "rect":
+                for ci, cont in enumerate(containers):
+                    cname = cont["name"].lower()
+                    if cname and (cname == first_line or cname in label):
+                        dsl = {
+                            "element_type": cont["type"],
+                            "container_name": cont["name"],
+                        }
+                        if cont.get("color"):
+                            dsl["container_color"] = cont["color"]
+                        _set_dsl(ann, dsl)
+                        containers.pop(ci)
+                        break
+
+            # Match lines to ANTLR arrows by order
+            elif kind == "line":
+                if arrows_list:
+                    arrow = arrows_list.pop(0)
+                    dsl = {"element_type": "arrow"}
+                    if arrow.get("style"):
+                        dsl["arrow_style"] = arrow["style"]
+                    if arrow.get("label"):
+                        dsl["arrow_label"] = arrow["label"]
+                    _set_dsl(ann, dsl)
+
+            # Recurse into group children
+            children = ann.get("children", [])
+            if children:
+                _enrich(children)
+
+    _enrich(annotations)
+
+    # Add diagram-level DSL metadata to first annotation or as standalone
+    diagram_dsl = {}
+    if src_info.get("title"):
+        diagram_dsl["title"] = src_info["title"]
+    if swimlanes:
+        diagram_dsl["swimlanes"] = swimlanes
+    if connectors:
+        diagram_dsl["connectors"] = connectors
+    if labels:
+        diagram_dsl["labels"] = labels
+    if notes_list:
+        diagram_dsl["notes"] = notes_list
+    if forks:
+        diagram_dsl["forks"] = forks
+    if loops:
+        diagram_dsl["loops"] = loops
+    if conditions:
+        diagram_dsl["remaining_conditions"] = conditions
+    if controls:
+        diagram_dsl["controls"] = controls
+
+    if diagram_dsl and annotations:
+        _set_dsl(annotations[0], {"diagram": diagram_dsl})
+
+
+# ───────────────────────────────────────────────
 # Activity diagram SVG parser
 # ───────────────────────────────────────────────
 
 
 def _parse_activity_diagram_svg(
     tree: ET.ElementTree,
+    puml_text: str = "",
 ) -> Dict[str, Any]:
     """Parse an activity diagram SVG into PictoSync annotations.
 
@@ -1413,11 +2084,305 @@ def _parse_activity_diagram_svg(
         top_level.sort(key=_child_y)
 
     _normalize_annotations(top_level)
+
+    # ── Enrich with ANTLR activity source semantics ──
+    if puml_text:
+        src_info = _parse_activity_source(puml_text)
+        if src_info:
+            _merge_activity_source_info(top_level, src_info)
+
     return {
         "version": "draft-1",
         "image": {"width": canvas_w, "height": canvas_h},
         "annotations": top_level,
     }
+
+
+# ───────────────────────────────────────────────
+# Sequence diagram source parser (ANTLR4)
+# ───────────────────────────────────────────────
+
+
+def _parse_sequence_source(puml_text: str) -> Dict[str, Any]:
+    """Parse PlantUML sequence diagram source with the ANTLR4 grammar.
+
+    Returns a dict with extracted semantic information::
+
+        {
+            "title": "Diagram Title",
+            "participants": [
+                {"name": "Alice", "keyword": "participant", "alias": "",
+                 "stereotype": "", "color": ""},
+                ...
+            ],
+            "messages": [
+                {"source": "Alice", "target": "Bob", "label": "hello",
+                 "arrow": "->"},
+                ...
+            ],
+            "groups": [
+                {"keyword": "alt", "label": "condition"},
+                ...
+            ],
+            "notes": [
+                {"text": "some note"},
+                ...
+            ],
+            "activations": 0,
+            "deactivations": 0,
+            "destroys": 0,
+            "returns": 0,
+            "boxes": [
+                {"name": "Internal", "color": "#LightBlue"},
+                ...
+            ],
+            "dividers": 0,
+            "refs": 0,
+            "newpages": 0,
+            "creates": 0,
+        }
+
+    Returns an empty dict if the grammar is unavailable or parsing fails.
+    """
+    try:
+        from antlr4 import CommonTokenStream, InputStream
+        from plantuml.grammar.generated.PlantUMLSequenceLexer import PlantUMLSequenceLexer
+        from plantuml.grammar.generated.PlantUMLSequenceParser import PlantUMLSequenceParser
+        from plantuml.grammar.generated.PlantUMLSequenceVisitor import PlantUMLSequenceVisitor
+    except ImportError:
+        return {}
+
+    class _Visitor(PlantUMLSequenceVisitor):
+        def __init__(self):
+            self.title = ""
+            self.participants: List[Dict[str, str]] = []
+            self.messages: List[Dict[str, str]] = []
+            self.groups: List[Dict[str, str]] = []
+            self.notes: List[Dict[str, str]] = []
+            self.activations = 0
+            self.deactivations = 0
+            self.destroys = 0
+            self.returns = 0
+            self.boxes: List[Dict[str, str]] = []
+            self.dividers = 0
+            self.refs = 0
+            self.newpages = 0
+            self.creates = 0
+
+        # ── Helpers ────────────────────────────────────────
+
+        @staticmethod
+        def _strip_quotes(text: str) -> str:
+            """Remove surrounding double-quotes if present."""
+            if len(text) >= 2 and text.startswith('"') and text.endswith('"'):
+                return text[1:-1]
+            return text
+
+        @staticmethod
+        def _participant_name_text(ctx) -> str:
+            """Extract cleaned name from a participantName context."""
+            if ctx is None:
+                return ""
+            raw = ctx.getText().strip()
+            if len(raw) >= 2 and raw.startswith('"') and raw.endswith('"'):
+                return raw[1:-1]
+            return raw
+
+        # ── Visitor overrides ──────────────────────────────
+
+        def visitTitleStmt(self, ctx):
+            if ctx.restOfLine():
+                self.title = ctx.restOfLine().getText().strip()
+            return self.visitChildren(ctx)
+
+        def visitTitleBlock(self, ctx):
+            # Multi-line title — collect noteBodyLine texts
+            lines = []
+            for bl in (ctx.noteBodyLine() or []):
+                lines.append(bl.getText().strip())
+            if lines:
+                self.title = "\n".join(lines)
+            return self.visitChildren(ctx)
+
+        def visitParticipantDecl(self, ctx):
+            keyword = ""
+            pt = ctx.participantType()
+            if pt and pt.participantKeyword():
+                keyword = pt.participantKeyword().getText().strip()
+            name = self._participant_name_text(ctx.participantName())
+            alias = ""
+            ac = ctx.aliasClause()
+            if ac and ac.participantName():
+                alias = self._participant_name_text(ac.participantName())
+            stereotype = ""
+            color = ""
+            for mod in (ctx.participantModifier() or []):
+                sc = mod.stereotypeClause()
+                if sc:
+                    stereotype = sc.getText().strip()
+                cs = mod.colorSpec()
+                if cs:
+                    color = cs.getText().strip()
+            self.participants.append({
+                "name": name,
+                "keyword": keyword,
+                "alias": alias,
+                "stereotype": stereotype,
+                "color": color,
+            })
+            return self.visitChildren(ctx)
+
+        def visitMessageStmt(self, ctx):
+            # Source
+            src_ctx = ctx.messageSource()
+            source = ""
+            if src_ctx:
+                pr = src_ctx.participantRef()
+                if pr and pr.participantName():
+                    source = self._participant_name_text(pr.participantName())
+                elif src_ctx.LBRACK():
+                    source = "["
+                elif src_ctx.QMARK():
+                    source = "?"
+
+            # Target
+            tgt_ctx = ctx.messageTarget()
+            target = ""
+            if tgt_ctx:
+                pr = tgt_ctx.participantRef()
+                if pr and pr.participantName():
+                    target = self._participant_name_text(pr.participantName())
+                elif tgt_ctx.RBRACK():
+                    target = "]"
+                elif tgt_ctx.QMARK():
+                    target = "?"
+
+            # Arrow
+            arrow = ""
+            as_ctx = ctx.arrowSpec()
+            if as_ctx and as_ctx.ARROW():
+                arrow = as_ctx.ARROW().getText().strip()
+
+            # Label
+            label = ""
+            ml = ctx.messageLabel()
+            if ml:
+                label = ml.getText().strip()
+
+            self.messages.append({
+                "source": source,
+                "target": target,
+                "label": label,
+                "arrow": arrow,
+            })
+            return self.visitChildren(ctx)
+
+        def visitGroupBlock(self, ctx):
+            keyword = ""
+            gk = ctx.groupKeyword()
+            if gk:
+                keyword = gk.getText().strip()
+            label = ""
+            gl = ctx.groupLabel()
+            if gl:
+                label = gl.getText().strip()
+            self.groups.append({"keyword": keyword, "label": label})
+            return self.visitChildren(ctx)
+
+        def visitNoteStmt(self, ctx):
+            text = ""
+            rol = ctx.restOfLine()
+            if rol:
+                text = rol.getText().strip()
+            self.notes.append({"text": text})
+            return self.visitChildren(ctx)
+
+        def visitNoteBlock(self, ctx):
+            lines = []
+            for bl in (ctx.noteBodyLine() or []):
+                lines.append(bl.getText().strip())
+            text = "\n".join(lines) if lines else ""
+            self.notes.append({"text": text})
+            return self.visitChildren(ctx)
+
+        def visitActivateStmt(self, ctx):
+            self.activations += 1
+            return self.visitChildren(ctx)
+
+        def visitDeactivateStmt(self, ctx):
+            self.deactivations += 1
+            return self.visitChildren(ctx)
+
+        def visitDestroyStmt(self, ctx):
+            self.destroys += 1
+            return self.visitChildren(ctx)
+
+        def visitReturnStmt(self, ctx):
+            self.returns += 1
+            return self.visitChildren(ctx)
+
+        def visitBoxBlock(self, ctx):
+            name = ""
+            qs = ctx.QUOTED_STRING()
+            if qs:
+                name = self._strip_quotes(qs.getText().strip())
+            color = ""
+            cs = ctx.colorSpec()
+            if cs:
+                color = cs.getText().strip()
+            self.boxes.append({"name": name, "color": color})
+            return self.visitChildren(ctx)
+
+        def visitDividerStmt(self, ctx):
+            self.dividers += 1
+            return self.visitChildren(ctx)
+
+        def visitRefStmt(self, ctx):
+            self.refs += 1
+            return self.visitChildren(ctx)
+
+        def visitRefBlock(self, ctx):
+            self.refs += 1
+            return self.visitChildren(ctx)
+
+        def visitNewpageStmt(self, ctx):
+            self.newpages += 1
+            return self.visitChildren(ctx)
+
+        def visitCreateStmt(self, ctx):
+            self.creates += 1
+            return self.visitChildren(ctx)
+
+    try:
+        input_stream = InputStream(puml_text)
+        lexer = PlantUMLSequenceLexer(input_stream)
+        lexer.removeErrorListeners()
+        token_stream = CommonTokenStream(lexer)
+        parser = PlantUMLSequenceParser(token_stream)
+        parser.removeErrorListeners()
+        tree = parser.diagram()
+
+        visitor = _Visitor()
+        visitor.visit(tree)
+
+        return {
+            "title": visitor.title,
+            "participants": visitor.participants,
+            "messages": visitor.messages,
+            "groups": visitor.groups,
+            "notes": visitor.notes,
+            "activations": visitor.activations,
+            "deactivations": visitor.deactivations,
+            "destroys": visitor.destroys,
+            "returns": visitor.returns,
+            "boxes": visitor.boxes,
+            "dividers": visitor.dividers,
+            "refs": visitor.refs,
+            "newpages": visitor.newpages,
+            "creates": visitor.creates,
+        }
+    except Exception:
+        return {}
 
 
 # ───────────────────────────────────────────────
@@ -1469,6 +2434,11 @@ def _parse_sequence_diagram_svg(
     phase_texts: List[ET.Element] = []
     phase_label_rects: List[ET.Element] = []
     separator_lines: List[ET.Element] = []
+    # Note shapes: path pairs (folded corner), bare rects (rnote), polygons (hnote)
+    note_path_pairs: List[Tuple[ET.Element, ET.Element]] = []
+    note_rects: List[ET.Element] = []        # rnote rectangles
+    note_polygons: List[ET.Element] = []     # hnote hexagons
+    _prev_note_path: Optional[ET.Element] = None
 
     seen_activation_keys: set = set()
 
@@ -1485,10 +2455,47 @@ def _parse_sequence_diagram_svg(
 
         elif tag == "rect":
             h = float(child.get("height", 0))
+            w = float(child.get("width", 0))
             style = child.get("style", "")
+            rfill = child.get("fill", "none").lower()
+            # rnote rectangles: note fill color, wider than activation boxes
+            if rfill.startswith("#fe") and w > 30:
+                note_rects.append(child)
             # Phase label rects: ~19.5px tall, black stroke border
-            if 15 < h < 25 and "stroke:#000000" in style:
+            elif 15 < h < 25 and "stroke:#000000" in style:
                 phase_label_rects.append(child)
+
+        elif tag == "polygon":
+            # hnote hexagons: polygon with note fill color
+            pgfill = child.get("fill", "none").lower()
+            if pgfill.startswith("#fe") or pgfill.startswith("#fb"):
+                note_polygons.append(child)
+
+        elif tag == "path":
+            # Note paths: filled paths with note-like colors.
+            # Notes are always pairs (body + folded corner) in sequence.
+            # Note fills: #FEFFDD, #FEFFDD, #FBFB77, custom note colors
+            # Group/frame fills: #F0F0F0, #E0E0E0 — skip these
+            pfill = child.get("fill", "none")
+            pfill_lower = pfill.lower()
+            is_note_fill = (pfill_lower not in ("none", "")
+                            and pfill_lower.startswith("#")
+                            and pfill_lower not in ("#f0f0f0", "#e0e0e0",
+                                                     "#e2e2f0", "#ffffff"))
+            if is_note_fill:
+                if _prev_note_path is not None:
+                    # Check if same fill = pair (body + corner)
+                    prev_fill = _prev_note_path.get("fill", "").lower()
+                    if prev_fill == pfill_lower:
+                        note_path_pairs.append((_prev_note_path, child))
+                        _prev_note_path = None
+                    else:
+                        # Different fill — previous was orphan, start new
+                        _prev_note_path = child
+                else:
+                    _prev_note_path = child
+            # Don't reset on non-note paths — notes may be interleaved with
+            # other elements (group frames, etc.)
 
         elif tag == "line":
             # Bare <line> elements are phase separator rules
@@ -2011,6 +3018,159 @@ def _parse_sequence_diagram_svg(
             ),
         })
 
+    # ── Notes (path pairs with note fill + nearby text) ─────
+    # Collect all bare <text> elements for note text matching
+    all_bare_texts = [
+        c for c in root_g
+        if c.tag.rsplit("}", 1)[-1] == "text"
+    ]
+    for body_path, corner_path in note_path_pairs:
+        d = body_path.get("d", "")
+        bx, by, bw, bh = _path_bbox(d)
+        if bw < 1 or bh < 1:
+            continue
+        fill = body_path.get("fill", "#FEFFDD")
+        stroke_color, stroke_width = _extract_stroke(body_path)
+
+        # Find text elements inside the note bbox
+        note_texts: List[str] = []
+        for t in all_bare_texts:
+            tx = float(t.get("x", 0))
+            ty = float(t.get("y", 0))
+            if bx <= tx <= bx + bw and by <= ty <= by + bh:
+                txt = (t.text or "").strip()
+                if txt:
+                    note_texts.append(txt)
+
+        if not note_texts:
+            continue
+
+        label = note_texts[0]
+        note_body = "\n".join(note_texts)
+        label, _tech, note_body = _dedup_label_tech_note(label, "", note_body)
+        text_fmt = _extract_text_format(
+            [t for t in all_bare_texts
+             if bx <= float(t.get("x", 0)) <= bx + bw
+             and by <= float(t.get("y", 0)) <= by + bh])
+
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        # TODO: Replace "rect" with a dedicated "note" item type
+        note_meta: Dict[str, Any] = {
+            "label": label,
+            "tech": "",
+            "note": note_body,
+        }
+        note_meta.update(text_fmt)
+        annotations.append({
+            "id": ann_id,
+            "kind": "rect",
+            "geom": {
+                "x": round(bx, 2), "y": round(by, 2),
+                "w": round(bw, 2), "h": round(bh, 2),
+            },
+            "meta": note_meta,
+            "style": {
+                "pen": {
+                    "color": stroke_color,
+                    "width": stroke_width,
+                    "dash": "solid",
+                },
+                "fill": {"color": _safe_fill(fill)},
+            },
+        })
+
+    # ── rnotes (bare <rect> with note fill) ─────────────────
+    for nr in note_rects:
+        rx = float(nr.get("x", 0))
+        ry = float(nr.get("y", 0))
+        rw = float(nr.get("width", 0))
+        rh = float(nr.get("height", 0))
+        if rw < 1 or rh < 1:
+            continue
+        fill = nr.get("fill", "#FEFFDD")
+        stroke_color, stroke_width = _extract_stroke(nr)
+        note_texts = []
+        for t in all_bare_texts:
+            tx = float(t.get("x", 0))
+            ty = float(t.get("y", 0))
+            if rx <= tx <= rx + rw and ry <= ty <= ry + rh:
+                txt = (t.text or "").strip()
+                if txt:
+                    note_texts.append(txt)
+        if not note_texts:
+            continue
+        label = note_texts[0]
+        note_body = "\n".join(note_texts)
+        label, _tech, note_body = _dedup_label_tech_note(label, "", note_body)
+        text_fmt = _extract_text_format(
+            [t for t in all_bare_texts
+             if rx <= float(t.get("x", 0)) <= rx + rw
+             and ry <= float(t.get("y", 0)) <= ry + rh])
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        note_meta = {"label": label, "tech": "rnote", "note": note_body}
+        note_meta.update(text_fmt)
+        annotations.append({
+            "id": ann_id,
+            "kind": "rect",
+            "geom": {"x": round(rx, 2), "y": round(ry, 2),
+                     "w": round(rw, 2), "h": round(rh, 2)},
+            "meta": note_meta,
+            "style": {"pen": {"color": stroke_color, "width": stroke_width,
+                              "dash": "solid"},
+                      "fill": {"color": _safe_fill(fill)}},
+        })
+
+    # ── hnotes (bare <polygon> with note fill) ────────────
+    for np in note_polygons:
+        pts_str = np.get("points", "")
+        pts = re.findall(r'([-+]?\d*\.?\d+),([-+]?\d*\.?\d+)', pts_str)
+        if len(pts) < 4:
+            continue
+        xs = [float(p[0]) for p in pts]
+        ys = [float(p[1]) for p in pts]
+        px, py = min(xs), min(ys)
+        pw, ph = max(xs) - px, max(ys) - py
+        if pw < 1 or ph < 1:
+            continue
+        fill = np.get("fill", "#FEFFDD")
+        stroke_color, stroke_width = _extract_stroke(np)
+        note_texts = []
+        for t in all_bare_texts:
+            tx = float(t.get("x", 0))
+            ty = float(t.get("y", 0))
+            if px <= tx <= px + pw and py <= ty <= py + ph:
+                txt = (t.text or "").strip()
+                if txt:
+                    note_texts.append(txt)
+        if not note_texts:
+            continue
+        label = note_texts[0]
+        note_body = "\n".join(note_texts)
+        label, _tech, note_body = _dedup_label_tech_note(label, "", note_body)
+        text_fmt = _extract_text_format(
+            [t for t in all_bare_texts
+             if px <= float(t.get("x", 0)) <= px + pw
+             and py <= float(t.get("y", 0)) <= py + ph])
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        note_meta = {"label": label, "tech": "hnote", "note": note_body}
+        note_meta.update(text_fmt)
+        annotations.append({
+            "id": ann_id,
+            "kind": "polygon",
+            "geom": {"x": round(px, 2), "y": round(py, 2),
+                     "w": round(pw, 2), "h": round(ph, 2),
+                     "points": [[round((float(p[0]) - px) / pw, 4),
+                                  round((float(p[1]) - py) / ph, 4)]
+                                 for p in pts]},
+            "meta": note_meta,
+            "style": {"pen": {"color": stroke_color, "width": stroke_width,
+                              "dash": "solid"},
+                      "fill": {"color": _safe_fill(fill)}},
+        })
+
     _normalize_annotations(annotations)
     return {
         "version": "draft-1",
@@ -2173,6 +3333,240 @@ def _parse_deployment_source(puml_text: str) -> Dict[str, Dict[str, Any]]:
         visitor = _Visitor()
         visitor.visit(tree)
         return visitor.elements
+    except Exception:
+        return {}
+
+
+# ───────────────────────────────────────────────
+# ANTLR4-based PlantUML component source parser
+# ───────────────────────────────────────────────
+
+def _parse_component_source(puml_text: str) -> Dict[str, Any]:
+    """Parse PlantUML component diagram source with the ANTLR4 grammar.
+
+    Returns a dict with semantic elements extracted from the source::
+
+        {
+            "title": str,
+            "components": [{"name", "keyword", "alias", "stereotype", "color"}],
+            "interfaces": [{"name", "alias"}],
+            "groups": [{"keyword", "name", "color"}],
+            "relations": [{"source", "target", "label"}],
+            "notes": [{"text"}],
+            "sprites": [str],
+        }
+
+    Returns an empty dict if the grammar is unavailable or parsing fails.
+    """
+    try:
+        from antlr4 import CommonTokenStream, InputStream
+        from plantuml.grammar.generated.PlantUMLComponentLexer import PlantUMLComponentLexer
+        from plantuml.grammar.generated.PlantUMLComponentParser import PlantUMLComponentParser
+        from plantuml.grammar.generated.PlantUMLComponentVisitor import PlantUMLComponentVisitor
+    except ImportError:
+        return {}
+
+    def _strip_quotes(s: str) -> str:
+        if s and len(s) >= 2 and s[0] == '"' and s[-1] == '"':
+            return s[1:-1]
+        return s
+
+    def _ctx_original_text(ctx) -> str:
+        """Recover original source text (with whitespace) from a parse-tree node."""
+        if ctx is None:
+            return ""
+        start = ctx.start
+        stop = ctx.stop
+        if start is None or stop is None:
+            return ctx.getText()
+        stream = start.source[1]  # the InputStream
+        return stream.getText(start.start, stop.stop)
+
+    class _Visitor(PlantUMLComponentVisitor):
+        def __init__(self):
+            self.title: str = ""
+            self.components: List[Dict[str, str]] = []
+            self.interfaces: List[Dict[str, str]] = []
+            self.groups: List[Dict[str, str]] = []
+            self.relations: List[Dict[str, str]] = []
+            self.notes: List[Dict[str, str]] = []
+            self.sprites: List[str] = []
+
+        # ── helpers ──────────────────────────────────
+
+        def _get_alias(self, ctx) -> str:
+            ac = ctx.aliasClause() if hasattr(ctx, "aliasClause") else None
+            if ac and ac.elementName():
+                return _strip_quotes(ac.elementName().getText())
+            return ""
+
+        def _get_stereotype(self, ctx) -> str:
+            mods = ctx.componentModifier() if hasattr(ctx, "componentModifier") else []
+            for mod in mods:
+                sc = mod.stereotypeClause()
+                if sc:
+                    return sc.getText()  # e.g. <<Docker>>
+            return ""
+
+        def _get_color(self, ctx) -> str:
+            mods = ctx.componentModifier() if hasattr(ctx, "componentModifier") else []
+            for mod in mods:
+                c = mod.COLOR()
+                if c:
+                    return c.getText()
+            return ""
+
+        def _relation_ref_name(self, ref_ctx) -> str:
+            """Extract the name string from a relationRef context."""
+            if ref_ctx.BRACKET_COMP():
+                return ref_ctx.BRACKET_COMP().getText().strip("[]").strip()
+            if ref_ctx.QUOTED_STRING():
+                return _strip_quotes(ref_ctx.QUOTED_STRING().getText())
+            if ref_ctx.CIRCLE_IFACE() and ref_ctx.elementName():
+                return _strip_quotes(ref_ctx.elementName().getText())
+            if ref_ctx.ID():
+                return ref_ctx.ID().getText()
+            # Fallback for keyword tokens used as identifiers
+            txt = ref_ctx.getText()
+            return _strip_quotes(txt) if txt else ""
+
+        # ── visitor methods ──────────────────────────
+
+        def visitComponentFullDecl(self, ctx):
+            name = ""
+            keyword = "component"
+            if ctx.BRACKET_COMP():
+                raw = ctx.BRACKET_COMP().getText()
+                name = raw.strip("[]").strip()
+            elif ctx.elementName():
+                name = _strip_quotes(ctx.elementName().getText())
+            alias = self._get_alias(ctx)
+            stereotype = self._get_stereotype(ctx)
+            color = self._get_color(ctx)
+            if name:
+                self.components.append({
+                    "name": name,
+                    "keyword": keyword,
+                    "alias": alias,
+                    "stereotype": stereotype,
+                    "color": color,
+                })
+            return self.visitChildren(ctx)
+
+        def visitInterfaceDecl(self, ctx):
+            name = ""
+            if ctx.elementName():
+                name = _strip_quotes(ctx.elementName().getText())
+            alias = self._get_alias(ctx)
+            if name:
+                self.interfaces.append({
+                    "name": name,
+                    "alias": alias,
+                })
+            return self.visitChildren(ctx)
+
+        def visitPortDecl(self, ctx):
+            # Ports are treated like components with a port keyword
+            name = ""
+            keyword = "port"
+            if ctx.KW_PORTIN():
+                keyword = "portin"
+            elif ctx.KW_PORTOUT():
+                keyword = "portout"
+            if ctx.elementName():
+                name = _strip_quotes(ctx.elementName().getText())
+            alias = self._get_alias(ctx)
+            if name:
+                self.components.append({
+                    "name": name,
+                    "keyword": keyword,
+                    "alias": alias,
+                    "stereotype": "",
+                    "color": "",
+                })
+            return self.visitChildren(ctx)
+
+        def visitGroupBlock(self, ctx):
+            keyword = ctx.groupKeyword().getText() if ctx.groupKeyword() else ""
+            name = ""
+            if ctx.elementName():
+                name = _strip_quotes(ctx.elementName().getText())
+            color = self._get_color(ctx)
+            if name or keyword:
+                self.groups.append({
+                    "keyword": keyword,
+                    "name": name,
+                    "color": color,
+                })
+            return self.visitChildren(ctx)
+
+        def visitRelationStmt(self, ctx):
+            refs = ctx.relationRef()
+            if len(refs) >= 2:
+                source = self._relation_ref_name(refs[0])
+                target = self._relation_ref_name(refs[1])
+                label = ""
+                if ctx.restOfLine():
+                    label = _ctx_original_text(ctx.restOfLine()).strip()
+                self.relations.append({
+                    "source": source,
+                    "target": target,
+                    "label": label,
+                })
+            return self.visitChildren(ctx)
+
+        def visitNoteStmt(self, ctx):
+            text = ""
+            if ctx.restOfLine():
+                text = _ctx_original_text(ctx.restOfLine()).strip()
+            if text:
+                self.notes.append({"text": text})
+            return self.visitChildren(ctx)
+
+        def visitNoteBlock(self, ctx):
+            lines = []
+            for body_line in ctx.noteBodyLine():
+                raw = _ctx_original_text(body_line).strip()
+                if raw:
+                    lines.append(raw)
+            text = "\n".join(lines)
+            if text:
+                self.notes.append({"text": text})
+            return self.visitChildren(ctx)
+
+        def visitTitleStmt(self, ctx):
+            if ctx.restOfLine():
+                self.title = _ctx_original_text(ctx.restOfLine()).strip()
+            return self.visitChildren(ctx)
+
+        def visitSpriteDecl(self, ctx):
+            tag = ctx.TAG()
+            if tag:
+                # TAG is $name — strip the leading $
+                self.sprites.append(tag.getText().lstrip("$"))
+            return self.visitChildren(ctx)
+
+    try:
+        input_stream = InputStream(puml_text)
+        lexer = PlantUMLComponentLexer(input_stream)
+        lexer.removeErrorListeners()
+        token_stream = CommonTokenStream(lexer)
+        parser = PlantUMLComponentParser(token_stream)
+        parser.removeErrorListeners()
+        tree = parser.diagram()
+        if parser.getNumberOfSyntaxErrors() > 0:
+            return {}
+        visitor = _Visitor()
+        visitor.visit(tree)
+        return {
+            "title": visitor.title,
+            "components": visitor.components,
+            "interfaces": visitor.interfaces,
+            "groups": visitor.groups,
+            "relations": visitor.relations,
+            "notes": visitor.notes,
+            "sprites": visitor.sprites,
+        }
     except Exception:
         return {}
 
@@ -2405,31 +3799,58 @@ def _parse_description_diagram_svg(
             stroke_width = 1
 
             if ellipse_el is not None:
-                # Actor (stick figure) or use-case ellipse
                 cx = float(ellipse_el.get("cx", 0))
                 cy = float(ellipse_el.get("cy", 0))
                 rx = float(ellipse_el.get("rx", 8))
                 ry = float(ellipse_el.get("ry", 8))
-                all_x: List[float] = [cx - rx, cx + rx]
-                all_y: List[float] = [cy - ry, cy + ry]
-                if path_el is not None:
-                    d = path_el.get("d", "")
-                    for pm in re.finditer(
-                        r'[ML]\s*([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)',
-                        d,
-                    ):
-                        all_x.append(float(pm.group(1)))
-                        all_y.append(float(pm.group(2)))
-                x = min(all_x)
-                y = min(all_y)
-                geom = {
-                    "x": round(x, 2), "y": round(y, 2),
-                    "w": round(max(all_x) - x, 2),
-                    "h": round(max(all_y) - y, 2),
-                }
-                kind = "ellipse"
-                fill = ellipse_el.get("fill", "#FFFFFF")
-                stroke_color, stroke_width = _extract_stroke(ellipse_el)
+
+                if rects:
+                    # Interface entity: ellipse (circle icon) + rect (name box)
+                    # TODO: Replace "rect" with a dedicated "interface" item type
+                    main_rect = max(
+                        rects,
+                        key=lambda r: (
+                            float(r.get("width", 0)) * float(r.get("height", 0))
+                        ),
+                    )
+                    r_x = float(main_rect.get("x", 0))
+                    r_y = float(main_rect.get("y", 0))
+                    r_w = float(main_rect.get("width", 0))
+                    r_h = float(main_rect.get("height", 0))
+                    # Include ellipse in bounding box
+                    x = min(r_x, cx - rx)
+                    y = min(r_y, cy - ry)
+                    w = max(r_x + r_w, cx + rx) - x
+                    h = max(r_y + r_h, cy + ry) - y
+                    geom = {
+                        "x": round(x, 2), "y": round(y, 2),
+                        "w": round(w, 2), "h": round(h, 2),
+                    }
+                    kind = "rect"  # TODO: dedicated interface item type
+                    fill = main_rect.get("fill", "#FFFFFF")
+                    stroke_color, stroke_width = _extract_stroke(main_rect)
+                else:
+                    # Actor (stick figure) or use-case ellipse (no rect)
+                    all_x: List[float] = [cx - rx, cx + rx]
+                    all_y: List[float] = [cy - ry, cy + ry]
+                    if path_el is not None:
+                        d = path_el.get("d", "")
+                        for pm in re.finditer(
+                            r'[ML]\s*([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)',
+                            d,
+                        ):
+                            all_x.append(float(pm.group(1)))
+                            all_y.append(float(pm.group(2)))
+                    x = min(all_x)
+                    y = min(all_y)
+                    geom = {
+                        "x": round(x, 2), "y": round(y, 2),
+                        "w": round(max(all_x) - x, 2),
+                        "h": round(max(all_y) - y, 2),
+                    }
+                    kind = "ellipse"
+                    fill = ellipse_el.get("fill", "#FFFFFF")
+                    stroke_color, stroke_width = _extract_stroke(ellipse_el)
 
             elif rects:
                 # Find main rect (largest by area)
@@ -2453,13 +3874,41 @@ def _parse_description_diagram_svg(
                 stroke_color, stroke_width = _extract_stroke(main_rect)
 
             elif path_el is not None:
-                # Note shape or other path-based entity
-                d = path_el.get("d", "")
-                bx, by, bw, bh = _path_bbox(d)
-                geom = {"x": bx, "y": by, "w": bw, "h": bh}
-                kind = "roundedrect"
-                fill = path_el.get("fill", "#FFFFFF")
-                stroke_color, stroke_width = _extract_stroke(path_el)
+                # Check for interface entity: has ellipse + rect + path
+                # (ellipse = circle icon, rect = name box, path = decoration)
+                # TODO: Replace "rect" with a dedicated "interface" item type
+                ellipse_el = g.find(f"{{{ns}}}ellipse")
+                rect_el2 = g.find(f"{{{ns}}}rect")
+                if ellipse_el is not None and rect_el2 is not None:
+                    # Interface entity — use the rect as main geometry
+                    rx = float(rect_el2.get("x", 0))
+                    ry = float(rect_el2.get("y", 0))
+                    rw = float(rect_el2.get("width", 0))
+                    rh = float(rect_el2.get("height", 0))
+                    # Include the ellipse in the bounding box
+                    ecx = float(ellipse_el.get("cx", 0))
+                    ecy = float(ellipse_el.get("cy", 0))
+                    erx = float(ellipse_el.get("rx", 9))
+                    ex, ey = ecx - erx, ecy - erx
+                    x = min(rx, ex)
+                    y = min(ry, ey)
+                    w = max(rx + rw, ex + erx * 2) - x
+                    h = max(ry + rh, ey + erx * 2) - y
+                    geom = {
+                        "x": round(x, 2), "y": round(y, 2),
+                        "w": round(w, 2), "h": round(h, 2),
+                    }
+                    kind = "rect"  # TODO: dedicated interface item type
+                    fill = rect_el2.get("fill", "#FFFFFF")
+                    stroke_color, stroke_width = _extract_stroke(rect_el2)
+                else:
+                    # Note shape or other path-based entity
+                    d = path_el.get("d", "")
+                    bx, by, bw, bh = _path_bbox(d)
+                    geom = {"x": bx, "y": by, "w": bw, "h": bh}
+                    kind = "roundedrect"
+                    fill = path_el.get("fill", "#FFFFFF")
+                    stroke_color, stroke_width = _extract_stroke(path_el)
 
             else:
                 # Check for polygon-based entity (deployment node without
@@ -2532,24 +3981,69 @@ def _parse_description_diagram_svg(
                 continue
 
             texts = [t.text for t in g.findall(f"{{{ns}}}text") if t.text]
-            label = " ".join(texts)
+            all_paths = g.findall(f"{{{ns}}}path")
+            polys = g.findall(f"{{{ns}}}polygon")
 
-            link_path = g.find(f"{{{ns}}}path")
+            # Separate main link path (stroke, no fill) from note paths (filled)
+            link_path = None
+            note_paths = []
+            for p in all_paths:
+                pfill = p.get("fill", "none").lower()
+                if pfill in ("none", ""):
+                    if link_path is None:
+                        link_path = p
+                else:
+                    note_paths.append(p)
+
             style_str = (
                 link_path.get("style", "") if link_path is not None else ""
             )
             d_attr = (
                 link_path.get("d", "") if link_path is not None else ""
             )
-            polys = g.findall(f"{{{ns}}}polygon")
+            path_id = (
+                link_path.get("id", "") if link_path is not None else ""
+            )
+            arrow_mode = _detect_arrow_mode(polys, path_id)
+
+            # If note paths exist, split texts: first text = link label,
+            # remaining texts = note content
+            if note_paths:
+                link_label = texts[0] if texts else ""
+                note_texts = texts[1:] if len(texts) > 1 else []
+                # Extract note geometry from the first filled path
+                note_d = note_paths[0].get("d", "")
+                note_fill = note_paths[0].get("fill", "#FFFDE7")
+                nbx, nby, nbw, nbh = _path_bbox(note_d)
+                note_stroke_color, note_stroke_width = _extract_stroke(
+                    note_paths[0])
+                note_label = note_texts[0] if note_texts else ""
+                note_body = "\n".join(note_texts)
+                note_label, _nt, note_body = _dedup_label_tech_note(
+                    note_label, "", note_body)
+                text_fmt = _extract_text_format(
+                    g.findall(f"{{{ns}}}text"))
+                entity_info[f"__note_on_link_{len(entity_info)}"] = {
+                    "kind": "roundedrect",
+                    "geom": {"x": nbx, "y": nby, "w": nbw, "h": nbh},
+                    "fill": note_fill,
+                    "label": note_label,
+                    "tech": "",
+                    "note": note_body,
+                    "stroke_color": note_stroke_color or "#F57F17",
+                    "stroke_width": note_stroke_width or 1,
+                    **text_fmt,
+                }
+            else:
+                link_label = " ".join(texts)
 
             link_list.append({
                 "src_id": src_id,
                 "dst_id": dst_id,
-                "label": label,
+                "label": link_label,
                 "style": style_str,
                 "path_d": d_attr,
-                "has_arrowhead": len(polys) > 0,
+                "arrow_mode": arrow_mode,
             })
 
     if not cluster_info and not entity_info:
@@ -2722,7 +4216,7 @@ def _parse_description_diagram_svg(
         if has_curves:
             curve_nodes, (bx, by, bw, bh) = _parse_path_to_curve_nodes(d_attr)
             if curve_nodes and bw > 0 and bh > 0:
-                arrow = "end" if link.get("has_arrowhead") else "none"
+                arrow = link.get("arrow_mode", "end" if link.get("has_arrowhead") else "none")
                 ann_id = f"p{counter:06d}"
                 counter += 1
                 line_anns.append({
@@ -2748,7 +4242,7 @@ def _parse_description_diagram_svg(
             if len(coords) >= 4:
                 all_x = [float(coords[i]) for i in range(0, len(coords), 2)]
                 all_y = [float(coords[i]) for i in range(1, len(coords), 2)]
-                arrow = "end" if link.get("has_arrowhead") else "none"
+                arrow = link.get("arrow_mode", "end" if link.get("has_arrowhead") else "none")
                 ann_id = f"p{counter:06d}"
                 counter += 1
                 line_anns.append({
@@ -3764,6 +5258,7 @@ def _parse_state_diagram_svg(
                     "path_id": path_id,
                     "link_type": link_type,
                     "has_arrowhead": len(polys) > 0,
+                    "arrow_mode": _detect_arrow_mode(polys, path_id, link_type),
                     "text_fmt": link_text_fmt,
                 })
 
@@ -4383,12 +5878,11 @@ def _parse_state_diagram_svg(
         )
         pen_width = int(float(width_m.group(1))) if width_m else 2
 
-        # Association links → dashed, no arrowhead
+        # Use detected arrow mode (handles reverse, bidirectional, association)
+        arrow_mode = link.get("arrow_mode", "end" if link.get("has_arrowhead") else "none")
         if link.get("link_type") == "association":
             dashed = True
             arrow_mode = "none"
-        else:
-            arrow_mode = "end" if link.get("has_arrowhead") else "none"
 
         # Build meta with text formatting from link's <text> elements
         link_meta: Dict[str, Any] = {
@@ -4817,7 +6311,7 @@ def _build_annotations(
         if has_curves:
             curve_nodes, (bx, by, bw, bh) = _parse_path_to_curve_nodes(d_attr)
             if curve_nodes and bw > 0 and bh > 0:
-                arrow = "end" if conn.get("has_arrowhead") else "none"
+                arrow = conn.get("arrow_mode", "end" if conn.get("has_arrowhead") else "none")
                 ann_id = f"p{counter:06d}"
                 counter += 1
                 annotations.append({
@@ -4898,10 +6392,10 @@ def parse_puml_to_annotations(
     if svg_path:
         tree = ET.parse(svg_path)
         if tree.getroot().get("data-diagram-type") == "ACTIVITY":
-            return _parse_activity_diagram_svg(tree)
+            return _parse_activity_diagram_svg(tree, puml_text)
         if tree.getroot().get("data-diagram-type") == "SEQUENCE":
             return _parse_sequence_diagram_svg(tree)
-        if tree.getroot().get("data-diagram-type") == "DESCRIPTION":
+        if tree.getroot().get("data-diagram-type") in ("DESCRIPTION", "CLASS"):
             return _parse_description_diagram_svg(tree, puml_text)
         if tree.getroot().get("data-diagram-type") == "STATE":
             return _parse_state_diagram_svg(tree, puml_text)
@@ -4943,6 +6437,7 @@ def parse_puml_to_annotations(
                 _apply_svg_link_style(conn, svg_link["style"])
                 conn["path_d"] = svg_link.get("path_d", "")
                 conn["has_arrowhead"] = svg_link.get("has_arrowhead", False)
+                conn["arrow_mode"] = svg_link.get("arrow_mode", "end" if conn["has_arrowhead"] else "none")
 
         # Add SVG-only links not found by the text regex
         for key, svg_link in svg_link_map.items():
@@ -4955,6 +6450,7 @@ def parse_puml_to_annotations(
                     "color": None,
                     "path_d": svg_link.get("path_d", ""),
                     "has_arrowhead": svg_link.get("has_arrowhead", False),
+                    "arrow_mode": svg_link.get("arrow_mode", "end"),
                 }
                 _apply_svg_link_style(conn, svg_link["style"])
                 connections.append(conn)

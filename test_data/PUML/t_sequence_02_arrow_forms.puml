@@ -1,0 +1,193 @@
+@startuml t_sequence_02_arrow_forms
+title Sequence Diagram — All Arrow Forms\n(shaft × head × boundary × color × style)
+
+' Participants kept minimal — focus is entirely on arrow syntax
+participant "Sender"   as S
+participant "Receiver" as R
+participant "Third"    as T
+participant "Fourth"   as F
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. BASIC SOLID SHAFT  (single dash)
+' ══════════════════════════════════════════════════════════════════════════
+
+== Solid Shaft —  single dash ==
+
+S -> R  : solid right (->)
+S <- R  : solid left  (<-)
+S -> S  : self solid  (->)
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. DOTTED SHAFT  (double dash)
+' ══════════════════════════════════════════════════════════════════════════
+
+== Dotted Shaft — double dash ==
+
+S --> R  : dotted right (-->)
+S <-- R  : dotted left  (<--)
+S --> S  : self dotted  (-->)
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. DOUBLE-HEAD ARROWS  (>> and <<)
+' ══════════════════════════════════════════════════════════════════════════
+
+== Double-Head Arrows ==
+
+S ->> R   : solid double-head right  (->>)
+S -->> R  : dotted double-head right  (-->>)
+S <<- R   : solid double-head left   (<<-)
+S <<-- R  : dotted double-head left  (<<--)
+S ->> S   : self double-head (->>)
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. OPEN CIRCLE ARROWS  (o on one or both ends)
+' ══════════════════════════════════════════════════════════════════════════
+
+== Open Circle Arrows ==
+
+S ->o  R   : circle right solid   (->o)
+S -->o R   : circle right dotted  (-->o)
+S o->  R   : circle left-source solid  (o->)
+S o--> R   : circle left-source dotted (o-->)
+S o->o R   : both circles solid   (o->o)
+S o-->o R  : both circles dotted  (o-->o)
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. LOST / FOUND MESSAGE ARROWS  (x terminators)
+' ══════════════════════════════════════════════════════════════════════════
+
+== Lost / Found (x) Arrows ==
+
+S ->x  R   : lost message right  (->x)
+S -->x R   : lost dotted right   (-->x)
+S x->  R   : found message left  (x->)
+S x--> R   : found dotted left   (x-->)
+S x->x R   : found+lost          (x->x)
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. BOUNDARY / INCOMING / OUTGOING  ([ and ] borders)
+' ══════════════════════════════════════════════════════════════════════════
+
+== Boundary Arrows [ and ] ==
+
+[-> S   : incoming solid right   ([->)
+[--> S  : incoming dotted right  ([-->)
+[->  S  : incoming right (boundary)
+[-->  S : incoming dotted (boundary)
+S ->]   : outgoing solid right   (->])
+S -->]  : outgoing dotted right  (-->])
+[<- S   : incoming left  ([<-)
+S <-]   : outgoing left  (<-])
+
+' ══════════════════════════════════════════════════════════════════════════
+' 7. SHORT ARROWS  (? prefix/suffix — partial lifeline)
+' ══════════════════════════════════════════════════════════════════════════
+
+== Short Arrows ? ==
+
+?-> S   : short incoming right  (?->)
+?--> S  : short incoming dotted (?-->)
+S ->?   : short outgoing right  (->?)
+S -->?  : short outgoing dotted (-->?)
+
+' ══════════════════════════════════════════════════════════════════════════
+' 8. COLOR-MODIFIED ARROWS  -[#color]->
+' ══════════════════════════════════════════════════════════════════════════
+
+== Color-Modified Arrows -[#color]-> ==
+
+S -[#FF0000]-> R    : red solid right
+S -[#0000FF]--> R   : blue dotted right
+S -[#008800]->> R   : green double-head
+S -[#FF8800]->o R   : orange circle right
+S -[#800080]->x R   : purple lost
+S <-[#FF0000]- R    : red solid left
+S <--[#0000FF]- R   : blue dotted left
+S <<-[#008800]- R   : green double-head left
+S -[#red]-> R       : named color
+S -[#blue]--> R     : named color dotted
+
+' ══════════════════════════════════════════════════════════════════════════
+' 9. STYLED ARROWS  -[#color,style]->
+' ══════════════════════════════════════════════════════════════════════════
+
+== Styled Arrows -[#color,style]-> ==
+
+S -[#FF0000,bold]-> R       : red bold
+S -[#0000FF,dashed]-> R     : blue dashed
+S -[#008800,dotted]-> R     : green dotted
+S -[#FF8800,bold]--> R      : orange bold dotted
+S -[#800080,dashed]->> R    : purple dashed double-head
+S -[#000000,bold]->> R      : black bold double-head
+S -[hidden]-> R             : hidden arrow (layout only)
+
+' ══════════════════════════════════════════════════════════════════════════
+' 10. COMBINED FORMS (head × shaft × color × modifier)
+' ══════════════════════════════════════════════════════════════════════════
+
+== Combined Forms ==
+
+S -[#red,bold]->o  R   : red bold circle right
+S -[#blue,dashed]-->> R : blue dashed double dotted right
+S o-[#green]->o    R   : green both circles
+S x-[#red]->x      R   : red found+lost
+[-> S                  : incoming arrow
+S -[#red,dashed]->]    : outgoing colored dashed
+
+' ══════════════════════════════════════════════════════════════════════════
+' 11. ARROWS WITH LABELS — label forms
+' ══════════════════════════════════════════════════════════════════════════
+
+== Arrow Labels ==
+
+S -> R  : plain text label
+S --> R : **bold** label
+S ->> R : //italic// label
+S --> R : ""monospace"" label
+S -> R  : <color:red>colored</color> label
+S --> R : label with\nnewline
+S -> R  : label: with colon inside
+S --> R : [bracketed label text]
+S ->> R : <<stereotype>> as label
+
+' ══════════════════════════════════════════════════════════════════════════
+' 12. SELF ARROWS
+' ══════════════════════════════════════════════════════════════════════════
+
+== Self Arrows ==
+
+S -> S    : self solid
+S --> S   : self dotted
+S ->> S   : self double-head
+S ->o S   : self circle
+S -[#red]-> S : self colored
+
+note right of S
+    **Grammar targets (arrows):**
+    -> --> <- <--
+    ->> -->> <<- <<--
+    ->o o-> o->o
+    ->x x-> x->x
+    [-> [--> ->] -->]
+    ?-> ?--> ->? -->?
+    -[#color]->
+    -[#color,style]->
+    -[hidden]->
+    Self-arrows (S -> S)
+    All with optional label text
+end note
+
+note right of T
+    **Arrow modifier tokens:**
+    Shaft: - (solid)  -- (dotted)
+    Right heads: > >> o x
+    Left heads:  < << o x
+    Prefix/suffix: [ ] ?
+    Color mod: -[#RRGGBB]->
+    Style mod: -[#col,bold]->
+    -[#col,dashed]->
+    -[#col,dotted]->
+    -[hidden]->
+end note
+
+@enduml

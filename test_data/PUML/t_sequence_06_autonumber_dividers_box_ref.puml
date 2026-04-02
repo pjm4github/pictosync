@@ -1,0 +1,289 @@
+@startuml t_sequence_06_autonumber_dividers_box_ref
+title Sequence Diagram — Autonumber, Dividers, Delays, Spacers, Box, Ref, Newpage
+
+' ══════════════════════════════════════════════════════════════════════════
+' BOX declarations wrap participants visually
+' ══════════════════════════════════════════════════════════════════════════
+
+box "Frontend" #EEF2FF
+    participant "Browser" as BR
+    participant "Web App" as WA
+end box
+
+box "Backend Services" #E8F5E9
+    participant "API GW"  as GW
+    participant "Auth"    as AU
+    participant "Orders"  as OR
+end box
+
+box "Data Layer" #FFF8E1
+    participant "Primary DB" as PDB
+    participant "Cache"      as CA
+end box
+
+participant "External\nPayment API" as PAY
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. AUTONUMBER — basic form
+' ══════════════════════════════════════════════════════════════════════════
+
+== autonumber (plain) ==
+
+autonumber
+
+BR -> WA : loadPage()
+WA -> GW : GET /api/orders
+GW -> AU : validateSession()
+AU --> GW : valid
+GW -> OR : fetchOrders()
+OR -> PDB : SELECT * FROM orders
+PDB --> OR : rows
+OR --> GW : order list
+GW --> WA : JSON response
+WA --> BR : render page
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. AUTONUMBER START VALUE
+' ══════════════════════════════════════════════════════════════════════════
+
+== autonumber with start value ==
+
+autonumber 100
+
+BR -> GW : request 100
+GW --> BR : response 101
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. AUTONUMBER START + INCREMENT
+' ══════════════════════════════════════════════════════════════════════════
+
+== autonumber start + increment ==
+
+autonumber 10 10
+
+BR -> GW : request (10)
+GW -> AU : check (20)
+AU --> GW : ok (30)
+GW --> BR : done (40)
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. AUTONUMBER WITH FORMAT STRING
+' ══════════════════════════════════════════════════════════════════════════
+
+== autonumber format string ==
+
+autonumber "<b>[000]</b>"
+
+BR -> GW : formatted [001]
+GW -> AU : formatted [002]
+AU --> GW : formatted [003]
+GW --> BR : formatted [004]
+
+== autonumber with custom format ==
+
+autonumber 1 1 "<font color=blue><b>Message ##</b></font>"
+
+BR -> WA : msg 1
+WA -> GW : msg 2
+GW --> WA : msg 3
+WA --> BR : msg 4
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. AUTONUMBER STOP / RESUME
+' ══════════════════════════════════════════════════════════════════════════
+
+== autonumber stop ==
+
+autonumber 1
+
+BR -> GW : numbered 1
+GW --> BR : numbered 2
+
+autonumber stop
+
+BR -> WA : unnumbered
+WA --> BR : unnumbered
+
+autonumber resume
+
+BR -> GW : resumed (3)
+GW --> BR : resumed (4)
+
+== autonumber resume with new increment ==
+
+autonumber stop
+BR -> AU : stop gap
+AU --> BR : not numbered
+
+autonumber resume 5
+
+BR -> GW : resumed with inc=5 (9)
+GW --> BR : continued (14)
+
+== autonumber resume with format ==
+
+autonumber stop
+
+autonumber resume 2 "<i>(%d)</i>"
+
+BR -> GW : italic format
+GW --> BR : italic format
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. DIVIDERS  == text ==
+' ══════════════════════════════════════════════════════════════════════════
+
+autonumber stop
+
+== Simple divider ==
+
+BR -> GW : step A
+GW --> BR : result A
+
+== Divider with longer text label here ==
+
+BR -> GW : step B
+GW --> BR : result B
+
+== 特殊文字 Divider with Unicode ==
+
+BR -> GW : unicode step
+GW --> BR : unicode result
+
+== ==
+
+' Empty divider (just == ==) — edge case
+BR -> GW : after empty divider
+GW --> BR : ok
+
+' ══════════════════════════════════════════════════════════════════════════
+' 7. DELAYS  ...  and  ... text ...
+' ══════════════════════════════════════════════════════════════════════════
+
+== Delays ==
+
+BR -> PAY : initiatePayment()
+activate PAY
+
+...
+
+PAY --> BR : paymentPending
+
+... 5 minutes later ...
+
+PAY -> PDB : commitTransaction()
+activate PDB
+PDB --> PAY : committed
+deactivate PDB
+
+... processing ...
+
+PAY --> BR : paymentComplete
+deactivate PAY
+
+... waiting for async event ...
+
+BR -> GW : checkStatus()
+GW --> BR : status
+
+' ══════════════════════════════════════════════════════════════════════════
+' 8. SPACERS  |||  and  ||N||
+' ══════════════════════════════════════════════════════════════════════════
+
+== Spacers ==
+
+BR -> GW : before spacer
+GW --> BR : response
+
+|||
+
+BR -> GW : after single spacer
+GW --> BR : response
+
+||50||
+
+BR -> GW : after 50px spacer
+GW --> BR : response
+
+||20||
+
+BR -> WA : after 20px spacer
+WA --> BR : response
+
+|||
+
+' ══════════════════════════════════════════════════════════════════════════
+' 9. BOX — all forms
+' ══════════════════════════════════════════════════════════════════════════
+
+== Box forms (already declared at top) ==
+
+' Boxes were declared at the top of this diagram.
+' Additional interactions to exercise box grouping visibility:
+
+BR -> WA : intra-box (frontend)
+WA -> GW : cross-box (FE → BE)
+GW -> AU : intra-box (backend)
+AU -> OR : intra-box (backend)
+OR -> PDB : cross-box (BE → Data)
+PDB -> CA : intra-box (data)
+CA --> OR : cross-box (Data → BE)
+OR --> GW : backend internal
+GW --> WA : cross-box
+WA --> BR : frontend internal
+
+' ══════════════════════════════════════════════════════════════════════════
+' 10. REF — reference to external diagram
+' ══════════════════════════════════════════════════════════════════════════
+
+== ref (single participant) ==
+
+BR -> GW : triggerRef()
+
+ref over GW : See Authentication\nSubflow Diagram
+
+GW --> BR : triggered
+
+== ref (spanning participants) ==
+
+BR -> OR : complexOperation()
+
+ref over GW, OR
+    Order Processing Subflow
+    See: order-flow-diagram.puml
+    Steps 1-12
+end ref
+
+OR --> BR : operation complete
+
+== ref (multi-participant inline) ==
+
+ref over AU, OR, PDB : Data Validation\nRef Diagram
+
+' ══════════════════════════════════════════════════════════════════════════
+' 11. NEWPAGE
+' ══════════════════════════════════════════════════════════════════════════
+
+newpage
+
+== After newpage (page 2) ==
+
+BR -> GW : first message on page 2
+GW --> BR : response on page 2
+
+newpage Titled Second Page
+
+== After newpage with title ==
+
+BR -> AU : auth on titled page 2
+AU --> BR : auth response
+
+note over BR, GW
+    **Grammar targets:**
+    autonumber / autonumber N / autonumber N inc "format"
+    autonumber stop / autonumber resume
+    dividers, delays, spacing
+    box/end box, ref over, newpage
+end note
+
+@enduml

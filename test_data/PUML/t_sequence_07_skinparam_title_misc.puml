@@ -1,0 +1,284 @@
+@startuml t_sequence_07_skinparam_title_misc
+title Sequence Diagram — Skinparam, Title, Header, Footer,\nComments, hide footbox, pragma teoz
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. MULTI-LINE TITLE (title...end title block form)
+' ══════════════════════════════════════════════════════════════════════════
+
+' Note: title keyword above uses single-line form.
+' The block form is:
+'   title
+'   line one
+'   line two
+'   end title
+' (tested in comment form here; single-line used above)
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. HEADER and FOOTER
+' ══════════════════════════════════════════════════════════════════════════
+
+header
+    **Document Header**
+    System: OT Edge AI Platform
+    Version: 2.4.1
+    Classification: CONFIDENTIAL
+end header
+
+footer
+    Page %page% of %lastpage%
+    Generated: 2026-03-31
+    © Pictosync Systems
+end footer
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. SKINPARAM — all sequence-relevant forms
+' ══════════════════════════════════════════════════════════════════════════
+
+skinparam backgroundColor #FEFEFE
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+
+skinparam sequenceArrowThickness 1.5
+skinparam sequenceGroupBorderThickness 1.2
+skinparam sequenceLifeLineBorderThickness 1.0
+skinparam sequenceLifeLineBackgroundColor #FFFFFF
+skinparam sequenceGroupBorderColor #666666
+
+skinparam sequence {
+    ArrowColor #444444
+    ArrowFontSize 10
+    ArrowFontColor #333333
+    LifeLineBorderColor #888888
+    LifeLineBackgroundColor #EEEEEE
+    ParticipantBorderColor #2C7BB6
+    ParticipantBackgroundColor #E8F4FD
+    ParticipantFontSize 12
+    ParticipantFontColor #000000
+    ActorBorderColor #E65100
+    ActorBackgroundColor #FFF3E0
+    ActorFontSize 12
+    BoxBackgroundColor #F8F9FA
+    BoxBorderColor #CCCCCC
+    GroupBorderColor #555555
+    GroupBackgroundColor #F0F0F0
+    GroupFontSize 11
+    GroupFontColor #333333
+    GroupHeaderFontSize 12
+    DividerBackgroundColor #E0E0E0
+    DividerBorderColor #AAAAAA
+    DividerBorderThickness 1
+    DividerFontColor #444444
+    DividerFontSize 11
+    NoteBackgroundColor #FFFDE7
+    NoteBorderColor #F9A825
+    NoteFontColor #4E342E
+    NoteFontSize 10
+    ReferenceBackgroundColor #E8F5E9
+    ReferenceBorderColor #2E7D32
+    ReferenceFontSize 10
+}
+
+skinparam participant {
+    Padding 5
+    BorderThickness 1.2
+}
+
+skinparam actor {
+    BorderThickness 1.0
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. HIDE FOOTBOX
+' ══════════════════════════════════════════════════════════════════════════
+
+hide footbox
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. PRAGMA TEOZ — enables multiline arrow anchoring
+' ══════════════════════════════════════════════════════════════════════════
+
+!pragma teoz true
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. PARTICIPANTS (styled by skinparam above)
+' ══════════════════════════════════════════════════════════════════════════
+
+actor     "Grid Operator"     as OP
+boundary  "API Gateway"       as GW
+control   "Auth Controller"   as AC
+entity    "Order Entity"      as OE
+database  "TimescaleDB"       as DB
+queue     "NATS Queue"        as NQ
+participant "Edge AI Node"    as AI
+
+' ══════════════════════════════════════════════════════════════════════════
+' 7. SINGLE-LINE COMMENTS  '
+' ══════════════════════════════════════════════════════════════════════════
+
+' This is a single-line comment — ignored by parser
+' Comments can appear anywhere between statements
+' Multiple consecutive comments are valid
+
+OP -> GW : login request
+' comment between messages
+GW -> AC : authenticate
+' another comment
+AC --> GW : token
+' final comment before response
+GW --> OP : session token
+
+' ══════════════════════════════════════════════════════════════════════════
+' 8. MULTI-LINE COMMENTS  /' ... '/
+' ══════════════════════════════════════════════════════════════════════════
+
+/' 
+    This is a multi-line comment block.
+    It can span multiple lines.
+    It is completely ignored by the parser.
+    Useful for temporarily disabling sections.
+    
+    participant "Disabled" as DIS
+    DIS -> GW : this message is commented out
+'/
+
+OP -> GW : data request
+
+/'
+    Another multi-line comment.
+    GW -> DB : this is hidden
+    DB --> GW : hidden response
+'/
+
+GW -> DB : actual data query
+DB --> GW : data
+
+' ══════════════════════════════════════════════════════════════════════════
+' 9. TEOZ PRAGMA — multiline arrow (concurrent arrows)
+' ══════════════════════════════════════════════════════════════════════════
+
+== teoz concurrent arrows ==
+
+OP -> GW : startConcurrentOp() {start}
+GW -> AC : validateAsync()
+AC --> GW : valid
+GW -> NQ : enqueueJob() {end}
+GW --> OP : jobQueued
+
+NQ -> AI : processJob()
+activate AI
+AI -> DB : storeResult()
+activate DB
+DB --> AI : stored
+deactivate DB
+AI --> NQ : jobComplete
+deactivate AI
+
+' ══════════════════════════════════════════════════════════════════════════
+' 10. FULL DIAGRAM EXERCISE — all features together
+' ══════════════════════════════════════════════════════════════════════════
+
+== full integration ==
+
+autonumber 1 1 "<b>(%d)</b>"
+
+OP -> GW : submitOrder(payload)
+activate GW #FFE0B2
+
+note right of OP : operator initiates order
+
+alt payload valid
+    GW -> AC : authorize(token)
+    activate AC #E3F2FD
+
+    opt token cached
+        AC -> DB : checkTokenCache()
+        activate DB #E8F5E9
+        DB --> AC : cached token data
+        deactivate DB
+    end
+
+    AC --> GW : authorized
+    deactivate AC
+
+    GW -> OE : createOrder(payload)
+    activate OE #FCE4EC
+
+    loop up to 3 retries
+        OE -> DB : persistOrder()
+        activate DB
+        
+        break on DB error
+            OE --> GW : persistence failed
+        end
+        
+        DB --> OE : orderId=42
+        deactivate DB
+    end
+
+    OE -> NQ : publishOrderEvent()
+    activate NQ
+    NQ --> OE : published
+    deactivate NQ
+
+    par async notifications
+        NQ -> AI : analyzeOrder()
+        activate AI
+        AI -> DB : storeAnalysis()
+        activate DB
+        DB --> AI : stored
+        deactivate DB
+        AI --> NQ : analysis complete
+        deactivate AI
+    else async logging
+        NQ -> DB : logEvent()
+        activate DB
+        DB --> NQ : logged
+        deactivate DB
+    end
+
+    OE --> GW : order 42 created
+    deactivate OE
+
+    GW --> OP : 201 Created\norderId=42
+    deactivate GW
+
+else payload invalid
+    GW --> OP : 400 Bad Request
+    deactivate GW
+end
+
+autonumber stop
+
+... processing async events ...
+
+|||
+
+== async completion ==
+
+NQ -> OP : orderConfirmed(42)
+
+note over OP, GW
+    Order lifecycle complete.
+    All async events processed.
+end note
+
+== end of document ==
+
+note right of AI
+    **Grammar targets (misc):**
+    title (single + multi-line)
+    header / end header
+    footer / end footer
+    skinparam key value
+    skinparam key { block }
+    skinparam type<<stereo>> { }
+    hide footbox
+    show footbox
+    !pragma teoz true
+    ' single-line comment
+    /' multi-line comment '/
+    autonumber formats
+    Concurrent teoz arrows {start}{end}
+end note
+
+@enduml

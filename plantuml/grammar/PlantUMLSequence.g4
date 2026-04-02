@@ -181,8 +181,37 @@ diagram
 
 // Optional filename after @startuml
 filenameHint
-    : ID ( DOT ID )*
+    : ( ID | INT )+ ( DOT ( ID | INT )+ )*
     | QUOTED_STRING
+    ;
+
+// ── Generic rest-of-line — consumes mixed tokens until NEWLINE ────────────
+restOfLine
+    : ( ID | QUOTED_STRING | INT | COLOR | FREE_TEXT
+      | COLON | COMMA | BANG | FSLASH | PLUS | LPAREN | RPAREN
+      | LBRACK | RBRACK | LBRACE | RBRACE | QMARK | DOT
+      | STEREOTYPE_OPEN
+      | ARROW | BIDIR_ARROW
+      | LL_ACTIVATE | LL_DEACTIVATE | LL_CREATE | LL_DESTROY
+      | SPACER | SPACER_N | DELAY | HIER_NUM
+      | participantKeyword
+      | KW_AS | KW_ORDER | KW_CREATE | KW_OF | KW_OVER | KW_ACROSS
+      | KW_ON | KW_OFF | KW_LEFT | KW_RIGHT
+      | KW_ACTIVATE | KW_DEACTIVATE | KW_DESTROY | KW_RETURN
+      | KW_AUTOACTIVATE | KW_AUTONUMBER | KW_STOP | KW_RESUME
+      | KW_INC | KW_A | KW_B
+      | KW_ALT | KW_ELSE | KW_OPT | KW_LOOP | KW_PAR
+      | KW_BREAK | KW_CRITICAL | KW_GROUP | KW_PARTITION
+      | KW_NOTE | KW_HNOTE | KW_RNOTE | KW_REF | KW_BOX
+      | KW_END | KW_TITLE | KW_HEADER | KW_FOOTER
+      | KW_NEWPAGE | KW_IGNORE | KW_PRAGMA | KW_SKINPARAM | KW_HIDE
+      )+
+    ;
+
+// Participant type keywords (shared rule for reuse)
+participantKeyword
+    : KW_PARTICIPANT | KW_ACTOR | KW_BOUNDARY | KW_CONTROL
+    | KW_ENTITY | KW_DATABASE | KW_COLLECTIONS | KW_QUEUE
     ;
 
 // ── Statement dispatcher ──────────────────────────────────────────────────
@@ -214,6 +243,7 @@ statement
     | anchorStmt      NEWLINE+
     | durationStmt    NEWLINE+
     | pragmaStmt      NEWLINE+
+    | skinparamBlock
     | skinparamStmt   NEWLINE+
     | hidestmt        NEWLINE+
     | COMMENT_SINGLE  NEWLINE+
@@ -232,26 +262,31 @@ statement
 participantDecl
     : participantType participantName
       aliasClause?
-      colorSpec?
-      orderClause?
-      stereotypeClause?
+      participantModifier*
       multiBody?
     ;
 
+participantModifier
+    : colorSpec
+    | orderClause
+    | stereotypeClause
+    ;
+
 participantType
-    : KW_PARTICIPANT
-    | KW_ACTOR
-    | KW_BOUNDARY
-    | KW_CONTROL
-    | KW_ENTITY
-    | KW_DATABASE
-    | KW_COLLECTIONS
-    | KW_QUEUE
+    : participantKeyword
     ;
 
 participantName
     : QUOTED_STRING
     | ID
+    // Keywords that can appear as participant names/aliases
+    | KW_A | KW_B | KW_ON | KW_OFF | KW_LEFT | KW_RIGHT
+    | KW_NOTE | KW_HNOTE | KW_RNOTE | KW_STOP | KW_RESUME | KW_END
+    | KW_ACTIVATE | KW_DEACTIVATE | KW_DESTROY | KW_RETURN
+    | KW_LOOP | KW_ALT | KW_GROUP | KW_BREAK | KW_CRITICAL
+    | KW_REF | KW_BOX | KW_PARTITION | KW_PAR | KW_OPT
+    | KW_OVER | KW_ACROSS | KW_OF | KW_ORDER | KW_CREATE
+    | KW_TITLE | KW_HEADER | KW_FOOTER
     ;
 
 aliasClause
@@ -272,7 +307,8 @@ stereotypeClause
 
 // Stereotype body: optional spot "(C,#color)" followed by optional text
 stereotypeBody
-    : spotSpec? freeText?
+    : spotSpec? ( ID | FREE_TEXT | participantKeyword | KW_LEFT | KW_RIGHT
+                 | KW_ON | KW_OFF | KW_A | KW_B )*
     ;
 
 spotSpec
@@ -292,7 +328,7 @@ multiBody
     ;
 
 multiBodyLine
-    : FREE_TEXT NEWLINE+
+    : restOfLine NEWLINE+
     | NEWLINE+
     ;
 
@@ -300,7 +336,7 @@ multiBodyLine
 // create [participantType] participantName
 
 createStmt
-    : KW_CREATE participantType? participantName
+    : KW_CREATE participantType? participantName aliasClause? participantModifier*
     ;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -339,10 +375,9 @@ messageTarget
     | QMARK              // ?  short outgoing
     ;
 
-// Participant reference in message: quoted or bare id
+// Participant reference in message: quoted, bare id, or keyword-as-name
 participantRef
-    : QUOTED_STRING
-    | ID
+    : participantName
     ;
 
 // ── Arrow specification ───────────────────────────────────────────────────
@@ -372,9 +407,9 @@ lifelineShorthand
     | LL_DESTROY                 // !!
     ;
 
-// Message label: free text to end of line
+// Message label: free text to end of line (includes >> for <<create>> etc.)
 messageLabel
-    : FREE_TEXT
+    : ( restOfLine | STEREOTYPE_CLOSE )+
     ;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -394,7 +429,7 @@ destroyStmt
     ;
 
 returnStmt
-    : KW_RETURN FREE_TEXT?
+    : KW_RETURN restOfLine?
     ;
 
 autoactivateStmt
@@ -425,6 +460,7 @@ autonumberArgs
     | KW_RESUME autonumberStart? QUOTED_STRING?
     | KW_INC ( KW_A | KW_B )
     | autonumberStart INT? QUOTED_STRING?
+    | QUOTED_STRING                               // format-only: autonumber "fmt"
     ;
 
 // Start number: plain integer or hierarchical dotted/delimited form
@@ -458,11 +494,11 @@ groupKeyword
     ;
 
 groupLabel
-    : FREE_TEXT ( LBRACK FREE_TEXT RBRACK )?    // group Label [secondary]
+    : restOfLine ( LBRACK restOfLine RBRACK )?    // group Label [secondary]
     ;
 
 elseBranch
-    : KW_ELSE FREE_TEXT? NEWLINE+
+    : KW_ELSE restOfLine? NEWLINE+
       statement*
     ;
 
@@ -472,7 +508,7 @@ elseBranch
 //   end
 
 partitionBlock
-    : KW_PARTITION FREE_TEXT? NEWLINE+
+    : KW_PARTITION restOfLine? NEWLINE+
           statement*
       KW_END NEWLINE+
     ;
@@ -498,7 +534,7 @@ partitionBlock
 
 // Single-line note on same line
 noteStmt
-    : noteAlign? noteKeyword notePosition colorSpec? COLON FREE_TEXT
+    : noteAlign? noteKeyword notePosition colorSpec? COLON restOfLine
     ;
 
 // Multi-line note block
@@ -525,7 +561,7 @@ notePosition
     ;
 
 noteBodyLine
-    : FREE_TEXT NEWLINE+
+    : ( restOfLine | DIVIDER | LBRACE | RBRACE | STEREOTYPE_CLOSE )+ NEWLINE+
     | NEWLINE+
     ;
 
@@ -546,7 +582,7 @@ noteEndKeyword
 // ═══════════════════════════════════════════════════════════════════════════
 
 refStmt
-    : KW_REF KW_OVER participantRef ( COMMA participantRef )* COLON FREE_TEXT
+    : KW_REF KW_OVER participantRef ( COMMA participantRef )* COLON restOfLine
     ;
 
 refBlock
@@ -580,8 +616,31 @@ boxBlock
 // ═══════════════════════════════════════════════════════════════════════════
 
 dividerStmt
-    : DIVIDER FREE_TEXT? DIVIDER   // == text ==  (DIVIDER is ==)
-    | DELAY                        // ...  or  ...text...
+    : DIVIDER dividerContent? DIVIDER   // == text ==  (DIVIDER is ==)
+    | DELAY                             // ...  or  ...text...
+    ;
+
+// Content between == ... == dividers — any tokens except DIVIDER and NEWLINE
+dividerContent
+    : ( ID | QUOTED_STRING | INT | COLOR | FREE_TEXT
+      | COLON | COMMA | BANG | FSLASH | PLUS | LPAREN | RPAREN
+      | LBRACK | RBRACK | QMARK | DOT
+      | ARROW | BIDIR_ARROW
+      | LL_ACTIVATE | LL_DEACTIVATE | LL_CREATE | LL_DESTROY
+      | participantKeyword
+      | KW_AS | KW_ORDER | KW_CREATE | KW_OF | KW_OVER
+      | KW_ON | KW_OFF | KW_LEFT | KW_RIGHT | KW_A | KW_B
+      | KW_ACTIVATE | KW_DEACTIVATE | KW_DESTROY | KW_RETURN
+      | KW_ALT | KW_ELSE | KW_OPT | KW_LOOP | KW_PAR
+      | KW_BREAK | KW_CRITICAL | KW_GROUP | KW_NOTE
+      | KW_END | KW_TITLE | KW_HEADER | KW_FOOTER
+      | KW_STOP | KW_RESUME | KW_INC
+      | KW_AUTOACTIVATE | KW_AUTONUMBER
+      | KW_SKINPARAM | KW_HIDE | KW_PRAGMA
+      | KW_BOX | KW_REF | KW_PARTITION | KW_NEWPAGE | KW_IGNORE
+      | STEREOTYPE_OPEN | STEREOTYPE_CLOSE
+      | LBRACE | RBRACE
+      )+
     ;
 
 spacerStmt
@@ -594,7 +653,7 @@ spacerStmt
 // ═══════════════════════════════════════════════════════════════════════════
 
 titleStmt
-    : KW_TITLE FREE_TEXT
+    : KW_TITLE restOfLine
     ;
 
 titleBlock
@@ -604,11 +663,17 @@ titleBlock
     ;
 
 headerStmt
-    : KW_HEADER FREE_TEXT
+    : KW_HEADER restOfLine          // single-line
+    | KW_HEADER NEWLINE+            // multi-line block
+          noteBodyLine+
+      KW_END_HEADER NEWLINE+
     ;
 
 footerStmt
-    : KW_FOOTER FREE_TEXT
+    : KW_FOOTER restOfLine          // single-line
+    | KW_FOOTER NEWLINE+            // multi-line block
+          noteBodyLine+
+      KW_END_FOOTER NEWLINE+
     ;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -619,7 +684,7 @@ footerStmt
 
 newpageStmt
     : KW_IGNORE KW_NEWPAGE
-    | KW_NEWPAGE FREE_TEXT?
+    | KW_NEWPAGE restOfLine?
     ;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -634,7 +699,7 @@ anchorStmt
     ;
 
 durationStmt
-    : LBRACE ID RBRACE BIDIR_ARROW LBRACE ID RBRACE ( COLON FREE_TEXT )?
+    : LBRACE ID RBRACE BIDIR_ARROW LBRACE ID RBRACE ( COLON restOfLine )?
     ;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -646,23 +711,35 @@ durationStmt
 // ═══════════════════════════════════════════════════════════════════════════
 
 pragmaStmt
-    : BANG KW_PRAGMA ID FREE_TEXT?
+    : BANG KW_PRAGMA ID restOfLine?
+    | BANG ID restOfLine?            // !theme, !define, !include, etc.
     ;
 
 skinparamStmt
-    : KW_SKINPARAM ID FREE_TEXT?
+    : KW_SKINPARAM ( ID | participantKeyword ) restOfLine?
+    ;
+
+skinparamBlock
+    : KW_SKINPARAM ( ID | participantKeyword ) LBRACE NEWLINE+
+          skinparamEntry*
+      RBRACE NEWLINE+
+    ;
+
+skinparamEntry
+    : restOfLine NEWLINE+
+    | NEWLINE+
     ;
 
 hidestmt
-    : KW_HIDE FREE_TEXT?
+    : KW_HIDE restOfLine?
     ;
 
 // ── Free text (label content) ─────────────────────────────────────────────
-// Placeholder rule — parser rules reference FREE_TEXT token directly.
-// The visitor joins multiple FREE_TEXT tokens when they appear.
+// Placeholder rule — parser rules reference restOfLine token directly.
+// The visitor joins multiple restOfLine tokens when they appear.
 
 freeText
-    : FREE_TEXT
+    : restOfLine
     ;
 
 
@@ -758,10 +835,12 @@ KW_BOX       : 'box' ;
 
 // ── Title / header / footer ───────────────────────────────────────────────
 // "end title" — compound; declared before KW_END so it wins.
-KW_END_TITLE : 'end' [ \t]+ 'title' ;
-KW_TITLE     : 'title' ;
-KW_HEADER    : 'header' ;
-KW_FOOTER    : 'footer' ;
+KW_END_TITLE  : 'end' [ \t]+ 'title' ;
+KW_END_HEADER : 'end' [ \t]+ 'header' ;
+KW_END_FOOTER : 'end' [ \t]+ 'footer' ;
+KW_TITLE      : 'title' ;
+KW_HEADER     : 'header' ;
+KW_FOOTER     : 'footer' ;
 
 // KW_END declared after ALL compound "end X" forms so that longer literals
 // (KW_END_NOTE, KW_END_TITLE, etc.) win when the lexer sees those sequences.
@@ -907,6 +986,7 @@ BANG : '!' ;
 
 // ── Punctuation ───────────────────────────────────────────────────────────
 
+PLUS     : '+' ;
 LPAREN   : '(' ;
 RPAREN   : ')' ;
 LBRACK   : '[' ;
@@ -945,11 +1025,12 @@ COMMENT_MULTI
     ;
 
 // ── Free text (label, title, note body, etc.) ────────────────────────────
-// Catch-all for anything remaining on a line that is not a structural token.
-// Stops at newlines.  Declared last so all structural tokens take priority.
+// Restricted: must NOT start with chars that begin structural tokens.
+// This prevents FREE_TEXT from consuming keyword-led lines.
 
 FREE_TEXT
-    : ~[\r\n]+
+    : ~[a-zA-Z0-9_"'()[\]{}<>#$@!:,*/~=\-.\r\n \t|+] ~[\r\n]*
+    | [&%^;?\\`] ~[\r\n]*
     ;
 
 // ── Newline ───────────────────────────────────────────────────────────────

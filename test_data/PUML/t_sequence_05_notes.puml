@@ -1,0 +1,259 @@
+@startuml t_sequence_05_notes
+title Sequence Diagram — Notes\n(note/rnote/hnote, left/right/over, spanning, color, multiline, across)
+
+participant "Alice"  as A
+participant "Bob"    as B
+participant "Carol"  as C
+participant "Dave"   as D
+participant "Eve"    as E
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. POSITIONAL NOTES — note left of / note right of
+' ══════════════════════════════════════════════════════════════════════════
+
+== note left of / note right of ==
+
+A -> B : message one
+
+note left of A : single-line note LEFT of A
+note right of B : single-line note RIGHT of B
+
+A -> B : message two
+
+note left of A
+    Multi-line note
+    left of A
+    three lines here
+end note
+
+note right of B
+    Multi-line note
+    right of B
+    with **bold** text
+    and //italic// text
+end note
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. NOTE OVER — single participant
+' ══════════════════════════════════════════════════════════════════════════
+
+== note over (single) ==
+
+A -> B : trigger note over
+
+note over A : single-line over A
+
+note over B
+    Multi-line note
+    over B
+end note
+
+note over C : note over C (not in message flow)
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. NOTE OVER — spanning two participants
+' ══════════════════════════════════════════════════════════════════════════
+
+== note over spanning ==
+
+A -> B : before spanning note
+
+note over A,B : spanning A and B (single-line)
+
+A -> C : wider span
+
+note over A,C
+    Spanning note over
+    A, B, and C
+    Multi-line spanning
+end note
+
+B -> D : even wider
+
+note over B,D : spanning B through D
+
+A -> E : full span
+
+note over A,E
+    Full span note
+    covering all five participants
+    A through E
+end note
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. NOTE ACROSS — full-width note
+' ══════════════════════════════════════════════════════════════════════════
+
+== note across ==
+
+A -> B : before across note
+
+note across : single-line across (full width)
+
+A -> C : another message
+
+note across
+    Multi-line across note
+    spanning the entire diagram width
+    regardless of participant count
+end note
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. COLORED NOTES  note #color
+' ══════════════════════════════════════════════════════════════════════════
+
+== colored notes ==
+
+A -> B : triggering colored notes
+
+note left of A #FF8888 : red left note
+note right of B #88FF88 : green right note
+note over A #FFE0B2 : orange over note
+note over B #E3F2FD : blue over note
+
+note over A,B #E8F5E9
+    Green spanning note
+    with color applied
+end note
+
+note right of C #LightYellow
+    Named color note
+    on the right side
+end note
+
+note across #FCE4EC : pink across note
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. RNOTE — rectangular note shape
+' ══════════════════════════════════════════════════════════════════════════
+
+== rnote (rectangular) ==
+
+A -> B : triggering rnotes
+
+rnote left of A : rnote left (rectangular)
+rnote right of B : rnote right (rectangular)
+rnote over A : rnote over A
+rnote over B
+    rnote multi-line
+    rectangular shape
+    over B
+end rnote
+
+rnote over A,B : rnote spanning A,B
+rnote over A,C #E3F2FD : colored rnote spanning
+
+' ══════════════════════════════════════════════════════════════════════════
+' 7. HNOTE — hexagonal note shape
+' ══════════════════════════════════════════════════════════════════════════
+
+== hnote (hexagonal) ==
+
+A -> B : triggering hnotes
+
+hnote left of A : hnote left (hexagonal)
+hnote right of B : hnote right (hexagonal)
+hnote over A : hnote over A
+hnote over B
+    hnote multi-line
+    hexagonal shape
+    over B
+end hnote
+
+hnote over A,B : hnote spanning A,B
+hnote over B,D #FFF3E0 : colored hnote spanning
+
+' ══════════════════════════════════════════════════════════════════════════
+' 8. CREOLE MARKUP INSIDE NOTES
+' ══════════════════════════════════════════════════════════════════════════
+
+== creole in notes ==
+
+A -> B : triggering creole-rich note
+
+note over A,B
+    **Bold text** in note
+    //Italic text// in note
+    ""Monospace"" in note
+    --Strikethrough-- in note
+    __Underline__ in note
+    <color:red>Red text</color>
+    <back:yellow>Highlighted</back>
+    <size:14>Larger text</size>
+    ====
+    Horizontal rule
+    ----
+    Another rule
+    * Bullet one
+    * Bullet two
+    ** Sub-bullet
+    # Numbered one
+    # Numbered two
+end note
+
+note right of E
+    **Hyperlink in note:**
+    [[http://example.com link]]
+    [[http://example.com{tooltip} link]]
+end note
+
+' ══════════════════════════════════════════════════════════════════════════
+' 9. NOTES LINKED TO ARROWS (note on link)
+' ══════════════════════════════════════════════════════════════════════════
+
+== notes interleaved with messages ==
+
+A -> B : first message
+note right of B : immediate right note
+
+B --> A : first response
+note left of A : immediate left note
+
+A -> C : second message
+note over A,C
+    Note spanning the
+    just-sent message
+end note
+
+C --> A : second response
+
+' ══════════════════════════════════════════════════════════════════════════
+' 10. ENDNOTE / ENDRNOTE / ENDHNOTE (alternative end keywords)
+' ══════════════════════════════════════════════════════════════════════════
+
+== endnote / endrnote / endhnote ==
+
+A -> B : triggering alt end keywords
+
+note over A
+    Using endnote
+    instead of end note
+endnote
+
+rnote over B
+    Using endrnote
+    instead of end rnote
+endrnote
+
+hnote over C
+    Using endhnote
+    instead of end hnote
+endhnote
+
+note right of D
+    **Grammar targets (notes):**
+    note left of ALIAS : text
+    note right of ALIAS : text
+    note over ALIAS : text
+    note over A,B : spanning
+    note across : full width
+    note #color
+    note over A\n...\nend note
+    note over A\n...\nendnote
+    rnote / end rnote / endrnote
+    hnote / end hnote / endhnote
+    Creole markup inside notes
+    Colored notes (#RRGGBB, #name)
+end note
+
+@enduml

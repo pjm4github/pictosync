@@ -1,0 +1,168 @@
+@startuml t_sequence_01_declarations
+title Sequence Diagram — Participant Declaration Forms\n(all keywords, alias, order, color, stereotype, create, multiline)
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. ALL EIGHT PARTICIPANT TYPE KEYWORDS
+'    participant  actor  boundary  control  entity  database  collections  queue
+' ══════════════════════════════════════════════════════════════════════════
+
+participant  "Plain Participant"  as PP
+actor        "Actor"              as ACT
+boundary     "Boundary"          as BND
+control      "Control"           as CTL
+entity       "Entity"            as ENT
+database     "Database"          as DB
+collections  "Collections"       as COL
+queue        "Queue"             as QUE
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. QUOTED NAME + ALIAS (as keyword)
+' ══════════════════════════════════════════════════════════════════════════
+
+participant "Long Quoted Name With Spaces" as LQNWS
+actor "Alice in Wonderland" as ALICE
+boundary "HTTP Boundary Layer" as HTTP_BND
+database "PostgreSQL 15\nPrimary" as PG_DB
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. UNQUOTED IDENTIFIERS (no alias needed)
+' ══════════════════════════════════════════════════════════════════════════
+
+participant SimpleParticipant
+actor SimpleActor
+database SimpleDB
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. ORDER KEYWORD — controls left-to-right display order
+' ══════════════════════════════════════════════════════════════════════════
+
+participant "Order 30" as ORD30 order 30
+participant "Order 10" as ORD10 order 10
+participant "Order 20" as ORD20 order 20
+actor       "Order 5"  as ORD5  order 5
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. BACKGROUND COLOR on declaration  #color
+' ══════════════════════════════════════════════════════════════════════════
+
+participant "Red Bg"        as RED_P   #FF8888
+participant "Green Bg"      as GRN_P   #88FF88
+participant "Blue Bg"       as BLU_P   #8888FF
+participant "Named Color"   as NAM_P   #LightYellow
+participant "Hex Short"     as HEX_P   #F0F
+actor       "Colored Actor" as COL_ACT #FFE0B2
+database    "Colored DB"    as COL_DB  #E8F5E9
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. STEREOTYPE on declaration  <<stereotype>>
+' ══════════════════════════════════════════════════════════════════════════
+
+participant "Stereo Only"          as ST1 <<service>>
+participant "Stereo + Color"       as ST2 <<repository>> #E3F2FD
+participant "Stereo + Order"       as ST3 <<gateway>>    order 50
+actor       "Actor Stereo"         as ST4 <<admin>>
+database    "DB Stereo"            as ST5 <<postgresql>>
+participant "Full Attrs"           as ST6 <<microservice>> #FCE4EC
+
+' ══════════════════════════════════════════════════════════════════════════
+' 7. CREATE KEYWORD — participant created mid-sequence
+' ══════════════════════════════════════════════════════════════════════════
+
+participant "Creator"   as CREATOR
+participant "Requester" as REQ
+
+' (created participants declared here but instantiated in message flow)
+' These are the subjects of 'create' messages below
+
+' ══════════════════════════════════════════════════════════════════════════
+' 8. MULTILINE LABELS using \n in quoted name
+' ══════════════════════════════════════════════════════════════════════════
+
+participant "Line One\nLine Two"              as ML2
+participant "Line One\nLine Two\nLine Three"  as ML3
+actor       "Actor\nMultiline"                as ML_ACT
+database    "DB\nMySQL 8\n:3306"             as ML_DB
+
+' ══════════════════════════════════════════════════════════════════════════
+' 9. INTERACTIONS — minimal messages to render all declared participants
+' ══════════════════════════════════════════════════════════════════════════
+
+== Section: Basic type interactions ==
+
+PP -> ACT : participant → actor
+ACT -> BND : actor → boundary
+BND -> CTL : boundary → control
+CTL -> ENT : control → entity
+ENT -> DB  : entity → database
+DB -> COL  : database → collections
+COL -> QUE : collections → queue
+QUE --> PP : queue → participant (return)
+
+== Section: Alias resolution ==
+
+LQNWS -> ALICE : long-name to alice
+ALICE -> HTTP_BND : alice to boundary
+HTTP_BND -> PG_DB : boundary to db
+PG_DB --> ALICE : db return
+
+== Section: Ordered participants ==
+
+ORD5 -> ORD10 : 5 → 10
+ORD10 -> ORD20 : 10 → 20
+ORD20 -> ORD30 : 20 → 30
+ORD30 --> ORD5 : 30 → 5
+
+== Section: Colored participants ==
+
+RED_P -> GRN_P : red to green
+GRN_P -> BLU_P : green to blue
+BLU_P -> NAM_P : blue to named
+NAM_P -> COL_ACT : to colored actor
+COL_ACT -> COL_DB : to colored db
+COL_DB --> RED_P : return
+
+== Section: Stereotyped participants ==
+
+ST1 -> ST2 : service to repo
+ST2 -> ST3 : repo to gateway
+ST3 -> ST4 : gateway to admin actor
+ST4 -> ST5 : admin to db
+ST5 -> ST6 : db to full-attrs
+ST6 --> ST1 : return
+
+== Section: CREATE keyword ==
+
+REQ -> CREATOR : requestCreation()
+create participant "Dynamic P" as DYN_P
+CREATOR -> DYN_P : <<create>>
+DYN_P -> REQ : created()
+
+create actor "Dynamic Actor" as DYN_ACT
+CREATOR -> DYN_ACT : <<create>>
+DYN_ACT --> CREATOR : ready
+
+create database "Dynamic DB" as DYN_DB
+CREATOR -> DYN_DB : initSchema()
+DYN_DB --> CREATOR : schema ready
+
+== Section: Multiline label participants ==
+
+ML2 -> ML3 : two-line to three-line
+ML3 -> ML_ACT : to multiline actor
+ML_ACT -> ML_DB : to multiline db
+ML_DB --> ML2 : return
+
+note right of ML3
+    **Grammar targets (declarations):**
+    - participant / actor / boundary /
+      control / entity / database /
+      collections / queue
+    - "Quoted Name" as ALIAS
+    - order N
+    - #RRGGBB and #colorName
+    - <<stereotype>>
+    - \n in quoted names
+    - create keyword mid-sequence
+end note
+
+@enduml

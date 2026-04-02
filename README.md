@@ -4,7 +4,7 @@
 
 # PictoSync
 
-**v2.8** | Diagram Normalization & Agentic Specification IDE
+**v2.9** | Diagram Normalization & Agentic Specification IDE
 
 ---
 
@@ -90,7 +90,7 @@ The primary user is a senior engineer or architect working on systems where inte
 
 ---
 
-## Current Features (v2.8)
+## Current Features (v2.9)
 
 **For a comparison to other tools and their features see: [Round Tripping PNG Tools](png_json_comparison.md)**
 
@@ -255,7 +255,7 @@ python main.py
 
 ## Testing
 
-PictoSync includes a comprehensive test suite of **1375 tests** across **31 test files** using pytest. See [`tests/README.md`](tests/README.md) for the full test directory structure, shared fixtures, design patterns, and coverage/reporting instructions.
+PictoSync includes a comprehensive test suite of **1576 tests** across **36 test files** using pytest. See [`tests/README.md`](tests/README.md) for the full test directory structure, shared fixtures, design patterns, and coverage/reporting instructions.
 
 ```bash
 # Run all tests
@@ -278,6 +278,7 @@ PictoSync includes a comprehensive test suite of **1375 tests** across **31 test
 | **UI Framework** | `test_undo_redo`, `test_drawing_modes`, `test_context_menu_zorder`, `test_json_editor`, `test_properties_panel`, `test_keyboard_shortcuts`, `test_canvas_view`, `test_drag_drop`, `test_settings_dialog`, `test_menu_system` | Undo/redo commands, mode switching, z-order, editor features, property panel, shortcuts, zoom, drag-drop, settings, menus |
 | **Integration** | `test_scroll_preservation`, `test_ungroup_drag`, `test_flow_ungroup` | Editor scroll during drag, ungroup integrity, flow diagram sequences |
 | **Parsers** | `test_mermaid_parser`, `test_c4_source_parser`, `test_c4_merger`, `test_sequence_source_parser`, `test_sequence_merger` | Mermaid SVG/source parsing, C4 and sequence diagram pipelines |
+| **PlantUML ANTLR** | `test_activity_source_parser`, `test_state_source_parser`, `test_deployment_source_parser`, `test_component_source_parser`, `test_puml_sequence_source_parser` | ANTLR4 grammar validation, source extraction, annotation merge, JSON round-trip for all 5 diagram types |
 | **Export** | `test_pptx_export` | PowerPoint export with blocks/runs text and per-run formatting |
 
 ## Project Structure
@@ -325,7 +326,7 @@ pictosync/
 │   └── worker.py        # Threaded alignment workers
 ├── domains/             # Domain-specific DSL plugins (e.g. ns3/)
 ├── icons/               # Theme-aware SVG icons
-├── tests/               # Automated test suite — 1375 tests, 31 files (see [tests/README.md](tests/README.md))
+├── tests/               # Automated test suite — 1576 tests, 36 files (see [tests/README.md](tests/README.md))
 ├── scripts/             # Diagnostic scripts (see [scripts/README.md](scripts/README.md))
 ├── test_data/           # Test fixture data (PUML, Mermaid SVG)
 └── requirements.txt
@@ -368,6 +369,16 @@ See `schemas/annotation_schema.json` for the full specification.
 Additional Mermaid diagram types (Sequence, Class, ER, Gantt, Mindmap, etc.) have test data collected; parsers not yet implemented.
 
 ## Version History
+
+### v2.9 (2026-04-01)
+- **ANTLR4 activity grammar**: Complete `PlantUMLActivity.g4` with zero parse errors on all 8 test files; 10 major fixes including composite `NOTE_BLOCK_TOKEN`/`NOTE_INLINE_TOKEN`/`HEADER_BLOCK`/`FOOTER_BLOCK` tokens, `CONNECTOR` removed from lexer (parser rule instead), `SWIMLANE` ANTLR4 syntax fix (`[^\r\n]` → `~[\r\n]`), 8 new punctuation tokens (QMARK, COMMA, SLASH, LT, GT, PLUS, TILDE, EQ), single-char `FREE_TEXT` with Unicode support, `end note` required on own line
+- **Activity source parser**: `_parse_activity_source()` ANTLR visitor extracts all semantic elements (actions with color/stereotype/bullet/swimlane, conditions with if/switch/elseif, loops with repeat/while/backward, forks with join specs, containers with all 5 types, swimlanes, notes, arrows, connectors, labels, controls); `_merge_activity_source_info()` enriches SVG annotations with `contents.dsl` data
+- **Component source parser**: `_parse_component_source()` extracts components (bracket + keyword forms), interfaces, groups, relations, notes, sprites from ANTLR4 component grammar
+- **Sequence source parser**: `_parse_sequence_source()` extracts participants (8 keyword types), messages, groups (alt/opt/loop/par/break/critical), notes, activations, boxes, dividers, refs from ANTLR4 sequence grammar
+- **ANTLR4 test suites**: 284 new tests across 5 files covering all PlantUML diagram types; grammar validation (zero-error assertion on clean files, no-exception on all files), source element extraction, annotation merge enrichment, overlay-2.0 normalize, and JSON round-trip serialization
+- **Test files**: `test_activity_source_parser.py` (105 tests, 8 files), `test_state_source_parser.py` (96 tests, 11 files), `test_deployment_source_parser.py` (20 tests, 5 files), `test_component_source_parser.py` (36 tests, 11 files), `test_puml_sequence_source_parser.py` (27 tests, 9 files)
+- **Sequence test data**: 8 new `t_sequence_*.puml` test files covering declarations, arrow forms, lifeline control, grouping frames, notes, autonumber/dividers/box/ref, skinparam, and parser stress test
+- **Generated grammar files**: Updated `PlantUMLActivity{Lexer,Parser,Visitor}.py` in `plantuml/grammar/generated/`
 
 ### v2.8 (2026-03-31)
 - **ANTLR4 component grammar**: Complete `PlantUMLComponent.g4` with zero parse errors on all 7 test files; restricted `FREE_TEXT`, `restOfLine` pattern, combined `componentFullDecl` rule avoiding LL(*) ambiguity
