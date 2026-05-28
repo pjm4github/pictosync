@@ -709,6 +709,44 @@ def _path_bbox(d: str) -> Optional[Tuple[float, float, float, float]]:
 # ─────────────────────────────────────────────────────────
 
 
+def _is_cylinder_path(d: str) -> bool:
+    """Heuristic: does an SVG path ``d`` describe a Mermaid cylinder (database)?
+
+    Mermaid draws a cylinder as flat elliptical arcs (``rx`` > ``ry``, with
+    consistent radii) for the top and bottom, joined by vertical line segments
+    and with **no** horizontal line segments.  That last point distinguishes it
+    from a rounded rectangle, whose path has horizontal top/bottom edges.
+    """
+    if not d:
+        return False
+    arcs: List[Tuple[float, float]] = []
+    has_vertical = False
+    has_horizontal = False
+    for m in re.finditer(r"([a-zA-Z])([^a-zA-Z]*)", d):
+        cmd = m.group(1).lower()
+        nums = [
+            float(n)
+            for n in re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", m.group(2))
+        ]
+        if cmd == "a" and len(nums) >= 2:
+            arcs.append((abs(nums[0]), abs(nums[1])))
+        elif cmd == "h":
+            has_horizontal = True
+        elif cmd == "v":
+            has_vertical = True
+        elif cmd == "l" and len(nums) >= 2:
+            dx, dy = nums[0], nums[1]
+            if abs(dx) < 0.5 and abs(dy) >= 0.5:
+                has_vertical = True
+            elif abs(dy) < 0.5 and abs(dx) >= 0.5:
+                has_horizontal = True
+    if len(arcs) < 2 or has_horizontal or not has_vertical:
+        return False
+    rx, ry = arcs[0]
+    consistent = all(abs(a[0] - rx) < 1.0 and abs(a[1] - ry) < 1.0 for a in arcs)
+    return consistent and rx > ry
+
+
 def _parse_node(
     node_g: ET.Element, ns: str, ann_id: str,
     default_text_color: str = "#333333",
@@ -840,11 +878,15 @@ def _parse_node(
     elif path_el is not None:
         d = path_el.get("d", "")
         bx, by, bw, bh = _robust_path_bbox(d)
-        x = tx + bx
-        y = ty + by
+        # The shape <path> carries its own translate (Mermaid centres the node
+        # at the group transform and offsets the path by -half_w,-half_h), so
+        # add it — otherwise the path's local origin lands at the node centre.
+        ptx, pty = _parse_translate(path_el.get("transform", ""))
+        x = tx + ptx + bx
+        y = ty + pty + by
         w = bw
         h = bh
-        kind = "roundedrect"
+        kind = "cylinder" if _is_cylinder_path(d) else "roundedrect"
         # When Mermaid uses a two-path pattern (fill_path_el for background,
         # path_el for border), prefer fill from fill_path_el.
         if fill_path_el is not None:
@@ -862,11 +904,12 @@ def _parse_node(
             if d and pf and pf != "none":
                 bx, by, bw, bh = _robust_path_bbox(d)
                 if bw > 1 and bh > 1:
-                    x = tx + bx
-                    y = ty + by
+                    ptx, pty = _parse_translate(p.get("transform", ""))
+                    x = tx + ptx + bx
+                    y = ty + pty + by
                     w = bw
                     h = bh
-                    kind = "rect"
+                    kind = "cylinder" if _is_cylinder_path(d) else "rect"
                     fill_color = pf
                     stroke_color = _get_stroke(p) or stroke_color
                     break
