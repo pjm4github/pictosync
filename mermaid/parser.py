@@ -533,6 +533,61 @@ def _get_text_color(node_g: ET.Element, ns: str) -> Optional[str]:
     return None
 
 
+def _expand_hex(color: str) -> str:
+    """Expand 3-digit hex (``#abc``) to 6-digit (``#aabbcc``); pass others through."""
+    if re.fullmatch(r"#[0-9a-fA-F]{3}", color):
+        return "#" + "".join(c * 2 for c in color[1:])
+    return color
+
+
+def _svg_label_text_colors(
+    root: ET.Element, ns: str,
+) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """Extract default node-, cluster-, and edge-label text colours from the
+    SVG ``<style>`` block.
+
+    Mermaid themes set label colour via CSS classes (``.label``,
+    ``.nodeLabel``, ``.cluster-label``, ``.edgeLabel``) rather than inline
+    attributes, so this resolves the diagram-wide default that
+    ``_get_text_color`` (inline-only) cannot see.  A per-element inline colour
+    still takes priority over this.  Edge labels usually inherit ``.label``, so
+    the edge colour falls back to the node colour when ``.edgeLabel`` sets none.
+
+    Returns:
+        ``(node_color, cluster_color, edge_color)`` — any may be ``None``.
+    """
+    css = "".join((st.text or "") for st in root.iter(f"{{{ns}}}style"))
+    if not css:
+        return None, None, None
+
+    def _color_from_body(body: str) -> Optional[str]:
+        m = re.search(
+            r"(?:^|;)\s*(?:color|fill)\s*:\s*"
+            r"(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)|[a-zA-Z]+)",
+            body,
+        )
+        if m and m.group(1).lower() not in (
+            "inherit", "currentcolor", "none", "revert",
+        ):
+            return _expand_hex(m.group(1))
+        return None
+
+    def _find(sel_patterns: List[str]) -> Optional[str]:
+        for selectors, body in re.findall(r"([^{}]+)\{([^}]*)\}", css):
+            if any(re.search(p, selectors) for p in sel_patterns):
+                c = _color_from_body(body)
+                if c:
+                    return c
+        return None
+
+    node_color = _find([r"\.nodeLabel(?![\w-])", r"\.label(?![\w-])"])
+    cluster_color = _find([r"\.cluster-label(?![\w-])"])
+    # Edge-label text inherits ``.label`` in Mermaid; the ``.edgeLabel`` rules
+    # set the background rect fill, not the text colour, so use the node colour.
+    edge_color = node_color
+    return node_color, cluster_color, edge_color
+
+
 def _text_from_el(t_el: ET.Element) -> str:
     """Get joined text from a single ``<text>`` element."""
     parts = list(t_el.itertext())
@@ -655,9 +710,16 @@ def _path_bbox(d: str) -> Optional[Tuple[float, float, float, float]]:
 
 
 def _parse_node(
-    node_g: ET.Element, ns: str, ann_id: str
+    node_g: ET.Element, ns: str, ann_id: str,
+    default_text_color: str = "#333333",
 ) -> Optional[Dict[str, Any]]:
-    """Parse a single ``<g class="node ...">`` into an annotation dict."""
+    """Parse a single ``<g class="node ...">`` into an annotation dict.
+
+    Args:
+        default_text_color: Label colour to use when the node has no inline
+            colour (typically the diagram-wide colour from the SVG ``<style>``
+            block, resolved by :func:`_svg_label_text_colors`).
+    """
     tx, ty = _parse_translate(node_g.get("transform", ""))
     text = _extract_text(node_g, ns)
 
@@ -820,14 +882,14 @@ def _parse_node(
     if kind == "polygon":
         geom["points"] = rel_points
 
-    text_color = _get_text_color(node_g, ns) or "#333333"
+    text_color = _get_text_color(node_g, ns) or default_text_color
     sw = stroke_width if stroke_width is not None else 1
 
     return {
         "id": ann_id,
         "kind": kind,
         "geom": geom,
-        "meta": {"label": text},
+        "meta": {"label": text, "text_color": text_color},
         "style": _make_shape_style(fill_color, stroke_color, text_color, sw),
     }
 
@@ -843,8 +905,15 @@ def _parse_edge_path(
     ann_id: str,
     edge_labels: List[Tuple[str, float, float]],
     edge_idx: int,
+    default_text_color: str = "#333333",
 ) -> Optional[Dict[str, Any]]:
-    """Parse a single edge ``<path>`` into a curve or line annotation."""
+    """Parse a single edge ``<path>`` into a curve or line annotation.
+
+    Args:
+        default_text_color: Edge-label colour from the SVG ``<style>`` block,
+            so a labelled edge's text matches the rendered diagram instead of
+            the line/curve kind-default colour.
+    """
     d = path_el.get("d", "")
     if not d:
         return None
@@ -907,7 +976,7 @@ def _parse_edge_path(
                 "h": round(bh, 2),
                 "nodes": nodes,
             },
-            "meta": {"label": label},
+            "meta": {"label": label, "text_color": default_text_color},
             "style": style,
         }
 
@@ -925,7 +994,7 @@ def _parse_edge_path(
             "x2": round(x2, 2),
             "y2": round(y2, 2),
         },
-        "meta": {"label": label},
+        "meta": {"label": label, "text_color": default_text_color},
         "style": style,
     }
 
@@ -935,8 +1004,15 @@ def _parse_cluster(
     ns: str,
     ann_id: str,
     all_annotations: List[Dict[str, Any]],
+    default_text_color: str = "#333333",
 ) -> Optional[Dict[str, Any]]:
-    """Parse a ``<g class="cluster">`` into a group annotation."""
+    """Parse a ``<g class="cluster">`` into a group annotation.
+
+    Args:
+        default_text_color: Title colour to use when the cluster has no inline
+            colour (the diagram-wide cluster-label colour from the SVG
+            ``<style>`` block).
+    """
     rect_el = cluster_g.find(f"{{{ns}}}rect")
     if rect_el is None:
         # Divider/alt clusters nest the rect inside an unnamed <g>
@@ -1004,12 +1080,16 @@ def _parse_cluster(
     if sd and sd != "0":
         dash = "dashed"
 
+    text_color = _get_text_color(cluster_g, ns) or default_text_color
+
     return {
         "id": ann_id,
         "kind": "group",
         "geom": {"x": x, "y": y, "w": w, "h": h},
-        "meta": {"label": text},
-        "style": _make_shape_style(fill_color, stroke_color, stroke_width=sw, dash=dash),
+        "meta": {"label": text, "text_color": text_color},
+        "style": _make_shape_style(
+            fill_color, stroke_color, text_color, stroke_width=sw, dash=dash,
+        ),
     }
 
 
@@ -1033,6 +1113,15 @@ def _parse_graph_diagram(
     edge_labels_g = _find_group_by_class(root, ns, "edgeLabels")
     clusters_g = _find_group_by_class(root, ns, "clusters")
 
+    # Diagram-wide label text colours from the SVG <style> block (themed via
+    # CSS classes, not inline attributes).  Per-element inline colour still wins.
+    node_text_color, cluster_text_color, edge_text_color = (
+        _svg_label_text_colors(root, ns)
+    )
+    node_default = node_text_color or "#333333"
+    cluster_default = cluster_text_color or "#333333"
+    edge_default = edge_text_color or "#333333"
+
     annotations: List[Dict[str, Any]] = []
     next_id = _make_id_gen()
 
@@ -1050,7 +1139,10 @@ def _parse_graph_diagram(
             tag = _strip_ns(cluster_g.tag, ns)
             if tag != "g":
                 continue
-            ann = _parse_cluster(cluster_g, ns, next_id(), annotations)
+            ann = _parse_cluster(
+                cluster_g, ns, next_id(), annotations,
+                default_text_color=cluster_default,
+            )
             if ann is not None:
                 svg_id = cluster_g.get("id", "")
                 if svg_id:
@@ -1077,7 +1169,10 @@ def _parse_graph_diagram(
         for child in edge_paths_g:
             tag = _strip_ns(child.tag, ns)
             if tag == "path":
-                ann = _parse_edge_path(child, ns, next_id(), edge_labels, edge_idx)
+                ann = _parse_edge_path(
+                    child, ns, next_id(), edge_labels, edge_idx,
+                    default_text_color=edge_default,
+                )
                 if ann is not None:
                     ann["z"] = edge_z
                     edge_z += 1
@@ -1091,7 +1186,10 @@ def _parse_graph_diagram(
                             path_el = p
                             break
                 if path_el is not None:
-                    ann = _parse_edge_path(path_el, ns, next_id(), edge_labels, edge_idx)
+                    ann = _parse_edge_path(
+                        path_el, ns, next_id(), edge_labels, edge_idx,
+                        default_text_color=edge_default,
+                    )
                     if ann is not None:
                         ann["z"] = edge_z
                         edge_z += 1
@@ -1108,7 +1206,9 @@ def _parse_graph_diagram(
             cls = node_g.get("class", "")
             if "node" not in cls:
                 continue
-            ann = _parse_node(node_g, ns, next_id())
+            ann = _parse_node(
+                node_g, ns, next_id(), default_text_color=node_default,
+            )
             if ann is not None:
                 src_id = _extract_node_id(node_g, node_id_re)
                 if src_id:
