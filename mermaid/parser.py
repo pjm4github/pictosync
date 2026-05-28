@@ -108,11 +108,18 @@ def detect_mermaid_svg(svg_path: str) -> Optional[str]:
     return None
 
 
-def parse_mermaid_svg_to_annotations(svg_path: str) -> Dict[str, Any]:
+def parse_mermaid_svg_to_annotations(
+    svg_path: str, normalize: bool = True,
+) -> Dict[str, Any]:
     """Parse a Mermaid-rendered SVG file into PictoSync annotation JSON.
 
     Args:
         svg_path: Path to the ``.svg`` file.
+        normalize: When ``True`` (default) the flat ``meta`` dicts are
+            converted to overlay-2.0 ``contents``.  Two-step mergers pass
+            ``False`` so they can match/enrich on the raw ``meta`` (which
+            carries ``src_id``, ``seq_role``, etc. that normalization drops)
+            and call ``_normalize_annotations`` themselves at the end.
 
     Returns:
         Annotation dict with ``version``, ``image``, and ``annotations`` keys.
@@ -150,7 +157,8 @@ def parse_mermaid_svg_to_annotations(svg_path: str) -> Dict[str, Any]:
         _apply_viewbox_offset(annotations, vb_x, vb_y)
 
     # ── Normalize and return ──
-    _normalize_annotations(annotations)
+    if normalize:
+        _normalize_annotations(annotations)
     return {
         "version": "draft-1",
         "image": {"width": canvas_w, "height": canvas_h},
@@ -1238,6 +1246,32 @@ def apply_classdef_styles(annotations: List[Dict[str, Any]], mmd_path: str) -> N
         style["fill"] = fill_d
         style["text"] = text
         ann["style"] = style
+
+
+_BR_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
+
+
+def convert_br_to_newlines(annotations: List[Dict[str, Any]]) -> None:
+    """Replace HTML line-break tags with real newlines in all text runs.
+
+    Mermaid source uses ``<br>`` / ``<br/>`` / ``<br />`` for line breaks
+    inside labels; the source parsers preserve the literal tag.  This converts
+    each to an embedded ``\\n`` so the serialized JSON (and downstream canvas
+    rendering) carries the actual newline rather than markup.  Recurses into
+    group children.  Modifies ``annotations`` in place.
+
+    Args:
+        annotations: Overlay-2.0 annotation list (with ``contents.blocks``).
+    """
+    for ann in annotations:
+        if not isinstance(ann, dict):
+            continue
+        for block in ann.get("contents", {}).get("blocks", []):
+            for run in block.get("runs", []):
+                txt = run.get("text")
+                if isinstance(txt, str) and "<br" in txt.lower():
+                    run["text"] = _BR_RE.sub("\n", txt)
+        convert_br_to_newlines(ann.get("children", []))
 
 
 def _parse_class(root: ET.Element, ns: str) -> List[Dict[str, Any]]:

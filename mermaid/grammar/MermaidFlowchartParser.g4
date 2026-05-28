@@ -146,49 +146,44 @@ classShorthand
 // ── Classic bracket-pair shapes ──────────────────────────────────────────
 // Listed longest/most-specific first.  Parser alternatives are tried top-down.
 
+// Each shape is one opening delimiter token (which pushed the lexer's label
+// mode), a single nodeLabel token, and the matching closing-delimiter token.
 classicShape
-    : LPAREN LPAREN LPAREN nodeLabel RPAREN RPAREN RPAREN   // (((t)))  double-circle
-    | LBRACK LBRACK nodeLabel RBRACK RBRACK                 // [[t]]    subroutine
-    | LBRACE LBRACE nodeLabel RBRACE RBRACE                 // {{t}}    hexagon
-    | LPAREN LBRACK nodeLabel RBRACK RPAREN                 // ([t])    stadium
-    | LBRACK LPAREN nodeLabel RPAREN RBRACK                 // [(t)]    cylinder
-    | LPAREN LPAREN nodeLabel RPAREN RPAREN                 // ((t))    circle
-    | LBRACK FSLASH nodeLabel FSLASH RBRACK                 // [/t/]    parallelogram
-    | LBRACK BSLASH nodeLabel BSLASH RBRACK                 // [\\t\\]  parallelogram-alt
-    | LBRACK FSLASH nodeLabel BSLASH RBRACK                 // [/t\\]    trapezoid
-    | LBRACK BSLASH nodeLabel FSLASH RBRACK                 // [\\t/]    trapezoid-alt
-    | LBRACK nodeLabel RBRACK                               // [t]      rectangle
-    | LPAREN nodeLabel RPAREN                               // (t)      rounded
-    | RANGLE nodeLabel RBRACK                               // >t]      asymmetric
-    | LBRACE nodeLabel RBRACE                               // {t}      rhombus
+    : TRIPLE_LPAREN nodeLabel TRIPLE_RPAREN   // (((t)))  double-circle
+    | DOUBLE_LBRACK nodeLabel DOUBLE_RBRACK   // [[t]]    subroutine
+    | DOUBLE_LBRACE nodeLabel DOUBLE_RBRACE   // {{t}}    hexagon
+    | LPAREN_LBRACK nodeLabel RBRACK_RPAREN   // ([t])    stadium
+    | LBRACK_LPAREN nodeLabel RPAREN_RBRACK   // [(t)]    cylinder
+    | DOUBLE_LPAREN nodeLabel DOUBLE_RPAREN   // ((t))    circle
+    | LBRACK_FSLASH nodeLabel RBRACK          // [/t/] [/t\\]  parallelogram / trapezoid
+    | LBRACK_BSLASH nodeLabel RBRACK          // [\\t\\] [\\t/] parallelogram-alt / trapezoid-alt
+    | LBRACK nodeLabel RBRACK                 // [t]      rectangle
+    | LPAREN nodeLabel RPAREN                 // (t)      rounded
+    | RANGLE nodeLabel RBRACK                 // >t]      asymmetric
+    | LBRACE nodeLabel RBRACE                 // {t}      rhombus
     ;
 
 // ── Node label content ────────────────────────────────────────────────────
-// Three surface forms:
-//   "quoted"      — most common, handles unicode / HTML / entity refs
-//   "`markdown`"  — bold, italic, auto-wrap
-//   plain text    — unquoted, rarely used, multi-token
+// The lexer's M_LBL mode captures the whole label as ONE token:
+//   QUOTED_STRING / MARKDOWN_STRING — when the label is wrapped in the DEFAULT
+//       mode before a bracket (rare), or
+//   LABEL_TEXT — the common case (any inner characters, incl. spaces, <br/>,
+//       slashes, unicode).  The visitor strips wrapping quotes/backticks.
+// The empty alternative permits empty-label shapes such as ``A()``.
 
 nodeLabel
     : QUOTED_STRING
     | MARKDOWN_STRING
-    | labelText+
-    ;
-
-labelText
-    : LABEL_TEXT
-    | ID
-    | INT
-    | FSLASH      // allow / in titles: "Level 4/5"
-    | COLON       // allow : in titles
-    | AMP         // allow & in titles
+    | LABEL_TEXT
+    |
     ;
 
 // ── @{ } attribute block ─────────────────────────────────────────────────
 // Shared by new node shapes (A@{...}) and edge property statements (e1@{...}).
+// '@{' is a single lexer token (AT_LBRACE) so the brace does not open a label.
 
 attrBlock
-    : AT LBRACE attrList RBRACE
+    : AT_LBRACE attrList RBRACE
     ;
 
 attrList

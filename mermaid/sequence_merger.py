@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from plantuml.parser import _normalize_annotations
 from mermaid.parser import parse_mermaid_svg_to_annotations
 from mermaid.sequence_source_parser import (
     SeqMessage,
@@ -204,8 +205,10 @@ def merge_sequence_source_with_svg(
     Returns:
         Annotation dict with ``version``, ``image``, and ``annotations`` keys.
     """
-    # Get SVG geometry from the generic parser
-    data = parse_mermaid_svg_to_annotations(svg_path)
+    # Get SVG geometry from the generic parser.  Defer normalization so the
+    # raw ``meta`` (label, seq_role) is available for classification and
+    # enrichment; we normalize to overlay-2.0 ``contents`` at the end.
+    data = parse_mermaid_svg_to_annotations(svg_path, normalize=False)
     annotations = data.get("annotations", [])
 
     # Classify
@@ -330,5 +333,8 @@ def merge_sequence_source_with_svg(
                         svg_b["meta"]["tech"] = " | ".join(labels)
                 used_src.add(i)
                 break
+
+    # ── Normalize flat meta → overlay-2.0 contents (preserves meta.dsl) ──
+    _normalize_annotations(annotations)
 
     return data

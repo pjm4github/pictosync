@@ -133,54 +133,40 @@ class FlowParseResult:
 # ═══════════════════════════════════════════════════════════
 
 
+# Opening-delimiter token text → shape name.  The lexer now emits one token
+# per opening delimiter (it pushed a label mode), so the shape is determined
+# solely by ``classicShape``'s first child.
+_OPEN_SHAPE_MAP = {
+    "(((": "double_circle",  # (((t)))
+    "[[": "subroutine",      # [[t]]
+    "{{": "hexagon",         # {{t}}
+    "([": "stadium",         # ([t])
+    "[(": "cylinder",        # [(t)]
+    "((": "circle",          # ((t))
+    "[": "rectangle",        # [t]
+    "(": "rounded",          # (t)
+    ">": "asymmetric",       # >t]
+    "{": "rhombus",          # {t}
+}
+
+
 def _classify_classic_shape(ctx: MermaidFlowchartParser.ClassicShapeContext) -> str:
     """Determine the shape name from a ``classicShape`` context.
 
-    Maps the 14 ANTLR parse tree alternatives to shape names based on
-    child count and delimiter tokens.
+    The opening delimiter token uniquely identifies the shape, except for the
+    parallelogram/trapezoid family (``[/`` and ``[\\``), which is disambiguated
+    by the label's trailing slash (the lexer captures it as label content).
     """
-    cc = ctx.getChildCount()
+    open_text = ctx.getChild(0).getText()
 
-    if cc == 7:
-        return "double_circle"  # (((t)))
+    if open_text in ("[/", "[\\"):
+        label = _extract_node_label(ctx.nodeLabel())
+        trailing = label[-1:] if label else ""
+        if open_text == "[/":
+            return "trapezoid" if trailing == "\\" else "parallelogram"
+        return "trapezoid_alt" if trailing == "/" else "parallelogram_alt"
 
-    first = ctx.getChild(0).getText()
-
-    if cc == 5:
-        second = ctx.getChild(1).getText()
-        if first == "[" and second == "[":
-            return "subroutine"  # [[t]]
-        if first == "{" and second == "{":
-            return "hexagon"  # {{t}}
-        if first == "(" and second == "[":
-            return "stadium"  # ([t])
-        if first == "[" and second == "(":
-            return "cylinder"  # [(t)]
-        if first == "(" and second == "(":
-            return "circle"  # ((t))
-        # Parallelogram variants: [/...] or [\...]
-        if first == "[":
-            fourth = ctx.getChild(3).getText()
-            if second == "/" and fourth == "/":
-                return "parallelogram"  # [/t/]
-            if second == "\\" and fourth == "\\":
-                return "parallelogram_alt"  # [\t\]
-            if second == "/" and fourth == "\\":
-                return "trapezoid"  # [/t\]
-            if second == "\\" and fourth == "/":
-                return "trapezoid_alt"  # [\t/]
-
-    if cc == 3:
-        if first == "[":
-            return "rectangle"  # [t]
-        if first == "(":
-            return "rounded"  # (t)
-        if first == ">":
-            return "asymmetric"  # >t]
-        if first == "{":
-            return "rhombus"  # {t}
-
-    return "rectangle"  # fallback
+    return _OPEN_SHAPE_MAP.get(open_text, "rectangle")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -243,10 +229,46 @@ def _decode_edge_token(text: str, token_type: int) -> Tuple[str, str, str, str]:
 # ═══════════════════════════════════════════════════════════
 
 
+def _strip_label_wrap(txt: str) -> str:
+    """Strip surrounding quotes / markdown backticks from raw label text.
+
+    The lexer's label mode captures the whole bracket content verbatim, so a
+    quoted label such as ``["ADC"]`` arrives as the literal ``"ADC"``.  Trim
+    whitespace and remove a single wrapping ``"..."``, `` `...` ``, or
+    ``"`...`"`` pair.
+    """
+    s = txt.strip()
+    if len(s) >= 4 and s.startswith('"`') and s.endswith('`"'):
+        return s[2:-2]
+    if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
+        return s[1:-1]
+    if len(s) >= 2 and s[0] == "`" and s[-1] == "`":
+        return s[1:-1]
+    return s
+
+
+# Shapes whose closing delimiter is a slash the lexer folds into the label
+# (e.g. ``[/text/]`` is captured as ``text/``).
+_PARALLELOGRAM_SHAPES = frozenset(
+    {"parallelogram", "parallelogram_alt", "trapezoid", "trapezoid_alt"}
+)
+
+
+def _clean_label_for_shape(label: str, shape: str) -> str:
+    """Strip the trailing ``/`` or ``\\`` that parallelogram/trapezoid labels
+    inherit from the closing delimiter."""
+    if shape in _PARALLELOGRAM_SHAPES and label[-1:] in ("/", "\\"):
+        return label[:-1].rstrip()
+    return label
+
+
 def _extract_node_label(ctx: MermaidFlowchartParser.NodeLabelContext) -> str:
     """Extract the text from a ``nodeLabel`` context.
 
-    Handles quoted strings, markdown strings, and plain text.
+    The label is one token from the lexer's label mode (``LABEL_TEXT``);
+    quoted/markdown forms appear as wrapped ``LABEL_TEXT`` and are unwrapped
+    here.  The ``QUOTED_STRING``/``MARKDOWN_STRING`` alternatives are retained
+    for robustness.
     """
     if ctx is None:
         return ""
@@ -264,11 +286,11 @@ def _extract_node_label(ctx: MermaidFlowchartParser.NodeLabelContext) -> str:
             txt = txt[1:-1]
         return txt
 
-    # Plain label text — concatenate all labelText children
-    parts = []
-    for lt in ctx.labelText() or []:
-        parts.append(lt.getText())
-    return " ".join(parts)
+    lt = ctx.LABEL_TEXT()
+    if lt is not None:
+        return _strip_label_wrap(lt.getText())
+
+    return ""
 
 
 # ═══════════════════════════════════════════════════════════
@@ -313,7 +335,9 @@ class _FlowchartVisitor(MermaidFlowchartParserVisitor):
             node.shape = _classify_classic_shape(shape_ctx)
             label_ctx = shape_ctx.nodeLabel()
             if label_ctx is not None:
-                node.label = _extract_node_label(label_ctx)
+                node.label = _clean_label_for_shape(
+                    _extract_node_label(label_ctx), node.shape
+                )
 
         # @{} attributes
         attr_ctx = ctx.attrBlock()
@@ -381,7 +405,9 @@ class _FlowchartVisitor(MermaidFlowchartParserVisitor):
             node.shape = _classify_classic_shape(shape_ctx)
             label_ctx = shape_ctx.nodeLabel()
             if label_ctx is not None:
-                node.label = _extract_node_label(label_ctx)
+                node.label = _clean_label_for_shape(
+                    _extract_node_label(label_ctx), node.shape
+                )
 
         # @{} attributes
         attr_ctx = ctx.attrBlock()

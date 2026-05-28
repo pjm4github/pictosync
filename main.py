@@ -1654,8 +1654,12 @@ class MainWindow(QMainWindow):
 
             # Apply classDef styles from the source file — handles cases
             # where mmdc doesn't render :::className in the SVG output.
-            from mermaid.parser import apply_classdef_styles
+            from mermaid.parser import apply_classdef_styles, convert_br_to_newlines
             apply_classdef_styles(data.get("annotations", []), mmd_path)
+
+            # Convert <br/> line-break markup in labels to real newlines so the
+            # serialized JSON carries the actual newline character.
+            convert_br_to_newlines(data.get("annotations", []))
 
             num_annotations = len(data.get("annotations", []))
             pretty = json.dumps(data, indent=2)

@@ -11,8 +11,25 @@
 //   4. Equal-length tie-breaks are resolved by declaration order (first wins).
 //   5. CSS_TEXT pushes CSS_MODE so free-form CSS content cannot clobber
 //      DIR_* tokens or keywords in the structural (DEFAULT) mode.
+//
+// Node-label handling (M_LBL mode)
+// ────────────────────────────────
+// The opening shape delimiter ('[', '(', '{', '>', and the multi-char forms
+// '[[', '[(', '([', '((', '(((', '{{', '[/', '[\') pushes M_LBL.  In that mode
+// the *entire* label is captured as ONE LABEL_TEXT token regardless of inner
+// characters (spaces, '<br/>', unicode, slashes), so label content can never
+// be mis-tokenised as node ids.  The closing delimiter popModes back.
 
 lexer grammar MermaidFlowchartLexer;
+
+// Token types emitted from M_LBL via ``-> type(...)`` are declared here so the
+// parser can reference stable names.
+tokens {
+    LABEL_TEXT,
+    RBRACK, RPAREN, RBRACE,
+    DOUBLE_RBRACK, DOUBLE_RPAREN, DOUBLE_RBRACE, TRIPLE_RPAREN,
+    RPAREN_RBRACK, RBRACK_RPAREN
+}
 
 // ── Keywords ──────────────────────────────────────────────────────────────
 
@@ -113,6 +130,10 @@ PIPE_LABEL
     ;
 
 // ── Quoted and markdown strings ───────────────────────────────────────────
+// Used for subgraph titles, click URLs, and @{} attribute values in the
+// structural (DEFAULT) mode.  Inside shape brackets the label — including any
+// surrounding quotes/backticks — is captured by M_LBL as LABEL_TEXT, and the
+// visitor strips the wrapping there.
 
 QUOTED_STRING
     : '"' ( '\\' '"' | ~["\r\n] )* '"'
@@ -129,21 +150,33 @@ MARKDOWN_STRING
 TRIPLE_COLON : ':::' ;
 
 // ── AT sign ───────────────────────────────────────────────────────────────
-// Used for @{} attribute blocks on both nodes and edge IDs.
+// '@{' opens an attribute block (node @{...} or edge-prop id@{...}).  It is a
+// single token so the following '{' does NOT push the label mode.  A bare '@'
+// is the edge-id prefix separator (e1@-->).
 
-AT : '@' ;
+AT_LBRACE : '@{' ;
+AT        : '@' ;
 
-// ── Punctuation ───────────────────────────────────────────────────────────
+// ── Shape-opening delimiters ───────────────────────────────────────────────
+// Each pushes M_LBL.  Multi-character openers are declared first; ANTLR's
+// longest-match rule means a bare '[' never fires on '[[' / '[(' / '[/'.
 
-LPAREN  : '(' ;
-RPAREN  : ')' ;
-LBRACK  : '[' ;
-RBRACK  : ']' ;
-LBRACE  : '{' ;
-RBRACE  : '}' ;
-RANGLE  : '>' ;    // asymmetric shape:  >text]
-FSLASH  : '/' ;    // parallelogram:     [/text/]
-BSLASH  : '\\' ; // parallelogram-alt: [\text\]
+TRIPLE_LPAREN : '(((' -> pushMode(M_LBL) ;   // (((t)))  double-circle
+DOUBLE_LPAREN : '(('  -> pushMode(M_LBL) ;   // ((t))    circle
+LPAREN_LBRACK : '(['  -> pushMode(M_LBL) ;   // ([t])    stadium
+LBRACK_LPAREN : '[('  -> pushMode(M_LBL) ;   // [(t)]    cylinder
+DOUBLE_LBRACK : '[['  -> pushMode(M_LBL) ;   // [[t]]    subroutine
+DOUBLE_LBRACE : '{{'  -> pushMode(M_LBL) ;   // {{t}}    hexagon
+LBRACK_FSLASH : '[/'  -> pushMode(M_LBL) ;   // [/t/] [/t\]  parallelogram/trapezoid
+LBRACK_BSLASH : '[\\' -> pushMode(M_LBL) ;   // [\t\] [\t/]  parallelogram-alt/trapezoid-alt
+LBRACK        : '['   -> pushMode(M_LBL) ;   // [t]      rectangle
+LPAREN        : '('   -> pushMode(M_LBL) ;   // (t)      rounded
+LBRACE        : '{'   -> pushMode(M_LBL) ;   // {t}      rhombus
+RANGLE        : '>'   -> pushMode(M_LBL) ;   // >t]      asymmetric
+
+// ── Remaining punctuation ──────────────────────────────────────────────────
+
+ATTR_RBRACE : '}' -> type(RBRACE) ;   // closes an @{...} attribute block
 COLON   : ':' ;
 SEMI    : ';' ;
 COMMA   : ',' ;
@@ -169,15 +202,6 @@ COMMENT
     : '%%' ~[\r\n]*
     ;
 
-// ── Unquoted label text (fallback for plain node labels) ─────────────────
-// Only fires inside classic shape brackets; excludes all structural chars
-// so it cannot accidentally match direction tokens (TD, LR, etc.) on the
-// header line.
-
-LABEL_TEXT
-    : ~[[\](){}<>/\\\r\n@|"`:;,&% ]+
-    ;
-
 
 // ── Whitespace ────────────────────────────────────────────────────────────
 
@@ -193,23 +217,30 @@ WS
 NEWLINE : ( '\r\n' | '\r' | '\n' ) ;
 
 
+// ═══════════════════════════════════════════════════════════════════════════
+// M_LBL  — node-label content mode
+// ═══════════════════════════════════════════════════════════════════════════
+// Entered on any shape-opening delimiter.  The label is one LABEL_TEXT token;
+// the closing delimiter popModes.  Closers are declared longest-first so ')))'
+// beats '))' beats ')', etc.  LABEL_TEXT excludes only the closer lead chars
+// ( ) ] } ) and newlines, so '/', '\', '<', '>', '(', '[', '{', '|', spaces
+// and unicode all remain part of the label (handles '<br/>', 'a/b', '×').
 
-// ── Style keywords push CSS_READY_MODE ──────────────────────────────────
-// KW_STYLE, KW_CLASSDEF, KW_LINKSTYLE are re-declared here as mode-pushing
-// variants.  When the lexer sees 'style', 'classDef', or 'linkStyle' it
-// emits the keyword token AND switches to CSS_READY_MODE, where the node/
-// class/link target is consumed normally before CSS_MODE takes over for the
-// free-form CSS value.
-//
-// NOTE: These must be declared AFTER the base keyword tokens above so that
-// within DEFAULT_MODE the plain keyword tokens win (declaration order).
-// These mode-pushing variants live at the bottom of DEFAULT_MODE and are
-// only reachable because they are identical literals — ANTLR picks the
-// FIRST matching rule, so we rely on CSS_READY_MODE being entered by the
-// parser issuing a pushMode via the action, not by re-matching the keyword.
-//
-// Simpler approach: push CSS_READY_MODE directly from the keyword tokens.
-// We redefine the three style keywords to push the mode:
+mode M_LBL;
+
+M_TRIPLE_RPAREN : ')))' -> type(TRIPLE_RPAREN), popMode ;   // (((t)))
+M_DOUBLE_RPAREN : '))'  -> type(DOUBLE_RPAREN), popMode ;   // ((t))
+M_RPAREN_RBRACK : ')]'  -> type(RPAREN_RBRACK), popMode ;   // [(t)]
+M_RBRACK_RPAREN : '])'  -> type(RBRACK_RPAREN), popMode ;   // ([t])
+M_DOUBLE_RBRACK : ']]'  -> type(DOUBLE_RBRACK), popMode ;   // [[t]]
+M_DOUBLE_RBRACE : '}}'  -> type(DOUBLE_RBRACE), popMode ;   // {{t}}
+M_RPAREN        : ')'   -> type(RPAREN),        popMode ;   // (t)
+M_RBRACK        : ']'   -> type(RBRACK),        popMode ;   // [t]  >t]  [/t/]
+M_RBRACE        : '}'   -> type(RBRACE),        popMode ;   // {t}
+
+M_LABEL_TEXT    : ~[)\]}\r\n]+ -> type(LABEL_TEXT) ;
+M_NL            : ('\r\n' | '\r' | '\n') -> type(NEWLINE), popMode ;
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CSS_READY_MODE  — entered right after a style/classDef/linkStyle keyword
