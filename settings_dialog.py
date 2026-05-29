@@ -1104,6 +1104,27 @@ class SettingsDialog(QDialog):
         self.tools_mmdc_status.setStyleSheet("font-size: 11px;")
         mmdc_layout.addWidget(self.tools_mmdc_status)
 
+        # Render backend selector
+        backend_row = QHBoxLayout()
+        backend_label = QLabel("Render backend:")
+        backend_label.setToolTip(
+            "How Mermaid diagrams are rendered.\n"
+            "• Mermaid CLI (mmdc): headless browser; pixel-faithful layout.\n"
+            "• Default browser: renders in your regular browser (no headless\n"
+            "  browser needed) and sends the SVG back automatically.\n"
+            "If mmdc is not installed, the browser backend is used automatically."
+        )
+        backend_row.addWidget(backend_label)
+        self.tools_render_backend_combo = QComboBox()
+        self.tools_render_backend_combo.addItem("Mermaid CLI (mmdc)", "mmdc")
+        self.tools_render_backend_combo.addItem("Default browser (no headless)", "browser")
+        _cur_backend = self.settings_manager.settings.external_tools.mermaid_render_backend
+        _bidx = self.tools_render_backend_combo.findData(_cur_backend)
+        self.tools_render_backend_combo.setCurrentIndex(_bidx if _bidx >= 0 else 0)
+        backend_row.addWidget(self.tools_render_backend_combo)
+        backend_row.addStretch()
+        mmdc_layout.addLayout(backend_row)
+
         # PNG scale factor
         scale_row = QHBoxLayout()
         scale_label = QLabel("PNG scale factor:")
@@ -1396,6 +1417,7 @@ class SettingsDialog(QDialog):
             "tools_nodejs_path": s.external_tools.nodejs_path,
             "tools_mmdc_path": s.external_tools.mmdc_path,
             "tools_mmdc_png_scale": s.external_tools.mmdc_png_scale,
+            "tools_mermaid_render_backend": s.external_tools.mermaid_render_backend,
             "tools_c4_shapes_per_row": s.external_tools.c4_shapes_per_row,
             "tools_c4_boundaries_per_row": s.external_tools.c4_boundaries_per_row,
         }
@@ -1621,6 +1643,7 @@ class SettingsDialog(QDialog):
         if not self.tools_mmdc_edit.isReadOnly():
             s.external_tools.mmdc_path = self.tools_mmdc_edit.text().strip()
         s.external_tools.mmdc_png_scale = self.tools_mmdc_scale_spin.value()
+        s.external_tools.mermaid_render_backend = self.tools_render_backend_combo.currentData()
         s.external_tools.c4_shapes_per_row = self.tools_c4_shapes_spin.value()
         s.external_tools.c4_boundaries_per_row = self.tools_c4_bnd_spin.value()
 
@@ -1733,6 +1756,7 @@ class SettingsDialog(QDialog):
         s.external_tools.nodejs_path = snapshot["tools_nodejs_path"]
         s.external_tools.mmdc_path = snapshot["tools_mmdc_path"]
         s.external_tools.mmdc_png_scale = snapshot["tools_mmdc_png_scale"]
+        s.external_tools.mermaid_render_backend = snapshot["tools_mermaid_render_backend"]
         s.external_tools.c4_shapes_per_row = snapshot["tools_c4_shapes_per_row"]
         s.external_tools.c4_boundaries_per_row = snapshot["tools_c4_boundaries_per_row"]
 

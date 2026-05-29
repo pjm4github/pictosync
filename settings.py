@@ -535,6 +535,7 @@ class ExternalToolsSettings:
         mmdc_png_scale: 4
         c4_shapes_per_row: 4
         c4_boundaries_per_row: 2
+        mermaid_render_backend: "mmdc"
     """
     java_path: str = ""              # Default: "" (auto-detect)
     plantuml_jar_path: str = ""      # Default: "" (auto-detect)
@@ -543,6 +544,9 @@ class ExternalToolsSettings:
     mmdc_png_scale: int = 4          # Default: 4 (CSS scale factor for PNG output)
     c4_shapes_per_row: int = 4       # Default: 4 (Mermaid C4 c4ShapeInRow)
     c4_boundaries_per_row: int = 2   # Default: 2 (Mermaid C4 c4BoundaryInRow)
+    # Mermaid render backend: "mmdc" (headless browser via Mermaid CLI) or
+    # "browser" (render in the user's default browser, no headless browser).
+    mermaid_render_backend: str = "mmdc"
 
 
 # =============================================================================
@@ -991,6 +995,7 @@ class SettingsManager:
         settings.external_tools.mmdc_png_scale = int(ext.get("mmdc_png_scale", settings.external_tools.mmdc_png_scale))
         settings.external_tools.c4_shapes_per_row = int(ext.get("c4_shapes_per_row", settings.external_tools.c4_shapes_per_row))
         settings.external_tools.c4_boundaries_per_row = int(ext.get("c4_boundaries_per_row", settings.external_tools.c4_boundaries_per_row))
+        settings.external_tools.mermaid_render_backend = ext.get("mermaid_render_backend", settings.external_tools.mermaid_render_backend)
 
     def _to_toml_dict(self, settings: "Optional[AppSettings]" = None) -> Dict[str, Any]:
         """Serialize *settings* (or current merged settings) to a TOML-compatible dictionary."""
@@ -1115,6 +1120,7 @@ class SettingsManager:
                 "mmdc_png_scale": s.external_tools.mmdc_png_scale,
                 "c4_shapes_per_row": s.external_tools.c4_shapes_per_row,
                 "c4_boundaries_per_row": s.external_tools.c4_boundaries_per_row,
+                "mermaid_render_backend": s.external_tools.mermaid_render_backend,
             },
         }
         return d

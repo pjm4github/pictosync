@@ -1575,9 +1575,26 @@ class MainWindow(QMainWindow):
                 except (ValueError, OSError):
                     pass  # Not a flowchart diagram — fall through to generic
 
+            # ── Choose render backend ──
+            # "browser" renders in the user's default browser (no headless
+            # browser needed); "mmdc" uses the Mermaid CLI.  Fall back to the
+            # browser automatically when mmdc isn't installed.
+            from settings import get_settings
+            from mermaid.renderer import find_mmdc
+            backend = get_settings().settings.external_tools.mermaid_render_backend
+            use_browser = backend == "browser" or (
+                backend == "mmdc" and find_mmdc() is None
+            )
+
             # ── Render to SVG (fatal — no annotations without SVG) ──
             try:
-                svg_path = render_mmd_to_svg(mmd_path)
+                if use_browser:
+                    from mermaid.browser_renderer import (
+                        render_mmd_to_svg as render_mmd_to_svg_browser,
+                    )
+                    svg_path = render_mmd_to_svg_browser(mmd_path)
+                else:
+                    svg_path = render_mmd_to_svg(mmd_path)
             except RuntimeError as e:
                 QMessageBox.warning(
                     self, "Mermaid Rendering",
@@ -1596,16 +1613,21 @@ class MainWindow(QMainWindow):
                 vb_w = round(float(_vb[2])) if len(_vb) >= 3 else None
                 vb_h = round(float(_vb[3])) if len(_vb) >= 4 else None
 
-                from mermaid.renderer import render_mmd_to_png
-                png_path = render_mmd_to_png(
-                    mmd_path,
-                    viewport_width=vb_w,
-                    viewport_height=vb_h,
-                )
+                if use_browser:
+                    # No headless browser: rasterise the returned SVG with Qt.
+                    from mermaid.renderer import render_svg_to_png
+                    png_path = render_svg_to_png(svg_path)
+                else:
+                    from mermaid.renderer import render_mmd_to_png
+                    png_path = render_mmd_to_png(
+                        mmd_path,
+                        viewport_width=vb_w,
+                        viewport_height=vb_h,
+                    )
 
                 from debug_trace import trace
                 pm = QPixmap(png_path)
-                trace(f"PNG from mmdc: {pm.width()}x{pm.height()} (viewport={vb_w}x{vb_h})", "IMPORT")
+                trace(f"PNG background: {pm.width()}x{pm.height()} (viewport={vb_w}x{vb_h}, browser={use_browser})", "IMPORT")
 
                 # Rescale to viewBox dimensions so coordinates are 1:1
                 if vb_w and vb_h and not pm.isNull() and (pm.width() != vb_w or pm.height() != vb_h):
@@ -1625,7 +1647,7 @@ class MainWindow(QMainWindow):
             except RuntimeError as e:
                 QMessageBox.warning(
                     self, "Mermaid Rendering",
-                    f"Could not render PNG background (mmdc issue).\n"
+                    f"Could not render PNG background.\n"
                     f"Annotations will still be parsed from SVG.\n\n{e}",
                 )
 
