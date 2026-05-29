@@ -87,8 +87,11 @@ GROUND_TRUTH = {
     },
     "flowchart1.svg": {
         "type": "flowchart-v2",
-        "total": 11,
-        "kinds": {"curve": 2, "ellipse": 3, "line": 2, "rect": 2, "roundedrect": 2},
+        # Includes the nested subgraph (group) and its inner nodes/edges, which
+        # use a direction directive and so render in a nested g.root context.
+        "total": 19,
+        "kinds": {"curve": 5, "ellipse": 3, "group": 1, "line": 2,
+                  "polygon": 1, "rect": 2, "roundedrect": 5},
         "min_w": 1440, "min_h": 580,
     },
     "gantt1.svg": {
@@ -159,8 +162,10 @@ GROUND_TRUTH = {
     },
     "state1.svg": {
         "type": "stateDiagram",
-        "total": 3,
-        "kinds": {"curve": 2, "ellipse": 1},
+        # Includes nested composite states (rendered in nested g.root contexts)
+        # and their inner states/transitions.
+        "total": 15,
+        "kinds": {"curve": 6, "ellipse": 3, "rect": 2, "roundedrect": 4},
         "min_w": 390, "min_h": 370,
     },
     "timeline1.svg": {

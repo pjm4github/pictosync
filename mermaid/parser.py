@@ -1141,6 +1141,23 @@ def _parse_cluster(
 # ─────────────────────────────────────────────────────────
 
 
+def _offset_annotation(ann: Dict[str, Any], ox: float, oy: float) -> None:
+    """Shift an annotation's geometry by ``(ox, oy)`` (no-op when both zero)."""
+    if not ox and not oy:
+        return
+    g = ann.get("geom", {})
+    if "x1" in g:  # line
+        g["x1"] = round(g["x1"] + ox, 2)
+        g["y1"] = round(g["y1"] + oy, 2)
+        g["x2"] = round(g["x2"] + ox, 2)
+        g["y2"] = round(g["y2"] + oy, 2)
+    else:  # rect / group / curve bbox (curve nodes are normalised 0-1)
+        if "x" in g:
+            g["x"] = round(g["x"] + ox, 2)
+        if "y" in g:
+            g["y"] = round(g["y"] + oy, 2)
+
+
 def _parse_graph_diagram(
     root: ET.Element,
     ns: str,
@@ -1148,16 +1165,16 @@ def _parse_graph_diagram(
 ) -> List[Dict[str, Any]]:
     """Generic parser for diagrams that use nodes/edgePaths/edgeLabels/clusters groups.
 
-    Z-values mirror the SVG painting order (clusters → edges → nodes)
-    so that later-painted items appear on top on the PictoSync canvas.
-    """
-    nodes_g = _find_group_by_class(root, ns, "nodes")
-    edge_paths_g = _find_group_by_class(root, ns, "edgePaths")
-    edge_labels_g = _find_group_by_class(root, ns, "edgeLabels")
-    clusters_g = _find_group_by_class(root, ns, "clusters")
+    Subgraphs that carry a ``direction`` directive make Mermaid emit a *nested*
+    layout: each subgraph becomes a ``<g class="root">`` inside the parent
+    ``nodes`` group, with its own ``clusters``/``nodes``/``edgePaths`` and a
+    translate offset.  This walks those contexts recursively, accumulating the
+    offset so nested clusters and nodes get absolute coordinates.  Flat diagrams
+    (no nesting) are unaffected since every accumulated offset is zero.
 
-    # Diagram-wide label text colours from the SVG <style> block (themed via
-    # CSS classes, not inline attributes).  Per-element inline colour still wins.
+    Z-values mirror the SVG painting order (clusters → edges → nodes) so that
+    later-painted items appear on top on the PictoSync canvas.
+    """
     node_text_color, cluster_text_color, edge_text_color = (
         _svg_label_text_colors(root, ns)
     )
@@ -1168,98 +1185,115 @@ def _parse_graph_diagram(
     annotations: List[Dict[str, Any]] = []
     next_id = _make_id_gen()
 
-    # Z-value tiers matching SVG painting order:
-    #   clusters (background)  → edges (middle)  → nodes (foreground)
-    # Within each tier, document order determines stacking.
-    z_cluster_base = 0
-    z_edge_base = 1000
-    z_node_base = 2000
+    # Shared z counters per tier (clusters behind, nodes in front) so the
+    # tiering holds across every nested context.
+    z = {"cluster": 0, "edge": 1000, "node": 2000}
 
-    # ── Clusters (lowest z — painted first in SVG) ──
-    if clusters_g is not None:
-        cluster_z = z_cluster_base
-        for cluster_g in clusters_g:
-            tag = _strip_ns(cluster_g.tag, ns)
-            if tag != "g":
-                continue
-            ann = _parse_cluster(
-                cluster_g, ns, next_id(), annotations,
-                default_text_color=cluster_default,
-            )
-            if ann is not None:
-                svg_id = cluster_g.get("id", "")
-                if svg_id:
-                    ann["meta"]["src_id"] = svg_id
-                ann["z"] = cluster_z
-                cluster_z += 1
-                annotations.append(ann)
+    def _direct_group(parent: ET.Element, name: str) -> Optional[ET.Element]:
+        for c in parent:
+            if _strip_ns(c.tag, ns) == "g" and name in c.get("class", "").split():
+                return c
+        return None
 
-    # ── Edge labels (collected for pairing with paths) ──
-    edge_labels: List[Tuple[str, float, float]] = []
-    if edge_labels_g is not None:
-        for label_g in edge_labels_g:
-            tag = _strip_ns(label_g.tag, ns)
-            if tag != "g":
-                continue
-            tx, ty = _parse_translate(label_g.get("transform", ""))
-            text = _extract_text(label_g, ns)
-            edge_labels.append((text, tx, ty))
+    def _process(container: ET.Element, ox: float, oy: float) -> None:
+        clusters_g = _direct_group(container, "clusters")
+        edge_paths_g = _direct_group(container, "edgePaths")
+        edge_labels_g = _direct_group(container, "edgeLabels")
+        nodes_g = _direct_group(container, "nodes")
 
-    # ── Edge paths (middle z) ──
-    if edge_paths_g is not None:
-        edge_idx = 0
-        edge_z = z_edge_base
-        for child in edge_paths_g:
-            tag = _strip_ns(child.tag, ns)
-            if tag == "path":
-                ann = _parse_edge_path(
-                    child, ns, next_id(), edge_labels, edge_idx,
-                    default_text_color=edge_default,
+        # Groups not direct children (e.g. <svg> wraps a <g class="root">):
+        # descend into child <g> wrappers, accumulating their transform.
+        if nodes_g is None and clusters_g is None and edge_paths_g is None:
+            for c in container:
+                if _strip_ns(c.tag, ns) == "g":
+                    tx, ty = _parse_translate(c.get("transform", ""))
+                    _process(c, ox + tx, oy + ty)
+            return
+
+        # ── Clusters (lowest z) ──
+        if clusters_g is not None:
+            gtx, gty = _parse_translate(clusters_g.get("transform", ""))
+            for cluster_g in clusters_g:
+                if _strip_ns(cluster_g.tag, ns) != "g":
+                    continue
+                ann = _parse_cluster(
+                    cluster_g, ns, next_id(), annotations,
+                    default_text_color=cluster_default,
                 )
                 if ann is not None:
-                    ann["z"] = edge_z
-                    edge_z += 1
+                    ctx, cty = _parse_translate(cluster_g.get("transform", ""))
+                    _offset_annotation(ann, ox + gtx + ctx, oy + gty + cty)
+                    svg_id = cluster_g.get("id", "")
+                    if svg_id:
+                        ann["meta"]["src_id"] = svg_id
+                    ann["z"] = z["cluster"]
+                    z["cluster"] += 1
                     annotations.append(ann)
-                edge_idx += 1
-            elif tag == "g":
-                path_el = child.find(f"{{{ns}}}path")
-                if path_el is None:
-                    for p in child.iter(f"{{{ns}}}path"):
-                        if p.get("d"):
-                            path_el = p
-                            break
+
+        # ── Edge labels for this context ──
+        edge_labels: List[Tuple[str, float, float]] = []
+        if edge_labels_g is not None:
+            for label_g in edge_labels_g:
+                if _strip_ns(label_g.tag, ns) != "g":
+                    continue
+                tx, ty = _parse_translate(label_g.get("transform", ""))
+                edge_labels.append((_extract_text(label_g, ns), tx, ty))
+
+        # ── Edge paths (middle z) ──
+        if edge_paths_g is not None:
+            gtx, gty = _parse_translate(edge_paths_g.get("transform", ""))
+            edge_idx = 0
+            for child in edge_paths_g:
+                tag = _strip_ns(child.tag, ns)
+                path_el = None
+                if tag == "path":
+                    path_el = child
+                elif tag == "g":
+                    path_el = child.find(f"{{{ns}}}path")
+                    if path_el is None:
+                        for p in child.iter(f"{{{ns}}}path"):
+                            if p.get("d"):
+                                path_el = p
+                                break
+                else:
+                    continue
                 if path_el is not None:
                     ann = _parse_edge_path(
                         path_el, ns, next_id(), edge_labels, edge_idx,
                         default_text_color=edge_default,
                     )
                     if ann is not None:
-                        ann["z"] = edge_z
-                        edge_z += 1
+                        ptx, pty = _parse_translate(path_el.get("transform", ""))
+                        _offset_annotation(ann, ox + gtx + ptx, oy + gty + pty)
+                        ann["z"] = z["edge"]
+                        z["edge"] += 1
                         annotations.append(ann)
                 edge_idx += 1
 
-    # ── Nodes (highest z — painted last in SVG) ──
-    if nodes_g is not None:
-        node_z = z_node_base
-        for node_g in nodes_g:
-            tag = _strip_ns(node_g.tag, ns)
-            if tag != "g":
-                continue
-            cls = node_g.get("class", "")
-            if "node" not in cls:
-                continue
-            ann = _parse_node(
-                node_g, ns, next_id(), default_text_color=node_default,
-            )
-            if ann is not None:
-                src_id = _extract_node_id(node_g, node_id_re)
-                if src_id:
-                    ann["meta"]["src_id"] = src_id
-                ann["z"] = node_z
-                node_z += 1
-                annotations.append(ann)
+        # ── Nodes (highest z) and nested subgraph roots ──
+        if nodes_g is not None:
+            gtx, gty = _parse_translate(nodes_g.get("transform", ""))
+            for child in nodes_g:
+                if _strip_ns(child.tag, ns) != "g":
+                    continue
+                tokens = child.get("class", "").split()
+                if "node" in tokens:
+                    ann = _parse_node(
+                        child, ns, next_id(), default_text_color=node_default,
+                    )
+                    if ann is not None:
+                        _offset_annotation(ann, ox + gtx, oy + gty)
+                        src_id = _extract_node_id(child, node_id_re)
+                        if src_id:
+                            ann["meta"]["src_id"] = src_id
+                        ann["z"] = z["node"]
+                        z["node"] += 1
+                        annotations.append(ann)
+                elif "root" in tokens:
+                    ctx, cty = _parse_translate(child.get("transform", ""))
+                    _process(child, ox + gtx + ctx, oy + gty + cty)
 
+    _process(root, 0.0, 0.0)
     return annotations
 
 

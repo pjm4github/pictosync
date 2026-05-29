@@ -281,7 +281,12 @@ def merge_flowchart_source_with_svg(
             "text": {"color": "#333333"},
         }
         if src_sg is not None:
-            svg_c["meta"]["label"] = src_sg.title
+            # Keep the SVG-extracted title — the rendered text is reliable,
+            # whereas the source parser can mangle titles containing
+            # parentheses.  Fall back to the source title only when the SVG
+            # provided none.
+            if not svg_c["meta"].get("label"):
+                svg_c["meta"]["label"] = src_sg.title
             svg_c["meta"]["dsl"] = _make_dsl_flowchart(
                 type="subgraph",
                 subgraph_id=src_sg.subgraph_id,
