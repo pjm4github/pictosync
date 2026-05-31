@@ -266,6 +266,17 @@ ICONS = {
   <circle cx="17" cy="12" r="3.5" stroke="{accent}" stroke-width="1.5" fill="{fill}"/>
   <line x1="14" y1="12" x2="20.5" y2="12" stroke="{accent}" stroke-width="1.2"/>
 </svg>''',
+
+    # Auto-connect: two shapes joined by a wire through ports, with a sparkle
+    # above hinting that the connection is created automatically.
+    "auto_connect": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <rect x="2" y="13" width="6" height="6" stroke="{stroke}" stroke-width="1.5" fill="{fill}" rx="1"/>
+  <rect x="16" y="13" width="6" height="6" stroke="{stroke}" stroke-width="1.5" fill="{fill}" rx="1"/>
+  <line x1="9" y1="16" x2="15" y2="16" stroke="{stroke}" stroke-width="1.5" stroke-linecap="round"/>
+  <circle cx="9" cy="16" r="1.5" stroke="{accent}" stroke-width="1.5" fill="{fill}"/>
+  <circle cx="15" cy="16" r="1.5" stroke="{accent}" stroke-width="1.5" fill="{fill}"/>
+  <path d="M12 3 L12.8 6.2 L16 7 L12.8 7.8 L12 11 L11.2 7.8 L8 7 L11.2 6.2 Z" fill="{accent}" stroke="{accent}" stroke-width="0.4" stroke-linejoin="round"/>
+</svg>''',
 }
 
 

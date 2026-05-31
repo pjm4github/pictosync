@@ -708,6 +708,22 @@ class MainWindow(QMainWindow):
         self._icon_actions[self.zoom_fit_act] = "zoom_fit"
         tb.addAction(self.zoom_fit_act)
 
+        tb.addSeparator()
+
+        # Auto-connect: scan every line/curve, attach unconnected endpoints to
+        # nearby shapes via new ports.
+        self.auto_connect_act = QAction("Auto-Connect", self)
+        self.auto_connect_act.triggered.connect(self.auto_connect_lines_curves)
+        self.auto_connect_act.setToolTip(
+            "Scan all lines and curves; create ports on nearby shapes and "
+            "connect each unconnected endpoint to the closest one"
+        )
+        self.auto_connect_act.setStatusTip(
+            "Auto-attach line/curve endpoints to the nearest shape via ports"
+        )
+        self._icon_actions[self.auto_connect_act] = "auto_connect"
+        tb.addAction(self.auto_connect_act)
+
         # Gemini token counter (far right)
         self._gemini_tokens = 0
         spacer = QWidget()
@@ -2258,6 +2274,170 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Exported PowerPoint: {path}")
         except Exception as e:
             QMessageBox.critical(self, "Export failed", str(e))
+
+    def auto_connect_lines_curves(self):
+        """Scan every line and curve; attach unconnected endpoints to nearby
+        shapes via new ports.
+
+        For each ``MetaLineItem``/``MetaCurveItem`` (including
+        ``MetaOrthoCurveItem``) on the scene, each endpoint that is not
+        already wired to a port is matched against the closest
+        ``PORTEABLE_KINDS`` shape by perimeter distance.  When that distance
+        is within ``threshold`` pixels a new ``MetaPortItem`` is created at
+        the closest perimeter ``t`` on that shape, the endpoint snaps to it,
+        and the bidirectional connection is recorded — exactly what the
+        manual drag-snap path does on mouse release.
+        """
+        from PyQt6.QtCore import QPointF, QLineF
+        from canvas.items import (
+            MetaCurveItem,
+            MetaLineItem,
+            MetaOrthoCurveItem,
+            MetaPortItem,
+        )
+        from canvas.perimeter import (
+            PORTEABLE_KINDS, perimeter_point, t_from_local_point,
+        )
+
+        threshold = 500.0  # generous — Mermaid imports place endpoints
+        # very close to shapes (single-digit px); larger leaves room for
+        # hand-drawn diagrams.
+        port_radius = 6.0
+
+        scene = self.scene
+        shapes = [
+            it for it in scene.items()
+            if hasattr(it, "kind") and it.kind in PORTEABLE_KINDS
+        ]
+        connectors = [
+            it for it in scene.items()
+            if isinstance(it, (MetaLineItem, MetaCurveItem))
+        ]
+
+        if not connectors or not shapes:
+            self.statusBar().showMessage(
+                "Auto-Connect: nothing to do (no lines/curves or no shapes)",
+                5000,
+            )
+            return
+
+        created = 0
+
+        def _endpoints(it):
+            """Return [(which, scene_point), ...] for an item's endpoints."""
+            if isinstance(it, MetaCurveItem):
+                if not getattr(it, "_nodes", None) or len(it._nodes) < 2:
+                    return []
+                return [
+                    ("start", it._node_scene_pos(0)),
+                    ("end", it._node_scene_pos(len(it._nodes) - 1)),
+                ]
+            p1, p2 = it._endpoints_scene()
+            return [("start", p1), ("end", p2)]
+
+        def _already_connected(it, which: str) -> bool:
+            ends = getattr(it, "_port_endpoints", None)
+            return bool(ends) and which in ends.values()
+
+        def _set_line_endpoint(it, which, port_pos):
+            p1, p2 = it._endpoints_scene()
+            if which == "start":
+                it.setPos(port_pos)
+                it.setLine(QLineF(
+                    0, 0, p2.x() - port_pos.x(), p2.y() - port_pos.y(),
+                ))
+            else:
+                it.setPos(p1)
+                it.setLine(QLineF(
+                    0, 0, port_pos.x() - p1.x(), port_pos.y() - p1.y(),
+                ))
+
+        def _set_curve_endpoint(it, which, port_pos):
+            idx = 0 if which == "start" else len(it._nodes) - 1
+            w = it._width if it._width > 0 else 1.0
+            h = it._height if it._height > 0 else 1.0
+            rx = (port_pos.x() - it.pos().x()) / w
+            ry = (port_pos.y() - it.pos().y()) / h
+            node = it._nodes[idx]
+            cmd = node.get("cmd", "L")
+            if cmd == "H":
+                node["x"] = rx
+            elif cmd == "V":
+                node["y"] = ry
+            else:
+                node["x"] = rx
+                node["y"] = ry
+            # Mirror the orthocurve adjustment the manual snap path does on
+            # the second-to-last node so the orthogonal segments stay aligned.
+            if isinstance(it, MetaOrthoCurveItem) and idx >= 1:
+                adj = it._nodes[idx - 1]
+                adj_cmd = adj.get("cmd", "L")
+                if cmd == "H" and adj_cmd in ("V", "M", "L"):
+                    adj["y"] = ry
+                elif cmd == "V" and adj_cmd in ("H", "M", "L"):
+                    adj["x"] = rx
+                elif cmd in ("M", "L"):
+                    if adj_cmd == "H":
+                        adj["x"] = rx
+                    elif adj_cmd == "V":
+                        adj["y"] = ry
+            it.prepareGeometryChange()
+            it._update_path()
+            it._update_label_position()
+            it._update_transform_origin()
+
+        for it in connectors:
+            for which, ep in _endpoints(it):
+                if _already_connected(it, which):
+                    continue
+
+                best_shape = None
+                best_t = 0.0
+                best_d = threshold
+                for shape in shapes:
+                    local = shape.mapFromScene(ep)
+                    kind = getattr(shape, "kind", "rect")
+                    try:
+                        t = t_from_local_point(kind, shape, local.x(), local.y())
+                        perim_local = perimeter_point(kind, shape, t)
+                        perim_scene = shape.mapToScene(perim_local)
+                        d = QLineF(ep, perim_scene).length()
+                    except Exception:
+                        continue
+                    if d < best_d:
+                        best_d = d
+                        best_t = t
+                        best_shape = shape
+
+                if best_shape is None:
+                    continue
+
+                ann_id = scene._make_id() if scene._make_id else "local"
+                port = MetaPortItem(
+                    best_t, port_radius, best_shape, ann_id,
+                    scene._on_item_changed,
+                )
+                if scene._on_new_item:
+                    scene._on_new_item(port)
+
+                port_pos = port.mapToScene(QPointF(0, 0))
+                if isinstance(it, MetaCurveItem):
+                    _set_curve_endpoint(it, which, port_pos)
+                else:
+                    _set_line_endpoint(it, which, port_pos)
+
+                if it.ann_id not in port._connections:
+                    port.add_connection(it.ann_id)
+                if port.ann_id not in it._port_ids:
+                    it._port_ids.append(port.ann_id)
+                it._port_endpoints[port.ann_id] = which
+                port._notify_changed()
+                it._notify_changed()
+                created += 1
+
+        self.statusBar().showMessage(
+            f"Auto-Connect: created {created} connection(s)", 5000,
+        )
 
     def _export_overlay_json(self) -> Dict[str, Any]:
         """Export current overlay as JSON."""
