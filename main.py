@@ -2209,11 +2209,24 @@ class MainWindow(QMainWindow):
 
     def export_pptx_dialog(self):
         """Export canvas to PowerPoint file."""
+        # Default the Save dialog to the loaded file's directory and base name
+        # (same name shown in the title bar — see _update_title).  _current_file
+        # is the source of truth for the currently loaded file; if nothing is
+        # loaded fall back to the pptx_export_to_source_dir setting's bg_path.
         initial_dir = ""
-        if self.settings_manager.settings.pptx_export_to_source_dir and self.bg_path:
+        if self._current_file:
+            initial_dir = os.path.dirname(self._current_file)
+        elif self.settings_manager.settings.pptx_export_to_source_dir and self.bg_path:
             initial_dir = os.path.dirname(self.bg_path)
+        default_path = initial_dir
+        if self._current_file:
+            base = os.path.splitext(os.path.basename(self._current_file))[0]
+            default_name = f"{base}.pptx"
+            default_path = (
+                os.path.join(initial_dir, default_name) if initial_dir else default_name
+            )
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export PowerPoint", initial_dir, "PowerPoint (*.pptx)"
+            self, "Export PowerPoint", default_path, "PowerPoint (*.pptx)"
         )
         if not path:
             return
