@@ -1613,6 +1613,19 @@ class MainWindow(QMainWindow):
                 vb_w = round(float(_vb[2])) if len(_vb) >= 3 else None
                 vb_h = round(float(_vb[3])) if len(_vb) >= 4 else None
 
+                # Cap diagram size at a PowerPoint-friendly maximum.  Slide
+                # max is 56 inches (≈5376 px at 9525 EMU/px); use 5000 to
+                # leave headroom for arrow overshoot and text-box overflow.
+                # Larger diagrams also exceed QPixmap's loadable size limit.
+                # The PIL resize below targets the (scaled) vb_w/vb_h, and
+                # the annotations are scaled by the same factor after merge.
+                _PPTX_SAFE_MAX_PX = 5000
+                import_scale = 1.0
+                if vb_w and vb_h and max(vb_w, vb_h) > _PPTX_SAFE_MAX_PX:
+                    import_scale = _PPTX_SAFE_MAX_PX / max(vb_w, vb_h)
+                    vb_w = round(vb_w * import_scale)
+                    vb_h = round(vb_h * import_scale)
+
                 if use_browser:
                     # No headless browser: rasterise the returned SVG with Qt.
                     from mermaid.renderer import render_svg_to_png
@@ -1626,22 +1639,40 @@ class MainWindow(QMainWindow):
                     )
 
                 from debug_trace import trace
-                pm = QPixmap(png_path)
-                trace(f"PNG background: {pm.width()}x{pm.height()} (viewport={vb_w}x{vb_h}, browser={use_browser})", "IMPORT")
-
-                # Rescale to viewBox dimensions so coordinates are 1:1
-                if vb_w and vb_h and not pm.isNull() and (pm.width() != vb_w or pm.height() != vb_h):
-                    pm = pm.scaled(
-                        vb_w, vb_h,
-                        Qt.AspectRatioMode.IgnoreAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                    import tempfile
-                    tmp_png = tempfile.mktemp(suffix=".png", prefix="pictosync_bg_")
-                    ok = pm.save(tmp_png, "PNG")
-                    trace(f"PNG rescaled: {pm.width()}x{pm.height()} ok={ok}", "IMPORT")
-                    if ok:
-                        png_path = tmp_png
+                # Resize to viewBox dimensions via PIL so coordinates are 1:1
+                # AND so QPixmap can actually load the result.  mmdc at the
+                # default scale=4 can emit 80+ megapixel PNGs that QPixmap
+                # silently fails to load, surfacing as "Could not load image"
+                # in load_background_png even though the file is on disk.
+                if vb_w and vb_h:
+                    try:
+                        from PIL import Image
+                        # mmdc at scale=4 can emit 200+ megapixel PNGs which
+                        # exceed PIL's default decompression-bomb threshold.
+                        # The file is one we just generated locally, so the
+                        # safety check isn't useful here — disable it.
+                        Image.MAX_IMAGE_PIXELS = None
+                        with Image.open(png_path) as _im:
+                            src_w, src_h = _im.size
+                            if (src_w, src_h) != (vb_w, vb_h):
+                                _im = _im.resize((vb_w, vb_h), Image.LANCZOS)
+                                import tempfile
+                                tmp_png = tempfile.mktemp(
+                                    suffix=".png", prefix="pictosync_bg_",
+                                )
+                                _im.save(tmp_png, "PNG")
+                                trace(
+                                    f"PNG resized via PIL: {src_w}x{src_h} -> {vb_w}x{vb_h}",
+                                    "IMPORT",
+                                )
+                                png_path = tmp_png
+                            else:
+                                trace(
+                                    f"PNG background: {src_w}x{src_h} (already viewBox-sized)",
+                                    "IMPORT",
+                                )
+                    except Exception as _e:
+                        trace(f"PIL PNG resize skipped: {_e}", "IMPORT")
 
                 self.load_background_png(png_path)
             except RuntimeError as e:
@@ -1682,6 +1713,20 @@ class MainWindow(QMainWindow):
             # Convert <br/> line-break markup in labels to real newlines so the
             # serialized JSON carries the actual newline character.
             convert_br_to_newlines(data.get("annotations", []))
+
+            # Apply the diagram-fit scaling decided earlier (see the PNG
+            # handling block).  Brings annotation coords and font sizes into
+            # the same coordinate system as the resized background PNG so
+            # everything lines up and stays within PowerPoint's slide limit.
+            if import_scale != 1.0:
+                from utils import scale_annotations_uniformly
+                scale_annotations_uniformly(
+                    data.get("annotations", []), import_scale,
+                )
+                img = data.get("image", {})
+                if isinstance(img, dict):
+                    img["width"] = vb_w
+                    img["height"] = vb_h
 
             num_annotations = len(data.get("annotations", []))
             pretty = json.dumps(data, indent=2)

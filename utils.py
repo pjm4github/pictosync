@@ -80,6 +80,66 @@ def _looks_normalized(v: float) -> bool:
     return 0.0 <= v <= 1.5  # forgiving
 
 
+def scale_annotations_uniformly(
+    annotations: list, factor: float, font_floor: float = 6.0,
+) -> None:
+    """Scale annotation geometry and font sizes uniformly, in place.
+
+    For each annotation: shrinks bounding-box coords (``x``/``y``/``w``/``h``)
+    and line endpoints (``x1``/``y1``/``x2``/``y2``) by ``factor``; scales
+    ``contents.default_format.font_size`` and every run's ``format.font_size``
+    by the same factor with ``font_floor`` as a minimum so text stays
+    readable.  Curve ``nodes`` and polygon ``points`` are stored normalised
+    (0-1 relative to the bbox), so they need no scaling.  Recurses into group
+    ``children``.
+
+    Used by ``_import_mmd`` to cap diagram dimensions for QPixmap loading and
+    PowerPoint export — PowerPoint's slide max is 56 inches ≈ 5376 px at
+    9525 EMU/px, and QPixmap silently fails on 80+ megapixel inputs.
+    """
+    if factor == 1.0:
+        return
+    for ann in annotations:
+        if not isinstance(ann, dict):
+            continue
+        g = ann.get("geom", {})
+        if isinstance(g, dict):
+            for k in ("x", "y", "w", "h", "x1", "y1", "x2", "y2"):
+                if k in g:
+                    try:
+                        g[k] = round(float(g[k]) * factor, 2)
+                    except (TypeError, ValueError):
+                        pass
+        contents = ann.get("contents", {})
+        if isinstance(contents, dict):
+            df = contents.get("default_format", {})
+            if isinstance(df, dict) and "font_size" in df:
+                try:
+                    df["font_size"] = max(
+                        font_floor, round(float(df["font_size"]) * factor, 1)
+                    )
+                except (TypeError, ValueError):
+                    pass
+            for block in contents.get("blocks", []) or []:
+                if not isinstance(block, dict):
+                    continue
+                for run in block.get("runs", []) or []:
+                    if not isinstance(run, dict):
+                        continue
+                    fmt = run.get("format", {})
+                    if isinstance(fmt, dict) and "font_size" in fmt:
+                        try:
+                            fmt["font_size"] = max(
+                                font_floor,
+                                round(float(fmt["font_size"]) * factor, 1),
+                            )
+                        except (TypeError, ValueError):
+                            pass
+        scale_annotations_uniformly(
+            ann.get("children", []) or [], factor, font_floor,
+        )
+
+
 def _scale_record(rec: dict, a: float, b: float, normalized: bool) -> dict:
     """
     Scale annotation coordinates by factors a (width) and b (height).
