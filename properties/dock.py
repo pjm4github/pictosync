@@ -614,6 +614,15 @@ class PropertyPanel(QWidget):
         self.chk_italic = self.ui.italic                 # QCheckBox
         self.chk_underline = self.ui.underline           # QCheckBox
         self.chk_strikethrough = self.ui.strikethrough   # QCheckBox (UI typo)
+        # Don't let the four character-format toggles steal focus on click —
+        # otherwise the Contents text editor's selection briefly flicks to
+        # the muted "inactive" highlight while the handler runs.  Combos and
+        # spinboxes (font, size, alignment) still take focus because they
+        # need it for keyboard editing; _refocus_text_contents handles those.
+        from PyQt6.QtCore import Qt as _Qt
+        for _chk in (self.chk_bold, self.chk_italic,
+                     self.chk_underline, self.chk_strikethrough):
+            _chk.setFocusPolicy(_Qt.FocusPolicy.NoFocus)
 
         # -- text box dimensions --
         self.spin_text_box_width = self.ui.text_box_width    # QSpinBox
@@ -3479,14 +3488,22 @@ class PropertyPanel(QWidget):
         self._refocus_text_contents()
 
     def _refocus_text_contents(self):
-        """Return focus to the Contents tab text widget if editing a MetaTextItem.
+        """Return focus to the Contents text widget after a format change.
 
-        Called after every format-change handler so keystrokes continue
-        going to the text editor instead of triggering toolbar shortcuts.
-        Also ensures the authoritative flag stays set for the session.
+        Called by every format handler (bold / italic / underline / font
+        size / font family / alignment / colour / …) so the selection set
+        by ``setTextCursor`` keeps the *active* highlight colour — when
+        focus stays on the toolbar button, Qt paints the selection in the
+        muted *inactive* palette and it visually disappears, forcing the
+        user to re-select between actions.  Focus returns for any label-
+        bearing item (rect / ellipse / line / curve / text / …), not just
+        MetaTextItem; the ``_text_contents_is_authoritative`` flag, which
+        controls text-sync semantics, stays gated to MetaTextItem so the
+        rest of the panel behaves as before.
         """
         if isinstance(self._current_item, MetaTextItem):
             self._text_contents_is_authoritative = True
+        if hasattr(self, "text_contents") and self.text_contents is not None:
             self.text_contents.setFocus()
 
     # ── bold / italic / underline / strikethrough handlers ──────────
