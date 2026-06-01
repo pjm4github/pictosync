@@ -651,22 +651,79 @@ class PropertyPanel(QWidget):
         self.anchor_frame.setVisible(False)  # hidden by default
 
         # -- ports / connections --
-        self.list_ports = self.ui.ports
-        self.list_connections = self.ui.list_connections
+        # The Connections panel is dropped; the Ports panel is relocated under
+        # Geometry below.  Keep only the still-used group references.
         self.group_ports = self.ui.group_ports
         self.group_connections = self.ui.group_connections
 
-        # Tight row height — delegate pins each row to font height + 4px,
-        # overriding Qt default item padding and any theme stylesheet inflation.
-        self.list_ports.setMinimumHeight(0)
-        self.list_ports.setStyleSheet(
-            "QListWidget { padding: 0px; }"
-            "QListWidget::item { padding: 0px 2px; margin: 0px; border: none; }"
+        # Replace the .ui's QListWidget for ports with an editable 3-column
+        # QTableWidget (Name | t | Dir).  The .ui-generated widget is kept as
+        # a layout slot; we drop it in and inject the table in its place so
+        # we don't have to regenerate properties_ui.py.
+        from PyQt6.QtWidgets import (
+            QTableWidget, QHeaderView, QAbstractItemView,
         )
-        _TightItemDelegate.install(self.list_ports)
-        # Restore parent item highlight when ports list loses focus
-        self._ports_focus_filter = _FocusOutFilter(self._on_ports_focus_lost, self)
-        self.list_ports.installEventFilter(self._ports_focus_filter)
+        _ui_ports = self.ui.ports
+        self.list_ports = QTableWidget(self.group_ports)
+        self.list_ports.setColumnCount(3)
+        # No column labels — the row content speaks for itself.
+        self.list_ports.horizontalHeader().setVisible(False)
+        self.list_ports.verticalHeader().setVisible(False)
+        self.list_ports.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectItems
+        )
+        self.list_ports.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
+        )
+        # Allow clicking once into the t cell to enter edit mode.
+        self.list_ports.setEditTriggers(
+            QAbstractItemView.EditTrigger.SelectedClicked
+            | QAbstractItemView.EditTrigger.DoubleClicked
+            | QAbstractItemView.EditTrigger.EditKeyPressed
+            | QAbstractItemView.EditTrigger.AnyKeyPressed
+        )
+        # Name + t share the available width equally; Dir stays auto-sized
+        # so the arrow combo only takes the room it needs.
+        hh = self.list_ports.horizontalHeader()
+        hh.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        hh.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.list_ports.setMinimumHeight(0)
+        # Swap the placeholder QListWidget for the new QTableWidget in the
+        # group_ports layout.
+        _parent_layout = _ui_ports.parent().layout()
+        if _parent_layout is not None:
+            _parent_layout.replaceWidget(_ui_ports, self.list_ports)
+        _ui_ports.deleteLater()
+
+        # Relocate the Ports group so it sits directly under Geometry and
+        # spans the same column width.  Drop the Connections group entirely.
+        geom_col = self.ui.verticalLayout_7
+        old_col = self.ui.verticalLayout_11
+        old_col.removeWidget(self.group_ports)
+        # Insert directly after the Geometry group (which is item 0) so the
+        # Ports group sits immediately under Geometry rather than below the
+        # secondary Stacking/spacer rows.
+        insert_idx = 1
+        for i in range(geom_col.count()):
+            w = geom_col.itemAt(i).widget()
+            if w is self.ui.group_geom_shape:
+                insert_idx = i + 1
+                break
+        geom_col.insertWidget(insert_idx, self.group_ports)
+        # Drop the Connections panel.
+        self.group_connections.setVisible(False)
+        self.group_connections.deleteLater()
+        # Empty out the now-orphan middle column so it collapses to zero
+        # width (otherwise its trailing spacer would still claim space).
+        for _ in range(old_col.count()):
+            it = old_col.takeAt(0)
+            if it is None:
+                continue
+            w = it.widget()
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
 
         # ── Group-box aliases for visibility control ─────────────────
         self.pen_row = self.ui.groupBox_2        # "Line" group
@@ -1094,9 +1151,13 @@ class PropertyPanel(QWidget):
 
     def _connect_signals(self):
         """Connect all widget signals to handlers."""
-        # Ports list — clicking a port ID emits port_selected
+        # Ports table — editing the t cell repositions the port on its
+        # parent shape's perimeter; the combo in the Dir column updates
+        # _port_type.  Single-click on a cell starts editing (the prior
+        # behaviour of navigating away from the panel is dropped — use the
+        # JSON editor or the canvas to focus a port instead).
         if HAS_UI:
-            self.list_ports.currentTextChanged.connect(self._on_port_selected)
+            self.list_ports.cellChanged.connect(self._on_port_t_changed)
 
         # Text field changes
         self.label_edit.editingFinished.connect(self._apply_changes)
@@ -2118,18 +2179,77 @@ class PropertyPanel(QWidget):
 
         self._block_all_signals(False)
 
-        # ── ports list ───────────────────────────────────────────────
+        # ── ports table (editable: Name / t / Dir) ──────────────────
+        # Walk the shape's port children directly (not the computed pid+t
+        # list) so each row keeps a live reference to its port — edits go
+        # straight to port._t / port._port_type and the port slides along
+        # the perimeter via _update_position_from_t.
         if HAS_UI:
             self.list_ports.blockSignals(True)
-            self.list_ports.clear()
-            port_ids = getattr(item, "ports", [])
-            for pid in port_ids:
-                self.list_ports.addItem(pid)
-            self.group_ports.setVisible(bool(port_ids))
-            if port_ids:
-                row_h = self.list_ports.sizeHintForRow(0)
+            self.list_ports.clearContents()
+            self.list_ports.setRowCount(0)
+
+            port_items: List[Any] = []
+            if hasattr(item, "childItems"):
+                for child in item.childItems():
+                    if getattr(child, "kind", "") == "port":
+                        port_items.append(child)
+
+            if port_items:
+                from PyQt6.QtWidgets import QTableWidgetItem, QComboBox
+                from PyQt6.QtCore import Qt as _Qt
+                from canvas.items import MetaPortItem
+                # ← In, → Out, ↔ InOut
+                _DIR_SYMBOLS = [
+                    ("←", MetaPortItem.PORT_IN),
+                    ("→", MetaPortItem.PORT_OUT),
+                    ("↔", MetaPortItem.PORT_INOUT),
+                ]
+                self.list_ports.setRowCount(len(port_items))
+                for row, port in enumerate(port_items):
+                    ann_id = getattr(port, "ann_id", "") or ""
+
+                    # Col 0: name (ann_id) — read-only
+                    name_qi = QTableWidgetItem(ann_id)
+                    name_qi.setFlags(
+                        name_qi.flags() & ~_Qt.ItemFlag.ItemIsEditable
+                    )
+                    name_qi.setData(_Qt.ItemDataRole.UserRole, ann_id)
+                    self.list_ports.setItem(row, 0, name_qi)
+
+                    # Col 1: t — editable; stash the live port object in
+                    # UserRole so the cellChanged handler can act on it.
+                    t = float(getattr(port, "_t", 0.0))
+                    t_qi = QTableWidgetItem(f"{t:.4f}")
+                    t_qi.setData(_Qt.ItemDataRole.UserRole, port)
+                    self.list_ports.setItem(row, 1, t_qi)
+
+                    # Col 2: direction — combo with arrow symbols.
+                    combo = QComboBox(self.list_ports)
+                    for sym, kind in _DIR_SYMBOLS:
+                        combo.addItem(sym, kind)
+                    cur_pt = getattr(
+                        port, "_port_type", MetaPortItem.PORT_INOUT,
+                    )
+                    for ci in range(combo.count()):
+                        if combo.itemData(ci) == cur_pt:
+                            combo.setCurrentIndex(ci)
+                            break
+                    combo.setProperty("port_ref", port)
+                    combo.currentIndexChanged.connect(
+                        lambda _i, c=combo: self._on_port_direction_changed(c)
+                    )
+                    self.list_ports.setCellWidget(row, 2, combo)
+
+                row_h = self.list_ports.verticalHeader().defaultSectionSize()
+                hh_w = self.list_ports.horizontalHeader()
+                hdr_h = hh_w.height() if hh_w.isVisible() else 0
                 frame = self.list_ports.frameWidth() * 2
-                self.list_ports.setFixedHeight(row_h * len(port_ids) + frame)
+                self.list_ports.setFixedHeight(
+                    hdr_h + row_h * len(port_items) + frame
+                )
+
+            self.group_ports.setVisible(bool(port_items))
             self.list_ports.blockSignals(False)
 
         self._set_enabled(True)
@@ -3733,8 +3853,73 @@ class PropertyPanel(QWidget):
             cmd = ChangeMetaCommand(item, {"image_anchor": old_val}, {"image_anchor": value}, lambda: None)
             self.undo_stack.push(cmd)
 
-    def _on_port_selected(self, ann_id: str):
-        """Handle port ID clicked in the ports list — emit port_selected signal."""
+    def _on_port_t_changed(self, row: int, col: int) -> None:
+        """Apply a ``t`` edit from the Ports table to the underlying port.
+
+        Parses the cell text as a float, clamps to ``[0, 1]``, sets
+        ``port._t``, and calls ``_update_position_from_t`` so the port
+        slides along its parent shape's perimeter; connected line/curve
+        endpoints follow via ``_update_connected_lines``.  Notifies on
+        change so the JSON editor reflects the new value.
+        """
+        if col != 1:
+            return
+        from PyQt6.QtCore import Qt as _Qt
+        cell = self.list_ports.item(row, col)
+        if cell is None:
+            return
+        port = cell.data(_Qt.ItemDataRole.UserRole)
+        if port is None:
+            return
+        try:
+            t = float(cell.text())
+        except (TypeError, ValueError):
+            # Revert to the port's current value on parse failure.
+            cur = round(float(getattr(port, "_t", 0.0)), 4)
+            self.list_ports.blockSignals(True)
+            cell.setText(f"{cur:.4f}")
+            self.list_ports.blockSignals(False)
+            return
+        t = max(0.0, min(1.0, t))
+        port._t = t
+        if hasattr(port, "_update_position_from_t"):
+            port._update_position_from_t()
+        if hasattr(port, "_update_connected_lines"):
+            port._update_connected_lines()
+        if hasattr(port, "_notify_changed"):
+            port._notify_changed()
+        # Reflect any clamped value so the display always matches state.
+        self.list_ports.blockSignals(True)
+        cell.setText(f"{t:.4f}")
+        self.list_ports.blockSignals(False)
+
+    def _on_port_direction_changed(self, combo) -> None:
+        """Apply a direction combo change to the port's ``_port_type``."""
+        port = combo.property("port_ref")
+        if port is None:
+            return
+        kind = combo.currentData()
+        if kind and hasattr(port, "set_port_type"):
+            port.set_port_type(kind)
+        if hasattr(port, "_notify_changed"):
+            port._notify_changed()
+
+    def _on_port_selected(self, current, _previous=None):
+        """Emit ``port_selected`` for the row's ann_id.
+
+        Connected to ``QListWidget.currentItemChanged``; ``current`` is a
+        ``QListWidgetItem`` whose ``Qt.UserRole`` data holds the port
+        annotation id (the display text also includes the perimeter t value,
+        so parsing the text would be brittle).  Accepts a plain string for
+        backward compatibility with any caller invoking this directly.
+        """
+        if current is None:
+            return
+        if isinstance(current, str):
+            ann_id = current
+        else:
+            from PyQt6.QtCore import Qt as _Qt
+            ann_id = current.data(_Qt.ItemDataRole.UserRole) or current.text()
         if ann_id:
             self.port_selected.emit(ann_id)
 

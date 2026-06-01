@@ -582,8 +582,16 @@ class MainWindow(QMainWindow):
         self.act_port = QAction("Port", self)
         self.act_port.setCheckable(True)
         self.act_port.setShortcut("O")
-        self.act_port.setToolTip("Place a connector port on a shape edge (O)")
-        self.act_port.setStatusTip("Place a connector port on a shape perimeter")
+        self.act_port.setToolTip(
+            "Place a connector port on a shape edge (O).\n"
+            "Tip: in Select mode, Alt+click grabs a port underneath an "
+            "overlapping line/curve endpoint so you can drag it along the "
+            "shape's perimeter."
+        )
+        self.act_port.setStatusTip(
+            "Place a connector port on a shape perimeter "
+            "(Alt+click in Select mode to grab a port under a line endpoint)"
+        )
         self.act_port.triggered.connect(lambda checked: self._on_mode_action_triggered(Mode.PORT))
         self._icon_actions[self.act_port] = "port"
         tb.addAction(self.act_port)

@@ -7,7 +7,7 @@ Mixin classes for graphics items providing annotation ID linking and metadata ha
 from __future__ import annotations
 
 import math
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import Qt, QPointF, QLineF
 from PyQt6.QtGui import QColor
@@ -255,17 +255,31 @@ class MetaMixin:
         self.meta = meta
 
     @property
-    def ports(self) -> List[str]:
-        """Annotation IDs of child port items attached to this shape."""
+    def ports(self) -> List[Tuple[str, float]]:
+        """Child port ``(ann_id, t)`` pairs attached to this shape.
+
+        ``t`` is the port's parametric position on the shape's perimeter
+        (0.0–1.0).  Exposing it alongside the id keeps the JSON record
+        (``"ports": [["a000005", 0.8435], ...]``) and the Properties panel
+        "Ports" list self-describing — readers can see where each port sits
+        without having to look up the port item separately.
+        """
         if not hasattr(self, 'childItems'):
             return []
-        return [child.ann_id for child in self.childItems()
-                if hasattr(child, 'kind') and child.kind == 'port'
-                and hasattr(child, 'ann_id')]
+        out: List[Tuple[str, float]] = []
+        for child in self.childItems():
+            if (hasattr(child, 'kind') and child.kind == 'port'
+                    and hasattr(child, 'ann_id')):
+                t = round(float(getattr(child, '_t', 0.0)), 4)
+                out.append((child.ann_id, t))
+        return out
 
     def _ports_dict(self) -> Dict[str, Any]:
-        """Return ``{"ports": [...]}`` for JSON serialization."""
-        return {"ports": self.ports}
+        """Return ``{"ports": [[id, t], ...]}`` for JSON serialization."""
+        # ``json.dumps`` writes tuples as arrays, so an explicit list[list]
+        # cast is not required, but makes the type at the JSON boundary
+        # consistent with the on-disk format.
+        return {"ports": [[pid, t] for pid, t in self.ports]}
 
     def _meta_dict(self, meta: AnnotationMeta) -> Dict[str, Any]:
         """Convert contents to dict for JSON serialization.

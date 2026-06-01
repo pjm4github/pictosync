@@ -131,7 +131,7 @@ class EditorSyntaxSettings:
         key_bold: True
         string_color: "#27AE60"
         number_color: "#8E44AD"
-        keyword_color: "#D35400"
+        keyword_color: "#16A085"
         keyword_bold: True
         brace_color: "#566573"
         brace_bold: True
@@ -140,7 +140,7 @@ class EditorSyntaxSettings:
     key_bold: bool = True            # Default: True
     string_color: str = "#27AE60"    # Default: green
     number_color: str = "#8E44AD"    # Default: purple
-    keyword_color: str = "#D35400"   # Default: orange
+    keyword_color: str = "#16A085"   # Default: muted teal
     keyword_bold: bool = True        # Default: True
     brace_color: str = "#566573"     # Default: gray
     brace_bold: bool = True          # Default: True

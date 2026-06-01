@@ -111,10 +111,19 @@
         },
         "ports": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              { "type": "string", "description": "Port annotation id" },
+              { "type": "number", "minimum": 0, "maximum": 1, "description": "Perimeter position t (0.0–1.0)" }
+            ],
+            "items": false,
+            "minItems": 2,
+            "maxItems": 2
+          },
           "readOnly": true,
           "default": [],
-          "description": "Computed list of child port annotation IDs (read-only, derived from port parent_id relationships)"
+          "description": "Computed [[port_ann_id, t], ...] pairs for each child port on this shape (read-only, derived from port child items and their perimeter t)"
         }
       },
       "allOf": [
