@@ -991,11 +991,12 @@ def _add_curve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
                 etree.SubElement(path_el, qn("a:close"))
 
     _apply_rotation(shape, geom)
-    return shape
 
     style = record.get("style", {})
     _apply_line_style(shape.line, style)
-    # No fill for curves
+    # Curves render as an open path — no fill, otherwise PowerPoint paints
+    # the implied region between the start and end of the path with its
+    # default theme fill.
     shape.fill.background()
 
     # Arrowheads — same XML approach used by _add_line
@@ -1064,6 +1065,7 @@ def _add_curve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
 
     _add_line_curve_textbox(slide, record, geom, scale_x, scale_y,
                             mid_x=mid_x, mid_y=mid_y)
+    return shape
 
 
 def _add_seqblock(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -1378,12 +1380,12 @@ def _add_orthocurve(slide, record: Dict[str, Any], scale_x: float, scale_y: floa
     shape = builder.convert_to_shape()
 
     _apply_rotation(shape, geom)
-    return shape
 
     # ── Styles ──
     style = record.get("style", {})
     _apply_line_style(shape.line, style)
-    # No fill for open polylines
+    # Open polyline — no fill, otherwise PowerPoint paints the implied
+    # region between start and end of the path with its default theme fill.
     shape.fill.background()
 
     # ── Arrowheads (same XML approach as _add_curve) ──
@@ -1415,6 +1417,7 @@ def _add_orthocurve(slide, record: Dict[str, Any], scale_x: float, scale_y: floa
     mid_y = geom.get("y", 0) + mid_ry * geom.get("h", 0)
     _add_line_curve_textbox(slide, record, geom, scale_x, scale_y,
                             mid_x=mid_x, mid_y=mid_y)
+    return shape
 
 
 def export_to_pptx(
