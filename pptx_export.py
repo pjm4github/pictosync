@@ -391,6 +391,7 @@ def _add_rectangle(slide, record: Dict[str, Any], scale_x: float, scale_y: float
 
     _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
+    return shape
 
 
 def _add_rounded_rectangle(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -423,6 +424,144 @@ def _add_rounded_rectangle(slide, record: Dict[str, Any], scale_x: float, scale_
 
     _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
+    return shape
+
+
+def _add_port(target_shapes, record: Dict[str, Any], scale_x: float, scale_y: float):
+    """Add a port as a transparent ellipse to ``target_shapes``.
+
+    The port's position is the centre of the ellipse (the caller has already
+    written ``geom["x"]/y`` as the absolute scene-space centre via
+    ``port_positions``); ``geom["radius"]`` controls the size, defaulting to
+    6 px to match the canvas port radius.  The pen colour is preserved so
+    the port stays visible; the fill is transparent so the shape behind it
+    is not obscured.  Returns the created ``pptx`` shape so callers can use
+    it as a connection target for smart connectors.
+    """
+    geom = record.get("geom", {})
+    cx = geom.get("x", 0) * scale_x
+    cy = geom.get("y", 0) * scale_y
+    r = float(geom.get("radius", 6.0))
+    diameter_px = r * 2
+    x = px_to_emu(cx - r * scale_x)
+    y = px_to_emu(cy - r * scale_y)
+    w = px_to_emu(diameter_px * scale_x)
+    h = px_to_emu(diameter_px * scale_y)
+
+    shape = target_shapes.add_shape(MSO_SHAPE.OVAL, x, y, w, h)
+    # Transparent fill — see-through so the shape behind shows through.
+    shape.fill.background()
+    # Keep the pen so the port stays visible.
+    style = record.get("style", {})
+    _apply_line_style(shape.line, style)
+    return shape
+
+
+def _add_smart_connector(
+    slide,
+    record: Dict[str, Any],
+    ann_id_to_pptx_shape: Dict[str, Any],
+    port_positions: Dict[str, tuple],
+    scale_x: float,
+    scale_y: float,
+    scene_x: float,
+    scene_y: float,
+):
+    """Emit a line/curve/orthocurve that is attached to one or more ports as
+    a PowerPoint smart connector with ``begin_connect``/``end_connect`` to
+    the corresponding port shapes, so the connector auto-routes when the
+    user moves the connected shapes in PowerPoint.
+
+    Endpoint-to-port matching is by Euclidean proximity (the canvas-side
+    ``_port_endpoints`` dict isn't serialised, so we infer which port sits
+    at which end from the line's recorded endpoints and each port's known
+    scene position).
+    """
+    geom = record.get("geom", {})
+    kind = record.get("kind", "line")
+
+    # Resolve endpoints in shifted (slide-aligned) scene coords.
+    if "x1" in geom:
+        e1 = (geom.get("x1", 0), geom.get("y1", 0))
+        e2 = (geom.get("x2", 0), geom.get("y2", 0))
+    else:
+        # Curve / orthocurve: bbox + normalized nodes (first = start,
+        # last = end).  Compute the endpoint scene positions from the
+        # bbox and the 0-1 relative node positions.
+        gx = geom.get("x", 0)
+        gy = geom.get("y", 0)
+        gw = geom.get("w", 0) or 1
+        gh = geom.get("h", 0) or 1
+        nodes = geom.get("nodes", [])
+        if len(nodes) >= 2:
+            n0, nN = nodes[0], nodes[-1]
+            e1 = (gx + n0.get("x", 0) * gw, gy + n0.get("y", 0) * gh)
+            e2 = (gx + nN.get("x", 0) * gw, gy + nN.get("y", 0) * gh)
+        else:
+            e1 = (gx, gy)
+            e2 = (gx + gw, gy + gh)
+
+    # Match each end to a port by proximity.  Port positions are stored
+    # in scene coords (un-shifted); shift them here to align with the
+    # already-shifted endpoint values.
+    port_ids = [p for p in record.get("ports", []) if p in port_positions]
+    begin_port: Optional[str] = None
+    end_port: Optional[str] = None
+    if port_ids:
+        def _shifted(pid: str) -> tuple:
+            px, py = port_positions[pid]
+            return (px - scene_x, py - scene_y)
+        # Greedy nearest match — each port claims the closer endpoint.
+        remaining = list(port_ids)
+        # Sort by which endpoint each port is closer to so the closer
+        # pairing is decided first.
+        remaining.sort(key=lambda pid: abs(
+            (_shifted(pid)[0] - e1[0]) ** 2 + (_shifted(pid)[1] - e1[1]) ** 2
+            - ((_shifted(pid)[0] - e2[0]) ** 2 + (_shifted(pid)[1] - e2[1]) ** 2)
+        ))
+        for pid in remaining:
+            px, py = _shifted(pid)
+            d1 = (px - e1[0]) ** 2 + (py - e1[1]) ** 2
+            d2 = (px - e2[0]) ** 2 + (py - e2[1]) ** 2
+            if d1 <= d2 and begin_port is None:
+                begin_port = pid
+            elif end_port is None:
+                end_port = pid
+
+    # Pick the connector style that matches the canvas item kind.
+    if kind == "curve":
+        conn_type = MSO_CONNECTOR.CURVE
+    elif kind == "orthocurve":
+        conn_type = MSO_CONNECTOR.ELBOW
+    else:
+        conn_type = MSO_CONNECTOR.STRAIGHT
+
+    x1 = px_to_emu(e1[0] * scale_x)
+    y1 = px_to_emu(e1[1] * scale_y)
+    x2 = px_to_emu(e2[0] * scale_x)
+    y2 = px_to_emu(e2[1] * scale_y)
+    connector = slide.shapes.add_connector(conn_type, x1, y1, x2, y2)
+
+    # Reuse the line styling (colour, width, dash) from the source record.
+    try:
+        _apply_line_style(connector.line, record.get("style", {}))
+    except Exception:
+        pass
+
+    # Wire the smart connections — silently fall back to a free connector
+    # if begin_connect/end_connect isn't supported for this connector type
+    # or shape combination.
+    if begin_port and begin_port in ann_id_to_pptx_shape:
+        try:
+            connector.begin_connect(ann_id_to_pptx_shape[begin_port], 0)
+        except Exception:
+            pass
+    if end_port and end_port in ann_id_to_pptx_shape:
+        try:
+            connector.end_connect(ann_id_to_pptx_shape[end_port], 0)
+        except Exception:
+            pass
+    return connector
 
 
 def _add_ellipse(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -441,6 +580,7 @@ def _add_ellipse(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
 
     _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
+    return shape
 
 
 def _add_line(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -650,6 +790,7 @@ def _add_hexagon(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
 
     _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
+    return shape
 
 
 def _add_cylinder(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -675,6 +816,7 @@ def _add_cylinder(slide, record: Dict[str, Any], scale_x: float, scale_y: float)
 
     _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
+    return shape
 
 
 def _add_blockarrow(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -705,6 +847,7 @@ def _add_blockarrow(slide, record: Dict[str, Any], scale_x: float, scale_y: floa
 
     _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
+    return shape
 
 
 def _add_polygon(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -742,6 +885,7 @@ def _add_polygon(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
 
     _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
+    return shape
 
 
 def _add_curve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -847,6 +991,7 @@ def _add_curve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
                 etree.SubElement(path_el, qn("a:close"))
 
     _apply_rotation(shape, geom)
+    return shape
 
     style = record.get("style", {})
     _apply_line_style(shape.line, style)
@@ -1173,6 +1318,7 @@ def _add_isocube(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
 
     _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
+    return shape
 
 
 def _add_orthocurve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -1232,6 +1378,7 @@ def _add_orthocurve(slide, record: Dict[str, Any], scale_x: float, scale_y: floa
     shape = builder.convert_to_shape()
 
     _apply_rotation(shape, geom)
+    return shape
 
     # ── Styles ──
     style = record.get("style", {})
@@ -1275,6 +1422,7 @@ def export_to_pptx(
     output_path: str,
     scene_rect: Optional[Dict[str, float]] = None,
     background_png: Optional[str] = None,
+    port_positions: Optional[Dict[str, tuple]] = None,
 ) -> None:
     """
     Export annotations to a PowerPoint file.
@@ -1284,18 +1432,29 @@ def export_to_pptx(
         output_path: Path to save the .pptx file
         scene_rect: Scene rectangle with x, y, w, h (for scaling)
         background_png: Optional path to background image
+        port_positions: Optional ``{port_ann_id: (scene_x, scene_y)}`` mapping
+            for ports — the port record stores its position as a perimeter
+            ``t`` on its parent, not an absolute x/y, so the caller (canvas
+            side) supplies the resolved scene position so the export can
+            place the port and route smart connectors through it.
     """
+    if port_positions is None:
+        port_positions = {}
     prs = Presentation()
 
     # Set slide dimensions based on scene rect
     if scene_rect:
         scene_w = scene_rect.get("w", 800)
         scene_h = scene_rect.get("h", 600)
+        scene_x = scene_rect.get("x", 0)
+        scene_y = scene_rect.get("y", 0)
         prs.slide_width = px_to_emu(scene_w)
         prs.slide_height = px_to_emu(scene_h)
     else:
         scene_w = 800
         scene_h = 600
+        scene_x = 0
+        scene_y = 0
 
     # Use blank layout
     blank_layout = prs.slide_layouts[6]  # Blank layout
@@ -1305,17 +1464,27 @@ def export_to_pptx(
     scale_x = 1.0
     scale_y = 1.0
 
-    # Add background image if provided
+    # Add background image if provided.  The scene rect typically extends
+    # beyond the PNG by the canvas margin (_update_scene_rect adds 50px on
+    # each side); stretching the PNG to fill the whole slide would scale
+    # PNG content up by that margin amount, so PNG features then look ~2 %
+    # bigger than the annotation overlay positioned at raw scene coords.
+    # Instead, place the PNG at its native pixel size at scene origin
+    # (0, 0), translated so that scene_rect's origin maps to slide (0, 0).
     if background_png:
         try:
-            from pptx.util import Inches
             import os
             if os.path.exists(background_png):
+                from PIL import Image
+                Image.MAX_IMAGE_PIXELS = None
+                with Image.open(background_png) as _im:
+                    png_w_px, png_h_px = _im.size
+                png_left = px_to_emu(0 - scene_x)
+                png_top = px_to_emu(0 - scene_y)
                 slide.shapes.add_picture(
                     background_png,
-                    0, 0,
-                    prs.slide_width,
-                    prs.slide_height
+                    png_left, png_top,
+                    px_to_emu(png_w_px), px_to_emu(png_h_px),
                 )
         except Exception:
             pass  # Skip if image can't be added
@@ -1338,35 +1507,123 @@ def export_to_pptx(
         key=lambda a: a.get("z", 0)
     )
 
+    # One pass to (a) inject the port's absolute scene position into the
+    # record (ports store t along the parent's perimeter, not an absolute
+    # x/y) and (b) shift every coord by -scene_rect.origin so scene (0, 0)
+    # maps to slide (0, 0).  Otherwise items would land at their raw scene
+    # coords while the PNG was already translated by the same amount above,
+    # and the two would offset by the canvas margin.
+    _shifted: List[Dict[str, Any]] = []
+    for _rec in sorted_annotations:
+        _rc = dict(_rec)
+        _g = dict(_rc.get("geom", {}))
+        if _rc.get("kind") == "port":
+            _pid = _rc.get("id", "")
+            if _pid in port_positions:
+                _px, _py = port_positions[_pid]
+                _g["x"] = _px
+                _g["y"] = _py
+        if "x" in _g:
+            _g["x"] = _g["x"] - scene_x
+        if "y" in _g:
+            _g["y"] = _g["y"] - scene_y
+        if "x1" in _g:
+            _g["x1"] = _g["x1"] - scene_x
+            _g["y1"] = _g["y1"] - scene_y
+        if "x2" in _g:
+            _g["x2"] = _g["x2"] - scene_x
+            _g["y2"] = _g["y2"] - scene_y
+        _rc["geom"] = _g
+        _shifted.append(_rc)
+    sorted_annotations = _shifted
+
+    # Pre-pass: map each parent shape (by ann_id) to the list of its child
+    # port records, so we know which shapes need to be wrapped in a group
+    # containing the parent + its ports.
+    parent_id_to_ports: Dict[str, List[Dict[str, Any]]] = {}
+    for _rec in sorted_annotations:
+        if _rec.get("kind") == "port":
+            _ppid = _rec.get("parent_id")
+            if _ppid:
+                parent_id_to_ports.setdefault(_ppid, []).append(_rec)
+
+    # Track pptx shapes by ann_id so deferred smart connectors can attach
+    # to them via begin_connect/end_connect.  Track ports already placed
+    # inside a group so the main loop doesn't add them again on the slide.
+    ann_id_to_pptx_shape: Dict[str, Any] = {}
+    processed_ports: set = set()
+    deferred_connectors: List[Dict[str, Any]] = []
+
+    _PORTEABLE_DISPATCH = {
+        "rect":         _add_rectangle,
+        "roundedrect":  _add_rounded_rectangle,
+        "ellipse":      _add_ellipse,
+        "hexagon":      _add_hexagon,
+        "cylinder":     _add_cylinder,
+        "blockarrow":   _add_blockarrow,
+        "polygon":      _add_polygon,
+        "isocube":      _add_isocube,
+    }
+
     # Add each shape to the slide
     for record in sorted_annotations:
         kind = record.get("kind", "")
+        ann_id = record.get("id", "")
 
-        if kind == "rect":
-            _add_rectangle(slide, record, scale_x, scale_y)
-        elif kind == "roundedrect":
-            _add_rounded_rectangle(slide, record, scale_x, scale_y)
-        elif kind == "ellipse":
-            _add_ellipse(slide, record, scale_x, scale_y)
+        if kind == "port":
+            if ann_id in processed_ports:
+                continue
+            shape = _add_port(slide.shapes, record, scale_x, scale_y)
+            if ann_id:
+                ann_id_to_pptx_shape[ann_id] = shape
+            continue
+
+        # Lines / curves connected to ports are deferred so they can be
+        # emitted as PowerPoint smart connectors with begin/end_connect.
+        if kind in ("line", "curve", "orthocurve") and record.get("ports"):
+            deferred_connectors.append(record)
+            continue
+
+        # If this is a porteable shape that owns child ports, build a group
+        # so the shape and its ports move together in PowerPoint.
+        child_ports = parent_id_to_ports.get(ann_id) or []
+        handler = _PORTEABLE_DISPATCH.get(kind)
+        if handler is not None and child_ports:
+            grp = slide.shapes.add_group_shape()
+            shape = handler(grp, record, scale_x, scale_y)
+            if ann_id and shape is not None:
+                ann_id_to_pptx_shape[ann_id] = shape
+            for port_rec in child_ports:
+                port_shape = _add_port(grp.shapes, port_rec, scale_x, scale_y)
+                pid = port_rec.get("id")
+                if pid:
+                    ann_id_to_pptx_shape[pid] = port_shape
+                    processed_ports.add(pid)
+            continue
+
+        # Default dispatch — no grouping needed.
+        if handler is not None:
+            shape = handler(slide, record, scale_x, scale_y)
+            if ann_id and shape is not None:
+                ann_id_to_pptx_shape[ann_id] = shape
         elif kind == "line":
             _add_line(slide, record, scale_x, scale_y)
         elif kind == "text":
             _add_text(slide, record, scale_x, scale_y)
-        elif kind == "hexagon":
-            _add_hexagon(slide, record, scale_x, scale_y)
-        elif kind == "cylinder":
-            _add_cylinder(slide, record, scale_x, scale_y)
-        elif kind == "blockarrow":
-            _add_blockarrow(slide, record, scale_x, scale_y)
-        elif kind == "polygon":
-            _add_polygon(slide, record, scale_x, scale_y)
         elif kind == "curve":
             _add_curve(slide, record, scale_x, scale_y)
-        elif kind == "isocube":
-            _add_isocube(slide, record, scale_x, scale_y)
         elif kind == "orthocurve":
             _add_orthocurve(slide, record, scale_x, scale_y)
         elif kind == "seqblock":
             _add_seqblock(slide, record, scale_x, scale_y)
+
+    # Second pass — deferred port-attached lines/curves become smart
+    # connectors with begin_connect/end_connect so they auto-route as the
+    # connected shapes move in PowerPoint.
+    for record in deferred_connectors:
+        _add_smart_connector(
+            slide, record, ann_id_to_pptx_shape, port_positions,
+            scale_x, scale_y, scene_x, scene_y,
+        )
 
     prs.save(output_path)

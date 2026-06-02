@@ -2259,17 +2259,32 @@ class MainWindow(QMainWindow):
         if not path.lower().endswith(".pptx"):
             path += ".pptx"
 
-        # Collect annotations from canvas (skip group children)
+        # Collect annotations from canvas (skip group children).  Capture
+        # each port's absolute scene position into port_positions so the
+        # PowerPoint export can place the transparent-ellipse port and
+        # connect lines/curves to it — the port record stores t along the
+        # parent's perimeter, not an absolute x/y.
+        from canvas.items import MetaPortItem as _MetaPortItem
+        from PyQt6.QtCore import QPointF as _QPointF
         annotations = []
+        port_positions: Dict[str, tuple] = {}
         for it in self.scene.items():
             if hasattr(it, "to_record") and hasattr(it, "meta"):
                 if isinstance(it.parentItem(), MetaGroupItem):
                     continue
-                annotations.append(it.to_record())
+                rec = it.to_record()
+                annotations.append(rec)
+                if isinstance(it, _MetaPortItem):
+                    p = it.mapToScene(_QPointF(0, 0))
+                    port_positions[rec.get("id", "")] = (p.x(), p.y())
         annotations.reverse()  # Maintain z-order
 
-        # Get scene rect for proper sizing
-        sr = self.scene.sceneRect()
+        # Use the items' bounding rect (actual PNG + annotations extent)
+        # rather than sceneRect, which _update_scene_rect grows by 50 px on
+        # every call and quickly bloats into the tens of thousands of pixels
+        # — that would either overflow PowerPoint's slide-size cap or
+        # squash the PNG/annotations into a corner with vast empty margin.
+        sr = self.scene.itemsBoundingRect()
         scene_rect = {"x": sr.x(), "y": sr.y(), "w": sr.width(), "h": sr.height()}
 
         try:
@@ -2278,6 +2293,7 @@ class MainWindow(QMainWindow):
                 output_path=path,
                 scene_rect=scene_rect,
                 background_png=self.bg_path,
+                port_positions=port_positions,
             )
             self.statusBar().showMessage(f"Exported PowerPoint: {path}")
         except Exception as e:
