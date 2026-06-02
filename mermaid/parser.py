@@ -372,21 +372,41 @@ def _extract_text(g_el: ET.Element, ns: str) -> str:
     """Extract text from a Mermaid SVG group (foreignObject or <text>).
 
     Handles both HTML-label mode (foreignObject with XHTML spans)
-    and plain SVG text mode.
+    and plain SVG text mode.  State-diagram nodes carry one
+    foreignObject per description line (title row + each ``STATE: text``
+    line) — accumulate text across every foreignObject and join with
+    newlines so multi-line state descriptions come through intact;
+    single-foreignObject nodes (flowchart, etc.) are unaffected since
+    the join over a single element is a no-op.
     """
-    # Try foreignObject first (default Mermaid output)
+    # Try foreignObject first (default Mermaid output).  Build text as a
+    # list of lines so an XHTML ``<br>`` inside a label (the way Mermaid
+    # state-diagram body descriptions stack visually) starts a new line in
+    # the extracted string.
+    fo_texts: List[str] = []
     for fo in g_el.iter(f"{{{ns}}}foreignObject"):
-        texts: List[str] = []
+        lines: List[List[str]] = [[]]
         for el in fo.iter():
+            tag = el.tag.rsplit("}", 1)[-1] if "}" in el.tag else el.tag
+            if tag.lower() == "br":
+                # The text that visually appears after this <br> is in its
+                # tail; start a fresh line and seed it with that tail.
+                lines.append([])
+                if el.tail and el.tail.strip():
+                    lines[-1].append(el.tail.strip())
+                continue
             if el.text and el.text.strip():
                 cls = el.get("class", "")
                 if cls and "fa-" in cls and not el.text.strip():
                     continue
-                texts.append(el.text.strip())
+                lines[-1].append(el.text.strip())
             if el.tail and el.tail.strip():
-                texts.append(el.tail.strip())
-        if texts:
-            return " ".join(texts)
+                lines[-1].append(el.tail.strip())
+        joined = "\n".join(" ".join(line) for line in lines if line)
+        if joined:
+            fo_texts.append(joined)
+    if fo_texts:
+        return "\n".join(fo_texts)
 
     # Also try XHTML namespace foreignObject content
     for fo in g_el.iter(f"{{{ns}}}foreignObject"):
@@ -765,6 +785,36 @@ def _parse_node(
     rect_el = node_g.find(f"{{{ns}}}rect[@class]")
     if rect_el is None:
         rect_el = node_g.find(f"{{{ns}}}rect")
+    # State-diagram nodes nest the geometry rect inside an unnamed wrapper
+    # <g> (rect.class = "outer title-state") rather than directly under the
+    # node group, so the direct .find() above misses it.  Fall back to a
+    # recursive scan, preferring the obvious "outer" / "title" / "node-bkg"
+    # styling and otherwise the first rect with non-trivial width.  Skip
+    # any rect inside a <foreignObject> — those are HTML label backgrounds,
+    # not the node's silhouette.
+    if rect_el is None:
+        _fo_descendants = {
+            id(r) for fo in node_g.iter(f"{{{ns}}}foreignObject")
+            for r in fo.iter(f"{{{ns}}}rect")
+        }
+        _preferred = ("outer", "title-state", "node-bkg")
+        _fallback: Optional[ET.Element] = None
+        for r in node_g.iter(f"{{{ns}}}rect"):
+            if id(r) in _fo_descendants:
+                continue
+            _cls = r.get("class", "")
+            if any(tok in _cls for tok in _preferred):
+                rect_el = r
+                break
+            if _fallback is None:
+                try:
+                    _w = float(r.get("width", "0") or "0")
+                except ValueError:
+                    _w = 0.0
+                if _w > 5:
+                    _fallback = r
+        if rect_el is None:
+            rect_el = _fallback
     poly_el = node_g.find(f"{{{ns}}}polygon")
     circle_el = node_g.find(f"{{{ns}}}circle")
     ellipse_el = node_g.find(f"{{{ns}}}ellipse")
