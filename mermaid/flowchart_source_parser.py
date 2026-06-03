@@ -469,7 +469,7 @@ class _FlowchartVisitor(MermaidFlowchartParserVisitor):
             if pipe_ctx is not None:
                 pipe_text = pipe_ctx.getText()
                 if pipe_text.startswith("|") and pipe_text.endswith("|"):
-                    label = pipe_text[1:-1].strip()
+                    label = _strip_label_wrap(pipe_text[1:-1].strip())
 
             # Edge ID prefix
             edge_id = ""

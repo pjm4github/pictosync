@@ -225,6 +225,12 @@ NEWLINE : ( '\r\n' | '\r' | '\n' ) ;
 // beats '))' beats ')', etc.  LABEL_TEXT excludes only the closer lead chars
 // ( ) ] } ) and newlines, so '/', '\', '<', '>', '(', '[', '{', '|', spaces
 // and unicode all remain part of the label (handles '<br/>', 'a/b', '×').
+//
+// Quoted labels are treated as atomic: when a `"..."` block appears anywhere
+// in the label content, every character inside it (including ')', ']', '}')
+// is part of the LABEL_TEXT.  Without this, a label like
+// `["Process bus (9-2 LE) + GOOSE"]` would have its inner ')' pop the mode
+// and the tail would mis-tokenise.
 
 mode M_LBL;
 
@@ -238,7 +244,10 @@ M_RPAREN        : ')'   -> type(RPAREN),        popMode ;   // (t)
 M_RBRACK        : ']'   -> type(RBRACK),        popMode ;   // [t]  >t]  [/t/]
 M_RBRACE        : '}'   -> type(RBRACE),        popMode ;   // {t}
 
-M_LABEL_TEXT    : ~[)\]}\r\n]+ -> type(LABEL_TEXT) ;
+M_LABEL_TEXT
+    : ( '"' ( '\\' . | ~["\r\n] )* '"' | ~[)\]}\r\n]+ )+
+      -> type(LABEL_TEXT)
+    ;
 M_NL            : ('\r\n' | '\r' | '\n') -> type(NEWLINE), popMode ;
 
 
