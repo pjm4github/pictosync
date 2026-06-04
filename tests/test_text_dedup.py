@@ -173,9 +173,17 @@ class TestDedupLabelTechNote:
 # ── Dedup in from_dict integration ───────────────────────────────────────
 
 class TestDedupInFromDict:
-    """_dedup_blocks is called during AnnotationContents.from_dict."""
+    """Dedup applies only to the LEGACY (label/tech/note) migration path.
 
-    def test_overlay20_dedup(self):
+    The overlay-2.0 ``blocks`` path is the canonical free-form text model and
+    deliberately does NOT dedup — the label/tech/note 3-block partition is a
+    C4-specific projection handled by the DSL layer, so repeated paragraphs
+    round-trip intact.
+    """
+
+    def test_overlay20_no_dedup(self):
+        # Overlay-2.0 blocks are taken verbatim: a paragraph whose text repeats
+        # an earlier block is preserved, not cleared.
         d = {
             "frame": {},
             "blocks": [
@@ -185,9 +193,13 @@ class TestDedupInFromDict:
             ],
         }
         meta = AnnotationContents.from_dict(d)
+        assert [b.plain_text() for b in meta.blocks] == [
+            "MyService", "Java", "MyService",
+        ]
+        # The label/tech/note read-properties still project onto blocks 0/1/2.
         assert meta.label == "MyService"
         assert meta.tech == "Java"
-        assert meta.note == ""  # cleared by dedup
+        assert meta.note == "MyService"  # preserved — no dedup on blocks path
 
     def test_legacy_dedup(self):
         d = {"label": "Server", "tech": "Server", "note": "Server"}

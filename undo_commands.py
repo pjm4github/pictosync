@@ -184,33 +184,38 @@ class ItemGeometryCommand(QUndoCommand):
 
 
 class TextEditCommand(QUndoCommand):
-    """Command for text editing undo on MetaTextItem."""
+    """Command for in-place text editing undo on MetaTextItem.
 
-    def __init__(self, item, old_text: str, new_text: str, parent=None):
+    Captures the item's overlay-2.0 ``blocks`` before and after an edit as
+    lists of plain dicts.  Undo/redo restores the snapshot, re-renders the
+    document from it, and notifies the sync layer.
+    """
+
+    def __init__(self, item, old_blocks: list, new_blocks: list, parent=None):
         super().__init__(parent)
         self.item = item
-        self.old_text = old_text
-        self.new_text = new_text
+        self.old_blocks = old_blocks
+        self.new_blocks = new_blocks
         ann_id = getattr(item, 'ann_id', 'item')
         self.setText(f"Edit text {ann_id}")
         self._first_redo = True
 
-    def undo(self):
-        self.item.document().blockSignals(True)
-        self.item.setPlainText(self.old_text)
-        self.item.document().blockSignals(False)
-        self.item.meta.note = self.old_text
+    def _apply(self, blocks: list):
+        from models import TextBlock, _blocks_to_legacy_text
+        self.item.meta.blocks = [TextBlock.from_dict(b) for b in blocks]
+        self.item.meta.text = _blocks_to_legacy_text(self.item.meta.blocks)
+        if hasattr(self.item, '_render_from_meta'):
+            self.item._render_from_meta()
         self.item._notify_changed()
+
+    def undo(self):
+        self._apply(self.old_blocks)
 
     def redo(self):
         if self._first_redo:
             self._first_redo = False
             return
-        self.item.document().blockSignals(True)
-        self.item.setPlainText(self.new_text)
-        self.item.document().blockSignals(False)
-        self.item.meta.note = self.new_text
-        self.item._notify_changed()
+        self._apply(self.new_blocks)
 
 
 class ResizeItemCommand(QUndoCommand):

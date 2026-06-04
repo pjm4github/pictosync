@@ -336,65 +336,11 @@ class AnnotationContents:
     # Arbitrary extra keys preserved through round-trips
     extras: Dict[str, Any] = field(default_factory=dict, repr=False)
 
-    # -- Block-based label/tech/note property aliases -------------------
-
-    def _ensure_blocks(self) -> List[TextBlock]:
-        """Ensure at least 3 blocks exist (label, tech, note) and return them.
-
-        Also initialises ``frame`` and ``default_format`` from effective
-        values when they are ``None``, so the overlay-2.0 structure is
-        always complete after this call.
-        """
-        if self.blocks is None:
-            self.blocks = []
-        if self.frame is None:
-            self.frame = self.effective_frame()
-        if self.default_format is None:
-            self.default_format = self.effective_default_format()
-        while len(self.blocks) < 3:
-            self.blocks.append(TextBlock(runs=[TextRun(type="text", text="")]))
-        return self.blocks
-
-    @property
-    def label(self) -> str:
-        """Block 0 plain text (bold run)."""
-        if self.blocks and len(self.blocks) >= 1:
-            return self.blocks[0].plain_text()
-        return ""
-
-    @label.setter
-    def label(self, value: str) -> None:
-        blks = self._ensure_blocks()
-        blks[0].runs = [TextRun(type="text", text=value,
-                                format=CharFormat(bold=True))]
-        self.text = _blocks_to_legacy_text(self.blocks)
-
-    @property
-    def tech(self) -> str:
-        """Block 1 plain text (italic run). Stored WITHOUT brackets."""
-        if self.blocks and len(self.blocks) >= 2:
-            return self.blocks[1].plain_text()
-        return ""
-
-    @tech.setter
-    def tech(self, value: str) -> None:
-        blks = self._ensure_blocks()
-        blks[1].runs = [TextRun(type="text", text=value,
-                                format=CharFormat(italic=True))]
-        self.text = _blocks_to_legacy_text(self.blocks)
-
-    @property
-    def note(self) -> str:
-        """Block 2 plain text (plain run)."""
-        if self.blocks and len(self.blocks) >= 3:
-            return self.blocks[2].plain_text()
-        return ""
-
-    @note.setter
-    def note(self, value: str) -> None:
-        blks = self._ensure_blocks()
-        blks[2].runs = [TextRun(type="text", text=value)]
-        self.text = _blocks_to_legacy_text(self.blocks)
+    # NOTE: the block-based label/tech/note property aliases and
+    # ``_ensure_blocks`` are defined once, lower in this class (search for
+    # "Block-based label / tech / note aliases").  An earlier duplicate set
+    # that force-padded to 3 blocks was removed when the C4 partition was
+    # decoupled from the generic text model.
 
     # -- Serialization -------------------------------------------------
 
@@ -453,7 +399,10 @@ class AnnotationContents:
                                    "text_box_border", "text_box_border_color",
                                    "text_box_background_color",
                                    "label", "tech", "note"}}
-            _dedup_blocks(blocks)
+            # NOTE: blocks are taken verbatim — no cross-block dedup.  The
+            # label/tech/note 3-block partition is a C4-specific projection
+            # handled by the DSL layer, not the generic text model, so
+            # free-form blocks (incl. repeated paragraphs) round-trip intact.
             return cls(
                 frame=frame, default_format=default_format, blocks=blocks,
                 wrap=wrap, text_box_width=text_box_width,
@@ -556,17 +505,10 @@ class AnnotationContents:
                 if fmt_d:
                     d["default_format"] = fmt_d
             d["blocks"] = [b.to_dict() for b in self.blocks]
-            # Convenience aliases — makes the JSON human-readable and keeps
-            # test assertions simple.
-            _lbl = self.label
-            _tch = self.tech
-            _nte = self.note
-            if _lbl:
-                d["label"] = _lbl
-            if _tch:
-                d["tech"] = _tch
-            if _nte:
-                d["note"] = _nte
+            # The serialized contract is blocks-only.  label/tech/note are no
+            # longer emitted as convenience aliases — they are a C4-specific
+            # projection over blocks, handled by the DSL layer, and remain
+            # available as read/write Python properties for importers.
             d["wrap"] = self.wrap
             if self.text_box_width:
                 d["text_box_width"] = self.text_box_width
@@ -584,10 +526,6 @@ class AnnotationContents:
                 d["text_box_border_color"] = self.text_box_border_color
             if self.text_box_background_color:
                 d["text_box_background_color"] = self.text_box_background_color
-            # Convenience keys for external tooling and property panel
-            d["label"] = self.label
-            d["tech"] = self.tech
-            d["note"] = self.note
             d.update(self.extras)
             return d
 
@@ -634,15 +572,19 @@ class AnnotationContents:
 
     # -- Block-based label / tech / note aliases -------------------------
 
-    def _ensure_blocks(self) -> List[TextBlock]:
-        """Ensure at least 3 blocks exist for the label/tech/note slots.
+    def _ensure_blocks(self, count: int = 1) -> List[TextBlock]:
+        """Ensure at least *count* blocks exist, padding with empty blocks.
 
         Lazily initialises ``blocks``, ``frame``, and ``default_format``
         the first time a caller writes through the ``label``/``tech``/``note``
-        property setters.
+        property setters.  Pads only up to *count* (the index the caller is
+        about to write) rather than always to 3 — the label/tech/note 3-block
+        partition is a C4-specific projection, not a generic-text invariant,
+        so a label-only node stays a single block instead of carrying two
+        empty trailing paragraphs.
 
         Returns:
-            The (now guaranteed ≥ 3-element) ``blocks`` list.
+            The (now guaranteed ≥ *count*-element) ``blocks`` list.
         """
         if self.blocks is None:
             self.blocks = []
@@ -650,48 +592,53 @@ class AnnotationContents:
             self.frame = self.effective_frame()
         if self.default_format is None:
             self.default_format = self.effective_default_format()
-        while len(self.blocks) < 3:
+        while len(self.blocks) < count:
             self.blocks.append(TextBlock(runs=[TextRun(type="text", text="")]))
         return self.blocks
 
     @property
     def label(self) -> str:
-        """Plain text of block 0 (label slot)."""
+        """Plain text of block 0 (label slot).
+
+        Back-compat sugar over ``blocks`` — importers (Mermaid/PlantUML) write
+        every node's primary text through this setter.  Reading/writing
+        ``label`` does not impose the C4 3-block partition.
+        """
         if self.blocks and len(self.blocks) >= 1:
             return self.blocks[0].plain_text()
         return ""
 
     @label.setter
     def label(self, value: str):
-        blks = self._ensure_blocks()
+        blks = self._ensure_blocks(1)
         blks[0].runs = [TextRun(type="text", text=value,
                                 format=CharFormat(bold=True))]
         self.text = _blocks_to_legacy_text(self.blocks)
 
     @property
     def tech(self) -> str:
-        """Plain text of block 1 (tech slot)."""
+        """Plain text of block 1 (tech slot). C4-specific projection."""
         if self.blocks and len(self.blocks) >= 2:
             return self.blocks[1].plain_text()
         return ""
 
     @tech.setter
     def tech(self, value: str):
-        blks = self._ensure_blocks()
+        blks = self._ensure_blocks(2)
         blks[1].runs = [TextRun(type="text", text=value,
                                 format=CharFormat(italic=True))]
         self.text = _blocks_to_legacy_text(self.blocks)
 
     @property
     def note(self) -> str:
-        """Plain text of block 2 (note slot)."""
+        """Plain text of block 2 (note slot). C4-specific projection."""
         if self.blocks and len(self.blocks) >= 3:
             return self.blocks[2].plain_text()
         return ""
 
     @note.setter
     def note(self, value: str):
-        blks = self._ensure_blocks()
+        blks = self._ensure_blocks(3)
         blks[2].runs = [TextRun(type="text", text=value)]
         self.text = _blocks_to_legacy_text(self.blocks)
 

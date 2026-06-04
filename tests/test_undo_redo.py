@@ -203,14 +203,20 @@ class TestResizeItemCommand:
 class TestTextEditCommand:
 
     def test_undo_restores_text(self):
+        # Blocks-based undo: command snapshots overlay-2.0 blocks before/after.
         item = MetaTextItem(10, 20, "old text", "t1", None)
-        cmd = TextEditCommand(item, "old text", "new text")
-        # Simulate the edit
-        item.setPlainText("new text")
-        item.meta.note = "new text"
+        old_blocks = [b.to_dict() for b in item.meta.blocks]
+        item.meta.blocks[0].runs[0].text = "new text"
+        new_blocks = [b.to_dict() for b in item.meta.blocks]
+
+        cmd = TextEditCommand(item, old_blocks, new_blocks)
         cmd.undo()
-        assert item.toPlainText() == "old text"
-        assert item.meta.note == "old text"
+        assert item.meta.blocks[0].plain_text() == "old text"
+
+        cmd.redo()  # first redo is a no-op (state already applied)
+        assert item.meta.blocks[0].plain_text() == "old text"
+        cmd.redo()
+        assert item.meta.blocks[0].plain_text() == "new text"
 
 
 # ── AddItemCommand ───────────────────────────────────────────────────────

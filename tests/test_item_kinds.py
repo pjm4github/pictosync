@@ -164,6 +164,17 @@ def _get_ann(mw, ann_id):
     return ann
 
 
+def _meta_field(ann, name):
+    """Read a label/tech/note projection from a blocks-only contents dict.
+
+    The serialized JSON contract is blocks-only — label/tech/note are no
+    longer emitted as aliases — so reconstruct the model and read the
+    block-0/1/2 projection properties.
+    """
+    from models import AnnotationContents
+    return getattr(AnnotationContents.from_dict(ann.get("contents", {})), name)
+
+
 def _all_ids(mw):
     """Return all annotation IDs from the live editor JSON."""
     text = mw.draft.get_json_text()
@@ -272,7 +283,7 @@ class TestPropertyPanelMeta:
         qapp.processEvents()
 
         ann = _get_ann(mw, ann_id)
-        assert ann["contents"]["label"] == "TestLabel"
+        assert _meta_field(ann, "label") == "TestLabel"
 
     @pytest.mark.parametrize("kind", ALL_KINDS)
     def test_tech_edit(self, main_window, qapp, kind):
@@ -286,7 +297,7 @@ class TestPropertyPanelMeta:
         qapp.processEvents()
 
         ann = _get_ann(mw, ann_id)
-        assert ann["contents"]["tech"] == "gRPC"
+        assert _meta_field(ann, "tech") == "gRPC"
 
     @pytest.mark.parametrize("kind", ALL_KINDS)
     def test_note_edit(self, main_window, qapp, kind):
@@ -300,7 +311,7 @@ class TestPropertyPanelMeta:
         qapp.processEvents()
 
         ann = _get_ann(mw, ann_id)
-        assert ann["contents"]["note"] == "A useful note"
+        assert _meta_field(ann, "note") == "A useful note"
 
     @pytest.mark.parametrize("kind", ALL_KINDS)
     def test_all_meta_fields_together(self, main_window, qapp, kind):
@@ -316,9 +327,9 @@ class TestPropertyPanelMeta:
         qapp.processEvents()
 
         ann = _get_ann(mw, ann_id)
-        assert ann["contents"]["label"] == "MyService"
-        assert ann["contents"]["tech"] == "HTTPS/JSON"
-        assert ann["contents"]["note"] == "Main service"
+        assert _meta_field(ann, "label") == "MyService"
+        assert _meta_field(ann, "tech") == "HTTPS/JSON"
+        assert _meta_field(ann, "note") == "Main service"
 
 
 # ---------------------------------------------------------------------------

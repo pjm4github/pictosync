@@ -971,13 +971,14 @@ class MainWindow(QMainWindow):
     def _setup_text_editing_callbacks(self):
         """Set up callbacks for MetaTextItem and shape property changes."""
         def on_request_edit(item):
-            """Double-click on scene text item → focus Contents tab text widget."""
+            """In-place edit started → surface the Contents tab.
+
+            The caret lives on the canvas item, so this only switches the
+            property panel to the Contents tab (making its format controls
+            visible).  It must NOT grab keyboard focus — doing so would pull
+            focus off the graphics item and immediately commit the edit.
+            """
             self.props.tabs.setCurrentIndex(1)  # Switch to Contents tab
-            self.props.text_contents.setFocus()
-            # Select all so the user can start typing immediately
-            cursor = self.props.text_contents.textCursor()
-            cursor.select(cursor.SelectionType.Document)
-            self.props.text_contents.setTextCursor(cursor)
 
         MetaTextItem.on_request_edit = on_request_edit
 
@@ -2112,9 +2113,13 @@ class MainWindow(QMainWindow):
         cmd = ItemGeometryCommand(item, old_state, new_state)
         self.undo_stack.push(cmd)
 
-    def _on_text_edit_finished(self, item, old_text, new_text):
-        """Handle text edit finished — push TextEditCommand to undo stack."""
-        cmd = TextEditCommand(item, old_text, new_text)
+    def _on_text_edit_finished(self, item, old_blocks, new_blocks):
+        """Handle in-place text edit finished — push TextEditCommand.
+
+        ``old_blocks`` / ``new_blocks`` are overlay-2.0 block snapshots
+        (lists of dicts) captured by the item on entering / committing edit.
+        """
+        cmd = TextEditCommand(item, old_blocks, new_blocks)
         self.undo_stack.push(cmd)
 
     def keyPressEvent(self, event):
