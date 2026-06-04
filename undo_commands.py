@@ -204,8 +204,11 @@ class TextEditCommand(QUndoCommand):
         from models import TextBlock, _blocks_to_legacy_text
         self.item.meta.blocks = [TextBlock.from_dict(b) for b in blocks]
         self.item.meta.text = _blocks_to_legacy_text(self.item.meta.blocks)
+        # MetaTextItem renders itself; shapes render their child label.
         if hasattr(self.item, '_render_from_meta'):
             self.item._render_from_meta()
+        elif hasattr(self.item, '_update_label_text'):
+            self.item._update_label_text()
         self.item._notify_changed()
 
     def undo(self):

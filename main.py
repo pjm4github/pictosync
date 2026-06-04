@@ -303,6 +303,10 @@ class MainWindow(QMainWindow):
         self.scene.set_on_select_mouse_up(self._on_select_mouse_up)
         LinkedMixin.on_resize_finished = self._on_item_resize_finished
         MetaTextItem.on_text_edit_finished = self._on_text_edit_finished
+        # Shape labels share the same in-place-edit undo path (the owner shape
+        # is passed as the edited item).
+        from canvas.text_edit import EditableLabelItem
+        EditableLabelItem.on_text_edit_finished = self._on_text_edit_finished
 
         # Give property panel and scene access to undo stack/actions
         self.props.undo_stack = self.undo_stack
@@ -981,6 +985,8 @@ class MainWindow(QMainWindow):
             self.props.tabs.setCurrentIndex(1)  # Switch to Contents tab
 
         MetaTextItem.on_request_edit = on_request_edit
+        from canvas.text_edit import EditableLabelItem
+        EditableLabelItem.on_request_edit = on_request_edit
 
         # Set up callbacks for shape property changes (adjust1/adjust2)
         MetaRoundedRectItem.on_adjust1_changed = self.props.update_adjust1_display

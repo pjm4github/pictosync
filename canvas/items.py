@@ -25,6 +25,11 @@ from PyQt6.QtWidgets import (
 
 from models import AnnotationMeta, ANN_ID_KEY, KIND_ALIAS_MAP
 from canvas.mixins import LinkedMixin, MetaMixin
+from canvas.text_edit import (
+    InPlaceTextEditMixin,
+    EditableLabelItem,
+    LabelEditableMixin,
+)
 from settings import get_settings
 from debug_trace import trace
 
@@ -273,7 +278,7 @@ def shape_with_handles(base_shape: QPainterPath, handle_positions: Dict[str, QPo
     return result
 
 
-class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
+class MetaRectItem(LabelEditableMixin, QGraphicsRectItem, MetaMixin, LinkedMixin):
     """Rectangle item with resizable corners and embedded C4 text label."""
 
     KIND = "rect"
@@ -318,7 +323,7 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
 
         # Embedded text for C4 properties
         trace("  Creating label item", "ITEM_INIT")
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
         self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
@@ -502,7 +507,7 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
         return rec
 
 
-class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
+class MetaRoundedRectItem(LabelEditableMixin, QGraphicsPathItem, MetaMixin, LinkedMixin):
     """Rounded rectangle item with configurable corner radius (adjust1)."""
 
     KIND = "roundedrect"
@@ -551,7 +556,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._apply_pen_brush()
 
         # Embedded text for C4 properties
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
         self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
@@ -789,7 +794,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         return rec
 
 
-class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
+class MetaEllipseItem(LabelEditableMixin, QGraphicsEllipseItem, MetaMixin, LinkedMixin):
     """Ellipse item with resizable corners."""
 
     KIND = "ellipse"
@@ -829,7 +834,7 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         self._apply_pen_brush()
 
         # Embedded label
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
         self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._update_label_position()
@@ -1602,7 +1607,7 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
         return rec
 
 
-class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
+class MetaTextItem(InPlaceTextEditMixin, QGraphicsTextItem, MetaMixin, LinkedMixin):
     """Editable text item backed by the overlay-2.0 content model.
 
     Double-clicking the item enters PowerPoint-style in-place editing: the
@@ -1610,11 +1615,14 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
     (``TextEditorInteraction``).  Character formatting applied to a selection
     (bold/italic/colour/size, …) uses Qt's native ``QTextCursor`` machinery.
 
-    On focus-out the edited document is converted back to ``meta.blocks`` via
+    The shared :class:`~canvas.text_edit.InPlaceTextEditMixin` drives the edit
+    lifecycle (enter / commit / focus guard / mini-toolbar / ``blocks``
+    round-trip); this class supplies the model hooks below.  On focus-out the
+    edited document is converted back to ``meta.blocks`` via
     :func:`text_convert.qtextdoc_to_blocks` — the same converter the property
-    panel uses — so the canvas, the property panel, and the JSON editor stay
-    in sync through one shared blocks/runs model.  Outside edit mode the item
-    is a one-way render target driven by ``_render_from_meta()``.
+    panel and shape labels use — so the canvas, the property panel, and the
+    JSON editor stay in sync through one shared blocks/runs model.  Outside
+    edit mode the item is a render target driven by ``_render_from_meta()``.
     """
 
     KIND = "text"
@@ -1653,9 +1661,7 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
 
         self.text_color = QColor(MetaTextItem.default_text_color)
         self.text_size_pt = 12
-        self._editing = False  # True while in-place editing (also read by dock.py)
-        self._edit_old_blocks = None  # block snapshot captured on entering edit
-        self._mini_toolbar = None  # lazily-created floating format toolbar
+        self._init_inplace()  # _editing / _edit_old_blocks / _mini_toolbar
         self._apply_text_style()
 
     def _apply_text_style(self):
@@ -1728,85 +1734,25 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
         else:
             super().mouseDoubleClickEvent(event)
 
-    # ── In-place editing ───────────────────────────────────────────────
+    # ── In-place editing hooks (InPlaceTextEditMixin) ──────────────────
 
-    def _blocks_snapshot(self) -> list:
-        """Return a JSON-serialisable snapshot of the current blocks."""
-        return [b.to_dict() for b in (self.meta.blocks or [])]
+    def _inplace_meta(self):
+        return self.meta
 
-    def _enter_edit_mode(self) -> None:
-        """Make the document interactive and grab keyboard focus."""
-        if self._editing:
-            return
-        self._editing = True
-        # Snapshot for change detection + undo.
-        self._edit_old_blocks = self._blocks_snapshot()
-        # Surface the Contents tab so the panel format controls are at hand.
-        # Done before grabbing focus so switching tabs cannot steal it back.
-        if MetaTextItem.on_request_edit:
-            MetaTextItem.on_request_edit(self)
-        self.setTextInteractionFlags(Qt.TextInteractionFlag.TextEditorInteraction)
-        self.setFocus(Qt.FocusReason.MouseFocusReason)
-
-    def focusOutEvent(self, event):
-        """Commit the edited text back to ``meta.blocks`` on losing focus.
-
-        Interacting with the floating mini-toolbar must NOT end the edit, so
-        focus loss is ignored while that popup is visible.
-        """
-        if self._editing:
-            tb = self._mini_toolbar
-            if tb is not None and tb.isVisible():
-                super().focusOutEvent(event)
-                return
-            self._commit_edit()
-        super().focusOutEvent(event)
-
-    def contextMenuEvent(self, event):
-        """Right-click over a selection while editing → show the mini-toolbar."""
-        if self._editing:
-            cur = self.textCursor()
-            if cur.hasSelection():
-                self._show_mini_toolbar(event.screenPos())
-                event.accept()
-                return
-        super().contextMenuEvent(event)
-
-    def _show_mini_toolbar(self, global_pos) -> None:
-        """Lazily build and pop up the floating format toolbar."""
-        from properties.mini_toolbar import MiniFormatToolbar
-        if self._mini_toolbar is None:
-            self._mini_toolbar = MiniFormatToolbar()
-        self._mini_toolbar.popup_for(self, global_pos)
-
-    def _commit_edit(self) -> None:
-        """Extract blocks from the edited document and sync the model."""
-        from text_convert import qtextdoc_to_blocks
-        from models import TextBlock, _blocks_to_legacy_text
-
-        self._editing = False
-        if self._mini_toolbar is not None and self._mini_toolbar.isVisible():
-            self._mini_toolbar.hide()
-        self.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
-        # Drop any lingering selection so the static render isn't highlighted.
-        cur = self.textCursor()
-        cur.clearSelection()
-        self.setTextCursor(cur)
-
-        default_fmt = self.meta.effective_default_format()
-        raw = qtextdoc_to_blocks(self.document(), default_fmt)
-        new_blocks = [TextBlock.from_dict(b) for b in raw]
-        self.meta.blocks = new_blocks
-        # Keep the legacy HTML mirror in sync for any legacy consumers.
-        self.meta.text = _blocks_to_legacy_text(new_blocks)
+    def _inplace_notify(self) -> None:
         self._notify_changed()
 
-        old_blocks = getattr(self, "_edit_old_blocks", None)
-        new_snapshot = [b.to_dict() for b in new_blocks]
-        if (old_blocks is not None and old_blocks != new_snapshot
-                and MetaTextItem.on_text_edit_finished):
-            MetaTextItem.on_text_edit_finished(self, old_blocks, new_snapshot)
-        self._edit_old_blocks = None
+    def _inplace_render(self) -> None:
+        self._render_from_meta()
+
+    def _inplace_request_edit(self) -> None:
+        # Surface the Contents tab so the panel format controls are at hand.
+        if MetaTextItem.on_request_edit:
+            MetaTextItem.on_request_edit(self)
+
+    def _inplace_finish(self, old_blocks, new_blocks) -> None:
+        if MetaTextItem.on_text_edit_finished:
+            MetaTextItem.on_text_edit_finished(self, old_blocks, new_blocks)
 
     def to_record(self) -> Dict[str, Any]:
         p = self.pos()
@@ -1828,7 +1774,7 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
         return rec
 
 
-class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
+class MetaHexagonItem(LabelEditableMixin, QGraphicsPathItem, MetaMixin, LinkedMixin):
     """Flat-top hexagon item with configurable horizontal indent.
 
     adjust1 controls how far the left/right vertices extend inward
@@ -1880,7 +1826,7 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._apply_pen_brush()
 
         # Embedded text for C4 properties
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
         self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
@@ -2123,7 +2069,7 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         return rec
 
 
-class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
+class MetaCylinderItem(LabelEditableMixin, QGraphicsPathItem, MetaMixin, LinkedMixin):
     """3D cylinder (database icon) with configurable cap ellipse ratio.
 
     adjust1 controls the depth/height of the elliptical cap as a
@@ -2174,7 +2120,7 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.dash_solid_percent = cached.default_dash_solid_percent
         self._apply_pen_brush()
 
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
         self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
@@ -2454,7 +2400,7 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         return rec
 
 
-class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
+class MetaBlockArrowItem(LabelEditableMixin, QGraphicsPathItem, MetaMixin, LinkedMixin):
     """Right-pointing block arrow with configurable head and shaft dimensions.
 
     adjust1: ratio of shaft height to total height (0.2 to 0.9)
@@ -2508,7 +2454,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.dash_solid_percent = cached.default_dash_solid_percent
         self._apply_pen_brush()
 
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
         self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
@@ -2796,7 +2742,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         return rec
 
 
-class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
+class MetaPolygonItem(LabelEditableMixin, QGraphicsPathItem, MetaMixin, LinkedMixin):
     """Arbitrary polygon item with vertex editing.
 
     Vertices are stored as relative coordinates (0.0–1.0) within the
@@ -2867,7 +2813,7 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._apply_pen_brush()
 
         # Embedded text for C4 properties
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
         self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
@@ -5721,7 +5667,7 @@ class MetaOrthoCurveItem(MetaCurveItem):
         return rec
 
 
-class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
+class MetaIsoCubeItem(LabelEditableMixin, QGraphicsPathItem, MetaMixin, LinkedMixin):
     """Isometric cube with configurable depth and extrusion angle.
 
     adjust1: depth of isometric extrusion in pixels (0–max(w,h), default 30)
@@ -5775,7 +5721,7 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.dash_solid_percent = cached.default_dash_solid_percent
         self._apply_pen_brush()
 
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
         self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
