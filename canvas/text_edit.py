@@ -237,6 +237,30 @@ class EditableLabelItem(InPlaceTextEditMixin, QGraphicsTextItem):
             self._saved_owner_movable = None
 
 
+def label_hit_at(label_item, parent_pos, pad_w: float = 20.0,
+                 pad_h: float = 12.0) -> bool:
+    """Whether *parent_pos* (in the owner's local coords) hits the label.
+
+    Used by items whose double-click is already bound to another action
+    (curve node editing, polygon vertex editing) to decide between editing
+    the label and toggling that mode.  For an empty/short label the hit
+    region falls back to a padded box around the label's anchor so a click
+    near the midpoint still starts a new edge label.
+    """
+    from PyQt6.QtCore import QRectF
+    if not isinstance(label_item, EditableLabelItem):
+        return False
+    br = label_item.boundingRect()
+    if br.width() > 2 and br.height() > 2:
+        rect = label_item.mapToParent(br).boundingRect()
+    else:
+        rect = QRectF()
+    if rect.width() < 2 * pad_w or rect.height() < pad_h:
+        p = label_item.pos()
+        rect = QRectF(p.x() - pad_w, p.y() - pad_h, 2 * pad_w, 2 * pad_h)
+    return rect.contains(parent_pos)
+
+
 class LabelEditableMixin:
     """Routes a shape's double-click into its child :class:`EditableLabelItem`.
 

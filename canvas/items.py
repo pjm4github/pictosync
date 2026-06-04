@@ -29,6 +29,7 @@ from canvas.text_edit import (
     InPlaceTextEditMixin,
     EditableLabelItem,
     LabelEditableMixin,
+    label_hit_at,
 )
 from settings import get_settings
 from debug_trace import trace
@@ -1020,7 +1021,7 @@ class MetaEllipseItem(LabelEditableMixin, QGraphicsEllipseItem, MetaMixin, Linke
         return rec
 
 
-class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
+class MetaLineItem(LabelEditableMixin, QGraphicsLineItem, MetaMixin, LinkedMixin):
     """Line item with draggable endpoints and optional arrowheads."""
 
     KIND = "line"
@@ -1067,7 +1068,7 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
         self._text_box_rect: Optional[QRectF] = None  # Will be computed from meta
 
         # Embedded text labels for label, tech, and note (stacked vertically)
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
         self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
@@ -3273,6 +3274,12 @@ class MetaPolygonItem(LabelEditableMixin, QGraphicsPathItem, MetaMixin, LinkedMi
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            # Double-click on the label edits it; elsewhere toggles vertex
+            # editing (the polygon's pre-existing behaviour).
+            if not self._vertex_editing and label_hit_at(self._label_item, event.pos()):
+                self._label_item._begin_edit_at(event.pos())
+                event.accept()
+                return
             if self._vertex_editing:
                 # In edit mode: only exit if double-click is on empty space.
                 scene_pt = event.scenePos()
@@ -3693,7 +3700,7 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._drag_text_box: Optional[str] = None
 
         # Embedded text for C4 properties
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
         self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
@@ -4364,6 +4371,12 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            # Double-click on the edge label edits it; elsewhere toggles
+            # node editing (the curve's pre-existing behaviour).
+            if not self._node_editing and label_hit_at(self._label_item, event.pos()):
+                self._label_item._begin_edit_at(event.pos())
+                event.accept()
+                return
             self._node_editing = not self._node_editing
             self.prepareGeometryChange()
             self.update()
