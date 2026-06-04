@@ -142,6 +142,7 @@ from undo_commands import (
     DeleteItemCommand, DeleteMultipleItemsCommand, AddItemCommand,
     GroupItemsCommand, UngroupItemsCommand,
     MoveItemCommand, ItemGeometryCommand, TextEditCommand,
+    ChangeMetaCommand,
 )
 from canvas.mixins import LinkedMixin, MetaMixin
 from domains import scan_domains, DomainInfo, DomainTool
@@ -985,8 +986,12 @@ class MainWindow(QMainWindow):
             self.props.tabs.setCurrentIndex(1)  # Switch to Contents tab
 
         MetaTextItem.on_request_edit = on_request_edit
-        from canvas.text_edit import EditableLabelItem
+        from canvas.text_edit import EditableLabelItem, EditableSectionItem
         EditableLabelItem.on_request_edit = on_request_edit
+        EditableSectionItem.on_request_edit = on_request_edit
+        MetaSeqBlockItem.on_section_edit_finished = (
+            self._on_seqblock_section_edit_finished
+        )
 
         # Set up callbacks for shape property changes (adjust1/adjust2)
         MetaRoundedRectItem.on_adjust1_changed = self.props.update_adjust1_display
@@ -2126,6 +2131,19 @@ class MainWindow(QMainWindow):
         (lists of dicts) captured by the item on entering / committing edit.
         """
         cmd = TextEditCommand(item, old_blocks, new_blocks)
+        self.undo_stack.push(cmd)
+
+    def _on_seqblock_section_edit_finished(self, item, old_tech, new_tech):
+        """Handle a committed seqblock section edit — push an undo command.
+
+        Sequence-block region text is stored as the pipe-separated ``tech``
+        field, so this round-trips through ChangeMetaCommand on ``tech`` and
+        re-renders the bracketed sections.
+        """
+        cmd = ChangeMetaCommand(
+            item, {"tech": old_tech}, {"tech": new_tech},
+            update_func=item._update_label_text,
+        )
         self.undo_stack.push(cmd)
 
     def keyPressEvent(self, event):

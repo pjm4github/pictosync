@@ -237,6 +237,70 @@ class EditableLabelItem(InPlaceTextEditMixin, QGraphicsTextItem):
             self._saved_owner_movable = None
 
 
+class EditableSectionItem(QGraphicsTextItem):
+    """Plain-text in-place editor for one ``MetaSeqBlockItem`` region.
+
+    A sequence-block region's text lives as a ``|``-separated segment of the
+    owner's ``meta.tech`` and is displayed as italic ``[text]`` — there is no
+    per-run formatting in that model, so this is a deliberately lightweight
+    plain-text editor (no rich blocks, no mini-toolbar).  Double-clicking a
+    region shows its raw text for editing and commits the edited segment back
+    on focus-out.
+    """
+
+    # Wired by MainWindow.  Called with the owner seqblock item.
+    on_request_edit = None  # (owner) -> None
+
+    def __init__(self, owner: QGraphicsItem, index: int):
+        QGraphicsTextItem.__init__(self, owner)
+        self._owner = owner
+        self._index = index
+        self._editing = False
+        self._saved_owner_movable = None
+        self.setAcceptHoverEvents(False)
+        self.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+
+    def begin_edit(self, raw_text: str) -> None:
+        """Show *raw_text* (un-bracketed) and start editing this region."""
+        if self._editing:
+            return
+        self._editing = True
+        self.setPlainText(raw_text)
+        self.setVisible(True)
+        if hasattr(self._owner, "_update_label_position"):
+            self._owner._update_label_position()
+            self.setVisible(True)
+        if EditableSectionItem.on_request_edit:
+            EditableSectionItem.on_request_edit(self._owner)
+        self.setTextInteractionFlags(Qt.TextInteractionFlag.TextEditorInteraction)
+        # Freeze owner movement so a text drag-select doesn't move the block.
+        flags = self._owner.flags()
+        self._saved_owner_movable = bool(
+            flags & QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
+        self._owner.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
+        self.setFocus(Qt.FocusReason.MouseFocusReason)
+        cur = self.textCursor()
+        cur.movePosition(QTextCursor.MoveOperation.End)
+        self.setTextCursor(cur)
+
+    def focusOutEvent(self, event):
+        if self._editing:
+            self._commit()
+        super().focusOutEvent(event)
+
+    def _commit(self) -> None:
+        self._editing = False
+        self.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        if self._saved_owner_movable is not None:
+            self._owner.setFlag(
+                QGraphicsItem.GraphicsItemFlag.ItemIsMovable,
+                self._saved_owner_movable)
+            self._saved_owner_movable = None
+        text = self.toPlainText().strip()
+        if hasattr(self._owner, "_set_section_text"):
+            self._owner._set_section_text(self._index, text)
+
+
 def label_hit_at(label_item, parent_pos, pad_w: float = 20.0,
                  pad_h: float = 12.0) -> bool:
     """Whether *parent_pos* (in the owner's local coords) hits the label.

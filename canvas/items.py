@@ -28,6 +28,7 @@ from canvas.mixins import LinkedMixin, MetaMixin
 from canvas.text_edit import (
     InPlaceTextEditMixin,
     EditableLabelItem,
+    EditableSectionItem,
     LabelEditableMixin,
     label_hit_at,
 )
@@ -6587,6 +6588,8 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     on_adjust1_changed = None
     on_adjust2_changed = None
     on_adjust3_changed = None
+    # Called with (item, old_tech, new_tech) on a committed section edit.
+    on_section_edit_finished = None
 
     _TAB_HEIGHT = 20
     _TAB_PADDING = 4
@@ -6638,12 +6641,11 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         # Section text items: one per region (top + up to 3 divider regions).
         # tech meta is pipe-separated; each section "[text]" is placed just
         # below its corresponding divider (first section below the tab).
-        self._section_items: List[QGraphicsTextItem] = []
-        for _ in range(4):
-            ti = QGraphicsTextItem(self)
-            ti.setAcceptHoverEvents(False)
+        # Each is an EditableSectionItem so a region can be edited in place.
+        self._section_items: List[EditableSectionItem] = []
+        for _i in range(4):
+            ti = EditableSectionItem(self, _i)
             ti.setDefaultTextColor(self.text_color)
-            ti.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
             ti.setVisible(False)
             self._section_items.append(ti)
         # Legacy compat: _label_item points to first section for shared code
@@ -6726,6 +6728,57 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         """Assign metadata and refresh label."""
         self.meta = meta
         self._update_label_text()
+
+    # ---- in-place section editing ----
+
+    def _sections(self) -> List[str]:
+        """Current region texts from the pipe-separated ``meta.tech``."""
+        if self.meta.tech:
+            return [s.strip() for s in self.meta.tech.split("|")]
+        return []
+
+    def _section_index_at(self, local_y: float) -> int:
+        """Region index for a click at *local_y* (item-local coordinates)."""
+        divider_ys: List[float] = []
+        if self._divider_count >= 1:
+            divider_ys.append(self._adjust1 * self._height)
+        if self._divider_count >= 2:
+            divider_ys.append(self._adjust2 * self._height)
+        if self._divider_count >= 3:
+            divider_ys.append(self._adjust3 * self._height)
+        idx = sum(1 for d in divider_ys if local_y >= d)
+        return min(idx, self._divider_count)
+
+    def mouseDoubleClickEvent(self, event):
+        """Double-click a region → edit that section's text in place."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            idx = self._section_index_at(event.pos().y())
+            sections = self._sections()
+            raw = sections[idx] if idx < len(sections) else ""
+            self._section_items[idx].begin_edit(raw)
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def _set_section_text(self, index: int, text: str) -> None:
+        """Write *text* into region *index* of the pipe-separated tech, render."""
+        active = self._divider_count + 1
+        sections = self._sections()
+        while len(sections) < active:
+            sections.append("")
+        old_tech = self.meta.tech
+        if index < len(sections):
+            sections[index] = text
+        new_tech = "|".join(sections)
+        changed = new_tech != old_tech
+        if changed:
+            self.meta.tech = new_tech
+        # Always re-render so the edited region returns to its "[text]" display.
+        self._update_label_text()
+        if changed:
+            self._notify_changed()
+            if MetaSeqBlockItem.on_section_edit_finished:
+                MetaSeqBlockItem.on_section_edit_finished(self, old_tech, new_tech)
 
     # ---- rect / adjust API ----
 
