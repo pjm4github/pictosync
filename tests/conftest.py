@@ -57,6 +57,12 @@ def main_window(qapp):
     mw.show()
     qapp.processEvents()
     yield mw
+    # Mark the draft "clean" so closeEvent's unsaved-work prompt doesn't block
+    # teardown with an offscreen modal dialog.
+    try:
+        mw._saved_signature = mw._current_work_signature()
+    except Exception:
+        pass
     mw.close()
 
 

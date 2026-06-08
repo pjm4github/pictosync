@@ -199,6 +199,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.settings_manager = settings_manager
         self._current_file: str | None = None
+        # Snapshot of the draft JSON at the last save/load, used to detect
+        # unsaved work before destructive actions (close, open, new graphic).
+        # None = never saved/loaded this session.
+        self._saved_signature: str | None = None
         self._update_title()
 
         # Scene and view
@@ -1324,6 +1328,8 @@ class MainWindow(QMainWindow):
 
     def open_graphic_dialog(self):
         """Open a file dialog to select a PNG image, PlantUML, Mermaid SVG, or Mermaid source file."""
+        if not self._maybe_confirm_discard():
+            return
         path, _ = QFileDialog.getOpenFileName(
             self, "Open Graphic", "",
             "All Supported (*.png *.puml *.svg *.mmd *.mermaid);;"
@@ -1910,8 +1916,93 @@ class MainWindow(QMainWindow):
             if self._png_hidden_indicator is not None:
                 self._png_hidden_indicator.setVisible(False)
 
-    def clear_overlay(self):
-        """Clear all overlay items from the scene."""
+    # ── Unsaved-work guard ───────────────────────────────────────────────
+
+    def _current_work_signature(self) -> str:
+        """The current draft JSON text (the source of truth for work)."""
+        try:
+            return self.draft.get_json_text().strip()
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _draft_has_annotations(text: str) -> bool:
+        try:
+            data = json.loads(text) if text else {}
+            return bool(isinstance(data, dict) and data.get("annotations"))
+        except Exception:
+            # Unparseable text means the user has an edit in progress.
+            return bool(text.strip())
+
+    def _has_unsaved_work(self) -> bool:
+        cur = self._current_work_signature()
+        if self._saved_signature is None:
+            # Never saved/loaded — unsaved only if there is actual content.
+            return self._draft_has_annotations(cur)
+        return cur != self._saved_signature
+
+    def _mark_saved(self):
+        """Record the current draft as the clean baseline."""
+        self._saved_signature = self._current_work_signature()
+
+    def _maybe_confirm_discard(self) -> bool:
+        """Prompt to save/discard when there is unsaved work.
+
+        Returns True if it is safe to proceed (saved or discarded), False if
+        the user cancelled.
+        """
+        if not self._has_unsaved_work():
+            return True
+        reply = QMessageBox.warning(
+            self, "Unsaved changes",
+            "You have unsaved changes that will be lost.\n\n"
+            "Save your work before continuing?",
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Save,
+        )
+        if reply == QMessageBox.StandardButton.Save:
+            return bool(self.save_project_dialog())  # False if save cancelled
+        if reply == QMessageBox.StandardButton.Discard:
+            return True
+        return False  # Cancel
+
+    def closeEvent(self, event):
+        """Confirm before closing if there is unsaved work."""
+        if self._maybe_confirm_discard():
+            event.accept()
+        else:
+            event.ignore()
+
+    def clear_overlay(self, *args):
+        """Clear all overlay items from the scene (with confirmation).
+
+        Destructive: removes every annotation and empties the draft JSON, so
+        confirm first whenever there is anything to lose.  ``*args`` absorbs
+        the ``checked`` bool that ``QAction.triggered`` passes.
+        """
+        has_items = any(
+            hasattr(it, "meta") and it is not self.bg_item
+            and it is not self._png_hidden_indicator
+            for it in self.scene.items()
+        )
+        has_json = bool(
+            self._draft_data
+            and isinstance(self._draft_data.get("annotations"), list)
+            and self._draft_data["annotations"]
+        )
+        if has_items or has_json:
+            reply = QMessageBox.question(
+                self, "Clear Overlay",
+                "Delete ALL annotations and clear the draft JSON text?\n\n"
+                "This cannot be undone.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
         self.scene.clearSelection()
         self.scene.blockSignals(True)
         try:
@@ -2217,7 +2308,7 @@ class MainWindow(QMainWindow):
             self, "Save Project", workspace, "JSON (*.json)"
         )
         if not path:
-            return
+            return False
 
         save_dir = os.path.dirname(path)
         data = self._export_overlay_json()
@@ -2240,11 +2331,16 @@ class MainWindow(QMainWindow):
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
             self.statusBar().showMessage(f"Saved project: {path}")
+            self._mark_saved()
+            return True
         except Exception as e:
             QMessageBox.critical(self, "Save failed", str(e))
+            return False
 
     def open_project_dialog(self):
         """Open a project (overlay JSON) from workspace directory."""
+        if not self._maybe_confirm_discard():
+            return
         workspace = str(self.settings_manager.get_workspace_dir())
         path, _ = QFileDialog.getOpenFileName(
             self, "Open Project", workspace, "JSON (*.json)"
@@ -2259,6 +2355,7 @@ class MainWindow(QMainWindow):
             return
         self._apply_overlay_import(data, base_dir=os.path.dirname(path))
         self.statusBar().showMessage(f"Opened project: {path}")
+        self._mark_saved()
 
     def export_pptx_dialog(self):
         """Export canvas to PowerPoint file."""
