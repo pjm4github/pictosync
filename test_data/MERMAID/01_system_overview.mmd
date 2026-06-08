@@ -1,0 +1,75 @@
+---
+title: System Overview — resident_robot_sme edge node
+---
+flowchart TB
+    classDef sealed fill:#fef3c7,stroke:#92400e,stroke-width:2px
+    classDef bootstrap fill:#dbeafe,stroke:#1e40af,stroke-width:2px
+    classDef always fill:#dcfce7,stroke:#166534,stroke-width:2px
+    classDef ui fill:#f3e8ff,stroke:#6b21a8,stroke-width:2px
+    classDef hardware fill:#fee2e2,stroke:#991b1b,stroke-width:3px
+
+    subgraph Substation["⚡ Substation (physical)"]
+        sensors[ADC sensors<br/>3-phase V/I]
+    end
+
+    subgraph Enclosure["🔒 Edge Enclosure (single physical box)"]
+        subgraph HOST["x86 HOST board"]
+            subgraph CH["Cloud Hypervisor — microVMs"]
+                subgraph GatedOn["AI-on services (BOOTSTRAP — full; INVESTIGATION — read-only)"]
+                    direction LR
+                    mcp[mcp_edge<br/>microVM]
+                    orch[llm_orchestrator<br/>microVM]
+                    llmapi[frontier_llm_api<br/>microVM]
+                end
+
+                seal[seal_authority<br/>microVM<br/>« STUB until security team »]
+            end
+
+            gpuplatform[(GPU Platform<br/>Frontier LLM<br/>PCIe card)]:::hardware
+
+            subgraph Safety["Safety Module — daughtercard"]
+                subgraph AlwaysOn["Always-on services (BOOTSTRAP + SEALED)"]
+                    direction LR
+                    dsp[dsp_frontend<br/>service]
+                    emit[token_emitter<br/>service]
+                    parse[grammar_parser<br/>service]
+                    detect[anomaly_detector<br/>service]
+                    store[(capsule_store<br/>service)]
+                    voice[voice_tag<br/>service]
+                end
+
+                powergate{{Power Gate<br/>Safety Module GPIO authority}}
+            end
+        end
+    end
+
+    subgraph Operator["Operator workstation"]
+        ui[RESIDENT_ROBOT_SME PyQt6 UI]
+    end
+
+    sensors -->|samples| dsp
+    dsp -->|features| emit
+    emit -->|tokens| parse
+    parse -->|AST| detect
+    detect -->|capsules| store
+    voice -->|tags| store
+
+    seal -.->|controls| powergate
+    powergate -.->|power rail| gpuplatform
+    llmapi -->|REST / PCIe| gpuplatform
+    orch -->|MCP| mcp
+    mcp -->|REST| store
+    mcp -->|REST| voice
+    orch -->|REST| llmapi
+
+    seal -.->|gates writes| mcp
+    seal -.->|gates writes| orch
+
+    ui -->|REST| store
+    ui -->|REST| voice
+    ui -->|REST| seal
+
+    class dsp,emit,parse,detect,store,voice always
+    class mcp,orch,llmapi bootstrap
+    class seal sealed
+    class ui ui

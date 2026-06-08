@@ -1,0 +1,3831 @@
+{
+  "version": "draft-1",
+  "image": {
+    "width": 5079,
+    "height": 415
+  },
+  "annotations": [
+    {
+      "id": "m000001",
+      "kind": "rect",
+      "geom": {
+        "x": 4291.53,
+        "y": 58.0,
+        "w": 779.41,
+        "h": 347.13
+      },
+      "style": {
+        "pen": {
+          "color": "#AAAA33",
+          "width": 1.5,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "#FFFFDE"
+        },
+        "text": {
+          "color": "#333333"
+        }
+      },
+      "z": 0,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "5. Outcome",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "subgraph",
+            "subgraph_id": "OutcomePhase",
+            "children": [
+              "modify",
+              "accept",
+              "reject",
+              "ontology"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "m000002",
+      "kind": "rect",
+      "geom": {
+        "x": 3664.05,
+        "y": 86.07,
+        "w": 577.48,
+        "h": 312.0
+      },
+      "style": {
+        "pen": {
+          "color": "#AAAA33",
+          "width": 1.5,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "#FFFFDE"
+        },
+        "text": {
+          "color": "#333333"
+        }
+      },
+      "z": 1,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "4. Curate",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "subgraph",
+            "subgraph_id": "CuratePhase",
+            "children": [
+              "auto",
+              "review",
+              "curator"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "m000003",
+      "kind": "rect",
+      "geom": {
+        "x": 2269.11,
+        "y": 102.96,
+        "w": 1321.84,
+        "h": 291.24
+      },
+      "style": {
+        "pen": {
+          "color": "#AAAA33",
+          "width": 1.5,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "#FFFFDE"
+        },
+        "text": {
+          "color": "#333333"
+        }
+      },
+      "z": 2,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "\"3. Normalize (BOOTSTRAP only",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "subgraph",
+            "subgraph_id": "NormalizePhase",
+            "children": [
+              "embed",
+              "cluster",
+              "similar",
+              "propose",
+              "confidence"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "m000004",
+      "kind": "rect",
+      "geom": {
+        "x": 1618.55,
+        "y": 137.72,
+        "w": 479.34,
+        "h": 265.43
+      },
+      "style": {
+        "pen": {
+          "color": "#AAAA33",
+          "width": 1.5,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "#FFFFDE"
+        },
+        "text": {
+          "color": "#333333"
+        }
+      },
+      "z": 3,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "2. Mode gate",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "subgraph",
+            "subgraph_id": "GatePhase",
+            "children": [
+              "sealcheck",
+              "queue"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "m000005",
+      "kind": "rect",
+      "geom": {
+        "x": 8.0,
+        "y": 87.55,
+        "w": 1560.55,
+        "h": 319.04
+      },
+      "style": {
+        "pen": {
+          "color": "#AAAA33",
+          "width": 1.5,
+          "dash": "dash"
+        },
+        "fill": {
+          "color": "#FFFFDE"
+        },
+        "text": {
+          "color": "#333333"
+        }
+      },
+      "z": 4,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "\"1. Capture (any mode",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "subgraph",
+            "subgraph_id": "CapturePhase",
+            "children": [
+              "sme",
+              "record",
+              "audio",
+              "asr",
+              "speaker",
+              "transcript",
+              "voicetag"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "m000006",
+      "kind": "line",
+      "geom": {
+        "x1": 266.23,
+        "y1": 267.07,
+        "x2": 312.23,
+        "y2": 267.07
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1000,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "sme",
+            "to": "record",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000007",
+      "kind": "line",
+      "geom": {
+        "x1": 564.88,
+        "y1": 267.07,
+        "x2": 610.88,
+        "y2": 267.07
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1001,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "record",
+            "to": "audio",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000008",
+      "kind": "curve",
+      "geom": {
+        "x": 734.93,
+        "y": 180.07,
+        "w": 76.26,
+        "h": 48.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 1.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.1208,
+            "y": 0.8333
+          },
+          {
+            "cmd": "C",
+            "x": 0.6497,
+            "y": 0.1667,
+            "c1x": 0.2415,
+            "c1y": 0.6667,
+            "c2x": 0.4831,
+            "c2y": 0.3333
+          },
+          {
+            "cmd": "C",
+            "x": 0.9541,
+            "y": 0.0,
+            "c1x": 0.8164,
+            "c1y": 0.0,
+            "c2x": 0.9082,
+            "c2y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 0.0
+          }
+        ]
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1002,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "audio",
+            "to": "asr",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000009",
+      "kind": "line",
+      "geom": {
+        "x1": 1057.53,
+        "y1": 180.07,
+        "x2": 1103.53,
+        "y2": 180.07
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1003,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "asr",
+            "to": "transcript",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000010",
+      "kind": "curve",
+      "geom": {
+        "x": 763.73,
+        "y": 306.07,
+        "w": 341.07,
+        "h": 14.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.0129,
+            "y": 0.1667
+          },
+          {
+            "cmd": "C",
+            "x": 0.1361,
+            "y": 0.8334,
+            "c1x": 0.0259,
+            "c1y": 0.3334,
+            "c2x": 0.0517,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "C",
+            "x": 0.5061,
+            "y": 1.0,
+            "c1x": 0.2204,
+            "c1y": 1.0,
+            "c2x": 0.3633,
+            "c2y": 1.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.8742,
+            "y": 1.0,
+            "c1x": 0.649,
+            "c1y": 1.0,
+            "c2x": 0.7919,
+            "c2y": 1.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.9891,
+            "y": 1.0,
+            "c1x": 0.9565,
+            "c1y": 1.0,
+            "c2x": 0.9782,
+            "c2y": 1.0
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1004,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "audio",
+            "to": "speaker",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000011",
+      "kind": "curve",
+      "geom": {
+        "x": 1342.16,
+        "y": 180.07,
+        "w": 49.11,
+        "h": 30.73,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.0849,
+            "y": 0.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.5061,
+            "y": 0.1667,
+            "c1x": 0.1697,
+            "c1y": 0.0,
+            "c2x": 0.3394,
+            "c2y": 0.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.9182,
+            "y": 0.8333,
+            "c1x": 0.6727,
+            "c1y": 0.3333,
+            "c2x": 0.8364,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1005,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "transcript",
+            "to": "voicetag",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000012",
+      "kind": "curve",
+      "geom": {
+        "x": 1340.89,
+        "y": 308.77,
+        "w": 47.73,
+        "h": 11.29,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 1.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.0917,
+            "y": 1.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.5335,
+            "y": 0.8334,
+            "c1x": 0.1834,
+            "c1y": 1.0,
+            "c2x": 0.3669,
+            "c2y": 1.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.9251,
+            "y": 0.1667,
+            "c1x": 0.7002,
+            "c1y": 0.6667,
+            "c2x": 0.8501,
+            "c2y": 0.3333
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 0.0
+          }
+        ]
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1006,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "speaker",
+            "to": "voicetag",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000013",
+      "kind": "curve",
+      "geom": {
+        "x": 1795.58,
+        "y": 283.47,
+        "w": 114.59,
+        "h": 16.33,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.0982,
+            "y": 0.1666
+          },
+          {
+            "cmd": "C",
+            "x": 0.5594,
+            "y": 0.8333,
+            "c1x": 0.1963,
+            "c1y": 0.3333,
+            "c2x": 0.3927,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "C",
+            "x": 0.9315,
+            "y": 1.0,
+            "c1x": 0.726,
+            "c1y": 1.0,
+            "c2x": 0.863,
+            "c2y": 1.0
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1007,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "SEALED",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "sealcheck",
+            "to": "queue",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000014",
+      "kind": "line",
+      "geom": {
+        "x1": 2503.38,
+        "y1": 267.07,
+        "x2": 2549.38,
+        "y2": 267.07
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1008,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "embed",
+            "to": "cluster",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000015",
+      "kind": "line",
+      "geom": {
+        "x1": 2769.44,
+        "y1": 267.07,
+        "x2": 2815.44,
+        "y2": 267.07
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1009,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "cluster",
+            "to": "similar",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000016",
+      "kind": "line",
+      "geom": {
+        "x1": 3079.44,
+        "y1": 267.07,
+        "x2": 3125.44,
+        "y2": 267.07
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1010,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "similar",
+            "to": "propose",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000017",
+      "kind": "line",
+      "geom": {
+        "x1": 3357.55,
+        "y1": 267.07,
+        "x2": 3403.55,
+        "y2": 267.07
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1011,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "propose",
+            "to": "confidence",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000018",
+      "kind": "curve",
+      "geom": {
+        "x": 3949.05,
+        "y": 180.07,
+        "w": 95.44,
+        "h": 45.82,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.0437,
+            "y": 0.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.3413,
+            "y": 0.1667,
+            "c1x": 0.0873,
+            "c1y": 0.0,
+            "c2x": 0.1746,
+            "c2y": 0.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.877,
+            "y": 0.8333,
+            "c1x": 0.508,
+            "c1y": 0.3333,
+            "c2x": 0.754,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1012,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "auto",
+            "to": "curator",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000019",
+      "kind": "curve",
+      "geom": {
+        "x": 3938.66,
+        "y": 307.54,
+        "w": 66.99,
+        "h": 12.53,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 1.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.088,
+            "y": 1.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.5188,
+            "y": 0.8334,
+            "c1x": 0.1761,
+            "c1y": 1.0,
+            "c2x": 0.3521,
+            "c2y": 1.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.9214,
+            "y": 0.1667,
+            "c1x": 0.6854,
+            "c1y": 0.6667,
+            "c2x": 0.8427,
+            "c2y": 0.3334
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 0.0
+          }
+        ]
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1013,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "review",
+            "to": "curator",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000020",
+      "kind": "curve",
+      "geom": {
+        "x": 4538.51,
+        "y": 139.07,
+        "w": 102.55,
+        "h": 57.53,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.0476,
+            "y": 0.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.3571,
+            "y": 0.1667,
+            "c1x": 0.0952,
+            "c1y": 0.0,
+            "c2x": 0.1904,
+            "c2y": 0.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.8809,
+            "y": 0.8333,
+            "c1x": 0.5237,
+            "c1y": 0.3333,
+            "c2x": 0.7619,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1014,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "modify",
+            "to": "accept",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000021",
+      "kind": "line",
+      "geom": {
+        "x1": 4825.52,
+        "y1": 250.07,
+        "x2": 4871.52,
+        "y2": 250.07
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1015,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "accept",
+            "to": "ontology",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000022",
+      "kind": "line",
+      "geom": {
+        "x1": 1543.55,
+        "y1": 267.07,
+        "x2": 1639.55,
+        "y2": 267.07
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1016,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "voicetag",
+            "to": "sealcheck",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000023",
+      "kind": "curve",
+      "geom": {
+        "x": 1784.17,
+        "y": 200.33,
+        "w": 535.26,
+        "h": 38.92,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 1.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.0246,
+            "y": 0.8333
+          },
+          {
+            "cmd": "C",
+            "x": 0.1635,
+            "y": 0.1667,
+            "c1x": 0.0491,
+            "c1y": 0.6667,
+            "c2x": 0.0983,
+            "c2y": 0.3333
+          },
+          {
+            "cmd": "C",
+            "x": 0.383,
+            "y": 0.0,
+            "c1x": 0.2287,
+            "c1y": 0.0,
+            "c2x": 0.3099,
+            "c2y": 0.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.5803,
+            "y": 0.0,
+            "c1x": 0.4561,
+            "c1y": 0.0,
+            "c2x": 0.5211,
+            "c2y": 0.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.7461,
+            "y": 0.0,
+            "c1x": 0.6394,
+            "c1y": 0.0,
+            "c2x": 0.6927,
+            "c2y": 0.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.895,
+            "y": 0.1109,
+            "c1x": 0.7994,
+            "c1y": 0.0,
+            "c2x": 0.8527,
+            "c2y": 0.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.9843,
+            "y": 0.5547,
+            "c1x": 0.9373,
+            "c1y": 0.2219,
+            "c2x": 0.9687,
+            "c2y": 0.4437
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 0.6656
+          }
+        ]
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1017,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "BOOTSTRAP",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "sealcheck",
+            "to": "embed",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000024",
+      "kind": "curve",
+      "geom": {
+        "x": 2072.89,
+        "y": 294.47,
+        "w": 217.34,
+        "h": 5.33,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 1.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.0192,
+            "y": 1.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.1615,
+            "y": 1.0,
+            "c1x": 0.0383,
+            "c1y": 1.0,
+            "c2x": 0.0767,
+            "c2y": 1.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.5089,
+            "y": 1.0,
+            "c1x": 0.2463,
+            "c1y": 1.0,
+            "c2x": 0.3776,
+            "c2y": 1.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.8534,
+            "y": 0.8333,
+            "c1x": 0.6402,
+            "c1y": 1.0,
+            "c2x": 0.7715,
+            "c2y": 1.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.9838,
+            "y": 0.1667,
+            "c1x": 0.9352,
+            "c1y": 0.6667,
+            "c2x": 0.9676,
+            "c2y": 0.3333
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 0.0
+          }
+        ]
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "dashed",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1018,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "next BOOTSTRAP",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "queue",
+            "to": "embed",
+            "line_style": "dotted",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000025",
+      "kind": "curve",
+      "geom": {
+        "x": 3529.91,
+        "y": 180.07,
+        "w": 155.13,
+        "h": 50.96,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 1.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.0656,
+            "y": 0.8333
+          },
+          {
+            "cmd": "C",
+            "x": 0.3671,
+            "y": 0.1667,
+            "c1x": 0.1312,
+            "c1y": 0.6667,
+            "c2x": 0.2623,
+            "c2y": 0.3333
+          },
+          {
+            "cmd": "C",
+            "x": 0.629,
+            "y": 0.0,
+            "c1x": 0.472,
+            "c1y": 0.0,
+            "c2x": 0.5505,
+            "c2y": 0.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.8479,
+            "y": 0.0,
+            "c1x": 0.7076,
+            "c1y": 0.0,
+            "c2x": 0.7861,
+            "c2y": 0.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.9774,
+            "y": 0.0,
+            "c1x": 0.9098,
+            "c1y": 0.0,
+            "c2x": 0.9549,
+            "c2y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 0.0
+          }
+        ]
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1019,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "yes",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "confidence",
+            "to": "auto",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000026",
+      "kind": "curve",
+      "geom": {
+        "x": 3539.25,
+        "y": 293.77,
+        "w": 156.18,
+        "h": 26.3,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.0552,
+            "y": 0.1667
+          },
+          {
+            "cmd": "C",
+            "x": 0.3149,
+            "y": 0.8334,
+            "c1x": 0.1104,
+            "c1y": 0.3333,
+            "c2x": 0.2207,
+            "c2y": 0.6667
+          },
+          {
+            "cmd": "C",
+            "x": 0.5651,
+            "y": 1.0,
+            "c1x": 0.409,
+            "c1y": 1.0,
+            "c2x": 0.4871,
+            "c2y": 1.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.7935,
+            "y": 1.0,
+            "c1x": 0.6431,
+            "c1y": 1.0,
+            "c2x": 0.7211,
+            "c2y": 1.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.9665,
+            "y": 1.0,
+            "c1x": 0.866,
+            "c1y": 1.0,
+            "c2x": 0.933,
+            "c2y": 1.0
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1020,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "no",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "confidence",
+            "to": "review",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000027",
+      "kind": "curve",
+      "geom": {
+        "x": 4178.27,
+        "y": 303.23,
+        "w": 448.3,
+        "h": 37.83,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 0.0749
+          },
+          {
+            "cmd": "L",
+            "x": 0.0235,
+            "y": 0.2291
+          },
+          {
+            "cmd": "C",
+            "x": 0.1269,
+            "y": 0.8458,
+            "c1x": 0.047,
+            "c1y": 0.3833,
+            "c2x": 0.0941,
+            "c2y": 0.6917
+          },
+          {
+            "cmd": "C",
+            "x": 0.1969,
+            "y": 1.0,
+            "c1x": 0.1597,
+            "c1y": 1.0,
+            "c2x": 0.1783,
+            "c2y": 1.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.2947,
+            "y": 1.0,
+            "c1x": 0.2155,
+            "c1y": 1.0,
+            "c2x": 0.234,
+            "c2y": 1.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.5608,
+            "y": 1.0,
+            "c1x": 0.3553,
+            "c1y": 1.0,
+            "c2x": 0.4581,
+            "c2y": 1.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.8394,
+            "y": 0.8334,
+            "c1x": 0.6635,
+            "c1y": 1.0,
+            "c2x": 0.7662,
+            "c2y": 1.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.9781,
+            "y": 0.1666,
+            "c1x": 0.9126,
+            "c1y": 0.6667,
+            "c2x": 0.9563,
+            "c2y": 0.3333
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 0.0
+          }
+        ]
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1021,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "curator",
+            "to": "accept",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000028",
+      "kind": "curve",
+      "geom": {
+        "x": 4148.54,
+        "y": 139.07,
+        "w": 168.28,
+        "h": 89.0,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 0.0,
+            "y": 1.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.0921,
+            "y": 0.8333
+          },
+          {
+            "cmd": "C",
+            "x": 0.4853,
+            "y": 0.1667,
+            "c1x": 0.1842,
+            "c1y": 0.6667,
+            "c2x": 0.3684,
+            "c2y": 0.3333
+          },
+          {
+            "cmd": "C",
+            "x": 0.7012,
+            "y": 0.0,
+            "c1x": 0.6021,
+            "c1y": 0.0,
+            "c2x": 0.6516,
+            "c2y": 0.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.85,
+            "y": 0.0,
+            "c1x": 0.7507,
+            "c1y": 0.0,
+            "c2x": 0.8002,
+            "c2y": 0.0
+          },
+          {
+            "cmd": "C",
+            "x": 0.975,
+            "y": 0.0,
+            "c1x": 0.8998,
+            "c1y": 0.0,
+            "c2x": 0.9499,
+            "c2y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 1.0,
+            "y": 0.0
+          }
+        ]
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1022,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "curator",
+            "to": "modify",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000029",
+      "kind": "line",
+      "geom": {
+        "x1": 4216.53,
+        "y1": 267.07,
+        "x2": 4312.53,
+        "y2": 267.07
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "z": 1023,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "edge",
+            "from": "curator",
+            "to": "reject",
+            "line_style": "solid",
+            "left_head": "none",
+            "right_head": "arrow"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000030",
+      "kind": "rect",
+      "geom": {
+        "x": 33.0,
+        "y": 228.07,
+        "w": 233.23,
+        "h": 78.0
+      },
+      "style": {
+        "pen": {
+          "color": "#166534",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#dcfce7"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2000,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "SME at substation\nreviewing event capsule",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "sme",
+            "shape": "rectangle"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000031",
+      "kind": "rect",
+      "geom": {
+        "x": 316.23,
+        "y": 228.07,
+        "w": 248.64,
+        "h": 78.0
+      },
+      "style": {
+        "pen": {
+          "color": "#1e40af",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#dbeafe"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2001,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "MIC Hold-to-record button\nPyQt6 widget",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "record",
+            "shape": "rectangle"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000032",
+      "kind": "rect",
+      "geom": {
+        "x": 614.88,
+        "y": 228.07,
+        "w": 150.31,
+        "h": 78.0
+      },
+      "style": {
+        "pen": {
+          "color": "#92400e",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#fef3c7"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2002,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "Audio file\n.wav, 16 kHz",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "audio",
+            "shape": "rectangle"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000033",
+      "kind": "rect",
+      "geom": {
+        "x": 815.19,
+        "y": 129.07,
+        "w": 242.34,
+        "h": 102.0
+      },
+      "style": {
+        "pen": {
+          "color": "#1e40af",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#dbeafe"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2003,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "Local Whisper ASR\non-prem GPU\nno data leaves substation",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "asr",
+            "shape": "rectangle"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000034",
+      "kind": "rect",
+      "geom": {
+        "x": 1108.8,
+        "y": 281.07,
+        "w": 232.09,
+        "h": 78.0
+      },
+      "style": {
+        "pen": {
+          "color": "#1e40af",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#dbeafe"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2004,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "Speaker ID\npyannote / SpeechBrain",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "speaker",
+            "shape": "rectangle"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000035",
+      "kind": "rect",
+      "geom": {
+        "x": 1107.53,
+        "y": 129.07,
+        "w": 234.62,
+        "h": 102.0
+      },
+      "style": {
+        "pen": {
+          "color": "#92400e",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#fef3c7"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2005,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "Transcript + confidence\nphase A to ground short,\nbreaker tripped",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "transcript",
+            "shape": "rectangle"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000036",
+      "kind": "cylinder",
+      "geom": {
+        "x": 1392.16,
+        "y": 216.72,
+        "w": 151.39,
+        "h": 100.69
+      },
+      "style": {
+        "pen": {
+          "color": "#92400e",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#fef3c7"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2006,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "VoiceTag stored\ncapsule_id, audio,\ntranscript, speaker",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "voicetag",
+            "shape": "cylinder"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000037",
+      "kind": "polygon",
+      "geom": {
+        "x": 1644.05,
+        "y": 182.85,
+        "w": 168.44,
+        "h": 168.44,
+        "points": [
+          [
+            0.5,
+            1.0
+          ],
+          [
+            1.0,
+            0.5
+          ],
+          [
+            0.5,
+            0.0
+          ],
+          [
+            0.0,
+            0.5
+          ]
+        ]
+      },
+      "style": {
+        "pen": {
+          "color": "#92400e",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#fef3c7"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2007,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "Mode ==\nBOOTSTRAP?",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "sealcheck",
+            "shape": "rhombus"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000038",
+      "kind": "cylinder",
+      "geom": {
+        "x": 1914.17,
+        "y": 261.31,
+        "w": 158.72,
+        "h": 76.99
+      },
+      "style": {
+        "pen": {
+          "color": "#92400e",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#fef3c7"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2008,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "Queue for next\nBOOTSTRAP window",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "queue",
+            "shape": "cylinder"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000039",
+      "kind": "rect",
+      "geom": {
+        "x": 2294.11,
+        "y": 228.07,
+        "w": 209.27,
+        "h": 78.0
+      },
+      "style": {
+        "pen": {
+          "color": "#991b1b",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#fee2e2"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2009,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "Sentence embedding\nvia frontier_llm_api",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "embed",
+            "shape": "rectangle"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000040",
+      "kind": "rect",
+      "geom": {
+        "x": 2553.38,
+        "y": 228.07,
+        "w": 216.06,
+        "h": 78.0
+      },
+      "style": {
+        "pen": {
+          "color": "#991b1b",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#fee2e2"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2010,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "Cluster by embedding\nsimilarity",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "cluster",
+            "shape": "rectangle"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000041",
+      "kind": "rect",
+      "geom": {
+        "x": 2819.44,
+        "y": 216.07,
+        "w": 260.0,
+        "h": 102.0
+      },
+      "style": {
+        "pen": {
+          "color": "#991b1b",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#fee2e2"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2011,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "Find similar already-labeled\ncapsules in corpus",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "similar",
+            "shape": "rectangle"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000042",
+      "kind": "rect",
+      "geom": {
+        "x": 3129.44,
+        "y": 228.07,
+        "w": 228.11,
+        "h": 78.0
+      },
+      "style": {
+        "pen": {
+          "color": "#991b1b",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#fee2e2"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2012,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "LLM proposes canonical\nlabel + attributes",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "propose",
+            "shape": "rectangle"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000043",
+      "kind": "polygon",
+      "geom": {
+        "x": 3408.05,
+        "y": 187.86,
+        "w": 158.41,
+        "h": 158.41,
+        "points": [
+          [
+            0.5,
+            1.0
+          ],
+          [
+            1.0,
+            0.5
+          ],
+          [
+            0.5,
+            0.0
+          ],
+          [
+            0.0,
+            0.5
+          ]
+        ]
+      },
+      "style": {
+        "pen": {
+          "color": "#991b1b",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#fee2e2"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2013,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "Confidence\n> 0.9?",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "confidence",
+            "shape": "rhombus"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000044",
+      "kind": "rect",
+      "geom": {
+        "x": 3689.05,
+        "y": 129.07,
+        "w": 260.0,
+        "h": 102.0
+      },
+      "style": {
+        "pen": {
+          "color": "#92400e",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#fef3c7"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2014,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "Auto-propose canonical label\npending curator approval",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "auto",
+            "shape": "rectangle"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000045",
+      "kind": "rect",
+      "geom": {
+        "x": 3699.43,
+        "y": 281.07,
+        "w": 239.23,
+        "h": 78.0
+      },
+      "style": {
+        "pen": {
+          "color": "#166534",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#dcfce7"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2015,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "Flag for human review\nwith suggested questions",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "review",
+            "shape": "rectangle"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000046",
+      "kind": "rect",
+      "geom": {
+        "x": 3999.05,
+        "y": 228.07,
+        "w": 217.48,
+        "h": 78.0
+      },
+      "style": {
+        "pen": {
+          "color": "#166534",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#dcfce7"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2016,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "Normalization curator\nreviews proposals",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "curator",
+            "shape": "rectangle"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000047",
+      "kind": "rect",
+      "geom": {
+        "x": 4320.82,
+        "y": 100.07,
+        "w": 217.69,
+        "h": 78.0
+      },
+      "style": {
+        "pen": {
+          "color": "#92400e",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#fef3c7"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2017,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "Modify proposed label\nbefore activation",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "modify",
+            "shape": "rectangle"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000048",
+      "kind": "rect",
+      "geom": {
+        "x": 4592.8,
+        "y": 199.07,
+        "w": 232.72,
+        "h": 102.0
+      },
+      "style": {
+        "pen": {
+          "color": "#92400e",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#fef3c7"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2018,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "Activate canonical label\ncapsule labeled\ntraining corpus updated",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "accept",
+            "shape": "rectangle"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000049",
+      "kind": "rect",
+      "geom": {
+        "x": 4316.53,
+        "y": 228.07,
+        "w": 226.27,
+        "h": 78.0
+      },
+      "style": {
+        "pen": {
+          "color": "#92400e",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#fef3c7"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2019,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "Reject - keep voice tag\nbut no canonical label",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "reject",
+            "shape": "rectangle"
+          }
+        }
+      }
+    },
+    {
+      "id": "m000050",
+      "kind": "cylinder",
+      "geom": {
+        "x": 4875.52,
+        "y": 211.35,
+        "w": 170.42,
+        "h": 77.42
+      },
+      "style": {
+        "pen": {
+          "color": "#92400e",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#fef3c7"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "z": 2020,
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "Canonical ontology\nextended if new class",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true,
+        "dsl": {
+          "tool": "mermaid",
+          "flowchart": {
+            "type": "node",
+            "node_id": "ontology",
+            "shape": "cylinder"
+          }
+        }
+      }
+    }
+  ]
+}

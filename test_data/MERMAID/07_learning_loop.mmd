@@ -1,0 +1,59 @@
+---
+title: Human-in-the-Loop Learning Architecture
+---
+flowchart TD
+    classDef capture fill:#dbeafe,stroke:#1e40af
+    classDef llm fill:#fee2e2,stroke:#991b1b
+    classDef human fill:#dcfce7,stroke:#166534
+    classDef store fill:#fef3c7,stroke:#92400e
+
+    samples[Samples arrive]:::capture
+    pipeline[DSP → tokens → parse → detect]:::capture
+    novelty{Novelty<br/>score}:::capture
+
+    capsule[(Event capsule<br/>created)]:::store
+
+    routine[Auto-classified<br/>auto-labeled]:::store
+    queue[(Review queue<br/>flagged for SME)]:::store
+
+    sme[SME reviews capsule]:::human
+    voice[🎤 Voice tag<br/>or typed label]:::human
+    confirm[Confirm suggested<br/>label]:::human
+
+    asr[Local ASR<br/>Whisper on-prem]:::capture
+    transcript[Transcript<br/>+ confidence]:::store
+
+    orch[llm_orchestrator<br/>during BOOTSTRAP]:::llm
+    propose[Propose canonical label<br/>+ ontology entry]:::llm
+    cluster[Cluster similar tags<br/>via embeddings]:::llm
+
+    curator[Normalization curator<br/>human review]:::human
+    ontology[(Canonical ontology<br/>versioned)]:::store
+
+    feedback[Retraining feeds:<br/>detectors, classifier,<br/>embedding model]:::store
+
+    samples --> pipeline --> novelty
+    novelty -->|low novelty<br/>known pattern| routine
+    novelty -->|high novelty<br/>or low classifier confidence| queue
+    routine --> capsule
+    queue --> capsule
+
+    capsule --> sme
+    sme --> voice
+    sme --> confirm
+
+    voice --> asr --> transcript
+    transcript -.->|queued in SEALED| transcript
+    transcript -->|in BOOTSTRAP| orch
+
+    confirm --> capsule
+
+    orch --> cluster --> propose
+    propose --> curator
+    curator -->|accept| ontology
+    curator -->|modify| ontology
+    curator -->|reject| orch
+
+    ontology --> feedback
+    capsule --> feedback
+    feedback -.->|update during next BOOTSTRAP| pipeline

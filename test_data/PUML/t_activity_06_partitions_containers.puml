@@ -1,0 +1,252 @@
+@startuml t_activity_06_partitions_containers
+title Activity Diagram — Partitions & Container Groups\n(partition, group, package, rectangle, card — all forms + nesting)
+
+skinparam activity {
+    BackgroundColor #F8F9FA
+    BorderColor #495057
+    DiamondBackgroundColor #FFF9C4
+    DiamondBorderColor #F9A825
+    FontSize 11
+    ArrowColor #444444
+}
+skinparam partition {
+    BackgroundColor #EEF2FF
+    BorderColor #3949AB
+    FontSize 12
+    FontStyle bold
+}
+
+start
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. PARTITION — basic, quoted, colored
+' ══════════════════════════════════════════════════════════════════════════
+
+partition Initialization {
+    :Load configuration file;
+    :Parse environment variables;
+    :Initialize logging subsystem;
+    :Connect to database;
+}
+
+partition "Authentication Phase" {
+    :Present login screen;
+    :Collect credentials;
+    :Hash password;
+    :Verify against store;
+}
+
+partition "Data Processing" #E8F4FD {
+    :Fetch raw dataset;
+    :Apply normalization;
+    :Run feature extraction;
+    :Produce feature vector;
+}
+
+partition "Output Generation" #E8F5E9 {
+    :Format results;
+    :Serialize to JSON;
+    :Write to output file;
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. GROUP — same syntax as partition, different rendering
+' ══════════════════════════════════════════════════════════════════════════
+
+group "Setup Group" {
+    :Initialize resources;
+    :Load plugins;
+    :Register handlers;
+}
+
+group "Processing Group" #FFF3E0 {
+    :Begin main loop;
+    while (items remaining?) is (yes)
+        :Process next item;
+        :Validate output;
+    endwhile (done)
+}
+
+group "Teardown Group" #FCE4EC {
+    :Flush write buffers;
+    :Release connections;
+    :Archive logs;
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. PACKAGE — visual grouping with package icon
+' ══════════════════════════════════════════════════════════════════════════
+
+package "com.example.auth" {
+    :Check session token;
+    :Validate expiry;
+    :Refresh if needed;
+}
+
+package "com.example.data" #E3F2FD {
+    :Open database connection;
+    :Execute query;
+    :Map result set;
+    :Close connection;
+}
+
+package "com.example.notify" #FFF8E1 {
+    :Build notification payload;
+    :Dispatch to queue;
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. RECTANGLE — geometric container
+' ══════════════════════════════════════════════════════════════════════════
+
+rectangle "Security Zone" {
+    :Verify digital signature;
+    :Check certificate chain;
+    :Validate revocation status;
+}
+
+rectangle "Compute Zone" #E8F5E9 {
+    :Allocate CPU resources;
+    :Schedule work units;
+    :Execute computation;
+    :Release CPU resources;
+}
+
+rectangle "Storage Zone" #FFF3E0 {
+    :Acquire write lock;
+    :Write to primary;
+    :Sync to replica;
+    :Release write lock;
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. CARD — card-shaped container
+' ══════════════════════════════════════════════════════════════════════════
+
+card "API Request Card" {
+    :Parse HTTP method;
+    :Extract path parameters;
+    :Deserialize request body;
+}
+
+card "Response Card" #E8F4FD {
+    :Compose response object;
+    :Set status code;
+    :Serialize to JSON;
+    :Add response headers;
+}
+
+card "Error Card" #FCE4EC {
+    :Capture exception;
+    :Log stack trace;
+    :Format error response;
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. NESTED CONTAINERS (partition inside partition)
+' ══════════════════════════════════════════════════════════════════════════
+
+partition "Outer Partition" #E8EAF6 {
+    :Outer setup;
+
+    partition "Inner Partition A" #E3F2FD {
+        :Inner A step 1;
+        :Inner A step 2;
+    }
+
+    :Middle action between inner partitions;
+
+    partition "Inner Partition B" #E8F5E9 {
+        :Inner B step 1;
+        if (inner condition?) then (yes)
+            :Inner conditional true;
+        else (no)
+            :Inner conditional false;
+        endif
+    }
+
+    :Outer teardown;
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 7. CONTROL FLOW INSIDE CONTAINERS
+' ══════════════════════════════════════════════════════════════════════════
+
+partition "Conditional Container" #FFF8E1 {
+    :Entry action;
+    if (condition in partition?) then (yes)
+        :Partition true branch;
+    elseif (alternate?) then (yes)
+        :Partition alternate branch;
+    else (no)
+        :Partition false branch;
+    endif
+    :Exit action;
+}
+
+partition "Loop Container" #F3E5F5 {
+    :Initialize counter;
+    repeat
+        :Loop body in partition;
+        :Increment counter;
+    backward:Reset sub-state;
+    repeat while (limit reached?) is (no) not (yes)
+    :Loop complete;
+}
+
+partition "Fork Container" #E1F5FE {
+    :Pre-fork action;
+    fork
+        :Partition fork branch 1;
+    fork again
+        :Partition fork branch 2;
+    fork again
+        :Partition fork branch 3;
+    end fork
+    :Post-fork action;
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 8. MIXED CONTAINER TYPES SIDE BY SIDE
+' ══════════════════════════════════════════════════════════════════════════
+
+group "Group preceding partition" #E8F4FD {
+    :Group action 1;
+    :Group action 2;
+}
+
+partition "Partition after group" #E8F5E9 {
+    :Partition action 1;
+    :Partition action 2;
+}
+
+rectangle "Rectangle after partition" #FFF3E0 {
+    :Rectangle action 1;
+    :Rectangle action 2;
+}
+
+card "Final card" #FCE4EC {
+    :Card final action;
+}
+
+stop
+
+note right
+    **Grammar targets (containers):**
+    partition Name { }
+    partition "Quoted Name" { }
+    partition "Name" #color { }
+    group "Name" { }
+    group "Name" #color { }
+    package "Name" { }
+    package "Name" #color { }
+    rectangle "Name" { }
+    rectangle "Name" #color { }
+    card "Name" { }
+    card "Name" #color { }
+    Nested partition in partition
+    if/while/fork inside containers
+    Mixed container types in sequence
+end note
+
+@enduml

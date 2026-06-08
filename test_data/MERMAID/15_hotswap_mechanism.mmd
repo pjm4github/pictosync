@@ -1,0 +1,129 @@
+---
+title: Hot-Swap Mechanism — SwapEngine state machine + snapshot/restore/migrate + ParamBankWriter + ControlApi + graph-level swap + CLI / framework entry points
+config:
+  flowchart:
+    curve: linear
+---
+%%{init: {'flowchart': {'curve': 'linear'}}}%%
+flowchart TB
+    classDef state fill:#dbeafe,stroke:#1e40af,stroke-width:2px
+    classDef term_ok fill:#dcfce7,stroke:#166534,stroke-width:2px
+    classDef term_fail fill:#fed7aa,stroke:#9a3412,stroke-width:2px
+    classDef verb fill:#f3e8ff,stroke:#6b21a8,stroke-width:2px
+    classDef seal fill:#fee2e2,stroke:#991b1b,stroke-width:2px
+    classDef cli fill:#fef3c7,stroke:#92400e,stroke-width:2px
+    classDef proxy fill:#fdf2f8,stroke:#9d174d,stroke-width:2px
+    classDef store fill:#e0e7ff,stroke:#3730a3,stroke-width:1px
+    classDef rule stroke-dasharray:4 3,stroke:#b91c1c
+    classDef note fill:#f1f5f9,stroke:#475569,stroke-dasharray:3 3
+
+    %% =====================================================================
+    %% 1. SwapEngine state machine (Stage 7b Phase 5) — the full-kernel swap
+    %% =====================================================================
+    subgraph Engine["SwapEngine · the full-kernel swap state machine"]
+        direction TB
+        st_loaded["LOADED<br/>(incumbent + candidate<br/>both instantiated,<br/>blobs allocated)"]:::state
+        st_verified["VERIFIED<br/>(ABI + kernel_id +<br/>LAYOUT compatible)"]:::state
+        st_quiesce["QUIESCING<br/>(waiting for kernel to<br/>reach BBSP_CLOSED at end<br/>of current block)"]:::state
+        st_swapped["SWAPPED<br/>(migrate() copied/translated<br/>WORKING into candidate blob;<br/>candidate is now LIVE)"]:::state
+        st_canary["CANARYING<br/>(replay N blocks through<br/>candidate + incumbent;<br/>DefaultScorer compares)"]:::state
+        st_commit(["COMMITTED<br/>candidate.score > incumbent.score<br/>(strict — ties → rollback)"]):::term_ok
+        st_rollback(["ROLLEDBACK<br/>candidate ≤ incumbent OR<br/>caller invoked rollback()"]):::term_fail
+
+        st_loaded -->|"verify()"| st_verified
+        st_verified -->|"quiesce_and_swap()<br/>· runs migrate at BBSP_OPEN<br/>· see 14 for BBSP discipline"| st_quiesce
+        st_quiesce -->|"BBSP_CLOSED reached"| st_swapped
+        st_swapped -->|"run_canary(stream, scorer)<br/>· N blocks · see 14 for BBSP"| st_canary
+        st_canary -->|"commit() — score strictly improved"| st_commit
+        st_canary -->|"rollback() — tie or worse"| st_rollback
+    end
+
+    %% =====================================================================
+    %% 2. The three composable Stage-7b primitives used by the engine
+    %% =====================================================================
+    subgraph Primitives["Composable primitives the engine drives at BBSP"]
+        direction LR
+        p_snapshot["snapshot.snapshot()<br/>read-only; both modes<br/>(forensics in SEALED)"]:::verb
+        p_restore["snapshot.restore()<br/>whole-blob write<br/>signal_restore · BOOTSTRAP-only"]:::seal
+        p_migrate["Kernel.migrate(<br/>old_blob, new_blob)<br/>kernel-owned WORKING translation<br/>· cross-version routes through here;<br/>cross-type rejected by layout/version guard"]:::verb
+        p_parambank["ParamBankWriter.write(<br/>sequencer, blob, params)<br/>PARAMS-region fast path ·<br/>both modes · cheap (no swap)"]:::verb
+    end
+    st_quiesce -.->|"calls"| p_migrate
+    st_swapped -.->|"snapshot/restore<br/>are independent verbs<br/>that compose with the engine"| Primitives
+
+    %% =====================================================================
+    %% 3. ControlApi — the operator-facing surface (Stage 7b Phase 7 +
+    %%    Stage 7c Phase 6 graph extensions + Phase 10 gating)
+    %% =====================================================================
+    subgraph ControlApi["ControlApi · six verbs + six graph-slot variants"]
+        direction TB
+        subgraph CoreVerbs["Single-kernel verbs"]
+            direction TB
+            ca_interrogate["interrogate(name, region)<br/>(both modes)"]:::verb
+            ca_snapshot["snapshot(name)<br/>(both modes)"]:::verb
+            ca_restore["restore(name, snap)<br/>signal_restore · BOOTSTRAP-only"]:::seal
+            ca_restart["restart_to_init(name)<br/>signal_restart_to_init · BOOTSTRAP-only"]:::seal
+            ca_sethyper["set_hyperparameter(name, key, value)<br/>(both modes — param-bank fast path)"]:::verb
+            ca_modeflag["mode_flag(name)<br/>(both modes — local kernel status)"]:::verb
+        end
+        subgraph SlotVerbs["Graph-slot variants (Stage 7c Phase 6)"]
+            direction TB
+            ca_reggraph["register_graph(name, runnable)<br/>+ unregister_graph"]:::verb
+            ca_slot["*_slot variants:<br/>interrogate_slot · snapshot_slot ·<br/>restore_slot · restart_slot_to_init ·<br/>set_slot_hyperparameter · slot_mode_flag"]:::verb
+            ca_swapgraph["swap_in_graph(graph, slot, candidate)<br/>signal_admit_candidate · BOOTSTRAP-only<br/>· slot's sequencer is preserved"]:::seal
+        end
+    end
+    ca_snapshot -.->|"delegates to"| p_snapshot
+    ca_restore -.->|"delegates to"| p_restore
+    ca_sethyper -.->|"delegates to"| p_parambank
+    ca_restart -.->|"kernel.init at BBSP"| p_restore
+    ca_swapgraph -.->|"graph-slot restore"| p_restore
+
+    %% =====================================================================
+    %% 4. Graph-level admission · attestation · audit (Stage 7c)
+    %% =====================================================================
+    subgraph GraphAdmit["Stage 7c · graph admission & attested load"]
+        direction TB
+        graph_ir["graph.py<br/>KernelNode · Edge · Graph<br/>· RunnableGraph<br/>(topo + validate + bind)"]:::verb
+        admit_gate["admission.admit(request)<br/>four-axis budget:<br/>VTCM bytes · HVX threads ·<br/>scalar threads · deadline ns<br/>· refuses with AdmissionError"]:::verb
+        attest_gate["loader.attest(artifact, slot)<br/>four content checks:<br/>artifact_sha256 · timing_quality ·<br/>migrate_paths · abi_version<br/>+ presence-only signature"]:::verb
+        audit_log[("audit.JsonlAuditBackend<br/>append-only JSONL ·<br/>thread-safe ·<br/>~/.dsp_loader/audit.log<br/>(DuckDB backend stub<br/>for Stage 8)")]:::store
+
+        graph_ir --> admit_gate
+        admit_gate -.->|"AdmissionGrant"| ca_swapgraph
+        attest_gate -.->|"AttestedLoadResult"| ca_swapgraph
+        admit_gate -.->|"writes record<br/>(admitted / denied)"| audit_log
+        attest_gate -.->|"writes record<br/>(admitted / denied)"| audit_log
+    end
+
+    %% =====================================================================
+    %% 5. Operator entry points · dsp-loader CLI + framework signal proxy
+    %% =====================================================================
+    subgraph EntryPoints["Operator entry points"]
+        direction TB
+        subgraph CLI["dsp-loader CLI · 11 subcommands"]
+            direction TB
+            cli_7a["list · check · build<br/>(Stage 7a — gate stack)"]:::cli
+            cli_probe["probe<br/>(Sidebar S2 — Token v1<br/>Feather writer)"]:::cli
+            cli_7b8["snapshot · restore · swap · canary<br/>(Stage 7b Phase 8 ·<br/>full-kernel hot-swap surface)"]:::cli
+            cli_7c7["graph · attest · audit<br/>(Stage 7c Phase 7 ·<br/>graph admission + audit log)"]:::cli
+        end
+        proxy["agrid debug &lt;svc&gt; signal &lt;verb&gt;<br/>(Stage 7c Phase 8 — Decision 2C)<br/>· framework proxies one opaque verb<br/>· local-IPC through DebugServer<br/>· signal plane owns dispatch"]:::proxy
+        scope["kernel_scope · Live kernel tab<br/>(Sidebar S6 — in-process<br/>KernelRuntime + ControlApi<br/>· strip-chart error · stem-plot weights)"]:::cli
+    end
+    cli_7b8 -.->|"calls (snapshot)"| p_snapshot
+    cli_7b8 -.->|"calls (restore, swap)"| Engine
+    cli_7c7 -.->|"calls (graph admit, attest)"| GraphAdmit
+    proxy -.->|"routes any signal verb to"| ControlApi
+    scope -.->|"drives the six verbs through<br/>an in-process ControlApi"| ControlApi
+
+    %% =====================================================================
+    %% 6. Stage 9 — remote discovery driver consumes the same surfaces
+    %% =====================================================================
+    discovery["Stage 9 — remote discovery loop<br/>· drives dsp-loader build/attest/swap/canary<br/>· drives the framework signal proxy<br/>· A/B-scores artifacts through the canary window<br/>· every load + swap writes an audit record"]:::note
+    discovery -.->|"build / probe / graph /<br/>attest / swap / canary"| CLI
+    discovery -.->|"signal"| proxy
+    discovery -.->|"reads"| audit_log
+
+    %% Forward / backward references
+    refs["See diagram 12 for the data contract;<br/>diagram 14 for the BBSP primitives that<br/>every state transition above is gated by."]:::note

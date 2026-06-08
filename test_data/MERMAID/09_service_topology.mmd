@@ -1,0 +1,50 @@
+---
+title: Service Topology with REST APIs and Dependencies
+---
+flowchart LR
+    classDef built fill:#dcfce7,stroke:#166534,stroke-width:2px
+    classDef stub fill:#fef3c7,stroke:#92400e,stroke-width:2px
+    classDef todo fill:#fee2e2,stroke:#991b1b,stroke-width:2px,stroke-dasharray:5 5
+    classDef ui fill:#f3e8ff,stroke:#6b21a8,stroke-width:2px
+    classDef hw fill:#dbeafe,stroke:#1e40af,stroke-width:3px
+
+    seal[":8001 seal_authority_stub<br/>STUB · refuses prod<br/>SealAuthorityClient impl"]:::stub
+
+    dsp[":8010 dsp_frontend<br/>POST /process<br/>GET /detectors"]:::built
+    emit[":8011 token_emitter<br/>POST /emit"]:::built
+    parse[":8012 grammar_parser<br/>POST /parse<br/>GET /grammar"]:::built
+    detect[":8013 anomaly_detector<br/>POST /analyze"]:::built
+    store[":8014 capsule_store<br/>PUT/GET /capsule/:id<br/>POST /capsules/query<br/>POST /capsule/:id/voice-tag<br/>POST /capsule/:id/label"]:::built
+
+    voice[":8015 voice_tag<br/>POST /tag<br/>POST /normalize (gated)<br/>GET /pending"]:::todo
+
+    mcp[":8020 mcp_edge<br/>MCP tools (gated)<br/>read tools + write tools"]:::todo
+    orch[":8021 llm_orchestrator<br/>POST /run-normalization (gated)<br/>POST /run-ontology-review (gated)"]:::todo
+    llmapi[":8030 frontier_llm_api<br/>POST /complete<br/>POST /embed<br/>POST /classify<br/>(returns HardwareUnavailable in SEALED)"]:::todo
+
+    gpuplatform[(GPU Platform<br/>PCIe card · power-gated<br/>REST endpoint)]:::hw
+
+    ui[RESIDENT_ROBOT_SME UI<br/>PyQt6 desktop app]:::todo
+
+    dsp -->|features| emit
+    emit -->|tokens| parse
+    parse -->|AST| detect
+    detect -->|capsule| store
+    voice -->|tags| store
+
+    orch -->|reads/writes| mcp
+    mcp -->|all writes| store
+    mcp -->|voice ops| voice
+    orch -->|inference| llmapi
+    llmapi -->|REST| gpuplatform
+
+    seal -.->|gates writes| mcp
+    seal -.->|gates writes| orch
+    seal -.->|gates writes| voice
+    seal -.->|gates writes| store
+    seal -.->|gates power| llmapi
+
+    ui -->|browse capsules| store
+    ui -->|record tags| voice
+    ui -->|mode info| seal
+    ui -->|operator console| seal

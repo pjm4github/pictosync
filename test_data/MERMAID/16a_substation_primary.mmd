@@ -1,0 +1,219 @@
+---
+title: Substation primary plant — IEC 61850 SAS reference (16a · pairs with 16b)
+config:
+  flowchart:
+    curve: linear
+    nodeSpacing: 22
+    rankSpacing: 28
+    padding: 6
+---
+%%{init: {'flowchart': {'curve': 'linear', 'nodeSpacing': 22, 'rankSpacing': 28, 'padding': 6}}}%%
+flowchart TB
+    classDef hv fill:#fee2e2,stroke:#991b1b,stroke-width:2px
+    classDef mv fill:#fed7aa,stroke:#9a3412,stroke-width:2px
+    classDef xfmr fill:#fde68a,stroke:#92400e,stroke-width:3px
+    classDef proc fill:#dbeafe,stroke:#1e40af,stroke-width:1px
+    classDef ied fill:#dcfce7,stroke:#166534,stroke-width:1px
+    classDef station fill:#e0e7ff,stroke:#3730a3,stroke-width:1px
+    classDef bus fill:#f3e8ff,stroke:#6b21a8,stroke-width:2px
+    classDef sensor fill:#fdf2f8,stroke:#9d174d,stroke-width:1px
+    classDef secsens fill:#fce7f3,stroke:#be185d,stroke-width:1px
+    classDef offpage fill:#fef3c7,stroke:#92400e,stroke-width:2px,stroke-dasharray:6 3
+    classDef note fill:#f1f5f9,stroke:#475569,stroke-dasharray:3 3
+
+    %% =====================================================================
+    %% LANE 1 — Switchyard primary plant (HV row + MV row)
+    %% =====================================================================
+    subgraph Lane1["⚡ Switchyard (outdoor)"]
+        direction TB
+        subgraph HVRow["HV side · 230 kV"]
+            direction LR
+            line_in["230 kV in"]:::hv
+            LineBay["Line bay<br/>SA·DS·CB·CT·VT·ES"]:::hv
+            HvBus["HV bus<br/>double bus + coupler"]:::hv
+            XfmrBay["Xfmr bay<br/>CT/CB (HV)"]:::hv
+            xfmr["Power xfmr<br/>230/69 kV · 100 MVA · OLTC"]:::xfmr
+            line_in --> LineBay --> HvBus --> XfmrBay --> xfmr
+        end
+        subgraph MVRow["MV side · 69 kV"]
+            direction LR
+            LvSide["LV side<br/>CB/CT (LV)"]:::mv
+            MvBus["MV bus<br/>double bus + coupler"]:::mv
+            FeederBay["Feeder bay<br/>CT·CB·DS"]:::mv
+            fdr_out["69 kV out → distribution"]:::mv
+            LvSide --> MvBus --> FeederBay --> fdr_out
+        end
+        xfmr -.->|"secondary"| LvSide
+    end
+
+    %% =====================================================================
+    %% LANE 2 — Asset-condition sensors + Physical security (side-by-side)
+    %% =====================================================================
+    subgraph Lane2["Asset-condition + physical-security sensors"]
+        direction LR
+
+        subgraph ACM["Asset-condition (PHY · APP)"]
+            direction LR
+            dga["DGA<br/>oil gases"]:::sensor
+            pd["PD<br/>UHF+acoustic+HFCT"]:::sensor
+            bush["Bushing tap<br/>C · tan δ"]:::sensor
+            vib["Vibration /<br/>acoustic"]:::sensor
+            tmp["Top-oil + winding<br/>RTD · FBG"]:::sensor
+            oltc["OLTC monitor"]:::sensor
+            sf6["SF6 density"]:::sensor
+            batt["Station battery<br/>V · IR · ripple"]:::sensor
+            env["Ctrl-house env<br/>T · RH · door"]:::sensor
+        end
+
+        subgraph PhysSec["Physical security + perimeter"]
+            direction LR
+            cam_dome["IP dome / PTZ<br/>PoE · ONVIF / RTSP"]:::secsens
+            cam_thermal["Thermal IR cam<br/>ONVIF + GenICam"]:::secsens
+            fence["Fence-line intrusion<br/>fiber / piezo cable"]:::secsens
+            gate["Gate access reader<br/>RFID · OSDP (RS-485)"]:::secsens
+            door["Door / window +<br/>motion PIR · tamper"]:::secsens
+            nvr["Local NVR / VMS<br/>H.264 / H.265 record"]:::secsens
+            cam_dome --> nvr
+            cam_thermal --> nvr
+        end
+    end
+
+    %% Sensor → primary plant attachment
+    dga -.-> xfmr
+    pd -.-> xfmr
+    bush -.-> xfmr
+    vib -.-> xfmr
+    tmp -.-> xfmr
+    oltc -.-> xfmr
+    sf6 -.-> LineBay
+    sf6 -.-> XfmrBay
+
+    %% =====================================================================
+    %% LANE 3 — Process level (MUs + PIUs)
+    %% =====================================================================
+    subgraph Lane3["🔀 Process level (MUs + PIUs)"]
+        direction LR
+        mu_line["MU line<br/>SV 9-2LE + GOOSE"]:::proc
+        mu_xfmr["MU xfmr<br/>HV + LV SV"]:::proc
+        mu_bus["MU bus<br/>3φ V SV"]:::proc
+        mu_fdr["MU feeder<br/>SV + GOOSE"]:::proc
+        piu_line["PIU line<br/>CB/DS/ES + trip"]:::proc
+        piu_xfmr["PIU xfmr<br/>OLTC · cooling"]:::proc
+        piu_fdr["PIU feeder"]:::proc
+    end
+    LineBay -.->|"CT/VT sec"| mu_line
+    XfmrBay -.-> mu_xfmr
+    LvSide -.-> mu_xfmr
+    HvBus -.-> mu_bus
+    FeederBay -.-> mu_fdr
+    LineBay -.->|"aux + trip coil"| piu_line
+    xfmr -.->|"OLTC + cooling"| piu_xfmr
+    FeederBay -.-> piu_fdr
+
+    %% =====================================================================
+    %% LANE 4 — Process bus
+    %% =====================================================================
+    pbus["Process bus  ·  L2 multicast Ethernet · PRP / HSR  ·  SV (9-2 LE) + GOOSE + PTP (9-3)"]:::bus
+    mu_line --> pbus
+    mu_xfmr --> pbus
+    mu_bus --> pbus
+    mu_fdr --> pbus
+    piu_line --> pbus
+    piu_xfmr --> pbus
+    piu_fdr --> pbus
+
+    %% =====================================================================
+    %% LANE 5 — Bay-level IEDs
+    %% =====================================================================
+    subgraph Lane5["Bay level (protection + control IEDs)"]
+        direction LR
+        ied_21["21<br/>line distance"]:::ied
+        ied_87t["87T<br/>xfmr diff"]:::ied
+        ied_87b["87B<br/>busbar diff"]:::ied
+        ied_5051["50/51/51N<br/>OC / EF"]:::ied
+        ied_bay["Bay controller<br/>interlocking · SOE"]:::ied
+    end
+    pbus --> ied_21
+    pbus --> ied_87t
+    pbus --> ied_87b
+    pbus --> ied_5051
+    pbus --> ied_bay
+    ied_21 -.->|"GOOSE trip"| piu_line
+    ied_87t -.->|"GOOSE trip"| piu_xfmr
+    ied_5051 -.->|"GOOSE trip"| piu_fdr
+
+    %% =====================================================================
+    %% LANE 6 — Station bus
+    %% =====================================================================
+    sbus["Station bus  ·  Ethernet (PRP)  ·  IEC 61850-8-1 MMS + GOOSE  ·  PTP (9-3)"]:::bus
+    ied_21 --> sbus
+    ied_87t --> sbus
+    ied_87b --> sbus
+    ied_5051 --> sbus
+    ied_bay --> sbus
+
+    %% =====================================================================
+    %% LANE 7 — Station level
+    %% =====================================================================
+    subgraph Lane7["🏢 Station level (control house)"]
+        direction LR
+        hmi["Station HMI"]:::station
+        ctrl["Station ctrl<br/>logic / seq"]:::station
+        scada_gw["SCADA gateway<br/>DNP3 / 60870-5-104"]:::station
+        eng_ws["Engineering WS<br/>SCL · CID · IID"]:::station
+        ptp_gm["PTP grandmaster<br/>GPS-disciplined<br/>1588v2 / 9-3"]:::station
+        gw_router["Remote-access router<br/>corp WAN · jump"]:::station
+    end
+    sbus --> hmi
+    sbus --> ctrl
+    sbus --> scada_gw
+    sbus --> eng_ws
+    ptp_gm -.->|"PTP master"| sbus
+    ptp_gm -.->|"PTP master"| pbus
+
+    %% =====================================================================
+    %% Off-page handoffs → 16b
+    %% =====================================================================
+    subgraph Handoff["⇨ to diagram 16b (SEC appliance)"]
+        direction LR
+        out_pbus[/"SPAN / mirror<br/>(process bus)<br/>→ 16b · tap_pbus"/]:::offpage
+        out_sbus[/"SPAN / mirror<br/>(station bus)<br/>→ 16b · tap_sbus"/]:::offpage
+        out_acm[/"Asset-condition feeds<br/>RS-485 · 4-20 mA+HART · Modbus TCP ·<br/>DNP3 · 61850 MMS · SNMP<br/>→ 16b · acm_in"/]:::offpage
+        out_sec[/"Physical-security feeds<br/>RTSP/ONVIF · OSDP ·<br/>BACnet MS/TP · dry contacts · NVR API<br/>→ 16b · sec_in"/]:::offpage
+        out_scada[/"SCADA upstream<br/>DNP3 / 60870-5-104<br/>→ 16b · control centre"/]:::offpage
+        out_remote[/"Remote-access<br/>corp WAN / jump host<br/>→ 16b · remote SME"/]:::offpage
+        out_ptp[/"PTP master · 1588v2<br/>→ 16b · signal-plane clock<br/>(origin_ns ingest)"/]:::offpage
+    end
+
+    pbus -.->|"SPAN / mirror"| out_pbus
+    sbus -.->|"SPAN / mirror"| out_sbus
+
+    dga -.-> out_acm
+    pd -.-> out_acm
+    bush -.-> out_acm
+    vib -.-> out_acm
+    tmp -.-> out_acm
+    oltc -.-> out_acm
+    sf6 -.-> out_acm
+    batt -.-> out_acm
+    env -.-> out_acm
+
+    cam_dome -.-> out_sec
+    cam_thermal -.-> out_sec
+    fence -.-> out_sec
+    gate -.-> out_sec
+    door -.-> out_sec
+    nvr -.-> out_sec
+
+    scada_gw --> out_scada
+    gw_router -.-> out_remote
+    ptp_gm -.-> out_ptp
+
+    %% =====================================================================
+    %% NOTES
+    %% =====================================================================
+    note_taps["The signal-tier appliance (16b) is a <b>passive listener</b>.<br/>It receives SPAN/mirror copies of the buses, slow-telemetry<br/>from the sensor aggregators, and read-only context from SCADA;<br/>it never publishes GOOSE, never commands MMS, never trips a CB."]:::note
+    note_time["One time domain.<br/>The substation PTP grandmaster disciplines both buses AND<br/>the appliance's signal-plane clock (16b · origin_ns at ingest)."]:::note
+
+    Handoff -.- note_taps
+    ptp_gm -.- note_time

@@ -1,0 +1,64 @@
+---
+title: Event Capsule Lifecycle and Retention
+---
+flowchart TB
+    classDef full fill:#dbeafe,stroke:#1e40af,stroke-width:2px
+    classDef decimated fill:#fef3c7,stroke:#92400e,stroke-width:2px
+    classDef tokens fill:#dcfce7,stroke:#166534,stroke-width:2px
+    classDef forever fill:#f3e8ff,stroke:#6b21a8,stroke-width:3px
+
+    capture[Event captured]
+
+    subgraph Full["FULL FIDELITY · ~50 MB · default 1 year"]
+        direction LR
+        f1[Raw samples 256 ksps]:::full
+        f2[Token stream]:::full
+        f3[Parse tree]:::full
+        f4[Embeddings]:::full
+        f5[Voice tags + transcripts]:::full
+        f6[Labels + history]:::full
+        f1 ~~~ f2 ~~~ f3 ~~~ f4 ~~~ f5 ~~~ f6
+    end
+
+    subgraph Decimated["DECIMATED · ~7 MB · default 5 years"]
+        direction LR
+        d1[Decimated samples 16 ksps]:::decimated
+        d2[Token stream]:::decimated
+        d3[Parse tree]:::decimated
+        d4[Embeddings]:::decimated
+        d5[Voice tags + transcripts]:::decimated
+        d6[Labels + history]:::decimated
+        d1 ~~~ d2 ~~~ d3 ~~~ d4 ~~~ d5 ~~~ d6
+    end
+
+    subgraph TokensOnly["TOKENS+LABELS · ~100 KB · forever"]
+        direction LR
+        t2[Token stream]:::tokens
+        t4[Embeddings]:::tokens
+        t6[Labels + history]:::tokens
+        t7[Provenance back to capture]:::forever
+        t2 ~~~ t4 ~~~ t6 ~~~ t7
+    end
+
+    transition1[Decimation job<br/>anti-alias + lowpass<br/>preserve manifest history]
+    transition2[Tokens-only transition<br/>preserve embeddings<br/>preserve labels]
+
+    legalhold{Legal<br/>hold?}:::full
+    override[Override: indefinite full fidelity]:::full
+
+    capture --> Full
+    Full --> legalhold
+    legalhold -->|yes| override
+    legalhold -->|no, age > 1yr| transition1
+    transition1 --> Decimated
+    Decimated -->|age > 5yr| transition2
+    transition2 --> TokensOnly
+
+    note1["💡 Retention policy is per-site
+    configurable, with overrides
+    by event class and novelty score"]
+
+    note2["⚠ Anti-alias filter applied
+    BEFORE decimation. Naive
+    downsampling aliases HF
+    transients into the kept band."]

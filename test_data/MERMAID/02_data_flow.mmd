@@ -1,0 +1,57 @@
+---
+title: Streaming Data Flow — ADC samples to event capsule
+---
+flowchart LR
+    classDef stream fill:#e0f2fe,stroke:#0369a1
+    classDef processing fill:#fef3c7,stroke:#92400e
+    classDef storage fill:#dcfce7,stroke:#166534
+    classDef async_pipe stroke-dasharray:5 5
+
+    subgraph Input["Input"]
+        adc[ADC samples<br/>256 ksps × 6 ch]:::stream
+    end
+
+    subgraph DSP["dsp_frontend"]
+        precon[Pre-conditioning<br/>DC removal, anti-alias]:::processing
+        edge[Edge detector]:::processing
+        peak[Peak detector]:::processing
+        rms[RMS-window detector]:::processing
+        fft[FFT detector]:::processing
+        wavelet[Wavelet detector]:::processing
+        precon --> edge & peak & rms & fft & wavelet
+    end
+
+    subgraph Emit["token_emitter"]
+        fusion[Fusion / scoring<br/>confidence-based promotion]:::processing
+        reorder[Reorder buffer<br/>~50 ms latency window]:::processing
+        fusion --> reorder
+    end
+
+    subgraph Parse["grammar_parser"]
+        trigger{Trigger<br/>monitor}:::processing
+        window[Windowed parser<br/>pre/post context]:::processing
+        ast[Event AST]:::processing
+        trigger -->|fires| window --> ast
+    end
+
+    subgraph Detect["anomaly_detector"]
+        novelty[Novelty scorer]:::processing
+        classifier[Classifier<br/>nearest neighbor]:::processing
+        novelty --> classifier
+    end
+
+    subgraph Store["capsule_store"]
+        capsule[(Event capsule<br/>+ manifest)]:::storage
+        catalog[(Catalog<br/>SQL)]:::storage
+        artifacts[(Artifacts<br/>parquet, COMTRADE)]:::storage
+        capsule --> catalog & artifacts
+    end
+
+    adc --> precon
+    edge & peak & rms & fft & wavelet -->|primitive features| fusion
+    reorder -->|tokens<br/>~400–2000/sec| trigger
+    reorder -->|window| window
+    ast --> novelty
+    classifier --> capsule
+
+    artifacts -.->|notify| notify[Notification<br/>queue]

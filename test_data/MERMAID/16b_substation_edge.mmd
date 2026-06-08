@@ -1,0 +1,142 @@
+---
+title: Substation Edge Compute appliance — operator + wireless + upstream (16b · pairs with 16a)
+config:
+  flowchart:
+    curve: linear
+    nodeSpacing: 22
+    rankSpacing: 28
+    padding: 6
+---
+%%{init: {'flowchart': {'curve': 'linear', 'nodeSpacing': 22, 'rankSpacing': 28, 'padding': 6}}}%%
+flowchart TB
+    classDef appliance fill:#fef3c7,stroke:#92400e,stroke-width:3px
+    classDef ui fill:#cffafe,stroke:#155e75,stroke-width:2px
+    classDef wire fill:#ecfeff,stroke:#0e7490,stroke-width:1px
+    classDef wan fill:#f1f5f9,stroke:#475569,stroke-dasharray:5 5
+    classDef offpage fill:#fef3c7,stroke:#92400e,stroke-width:2px,stroke-dasharray:6 3
+    classDef note fill:#f1f5f9,stroke:#475569,stroke-dasharray:3 3
+
+    %% =====================================================================
+    %% BAND 1 — Off-page sources ← from 16a (laid out LR)
+    %% =====================================================================
+    subgraph FromA["⇦ from diagram 16a (substation primary)"]
+        direction LR
+        in_pbus[/"SPAN / mirror<br/>process bus<br/>SV + GOOSE"/]:::offpage
+        in_sbus[/"SPAN / mirror<br/>station bus<br/>MMS + SOE + GOOSE"/]:::offpage
+        in_acm[/"Asset-condition feeds<br/>DGA · PD · OLTC · RTD/FBG ·<br/>vib · SF6 · battery · env"/]:::offpage
+        in_sec[/"Physical-security feeds<br/>cams · thermal IR · NVR ·<br/>gate · PIR · tamper"/]:::offpage
+        in_ptp[/"PTP master · 1588v2<br/>(GPS-disciplined)"/]:::offpage
+        in_scada[/"SCADA upstream<br/>DNP3 / 60870-5-104"/]:::offpage
+        in_wan[/"Corp WAN / jump host<br/>(remote-access router)"/]:::offpage
+    end
+
+    %% =====================================================================
+    %% BAND 2 — Inputs ribbon (4 channels)
+    %% =====================================================================
+    subgraph Inputs["⚙ Substation Edge Compute · Inputs"]
+        direction LR
+        tap_pbus["Process-bus tap<br/>SPAN (RO) · SV + GOOSE"]:::appliance
+        tap_sbus["Station-bus tap<br/>SPAN (RO) · MMS + SOE + GOOSE"]:::appliance
+        acm_in["Asset-cond aggregator<br/>RS-485 · 4-20 mA + HART · Modbus TCP<br/>· DNP3 · 61850 MMS · SNMP"]:::appliance
+        sec_in["Security aggregator<br/>RTSP / ONVIF · OSDP · BACnet MS/TP<br/>· dry contacts · NVR API"]:::appliance
+    end
+
+    %% =====================================================================
+    %% BAND 3 — Appliance internals (microVMs | GPU | Safety Module)
+    %% =====================================================================
+    subgraph Box["⚙ Substation Edge Compute · enclosure"]
+        direction LR
+
+        subgraph SEC_host["x86 HOST · Cloud Hypervisor microVMs"]
+            direction LR
+            mcp["mcp_edge"]:::appliance
+            orch["llm_orchestrator"]:::appliance
+            llmapi["frontier_llm_api"]:::appliance
+            seal["seal_authority<br/>« stub »"]:::appliance
+        end
+
+        gpu[(GPU Platform<br/>frontier LLM<br/>PCIe card)]:::appliance
+
+        subgraph SEC_safety["Safety Module daughtercard · always-on"]
+            direction LR
+            dsp["dsp_frontend<br/>signal plane"]:::appliance
+            emit["token_emitter"]:::appliance
+            parse["grammar_parser"]:::appliance
+            detect["anomaly_detector"]:::appliance
+            store[(capsule_store)]:::appliance
+            voice["voice_tag"]:::appliance
+        end
+
+        seal -.->|"power gate"| gpu
+    end
+
+    %% Inputs → safety-module services
+    tap_pbus --> dsp
+    tap_sbus --> parse
+    acm_in --> emit
+    sec_in --> emit
+
+    %% From-A → Inputs
+    in_pbus --> tap_pbus
+    in_sbus --> tap_sbus
+    in_acm  --> acm_in
+    in_sec  --> sec_in
+    in_ptp  -.->|"disciplines signal-plane clock<br/>(origin_ns at ingest)"| dsp
+
+    %% =====================================================================
+    %% BAND 4 — Operator + Wireless + Upstream (three groups side by side)
+    %% =====================================================================
+    subgraph Surfaces["👤 Operator · wireless / phone · upstream"]
+        direction LR
+
+        subgraph Operator["Operator"]
+            direction TB
+            sme_ws["SME workstation<br/>PyQt6 UI<br/>State Viewer · bus emulator ·<br/>LLM loop · session console"]:::ui
+        end
+
+        subgraph WirelessRemote["Wireless / remote (phone)"]
+            direction LR
+            cell["Cellular modem<br/>4G LTE / 5G NSA<br/>APN + IPsec VPN<br/>MQTT / HTTPS"]:::wire
+            wifi["Wi-Fi AP<br/>802.11ac<br/>WPA2-Enterprise<br/>(eng only)"]:::wire
+            ble["Bluetooth LE<br/>field-engineer<br/>service tool<br/>(pairing-gated)"]:::wire
+            sms_push["SME phone notify<br/>SMS / push<br/>call-out"]:::wire
+        end
+
+        subgraph Upstream["Upstream"]
+            direction LR
+            cc["Utility control centre<br/>EMS / DMS / OMS<br/>DNP3 / 60870-5-104"]:::wan
+            am["Asset-mgmt portal<br/>batch · NERC CIP"]:::wan
+            sme_remote["Remote SME<br/>(on-call)<br/>secure tunnel"]:::wan
+        end
+
+        sme_ws -.-> sms_push
+        sms_push -.->|"SMS / push"| sme_remote
+        cell -.->|"WAN backhaul"| sme_remote
+        cell -.->|"audit egress"| am
+    end
+
+    %% Appliance → Operator cross-band
+    store --> sme_ws
+    detect --> sme_ws
+    seal -.->|"mode events · SSE"| sme_ws
+
+    %% From-A → Surfaces
+    in_scada --> cc
+    in_wan -.-> sme_remote
+
+    %% Wireless integration
+    wifi -.->|"engineering laptop"| sme_ws
+    ble -.->|"local service tool"| seal
+    cell -.->|"redundant WAN"| in_wan
+    sme_remote -.->|"handshake → INVESTIGATION"| sme_ws
+
+    %% =====================================================================
+    %% NOTES
+    %% =====================================================================
+    note_modes["Seal contract gates GPU power.<br/>SEALED ⇄ AWAITING_SME ⇄ INVESTIGATION<br/>is the SME flow. GPU unpowered in SEALED."]:::note
+    note_read["Read-only by design.<br/>Every input on band 1 is a passive copy / aggregation;<br/>the SEC never publishes GOOSE, commands MMS, or trips a CB.<br/>Camera + PD cross-correlation is a target Stage 7e+ use case."]:::note
+    note_wireless["Wireless is access, not control.<br/>Cellular = redundant WAN + audit egress;<br/>Wi-Fi = engineering only;<br/>BLE = local field-tool pairing only;<br/>SMS / push = SME call-out for INVESTIGATION."]:::note
+
+    Box -.- note_modes
+    Inputs -.- note_read
+    WirelessRemote -.- note_wireless

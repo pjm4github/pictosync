@@ -1,0 +1,224 @@
+@startuml t_activity_05_swimlanes
+title Activity Diagram — Swimlanes\n(all swimlane forms, colors, aliases, nested constructs inside lanes)
+
+skinparam activity {
+    BackgroundColor #FAFAFA
+    BorderColor #666666
+    DiamondBackgroundColor #FFF9C4
+    DiamondBorderColor #F9A825
+    FontSize 11
+    ArrowColor #444444
+}
+skinparam swimlane {
+    BorderColor #9E9E9E
+    TitleFontSize 13
+    TitleFontStyle bold
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. BASIC SWIMLANE  |Name|
+' ══════════════════════════════════════════════════════════════════════════
+
+|Customer|
+start
+:Submit order request;
+:Enter payment details;
+
+|Order System|
+:Receive order;
+:Validate order data;
+
+|Warehouse|
+:Check stock availability;
+:Reserve items;
+
+|Order System|
+:Confirm order;
+
+|Customer|
+:Receive order confirmation;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. COLORED SWIMLANE  |#color|Name|
+' ══════════════════════════════════════════════════════════════════════════
+
+|#FFE0B2|User Interface|
+:Display payment form;
+:Collect card details;
+
+|#E3F2FD|Payment Gateway|
+:Tokenize card data;
+:Submit to processor;
+
+|#E8F5E9|Payment Processor|
+:Authorize transaction;
+:Return auth code;
+
+|#E3F2FD|Payment Gateway|
+:Record authorization;
+
+|#FFE0B2|User Interface|
+:Show payment success;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. SWIMLANE WITH ALL CONTROL STRUCTURES INSIDE
+' ══════════════════════════════════════════════════════════════════════════
+
+|#EDE7F6|Operator|
+:Initiate diagnostic session;
+
+|#E8F4FD|AI Engine|
+:Load anomaly context;
+
+if (anomaly severity?) then (critical)
+    |#FFEBEE|Alert System|
+    #Red:Dispatch critical alert;
+    :Page on-call engineer;
+    |#E8F4FD|AI Engine|
+    :Escalate analysis priority;
+else (non-critical)
+    |#E8F4FD|AI Engine|
+    :Queue for batch analysis;
+endif
+
+|#E8F4FD|AI Engine|
+
+while (analysis steps remaining?) is (yes)
+    :Execute analysis step;
+    :Score anomaly pattern;
+endwhile (analysis complete)
+
+|#EDE7F6|Operator|
+:Review analysis results;
+
+fork
+    |#EDE7F6|Operator|
+    :Annotate finding;
+fork again
+    |#E8F5E9|Data Store|
+    :Persist analysis record;
+fork again
+    |#E3F2FD|Notifier|
+    :Send status update;
+end fork
+
+|#EDE7F6|Operator|
+:Close diagnostic session;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. SWIMLANE WITH COLOR — microservice flow
+' ══════════════════════════════════════════════════════════════════════════
+
+|#FFF8E1|Frontend Service|
+:Accept HTTP request;
+:Validate request headers;
+
+|#E8F4FD|API Gateway|
+:Route to service;
+:Apply rate limiting;
+
+|#E8F5E9|Auth Service|
+:Verify JWT token;
+:Check permissions;
+
+|#EDE7F6|Business Logic|
+:Execute business rules;
+:Compose response data;
+
+|#FCE4EC|Data Layer|
+:Run database query;
+:Return result set;
+
+|#EDE7F6|Business Logic|
+:Format response;
+
+|#FFF8E1|Frontend Service|
+:Return HTTP response;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. MANY SWIMLANES — test wide horizontal layout
+' ══════════════════════════════════════════════════════════════════════════
+
+|#EEF2FF|Lane1|
+:L1 start action;
+
+|#FFF8E1|Lane2|
+:L2 action;
+
+|#E8F5E9|Lane3|
+:L3 action;
+
+|#FCE4EC|Lane4|
+:L4 action;
+
+|#F3E5F5|Lane5|
+:L5 action;
+
+|#E0F7FA|Lane6|
+:L6 action;
+
+|#FFF3E0|Lane7|
+:L7 action;
+
+|#EEF2FF|Lane1|
+:L1 continue;
+
+if (route to which lane?) then (lane 3)
+    |#E8F5E9|Lane3|
+    :L3 conditional action;
+elseif (route to which lane?) then (lane 5)
+    |#F3E5F5|Lane5|
+    :L5 conditional action;
+else (lane 7)
+    |#FFF3E0|Lane7|
+    :L7 conditional action;
+endif
+
+|#EEF2FF|Lane1|
+:L1 final action;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. REPEAT / WHILE SPANNING SWIMLANES
+' ══════════════════════════════════════════════════════════════════════════
+
+|#E8F4FD|Producer|
+:Initialize data feed;
+
+repeat
+    |#E8F4FD|Producer|
+    :Generate data batch;
+
+    |#E8F5E9|Processor|
+    :Consume batch;
+    :Transform data;
+    :Validate results;
+
+    |#EDE7F6|Consumer|
+    :Ingest processed data;
+    :Update index;
+
+    |#E8F4FD|Producer|
+    :Check feed status;
+backward:Reset batch pointer;
+repeat while (feed active?) is (yes) not (no)
+
+|#E8F5E9|Processor|
+:Flush remaining buffer;
+
+|#EDE7F6|Consumer|
+:Finalize index;
+stop
+
+note
+    **Grammar targets (swimlanes):**
+    |Name|
+    |#color|Name|
+    Lane transitions (cross-lane arrows)
+    Conditionals spanning lanes
+    Loops spanning lanes
+    Fork spanning lanes
+    Many lanes (wide layout)
+    Colored lanes with constructs
+end note
+
+@enduml

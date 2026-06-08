@@ -1,0 +1,62 @@
+---
+title: Seal Contract Enforcement at Every Orchestration Operation
+---
+flowchart LR
+    classDef gated fill:#fee2e2,stroke:#991b1b,stroke-width:2px
+    classDef ungated fill:#dcfce7,stroke:#166534
+    classDef gate fill:#fef3c7,stroke:#92400e,stroke-width:3px
+
+    caller[Caller: orchestrator, UI, MCP, etc.]
+
+    subgraph Decorator["@requires_bootstrap_mode decorator"]
+        check{Cached mode<br/>still valid?}:::gate
+        fetch[Fetch current_mode<br/>from seal authority]:::gate
+        verify{mode ==<br/>BOOTSTRAP?}:::gate
+    end
+
+    auth[(seal_authority<br/>service)]
+
+    op[Operation body executes]:::gated
+    err[Raise SealedModeError]
+    integrity[Raise SealIntegrityError<br/>HARD STOP]
+
+    caller --> check
+    check -->|yes, < 500ms TTL| verify
+    check -->|no| fetch
+    fetch -->|REST or in-proc| auth
+    auth -->|mode| verify
+    auth -.->|tampered| integrity
+    verify -->|BOOTSTRAP| op
+    verify -->|SEALED / FACTORY / INVESTIGATION| err
+
+    subgraph Examples["Examples of GATED operations"]
+        direction LR
+        ex1[propose_ontology_update]:::gated
+        ex2[push_embedding_model]:::gated
+        ex3[update_retention_policy]:::gated
+        ex4[normalize_voice_tag]:::gated
+        ex5[propose_canonical_label]:::gated
+        ex6[activate_proposal]:::gated
+    end
+
+    subgraph NonGated["Operations that work in ALL modes"]
+        direction LR
+        ng1[capture_sample_window]:::ungated
+        ng2[get_capsule_manifest]:::ungated
+        ng3[record_voice_tag]:::ungated
+        ng4[query_catalog]:::ungated
+        ng5[get_current_mode]:::ungated
+    end
+
+    subgraph SubscriberPath["Mode-change subscription"]
+        sub[Mode change pushed<br/>by authority]:::gate
+        invalidate[Cache invalidated<br/>immediately]:::gate
+        sub --> invalidate
+    end
+
+    subgraph ModeNote["INVESTIGATION vs BOOTSTRAP"]
+        note1[GPU Platform powered in both modes,<br/>but only BOOTSTRAP permits<br/>orchestration writes.<br/>INVESTIGATION = read-only inference,<br/>15-min session, auto crypto-erase.]:::gate
+    end
+
+    auth -.->|push notify| sub
+    invalidate -.->|next call refetches| check
