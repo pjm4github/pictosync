@@ -2594,9 +2594,91 @@ class MainWindow(QMainWindow):
         self._set_draft_text_programmatically(pretty, enable_import=True, status="Draft ready. Click Import to link JSON<->Scene.", focus_id=None)
         self.statusBar().showMessage("AI draft received.")
 
+    @staticmethod
+    def _friendly_gemini_error(err: str):
+        """Turn a raw Gemini/worker error string into a user-facing
+        ``(title, summary, how_to_fix)`` triple.  The raw text is still shown
+        via the dialog's collapsible Details section."""
+        e = err or ""
+        el = e.lower()
+
+        def first_line(s: str) -> str:
+            for ln in s.splitlines():
+                if ln.strip():
+                    return ln.strip()
+            return s.strip()
+
+        if "google_api_key" in el and "not set" in el:
+            return ("Gemini API key not set",
+                    "PictoSync couldn't find your Gemini API key.",
+                    "Set the GOOGLE_API_KEY environment variable to your key, "
+                    "then restart PictoSync.\n"
+                    "Create a key at: https://aistudio.google.com/apikey")
+        if "google-genai" in el and ("not installed" in el or "install" in el):
+            return ("Gemini SDK not installed",
+                    "The google-genai package is missing.",
+                    "Install it and restart PictoSync:\n\n"
+                    "    pip install google-genai")
+        if "resource_exhausted" in el or "429" in e:
+            return ("Gemini quota exceeded",
+                    "Gemini rejected the request because a usage limit was "
+                    "reached (HTTP 429, RESOURCE_EXHAUSTED).",
+                    "How to fix:\n"
+                    "• The selected model may have no free-tier quota "
+                    "(free-tier limit 0 — e.g. the image-preview models). "
+                    "In Settings → External Tools → Gemini AI, set "
+                    "Default Model to one your plan allows (e.g. "
+                    "gemini-2.5-flash-image) and click “Validate "
+                    "Connection”.\n"
+                    "• Or enable billing / raise the quota for this model:\n"
+                    "    https://ai.google.dev/gemini-api/docs/rate-limits\n"
+                    "    https://aistudio.google.com/\n"
+                    "• If this is a per-minute rate limit, wait a few "
+                    "seconds and try Auto-Extract again.")
+        if ("permission_denied" in el or "unauthenticated" in el
+                or "api key not valid" in el or "api_key_invalid" in el
+                or "401" in e or "403" in e):
+            return ("Gemini authentication failed",
+                    "Gemini rejected the request as unauthorized.",
+                    "How to fix:\n"
+                    "• Check that GOOGLE_API_KEY is correct and active.\n"
+                    "• Ensure the Generative Language API is enabled for "
+                    "the key:\n    https://aistudio.google.com/apikey")
+        if ("not_found" in el or "is not found for api version" in el
+                or ("404" in e and "model" in el)):
+            return ("Gemini model not available",
+                    "The selected Gemini model isn't available to your API key.",
+                    "How to fix:\n"
+                    "• In Settings → External Tools → Gemini AI, "
+                    "pick a different Default Model.\n"
+                    "• Use “Validate Connection” there to list "
+                    "the models your key can use.")
+        if any(k in el for k in (
+                "timed out", "timeout", "connection", "ssl", "network",
+                "getaddrinfo", "temporarily unavailable", "deadline",
+                "failed to establish")):
+            return ("Could not reach Gemini",
+                    "PictoSync couldn't connect to the Gemini service.",
+                    "How to fix:\n"
+                    "• Check your internet connection / proxy.\n"
+                    "• Confirm access to generativelanguage.googleapis.com "
+                    "is allowed.\n"
+                    "• Then try Auto-Extract again.")
+        return ("Auto-Extract failed", first_line(e),
+                "Gemini returned an unexpected error. Expand Details below, "
+                "or see https://ai.google.dev/gemini-api/docs")
+
     def on_ai_failed(self, err: str):
-        """Handle AI extraction failure."""
-        QMessageBox.critical(self, "Auto-Extract failed", err)
+        """Handle AI extraction failure with a user-friendly dialog."""
+        title, summary, how_to_fix = self._friendly_gemini_error(err)
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Auto-Extract failed")
+        box.setText(title)
+        box.setInformativeText(summary + "\n\n" + how_to_fix)
+        if err:
+            box.setDetailedText(err)   # raw error + traceback (collapsible)
+        box.exec()
         self._set_draft_text_programmatically(self.draft.get_json_text(), enable_import=False, status="Auto-Extract failed.", focus_id=None)
         self.statusBar().showMessage("Auto-Extract failed.")
 

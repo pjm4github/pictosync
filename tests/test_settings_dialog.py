@@ -181,3 +181,26 @@ class TestDialogActions:
 
     def test_on_restore_defaults_no_crash(self, dialog):
         dialog._on_restore_defaults()
+
+
+class TestGeminiSetup:
+    """Gemini model setup + connection validation in the External Tools tab."""
+
+    def test_gemini_group_in_external_tools_tab(self, dialog):
+        # Gemini widgets exist and are populated from settings.
+        assert hasattr(dialog, "gemini_model_list")
+        assert hasattr(dialog, "gemini_default_combo")
+        assert hasattr(dialog, "gemini_validate_btn")
+        assert dialog.gemini_model_list.count() >= 1
+
+    def test_validate_reports_missing_api_key(self, dialog, monkeypatch):
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        ok, level, title, detail = dialog._check_gemini_connection(
+            "gemini-2.5-flash-image")
+        # Either the SDK is missing or the key is missing — both are clean
+        # error results with actionable instructions.
+        assert ok is False
+        assert level == "error"
+        assert title in ("GOOGLE_API_KEY is not set",
+                         "google-genai is not installed")
+        assert detail.strip()

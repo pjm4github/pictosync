@@ -80,11 +80,60 @@ class InPlaceTextEditMixin:
         self._inplace_request_edit()
         self._inplace_on_enter()
         self.setTextInteractionFlags(Qt.TextInteractionFlag.TextEditorInteraction)
+        self._seed_default_format()
         self.setFocus(Qt.FocusReason.MouseFocusReason)
         try:
             self.document().contentsChanged.connect(self._on_inplace_contents_changed)
         except (TypeError, RuntimeError):
             pass
+
+    def _seed_default_format(self) -> None:
+        """Apply the item's effective default format to the document/typing
+        cursor so the *first* characters typed into an empty box inherit the
+        configured font, size, and colour — instead of Qt's bare defaults
+        (which only got corrected on focus-out re-render before).
+        """
+        from PyQt6.QtGui import QFont, QTextCharFormat
+        from utils import hex_to_qcolor
+        eff = self._inplace_meta().effective_default_format()
+        fam = eff.font_family
+        size = max(6, int(eff.font_size or 12))
+
+        fnt = QFont(fam) if fam else QFont()
+        fnt.setPointSize(size)
+        if eff.bold:
+            fnt.setBold(True)
+        if eff.italic:
+            fnt.setItalic(True)
+        if eff.underline:
+            fnt.setUnderline(True)
+        if eff.strikethrough:
+            fnt.setStrikeOut(True)
+        self.document().setDefaultFont(fnt)
+        if eff.color:
+            self.setDefaultTextColor(hex_to_qcolor(eff.color, self.defaultTextColor()))
+
+        # Seed the typing format only when the box is empty, so existing runs
+        # keep their own formatting.
+        if self.toPlainText():
+            return
+        tcf = QTextCharFormat()
+        if fam:
+            tcf.setFontFamilies([fam])
+        tcf.setFontPointSize(float(size))
+        if eff.bold:
+            tcf.setFontWeight(QFont.Weight.Bold)
+        if eff.italic:
+            tcf.setFontItalic(True)
+        if eff.underline:
+            tcf.setFontUnderline(True)
+        if eff.strikethrough:
+            tcf.setFontStrikeOut(True)
+        if eff.color:
+            tcf.setForeground(hex_to_qcolor(eff.color, self.defaultTextColor()))
+        cur = self.textCursor()
+        cur.setCharFormat(tcf)
+        self.setTextCursor(cur)
 
     def _on_inplace_contents_changed(self) -> None:
         if self._editing:

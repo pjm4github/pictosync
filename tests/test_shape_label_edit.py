@@ -243,3 +243,31 @@ class TestKeyboardDuringEdit:
         assert lbl._editing is False
         assert item.isSelected() is True
         assert item.meta.blocks[0].plain_text() == "hi"   # committed
+
+
+class TestDefaultStyleOnEmptyBox:
+    """Typing into a freshly-entered empty box inherits the item's default
+    style immediately (not only after focus-out)."""
+
+    def test_typed_text_inherits_default_format(self, main_window, qapp):
+        from models import CharFormat
+        mw = main_window
+        item, _ = _make(mw, qapp, "rect")
+        item.meta.default_format = CharFormat(
+            font_family="Arial", font_size=20, color="#FF0000FF")
+        item._update_label_text()
+        lbl = item._label_item
+        lbl._begin_edit_at(QPointF(20, 20))
+        cur = lbl.textCursor()
+        cur.insertText("X")
+        lbl.setTextCursor(cur)
+        cf = lbl.document().begin().begin().fragment().charFormat()
+        assert cf.fontFamilies() == ["Arial"]
+        assert cf.fontPointSize() == 20.0
+        assert cf.foreground().color().name() == "#ff0000"
+        # committed JSON stays sparse (run format == default → omitted)
+        lbl._commit_edit()
+        qapp.processEvents()
+        blocks = item.meta.blocks
+        assert blocks[0].plain_text() == "X"
+        assert blocks[0].runs[0].format is None or not blocks[0].runs[0].format.to_dict(sparse=True)

@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
     QRadioButton,
     QButtonGroup,
     QSizePolicy,
+    QMessageBox,
 )
 from PyQt6.QtGui import QColor
 
@@ -325,38 +326,9 @@ class SettingsDialog(QDialog):
         workspace_layout.addRow("", self.pptx_source_dir_cb)
 
         layout.addWidget(workspace_group)
-
-        # Gemini AI group
-        gemini_group = QGroupBox("Gemini AI")
-        gemini_layout = QVBoxLayout(gemini_group)
-        gemini_layout.setContentsMargins(6, 4, 6, 4)
-        gemini_layout.setSpacing(4)
-
-        model_label = QLabel("Available Models:")
-        gemini_layout.addWidget(model_label)
-
-        self.gemini_model_list = QListWidget()
-        self.gemini_model_list.setMaximumHeight(120)
-        gemini_layout.addWidget(self.gemini_model_list)
-
-        model_btn_row = QHBoxLayout()
-        self.gemini_add_btn = QPushButton("Add...")
-        self.gemini_add_btn.clicked.connect(self._add_gemini_model)
-        model_btn_row.addWidget(self.gemini_add_btn)
-
-        self.gemini_remove_btn = QPushButton("Remove")
-        self.gemini_remove_btn.clicked.connect(self._remove_gemini_model)
-        model_btn_row.addWidget(self.gemini_remove_btn)
-        model_btn_row.addStretch()
-        gemini_layout.addLayout(model_btn_row)
-
-        default_row = QFormLayout()
-        self.gemini_default_combo = QComboBox()
-        default_row.addRow("Default Model:", self.gemini_default_combo)
-        gemini_layout.addLayout(default_row)
-
-        layout.addWidget(gemini_group)
         layout.addStretch()
+
+        # (The Gemini AI group now lives in the External Tools tab.)
 
         return widget
 
@@ -403,6 +375,141 @@ class SettingsDialog(QDialog):
         idx = self.gemini_default_combo.findText(current_default)
         if idx >= 0:
             self.gemini_default_combo.setCurrentIndex(idx)
+
+    # =========================================================================
+    # Gemini AI group (lives in the External Tools tab)
+    # =========================================================================
+
+    def _build_gemini_group(self) -> QGroupBox:
+        """Build the Gemini AI group: model list, default model, and a button
+        to validate that the selected model is reachable/active."""
+        group = QGroupBox("Gemini AI")
+        gl = QVBoxLayout(group)
+        gl.setContentsMargins(6, 4, 6, 4)
+        gl.setSpacing(4)
+
+        note = QLabel(
+            "Gemini powers AI extraction of annotations from a diagram image. "
+            "Set the GOOGLE_API_KEY environment variable to your API key "
+            "(get one at https://aistudio.google.com/apikey), then use "
+            "Validate to confirm the selected model is reachable."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #666; font-size: 11px;")
+        gl.addWidget(note)
+
+        gl.addWidget(QLabel("Available Models:"))
+        self.gemini_model_list = QListWidget()
+        self.gemini_model_list.setMaximumHeight(120)
+        gl.addWidget(self.gemini_model_list)
+
+        btn_row = QHBoxLayout()
+        self.gemini_add_btn = QPushButton("Add...")
+        self.gemini_add_btn.clicked.connect(self._add_gemini_model)
+        btn_row.addWidget(self.gemini_add_btn)
+        self.gemini_remove_btn = QPushButton("Remove")
+        self.gemini_remove_btn.clicked.connect(self._remove_gemini_model)
+        btn_row.addWidget(self.gemini_remove_btn)
+        btn_row.addStretch()
+        gl.addLayout(btn_row)
+
+        default_row = QHBoxLayout()
+        default_row.addWidget(QLabel("Default Model:"))
+        self.gemini_default_combo = QComboBox()
+        default_row.addWidget(self.gemini_default_combo, 1)
+        self.gemini_validate_btn = QPushButton("Validate Connection")
+        self.gemini_validate_btn.clicked.connect(self._validate_gemini_model)
+        default_row.addWidget(self.gemini_validate_btn)
+        gl.addLayout(default_row)
+
+        self.gemini_status_label = QLabel("")
+        self.gemini_status_label.setWordWrap(True)
+        self.gemini_status_label.setStyleSheet("font-size: 11px;")
+        gl.addWidget(self.gemini_status_label)
+        return group
+
+    @staticmethod
+    def _check_gemini_connection(model: str):
+        """Test connectivity to Gemini and whether *model* is available.
+
+        Returns ``(ok, level, title, detail)`` where *level* is one of
+        ``"ok"`` / ``"warn"`` / ``"error"``.  Performs a network call.
+        """
+        import os
+        try:
+            from google import genai
+        except Exception:
+            return (False, "error", "google-genai is not installed",
+                    "The Gemini SDK is missing. Install it and restart "
+                    "PictoSync:\n\n    pip install google-genai")
+        key = os.environ.get("GOOGLE_API_KEY", "").strip()
+        if not key:
+            return (False, "error", "GOOGLE_API_KEY is not set",
+                    "Set the GOOGLE_API_KEY environment variable to your "
+                    "Gemini API key, then restart PictoSync.\n\n"
+                    "Create a key at:\n  https://aistudio.google.com/apikey")
+        try:
+            client = genai.Client(api_key=key)
+            available = []
+            for m in client.models.list():
+                name = (getattr(m, "name", "") or "").split("/")[-1]
+                if name:
+                    available.append(name)
+        except Exception as e:
+            return (False, "error", "Could not connect to Gemini",
+                    "The connection test failed:\n\n"
+                    f"{type(e).__name__}: {e}\n\n"
+                    "Check that:\n"
+                    "  • your network/proxy allows access to "
+                    "generativelanguage.googleapis.com\n"
+                    "  • GOOGLE_API_KEY is valid and the Generative "
+                    "Language API is enabled for it")
+        short = model.split("/")[-1]
+        if short in available:
+            return (True, "ok", "Connected — model is active",
+                    f"Gemini is reachable and '{model}' is available for "
+                    "your API key.")
+        listed = "\n".join("  • " + a for a in sorted(available)[:20])
+        return (False, "warn", "Connected, but model not confirmed",
+                f"Gemini is reachable, but '{model}' was not found in the "
+                "models available to your API key (it may be a preview or "
+                "restricted model that still works).\n\n"
+                "Models reported as available:\n"
+                + (listed or "  (none returned)"))
+
+    def _validate_gemini_model(self):
+        """Validate the selected Gemini model and show a status dialog."""
+        from PyQt6.QtCore import Qt as _Qt
+        from PyQt6.QtWidgets import QApplication
+
+        model = self.gemini_default_combo.currentText().strip()
+        if not model and self.gemini_model_list.currentItem():
+            model = self.gemini_model_list.currentItem().text().strip()
+        if not model:
+            QMessageBox.warning(self, "Gemini",
+                                "Select a model to validate first.")
+            return
+
+        self.gemini_status_label.setText("Checking…")
+        QApplication.setOverrideCursor(_Qt.CursorShape.WaitCursor)
+        try:
+            ok, level, title, detail = self._check_gemini_connection(model)
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        color = {"ok": "#16a34a", "warn": "#d97706",
+                 "error": "#dc2626"}.get(level, "#666")
+        self.gemini_status_label.setText(
+            f"<b style='color:{color}'>{title}</b>")
+
+        box = QMessageBox(self)
+        box.setWindowTitle("Gemini Connection")
+        box.setIcon(QMessageBox.Icon.Information if level == "ok"
+                    else QMessageBox.Icon.Warning if level == "warn"
+                    else QMessageBox.Icon.Critical)
+        box.setText(title)
+        box.setInformativeText(detail)
+        box.exec()
 
     # =========================================================================
     # Editor Tab
@@ -1184,6 +1291,9 @@ class SettingsDialog(QDialog):
         mmdc_layout.addLayout(c4_bnd_row)
 
         layout.addWidget(mmdc_group)
+
+        # ── Gemini AI ──
+        layout.addWidget(self._build_gemini_group())
 
         layout.addStretch()
 
