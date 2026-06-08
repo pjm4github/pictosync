@@ -69,7 +69,7 @@
        <item>
         <widget class="QTabWidget" name="shape_subtabs">
          <property name="currentIndex">
-          <number>0</number>
+          <number>2</number>
          </property>
          <widget class="QWidget" name="shape_fill_line">
           <attribute name="title">
@@ -523,8 +523,8 @@
                <rect>
                 <x>0</x>
                 <y>0</y>
-                <width>100</width>
-                <height>30</height>
+                <width>340</width>
+                <height>937</height>
                </rect>
               </property>
               <layout class="QVBoxLayout" name="shape_effects_layout">
@@ -545,261 +545,557 @@
                </property>
                <item>
                 <widget class="QGroupBox" name="grp_shadow">
-                 <property name="title"><string>Shadow</string></property>
-                 <layout class="QVBoxLayout" name="grp_shadow_layout"><property name="spacing"><number>4</number></property>
-                 <item>
-                  <layout class="QFormLayout" name="grp_shadow_form">
-                   <property name="fieldGrowthPolicy"><enum>QFormLayout::AllNonFixedFieldsGrow</enum></property>
-                <item row="0" column="0">
-                 <widget class="QLabel" name="lbl_shadow_presets">
-                  <property name="text"><string>Presets</string></property>
-                 </widget>
-                </item>
-                <item row="0" column="1">
-                 <widget class="QPushButton" name="btn_shadow_presets">
-                  <property name="text"><string/></property>
-                  <property name="maximumWidth"><number>48</number></property>
-                 </widget>
-                </item>
-                <item row="1" column="0">
-                 <widget class="QLabel" name="lbl_shadow_color">
-                  <property name="text"><string>Color</string></property>
-                 </widget>
-                </item>
-                <item row="1" column="1">
-                 <widget class="QPushButton" name="btn_shadow_color">
-                  <property name="text"><string/></property>
-                  <property name="maximumWidth"><number>48</number></property>
-                 </widget>
-                </item>
-                <item row="2" column="0">
-                 <widget class="QLabel" name="lbl_shadow_transparency">
-                  <property name="text"><string>Transparency</string></property>
-                 </widget>
-                </item>
-                <item row="2" column="1">
-                 <layout class="QHBoxLayout" name="shadow_transparency_row">
-                  <item><widget class="QSlider" name="shadow_transparency_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QSpinBox" name="shadow_transparency_spin"><property name="suffix"><string>%</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                <item row="3" column="0">
-                 <widget class="QLabel" name="lbl_shadow_size">
-                  <property name="text"><string>Size</string></property>
-                 </widget>
-                </item>
-                <item row="3" column="1">
-                 <layout class="QHBoxLayout" name="shadow_size_row">
-                  <item><widget class="QSlider" name="shadow_size_slider"><property name="maximum"><number>200</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QSpinBox" name="shadow_size_spin"><property name="suffix"><string>%</string></property><property name="maximum"><number>200</number></property></widget></item>
-                 </layout>
-                </item>
-                <item row="4" column="0">
-                 <widget class="QLabel" name="lbl_shadow_blur">
-                  <property name="text"><string>Blur</string></property>
-                 </widget>
-                </item>
-                <item row="4" column="1">
-                 <layout class="QHBoxLayout" name="shadow_blur_row">
-                  <item><widget class="QSlider" name="shadow_blur_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QDoubleSpinBox" name="shadow_blur_spin"><property name="suffix"><string> pt</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                <item row="5" column="0">
-                 <widget class="QLabel" name="lbl_shadow_angle">
-                  <property name="text"><string>Angle</string></property>
-                 </widget>
-                </item>
-                <item row="5" column="1">
-                 <layout class="QHBoxLayout" name="shadow_angle_row">
-                  <item><widget class="QSlider" name="shadow_angle_slider"><property name="maximum"><number>359</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QSpinBox" name="shadow_angle_spin"><property name="suffix"><string>°</string></property><property name="maximum"><number>359</number></property></widget></item>
-                 </layout>
-                </item>
-                <item row="6" column="0">
-                 <widget class="QLabel" name="lbl_shadow_distance">
-                  <property name="text"><string>Distance</string></property>
-                 </widget>
-                </item>
-                <item row="6" column="1">
-                 <layout class="QHBoxLayout" name="shadow_distance_row">
-                  <item><widget class="QSlider" name="shadow_distance_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QDoubleSpinBox" name="shadow_distance_spin"><property name="suffix"><string> pt</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                  </layout>
-                 </item>
+                 <property name="title">
+                  <string>Shadow</string>
+                 </property>
+                 <layout class="QVBoxLayout" name="grp_shadow_layout">
+                  <property name="spacing">
+                   <number>4</number>
+                  </property>
+                  <item>
+                   <layout class="QFormLayout" name="grp_shadow_form">
+                    <property name="fieldGrowthPolicy">
+                     <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+                    </property>
+                    <item row="0" column="0">
+                     <widget class="QLabel" name="lbl_shadow_presets">
+                      <property name="text">
+                       <string>Presets</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="0" column="1">
+                     <widget class="QPushButton" name="btn_shadow_presets">
+                      <property name="text">
+                       <string/>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="0">
+                     <widget class="QLabel" name="lbl_shadow_color">
+                      <property name="text">
+                       <string>Color</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="1">
+                     <widget class="QPushButton" name="btn_shadow_color">
+                      <property name="text">
+                       <string/>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="2" column="0">
+                     <widget class="QLabel" name="lbl_shadow_transparency">
+                      <property name="text">
+                       <string>Transparency</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="2" column="1">
+                     <layout class="QHBoxLayout" name="shadow_transparency_row">
+                      <item>
+                       <widget class="QSlider" name="shadow_transparency_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QSpinBox" name="shadow_transparency_spin">
+                        <property name="suffix">
+                         <string>%</string>
+                        </property>
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item row="3" column="0">
+                     <widget class="QLabel" name="lbl_shadow_size">
+                      <property name="text">
+                       <string>Size</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="3" column="1">
+                     <layout class="QHBoxLayout" name="shadow_size_row">
+                      <item>
+                       <widget class="QSlider" name="shadow_size_slider">
+                        <property name="maximum">
+                         <number>200</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QSpinBox" name="shadow_size_spin">
+                        <property name="suffix">
+                         <string>%</string>
+                        </property>
+                        <property name="maximum">
+                         <number>200</number>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item row="4" column="0">
+                     <widget class="QLabel" name="lbl_shadow_blur">
+                      <property name="text">
+                       <string>Blur</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="4" column="1">
+                     <layout class="QHBoxLayout" name="shadow_blur_row">
+                      <item>
+                       <widget class="QSlider" name="shadow_blur_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QDoubleSpinBox" name="shadow_blur_spin">
+                        <property name="suffix">
+                         <string> pt</string>
+                        </property>
+                        <property name="maximum">
+                         <double>100.000000000000000</double>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item row="5" column="0">
+                     <widget class="QLabel" name="lbl_shadow_angle">
+                      <property name="text">
+                       <string>Angle</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="5" column="1">
+                     <layout class="QHBoxLayout" name="shadow_angle_row">
+                      <item>
+                       <widget class="QSlider" name="shadow_angle_slider">
+                        <property name="maximum">
+                         <number>359</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QSpinBox" name="shadow_angle_spin">
+                        <property name="suffix">
+                         <string>°</string>
+                        </property>
+                        <property name="maximum">
+                         <number>359</number>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item row="6" column="0">
+                     <widget class="QLabel" name="lbl_shadow_distance">
+                      <property name="text">
+                       <string>Distance</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="6" column="1">
+                     <layout class="QHBoxLayout" name="shadow_distance_row">
+                      <item>
+                       <widget class="QSlider" name="shadow_distance_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QDoubleSpinBox" name="shadow_distance_spin">
+                        <property name="suffix">
+                         <string> pt</string>
+                        </property>
+                        <property name="maximum">
+                         <double>100.000000000000000</double>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                   </layout>
+                  </item>
                  </layout>
                 </widget>
                </item>
                <item>
                 <widget class="QGroupBox" name="grp_reflection">
-                 <property name="title"><string>Reflection</string></property>
-                 <layout class="QVBoxLayout" name="grp_reflection_layout"><property name="spacing"><number>4</number></property>
-                 <item>
-                  <layout class="QFormLayout" name="grp_reflection_form">
-                   <property name="fieldGrowthPolicy"><enum>QFormLayout::AllNonFixedFieldsGrow</enum></property>
-                <item row="0" column="0">
-                 <widget class="QLabel" name="lbl_reflection_presets">
-                  <property name="text"><string>Presets</string></property>
-                 </widget>
-                </item>
-                <item row="0" column="1">
-                 <widget class="QPushButton" name="btn_reflection_presets">
-                  <property name="text"><string/></property>
-                  <property name="maximumWidth"><number>48</number></property>
-                 </widget>
-                </item>
-                <item row="1" column="0">
-                 <widget class="QLabel" name="lbl_reflection_transparency">
-                  <property name="text"><string>Transparency</string></property>
-                 </widget>
-                </item>
-                <item row="1" column="1">
-                 <layout class="QHBoxLayout" name="reflection_transparency_row">
-                  <item><widget class="QSlider" name="reflection_transparency_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QSpinBox" name="reflection_transparency_spin"><property name="suffix"><string>%</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                <item row="2" column="0">
-                 <widget class="QLabel" name="lbl_reflection_size">
-                  <property name="text"><string>Size</string></property>
-                 </widget>
-                </item>
-                <item row="2" column="1">
-                 <layout class="QHBoxLayout" name="reflection_size_row">
-                  <item><widget class="QSlider" name="reflection_size_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QSpinBox" name="reflection_size_spin"><property name="suffix"><string>%</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                <item row="3" column="0">
-                 <widget class="QLabel" name="lbl_reflection_blur">
-                  <property name="text"><string>Blur</string></property>
-                 </widget>
-                </item>
-                <item row="3" column="1">
-                 <layout class="QHBoxLayout" name="reflection_blur_row">
-                  <item><widget class="QSlider" name="reflection_blur_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QDoubleSpinBox" name="reflection_blur_spin"><property name="suffix"><string> pt</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                <item row="4" column="0">
-                 <widget class="QLabel" name="lbl_reflection_distance">
-                  <property name="text"><string>Distance</string></property>
-                 </widget>
-                </item>
-                <item row="4" column="1">
-                 <layout class="QHBoxLayout" name="reflection_distance_row">
-                  <item><widget class="QSlider" name="reflection_distance_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QDoubleSpinBox" name="reflection_distance_spin"><property name="suffix"><string> pt</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                  </layout>
-                 </item>
+                 <property name="title">
+                  <string>Reflection</string>
+                 </property>
+                 <layout class="QVBoxLayout" name="grp_reflection_layout">
+                  <property name="spacing">
+                   <number>4</number>
+                  </property>
+                  <item>
+                   <layout class="QFormLayout" name="grp_reflection_form">
+                    <property name="fieldGrowthPolicy">
+                     <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+                    </property>
+                    <item row="0" column="0">
+                     <widget class="QLabel" name="lbl_reflection_presets">
+                      <property name="text">
+                       <string>Presets</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="0" column="1">
+                     <widget class="QPushButton" name="btn_reflection_presets">
+                      <property name="text">
+                       <string/>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="0">
+                     <widget class="QLabel" name="lbl_reflection_transparency">
+                      <property name="text">
+                       <string>Transparency</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="1">
+                     <layout class="QHBoxLayout" name="reflection_transparency_row">
+                      <item>
+                       <widget class="QSlider" name="reflection_transparency_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QSpinBox" name="reflection_transparency_spin">
+                        <property name="suffix">
+                         <string>%</string>
+                        </property>
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item row="2" column="0">
+                     <widget class="QLabel" name="lbl_reflection_size">
+                      <property name="text">
+                       <string>Size</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="2" column="1">
+                     <layout class="QHBoxLayout" name="reflection_size_row">
+                      <item>
+                       <widget class="QSlider" name="reflection_size_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QSpinBox" name="reflection_size_spin">
+                        <property name="suffix">
+                         <string>%</string>
+                        </property>
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item row="3" column="0">
+                     <widget class="QLabel" name="lbl_reflection_blur">
+                      <property name="text">
+                       <string>Blur</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="3" column="1">
+                     <layout class="QHBoxLayout" name="reflection_blur_row">
+                      <item>
+                       <widget class="QSlider" name="reflection_blur_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QDoubleSpinBox" name="reflection_blur_spin">
+                        <property name="suffix">
+                         <string> pt</string>
+                        </property>
+                        <property name="maximum">
+                         <double>100.000000000000000</double>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item row="4" column="0">
+                     <widget class="QLabel" name="lbl_reflection_distance">
+                      <property name="text">
+                       <string>Distance</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="4" column="1">
+                     <layout class="QHBoxLayout" name="reflection_distance_row">
+                      <item>
+                       <widget class="QSlider" name="reflection_distance_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QDoubleSpinBox" name="reflection_distance_spin">
+                        <property name="suffix">
+                         <string> pt</string>
+                        </property>
+                        <property name="maximum">
+                         <double>100.000000000000000</double>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                   </layout>
+                  </item>
                  </layout>
                 </widget>
                </item>
                <item>
                 <widget class="QGroupBox" name="grp_glow">
-                 <property name="title"><string>Glow</string></property>
-                 <layout class="QVBoxLayout" name="grp_glow_layout"><property name="spacing"><number>4</number></property>
-                 <item>
-                  <layout class="QFormLayout" name="grp_glow_form">
-                   <property name="fieldGrowthPolicy"><enum>QFormLayout::AllNonFixedFieldsGrow</enum></property>
-                <item row="0" column="0">
-                 <widget class="QLabel" name="lbl_glow_presets">
-                  <property name="text"><string>Presets</string></property>
-                 </widget>
-                </item>
-                <item row="0" column="1">
-                 <widget class="QPushButton" name="btn_glow_presets">
-                  <property name="text"><string/></property>
-                  <property name="maximumWidth"><number>48</number></property>
-                 </widget>
-                </item>
-                <item row="1" column="0">
-                 <widget class="QLabel" name="lbl_glow_color">
-                  <property name="text"><string>Color</string></property>
-                 </widget>
-                </item>
-                <item row="1" column="1">
-                 <widget class="QPushButton" name="btn_glow_color">
-                  <property name="text"><string/></property>
-                  <property name="maximumWidth"><number>48</number></property>
-                 </widget>
-                </item>
-                <item row="2" column="0">
-                 <widget class="QLabel" name="lbl_glow_size">
-                  <property name="text"><string>Size</string></property>
-                 </widget>
-                </item>
-                <item row="2" column="1">
-                 <layout class="QHBoxLayout" name="glow_size_row">
-                  <item><widget class="QSlider" name="glow_size_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QDoubleSpinBox" name="glow_size_spin"><property name="suffix"><string> pt</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                <item row="3" column="0">
-                 <widget class="QLabel" name="lbl_glow_transparency">
-                  <property name="text"><string>Transparency</string></property>
-                 </widget>
-                </item>
-                <item row="3" column="1">
-                 <layout class="QHBoxLayout" name="glow_transparency_row">
-                  <item><widget class="QSlider" name="glow_transparency_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QSpinBox" name="glow_transparency_spin"><property name="suffix"><string>%</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                  </layout>
-                 </item>
+                 <property name="title">
+                  <string>Glow</string>
+                 </property>
+                 <layout class="QVBoxLayout" name="grp_glow_layout">
+                  <property name="spacing">
+                   <number>4</number>
+                  </property>
+                  <item>
+                   <layout class="QFormLayout" name="grp_glow_form">
+                    <property name="fieldGrowthPolicy">
+                     <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+                    </property>
+                    <item row="0" column="0">
+                     <widget class="QLabel" name="lbl_glow_presets">
+                      <property name="text">
+                       <string>Presets</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="0" column="1">
+                     <widget class="QPushButton" name="btn_glow_presets">
+                      <property name="text">
+                       <string/>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="0">
+                     <widget class="QLabel" name="lbl_glow_color">
+                      <property name="text">
+                       <string>Color</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="1">
+                     <widget class="QPushButton" name="btn_glow_color">
+                      <property name="text">
+                       <string/>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="2" column="0">
+                     <widget class="QLabel" name="lbl_glow_size">
+                      <property name="text">
+                       <string>Size</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="2" column="1">
+                     <layout class="QHBoxLayout" name="glow_size_row">
+                      <item>
+                       <widget class="QSlider" name="glow_size_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QDoubleSpinBox" name="glow_size_spin">
+                        <property name="suffix">
+                         <string> pt</string>
+                        </property>
+                        <property name="maximum">
+                         <double>100.000000000000000</double>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item row="3" column="0">
+                     <widget class="QLabel" name="lbl_glow_transparency">
+                      <property name="text">
+                       <string>Transparency</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="3" column="1">
+                     <layout class="QHBoxLayout" name="glow_transparency_row">
+                      <item>
+                       <widget class="QSlider" name="glow_transparency_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QSpinBox" name="glow_transparency_spin">
+                        <property name="suffix">
+                         <string>%</string>
+                        </property>
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                   </layout>
+                  </item>
                  </layout>
                 </widget>
                </item>
                <item>
                 <widget class="QGroupBox" name="grp_soft_edges">
-                 <property name="title"><string>Soft Edges</string></property>
-                 <layout class="QVBoxLayout" name="grp_soft_edges_layout"><property name="spacing"><number>4</number></property>
-                 <item>
-                  <layout class="QFormLayout" name="grp_soft_edges_form">
-                   <property name="fieldGrowthPolicy"><enum>QFormLayout::AllNonFixedFieldsGrow</enum></property>
-                <item row="0" column="0">
-                 <widget class="QLabel" name="lbl_soft_presets">
-                  <property name="text"><string>Presets</string></property>
-                 </widget>
-                </item>
-                <item row="0" column="1">
-                 <widget class="QPushButton" name="btn_soft_edges_presets">
-                  <property name="text"><string/></property>
-                  <property name="maximumWidth"><number>48</number></property>
-                 </widget>
-                </item>
-                <item row="1" column="0">
-                 <widget class="QLabel" name="lbl_soft_size">
-                  <property name="text"><string>Size</string></property>
-                 </widget>
-                </item>
-                <item row="1" column="1">
-                 <layout class="QHBoxLayout" name="soft_edges_size_row">
-                  <item><widget class="QSlider" name="soft_edges_size_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QDoubleSpinBox" name="soft_edges_size_spin"><property name="suffix"><string> pt</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                  </layout>
-                 </item>
+                 <property name="title">
+                  <string>Soft Edges</string>
+                 </property>
+                 <layout class="QVBoxLayout" name="grp_soft_edges_layout">
+                  <property name="spacing">
+                   <number>4</number>
+                  </property>
+                  <item>
+                   <layout class="QFormLayout" name="grp_soft_edges_form">
+                    <property name="fieldGrowthPolicy">
+                     <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+                    </property>
+                    <item row="0" column="0">
+                     <widget class="QLabel" name="lbl_soft_presets">
+                      <property name="text">
+                       <string>Presets</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="0" column="1">
+                     <widget class="QPushButton" name="btn_soft_edges_presets">
+                      <property name="text">
+                       <string/>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="0">
+                     <widget class="QLabel" name="lbl_soft_size">
+                      <property name="text">
+                       <string>Size</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="1">
+                     <layout class="QHBoxLayout" name="soft_edges_size_row">
+                      <item>
+                       <widget class="QSlider" name="soft_edges_size_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QDoubleSpinBox" name="soft_edges_size_spin">
+                        <property name="suffix">
+                         <string> pt</string>
+                        </property>
+                        <property name="maximum">
+                         <double>100.000000000000000</double>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                   </layout>
+                  </item>
                  </layout>
                 </widget>
                </item>
                <item>
                 <widget class="QGroupBox" name="grp_3d_format">
-                 <property name="title"><string>3-D Format</string></property>
-                 <layout class="QVBoxLayout" name="grp_3d_format_layout"><property name="spacing"><number>4</number></property>
+                 <property name="title">
+                  <string>3-D Format</string>
+                 </property>
+                 <layout class="QVBoxLayout" name="grp_3d_format_layout">
+                  <property name="spacing">
+                   <number>4</number>
+                  </property>
                  </layout>
                 </widget>
                </item>
                <item>
                 <widget class="QGroupBox" name="grp_3d_rotation">
-                 <property name="title"><string>3-D Rotation</string></property>
-                 <layout class="QVBoxLayout" name="grp_3d_rotation_layout"><property name="spacing"><number>4</number></property>
+                 <property name="title">
+                  <string>3-D Rotation</string>
+                 </property>
+                 <layout class="QVBoxLayout" name="grp_3d_rotation_layout">
+                  <property name="spacing">
+                   <number>4</number>
+                  </property>
                  </layout>
                 </widget>
                </item>
@@ -855,8 +1151,8 @@
                <rect>
                 <x>0</x>
                 <y>0</y>
-                <width>100</width>
-                <height>30</height>
+                <width>340</width>
+                <height>937</height>
                </rect>
               </property>
               <layout class="QVBoxLayout" name="shape_size_props_layout">
@@ -877,145 +1173,351 @@
                </property>
                <item>
                 <widget class="QGroupBox" name="grp_size">
-                 <property name="title"><string>Size</string></property>
+                 <property name="title">
+                  <string>Size</string>
+                 </property>
                  <layout class="QFormLayout" name="grp_size_form">
-                  <property name="fieldGrowthPolicy"><enum>QFormLayout::AllNonFixedFieldsGrow</enum></property>
-                <item row="0" column="0">
-                 <widget class="QLabel" name="lbl_sp_0"><property name="text"><string>Height</string></property></widget>
-                </item>
-                <item row="0" column="1">
-                 <widget class="QDoubleSpinBox" name="h"></widget>
-                </item>
-                <item row="1" column="0">
-                 <widget class="QLabel" name="lbl_sp_1"><property name="text"><string>Width</string></property></widget>
-                </item>
-                <item row="1" column="1">
-                 <widget class="QDoubleSpinBox" name="w"></widget>
-                </item>
-                <item row="2" column="0">
-                 <widget class="QLabel" name="lbl_sp_2"><property name="text"><string>Rotation</string></property></widget>
-                </item>
-                <item row="2" column="1">
-                 <widget class="QDoubleSpinBox" name="angle"><property name="suffix"><string>°</string></property></widget>
-                </item>
-                <item row="3" column="0">
-                 <widget class="QLabel" name="lbl_sp_3"><property name="text"><string>Scale Height</string></property></widget>
-                </item>
-                <item row="3" column="1">
-                 <widget class="QSpinBox" name="scale_height"><property name="suffix"><string>%</string></property></widget>
-                </item>
-                <item row="4" column="0">
-                 <widget class="QLabel" name="lbl_sp_4"><property name="text"><string>Scale Width</string></property></widget>
-                </item>
-                <item row="4" column="1">
-                 <widget class="QSpinBox" name="scale_width"><property name="suffix"><string>%</string></property></widget>
-                </item>
-                <item row="5" column="0" colspan="2">
-                 <widget class="QCheckBox" name="chk_lock_aspect"><property name="text"><string>Lock aspect ratio</string></property></widget>
-                </item>
-                <item row="6" column="0" colspan="2">
-                 <widget class="QCheckBox" name="chk_relative_original"><property name="text"><string>Relative to original picture size</string></property><property name="enabled"><bool>false</bool></property></widget>
-                </item>
-                <item row="7" column="0" colspan="2">
-                 <widget class="QCheckBox" name="chk_best_scale"><property name="text"><string>Best scale for slide show</string></property><property name="enabled"><bool>false</bool></property></widget>
-                </item>
-                <item row="8" column="0">
-                 <widget class="QLabel" name="lbl_resolution"><property name="text"><string>Resolution</string></property></widget>
-                </item>
-                <item row="8" column="1">
-                 <widget class="QComboBox" name="cmb_resolution"><property name="enabled"><bool>false</bool></property><item><property name="text"><string>640 x 480</string></property></item></widget>
-                </item>
+                  <property name="fieldGrowthPolicy">
+                   <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+                  </property>
+                  <item row="0" column="0">
+                   <widget class="QLabel" name="lbl_sp_0">
+                    <property name="text">
+                     <string>Height</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="0" column="1">
+                   <widget class="QDoubleSpinBox" name="h"/>
+                  </item>
+                  <item row="1" column="0">
+                   <widget class="QLabel" name="lbl_sp_1">
+                    <property name="text">
+                     <string>Width</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="1" column="1">
+                   <widget class="QDoubleSpinBox" name="w"/>
+                  </item>
+                  <item row="2" column="0">
+                   <widget class="QLabel" name="lbl_sp_2">
+                    <property name="text">
+                     <string>Rotation</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="2" column="1">
+                   <widget class="QDoubleSpinBox" name="angle">
+                    <property name="suffix">
+                     <string>°</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="3" column="0">
+                   <widget class="QLabel" name="lbl_sp_3">
+                    <property name="text">
+                     <string>Scale Height</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="3" column="1">
+                   <widget class="QSpinBox" name="scale_height">
+                    <property name="suffix">
+                     <string>%</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="4" column="0">
+                   <widget class="QLabel" name="lbl_sp_4">
+                    <property name="text">
+                     <string>Scale Width</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="4" column="1">
+                   <widget class="QSpinBox" name="scale_width">
+                    <property name="suffix">
+                     <string>%</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="5" column="0" colspan="2">
+                   <widget class="QCheckBox" name="chk_lock_aspect">
+                    <property name="text">
+                     <string>Lock aspect ratio</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="6" column="0" colspan="2">
+                   <widget class="QCheckBox" name="chk_relative_original">
+                    <property name="enabled">
+                     <bool>false</bool>
+                    </property>
+                    <property name="text">
+                     <string>Relative to original picture size</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="7" column="0" colspan="2">
+                   <widget class="QCheckBox" name="chk_best_scale">
+                    <property name="enabled">
+                     <bool>false</bool>
+                    </property>
+                    <property name="text">
+                     <string>Best scale for slide show</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="8" column="0">
+                   <widget class="QLabel" name="lbl_resolution">
+                    <property name="text">
+                     <string>Resolution</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="8" column="1">
+                   <widget class="QComboBox" name="cmb_resolution">
+                    <property name="enabled">
+                     <bool>false</bool>
+                    </property>
+                    <item>
+                     <property name="text">
+                      <string>640 x 480</string>
+                     </property>
+                    </item>
+                   </widget>
+                  </item>
                  </layout>
                 </widget>
                </item>
                <item>
                 <widget class="QGroupBox" name="grp_position">
-                 <property name="title"><string>Position</string></property>
+                 <property name="title">
+                  <string>Position</string>
+                 </property>
                  <layout class="QFormLayout" name="grp_position_form">
-                  <property name="fieldGrowthPolicy"><enum>QFormLayout::AllNonFixedFieldsGrow</enum></property>
-                <item row="0" column="0">
-                 <widget class="QLabel" name="lbl_hpos"><property name="text"><string>Horizontal position</string></property></widget>
-                </item>
-                <item row="0" column="1">
-                 <widget class="QDoubleSpinBox" name="x"></widget>
-                </item>
-                <item row="1" column="0">
-                 <widget class="QLabel" name="lbl_hpos_from"><property name="text"><string>From</string></property></widget>
-                </item>
-                <item row="1" column="1">
-                 <widget class="QComboBox" name="cmb_hpos_from"><item><property name="text"><string>Top Left Corner</string></property></item><item><property name="text"><string>Center</string></property></item></widget>
-                </item>
-                <item row="2" column="0">
-                 <widget class="QLabel" name="lbl_vpos"><property name="text"><string>Vertical position</string></property></widget>
-                </item>
-                <item row="2" column="1">
-                 <widget class="QDoubleSpinBox" name="y"></widget>
-                </item>
-                <item row="3" column="0">
-                 <widget class="QLabel" name="lbl_vpos_from"><property name="text"><string>From</string></property></widget>
-                </item>
-                <item row="3" column="1">
-                 <widget class="QComboBox" name="cmb_vpos_from"><item><property name="text"><string>Top Left Corner</string></property></item><item><property name="text"><string>Center</string></property></item></widget>
-                </item>
+                  <property name="fieldGrowthPolicy">
+                   <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+                  </property>
+                  <item row="0" column="0">
+                   <widget class="QLabel" name="lbl_hpos">
+                    <property name="text">
+                     <string>Horizontal position</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="0" column="1">
+                   <widget class="QDoubleSpinBox" name="x"/>
+                  </item>
+                  <item row="1" column="0">
+                   <widget class="QLabel" name="lbl_hpos_from">
+                    <property name="text">
+                     <string>From</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="1" column="1">
+                   <widget class="QComboBox" name="cmb_hpos_from">
+                    <item>
+                     <property name="text">
+                      <string>Top Left Corner</string>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>Center</string>
+                     </property>
+                    </item>
+                   </widget>
+                  </item>
+                  <item row="2" column="0">
+                   <widget class="QLabel" name="lbl_vpos">
+                    <property name="text">
+                     <string>Vertical position</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="2" column="1">
+                   <widget class="QDoubleSpinBox" name="y"/>
+                  </item>
+                  <item row="3" column="0">
+                   <widget class="QLabel" name="lbl_vpos_from">
+                    <property name="text">
+                     <string>From</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="3" column="1">
+                   <widget class="QComboBox" name="cmb_vpos_from">
+                    <item>
+                     <property name="text">
+                      <string>Top Left Corner</string>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>Center</string>
+                     </property>
+                    </item>
+                   </widget>
+                  </item>
                  </layout>
                 </widget>
                </item>
                <item>
                 <widget class="QGroupBox" name="grp_textbox">
-                 <property name="title"><string>Text Box</string></property>
+                 <property name="title">
+                  <string>Text Box</string>
+                 </property>
                  <layout class="QFormLayout" name="grp_textbox_form">
-                  <property name="fieldGrowthPolicy"><enum>QFormLayout::AllNonFixedFieldsGrow</enum></property>
-                <item row="0" column="0">
-                 <widget class="QLabel" name="lbl_valign"><property name="text"><string>Vertical alignment</string></property></widget>
-                </item>
-                <item row="0" column="1">
-                 <widget class="QComboBox" name="valign"><item><property name="text"><string>Top</string></property></item><item><property name="text"><string>Middle</string></property></item><item><property name="text"><string>Bottom</string></property></item></widget>
-                </item>
-                <item row="1" column="0">
-                 <widget class="QLabel" name="lbl_text_direction"><property name="text"><string>Text direction</string></property></widget>
-                </item>
-                <item row="1" column="1">
-                 <widget class="QComboBox" name="cmb_text_direction"><item><property name="text"><string>Horizontal</string></property></item><item><property name="text"><string>Rotate all text 90°</string></property></item><item><property name="text"><string>Rotate all text 270°</string></property></item><item><property name="text"><string>Stacked</string></property></item></widget>
-                </item>
-                <item row="2" column="0" colspan="2">
-                 <widget class="QRadioButton" name="rb_no_autofit"><property name="text"><string>Do not Autofit</string></property><property name="checked"><bool>true</bool></property></widget>
-                </item>
-                <item row="3" column="0" colspan="2">
-                 <widget class="QRadioButton" name="rb_shrink_text"><property name="text"><string>Shrink text on overflow</string></property></widget>
-                </item>
-                <item row="4" column="0" colspan="2">
-                 <widget class="QRadioButton" name="rb_resize_shape"><property name="text"><string>Resize shape to fit text</string></property></widget>
-                </item>
-                <item row="5" column="0">
-                 <widget class="QLabel" name="lbl_margin_left"><property name="text"><string>Left margin</string></property></widget>
-                </item>
-                <item row="5" column="1">
-                 <widget class="QSpinBox" name="margin_left"></widget>
-                </item>
-                <item row="6" column="0">
-                 <widget class="QLabel" name="lbl_margin_right"><property name="text"><string>Right margin</string></property></widget>
-                </item>
-                <item row="6" column="1">
-                 <widget class="QSpinBox" name="margin_right"></widget>
-                </item>
-                <item row="7" column="0">
-                 <widget class="QLabel" name="lbl_margin_top"><property name="text"><string>Top margin</string></property></widget>
-                </item>
-                <item row="7" column="1">
-                 <widget class="QSpinBox" name="margin_top"></widget>
-                </item>
-                <item row="8" column="0">
-                 <widget class="QLabel" name="lbl_margin_bottom"><property name="text"><string>Bottom margin</string></property></widget>
-                </item>
-                <item row="8" column="1">
-                 <widget class="QSpinBox" name="margin_bottom"></widget>
-                </item>
-                <item row="9" column="0" colspan="2">
-                 <widget class="QCheckBox" name="wrap"><property name="text"><string>Wrap text in shape</string></property><property name="checked"><bool>true</bool></property></widget>
-                </item>
-                <item row="10" column="0" colspan="2">
-                 <widget class="QPushButton" name="btn_columns"><property name="text"><string>Columns...</string></property><property name="sizePolicy"><sizepolicy hsizetype="Fixed" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property></widget>
-                </item>
+                  <property name="fieldGrowthPolicy">
+                   <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+                  </property>
+                  <item row="0" column="0">
+                   <widget class="QLabel" name="lbl_valign">
+                    <property name="text">
+                     <string>Vertical alignment</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="0" column="1">
+                   <widget class="QComboBox" name="valign">
+                    <item>
+                     <property name="text">
+                      <string>Top</string>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>Middle</string>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>Bottom</string>
+                     </property>
+                    </item>
+                   </widget>
+                  </item>
+                  <item row="1" column="0">
+                   <widget class="QLabel" name="lbl_text_direction">
+                    <property name="text">
+                     <string>Text direction</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="1" column="1">
+                   <widget class="QComboBox" name="cmb_text_direction">
+                    <item>
+                     <property name="text">
+                      <string>Horizontal</string>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>Rotate all text 90°</string>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>Rotate all text 270°</string>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>Stacked</string>
+                     </property>
+                    </item>
+                   </widget>
+                  </item>
+                  <item row="2" column="0" colspan="2">
+                   <widget class="QRadioButton" name="rb_no_autofit">
+                    <property name="text">
+                     <string>Do not Autofit</string>
+                    </property>
+                    <property name="checked">
+                     <bool>true</bool>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="3" column="0" colspan="2">
+                   <widget class="QRadioButton" name="rb_shrink_text">
+                    <property name="text">
+                     <string>Shrink text on overflow</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="4" column="0" colspan="2">
+                   <widget class="QRadioButton" name="rb_resize_shape">
+                    <property name="text">
+                     <string>Resize shape to fit text</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="5" column="0">
+                   <widget class="QLabel" name="lbl_margin_left">
+                    <property name="text">
+                     <string>Left margin</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="5" column="1">
+                   <widget class="QSpinBox" name="margin_left"/>
+                  </item>
+                  <item row="6" column="0">
+                   <widget class="QLabel" name="lbl_margin_right">
+                    <property name="text">
+                     <string>Right margin</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="6" column="1">
+                   <widget class="QSpinBox" name="margin_right"/>
+                  </item>
+                  <item row="7" column="0">
+                   <widget class="QLabel" name="lbl_margin_top">
+                    <property name="text">
+                     <string>Top margin</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="7" column="1">
+                   <widget class="QSpinBox" name="margin_top"/>
+                  </item>
+                  <item row="8" column="0">
+                   <widget class="QLabel" name="lbl_margin_bottom">
+                    <property name="text">
+                     <string>Bottom margin</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="8" column="1">
+                   <widget class="QSpinBox" name="margin_bottom"/>
+                  </item>
+                  <item row="9" column="0" colspan="2">
+                   <widget class="QCheckBox" name="wrap">
+                    <property name="text">
+                     <string>Wrap text in shape</string>
+                    </property>
+                    <property name="checked">
+                     <bool>true</bool>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="10" column="0" colspan="2">
+                   <widget class="QPushButton" name="btn_columns">
+                    <property name="sizePolicy">
+                     <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                      <horstretch>0</horstretch>
+                      <verstretch>0</verstretch>
+                     </sizepolicy>
+                    </property>
+                    <property name="text">
+                     <string>Columns...</string>
+                    </property>
+                   </widget>
+                  </item>
                  </layout>
                 </widget>
                </item>
@@ -1100,8 +1602,8 @@
                <rect>
                 <x>0</x>
                 <y>0</y>
-                <width>100</width>
-                <height>30</height>
+                <width>340</width>
+                <height>937</height>
                </rect>
               </property>
               <layout class="QVBoxLayout" name="text_fill_outline_layout">
@@ -1122,38 +1624,146 @@
                </property>
                <item>
                 <widget class="QGroupBox" name="grp_text_fill">
-                 <property name="title"><string>Text Fill</string></property>
-                 <layout class="QVBoxLayout" name="grp_text_fill_layout"><property name="spacing"><number>4</number></property>
-                <item><widget class="QRadioButton" name="rb_text_fill_none"><property name="text"><string>No fill</string></property></widget></item>
-                <item><widget class="QRadioButton" name="rb_text_fill_solid"><property name="text"><string>Solid fill</string></property><property name="checked"><bool>true</bool></property></widget></item>
-                <item><widget class="QRadioButton" name="rb_text_fill_gradient"><property name="text"><string>Gradient fill</string></property></widget></item>
-                <item><widget class="QRadioButton" name="rb_text_fill_picture"><property name="text"><string>Picture or texture fill</string></property></widget></item>
-                <item><widget class="QRadioButton" name="rb_text_fill_pattern"><property name="text"><string>Pattern fill</string></property></widget></item>
-                <item><widget class="Line" name="text_fill_sep"><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                <item>
-                 <layout class="QFormLayout" name="grp_text_fill_form">
-                  <property name="fieldGrowthPolicy"><enum>QFormLayout::AllNonFixedFieldsGrow</enum></property>
-                  <item row="0" column="0"><widget class="QLabel" name="lbl_text_fill_color"><property name="text"><string>Color</string></property></widget></item>
-                  <item row="0" column="1"><widget class="QPushButton" name="btn_text_color"><property name="text"><string/></property></widget></item>
-                  <item row="1" column="0"><widget class="QLabel" name="lbl_text_fill_transparency"><property name="text"><string>Transparency</string></property></widget></item>
-                  <item row="1" column="1">
-                   <layout class="QHBoxLayout" name="text_fill_transparency_row">
-                    <item><widget class="QSlider" name="text_transparency_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                    <item><widget class="QSpinBox" name="text_transparency_spin"><property name="suffix"><string>%</string></property><property name="maximum"><number>100</number></property></widget></item>
+                 <property name="title">
+                  <string>Text Fill</string>
+                 </property>
+                 <layout class="QVBoxLayout" name="grp_text_fill_layout">
+                  <property name="spacing">
+                   <number>4</number>
+                  </property>
+                  <item>
+                   <widget class="QRadioButton" name="rb_text_fill_none">
+                    <property name="text">
+                     <string>No fill</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QRadioButton" name="rb_text_fill_solid">
+                    <property name="text">
+                     <string>Solid fill</string>
+                    </property>
+                    <property name="checked">
+                     <bool>true</bool>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QRadioButton" name="rb_text_fill_gradient">
+                    <property name="text">
+                     <string>Gradient fill</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QRadioButton" name="rb_text_fill_picture">
+                    <property name="text">
+                     <string>Picture or texture fill</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QRadioButton" name="rb_text_fill_pattern">
+                    <property name="text">
+                     <string>Pattern fill</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="Line" name="text_fill_sep">
+                    <property name="orientation">
+                     <enum>Qt::Horizontal</enum>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <layout class="QFormLayout" name="grp_text_fill_form">
+                    <property name="fieldGrowthPolicy">
+                     <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+                    </property>
+                    <item row="0" column="0">
+                     <widget class="QLabel" name="lbl_text_fill_color">
+                      <property name="text">
+                       <string>Color</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="0" column="1">
+                     <widget class="QPushButton" name="btn_text_color">
+                      <property name="text">
+                       <string/>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="0">
+                     <widget class="QLabel" name="lbl_text_fill_transparency">
+                      <property name="text">
+                       <string>Transparency</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="1">
+                     <layout class="QHBoxLayout" name="text_fill_transparency_row">
+                      <item>
+                       <widget class="QSlider" name="text_transparency_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QSpinBox" name="text_transparency_spin">
+                        <property name="suffix">
+                         <string>%</string>
+                        </property>
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
                    </layout>
                   </item>
-                 </layout>
-                </item>
                  </layout>
                 </widget>
                </item>
                <item>
                 <widget class="QGroupBox" name="grp_text_outline">
-                 <property name="title"><string>Text Outline</string></property>
-                 <layout class="QVBoxLayout" name="grp_text_outline_layout"><property name="spacing"><number>4</number></property>
-                <item><widget class="QRadioButton" name="rb_text_outline_none"><property name="text"><string>No line</string></property><property name="checked"><bool>true</bool></property></widget></item>
-                <item><widget class="QRadioButton" name="rb_text_outline_solid"><property name="text"><string>Solid line</string></property></widget></item>
-                <item><widget class="QRadioButton" name="rb_text_outline_gradient"><property name="text"><string>Gradient line</string></property></widget></item>
+                 <property name="title">
+                  <string>Text Outline</string>
+                 </property>
+                 <layout class="QVBoxLayout" name="grp_text_outline_layout">
+                  <property name="spacing">
+                   <number>4</number>
+                  </property>
+                  <item>
+                   <widget class="QRadioButton" name="rb_text_outline_none">
+                    <property name="text">
+                     <string>No line</string>
+                    </property>
+                    <property name="checked">
+                     <bool>true</bool>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QRadioButton" name="rb_text_outline_solid">
+                    <property name="text">
+                     <string>Solid line</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QRadioButton" name="rb_text_outline_gradient">
+                    <property name="text">
+                     <string>Gradient line</string>
+                    </property>
+                   </widget>
+                  </item>
                  </layout>
                 </widget>
                </item>
@@ -1209,8 +1819,8 @@
                <rect>
                 <x>0</x>
                 <y>0</y>
-                <width>100</width>
-                <height>30</height>
+                <width>340</width>
+                <height>937</height>
                </rect>
               </property>
               <layout class="QVBoxLayout" name="text_effects_layout">
@@ -1231,151 +1841,572 @@
                </property>
                <item>
                 <widget class="QGroupBox" name="grp_text_shadow">
-                 <property name="title"><string>Shadow</string></property>
-                 <layout class="QVBoxLayout" name="grp_text_shadow_layout"><property name="spacing"><number>4</number></property>
-                 <item><layout class="QFormLayout" name="grp_text_shadow_form">
-                  <property name="fieldGrowthPolicy"><enum>QFormLayout::AllNonFixedFieldsGrow</enum></property>
-                <item row="0" column="0"><widget class="QLabel" name="lbl_ts_presets"><property name="text"><string>Presets</string></property></widget></item>
-                <item row="0" column="1"><widget class="QPushButton" name="btn_text_shadow_presets"><property name="text"><string/></property><property name="maximumWidth"><number>48</number></property></widget></item>
-                <item row="1" column="0"><widget class="QLabel" name="lbl_ts_color"><property name="text"><string>Color</string></property></widget></item>
-                <item row="1" column="1"><widget class="QPushButton" name="btn_text_shadow_color"><property name="text"><string/></property><property name="maximumWidth"><number>48</number></property></widget></item>
-                <item row="2" column="0"><widget class="QLabel" name="lbl_ts_transp"><property name="text"><string>Transparency</string></property></widget></item>
-                <item row="2" column="1">
-                 <layout class="QHBoxLayout" name="text_shadow_transparency_row">
-                  <item><widget class="QSlider" name="text_shadow_transparency_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QSpinBox" name="text_shadow_transparency_spin"><property name="suffix"><string>%</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                <item row="3" column="0"><widget class="QLabel" name="lbl_ts_size"><property name="text"><string>Size</string></property></widget></item>
-                <item row="3" column="1">
-                 <layout class="QHBoxLayout" name="text_shadow_size_row">
-                  <item><widget class="QSlider" name="text_shadow_size_slider"><property name="maximum"><number>200</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QSpinBox" name="text_shadow_size_spin"><property name="suffix"><string>%</string></property><property name="maximum"><number>200</number></property></widget></item>
-                 </layout>
-                </item>
-                <item row="4" column="0"><widget class="QLabel" name="lbl_ts_blur"><property name="text"><string>Blur</string></property></widget></item>
-                <item row="4" column="1">
-                 <layout class="QHBoxLayout" name="text_shadow_blur_row">
-                  <item><widget class="QSlider" name="text_shadow_blur_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QDoubleSpinBox" name="text_shadow_blur_spin"><property name="suffix"><string> pt</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                <item row="5" column="0"><widget class="QLabel" name="lbl_ts_angle"><property name="text"><string>Angle</string></property></widget></item>
-                <item row="5" column="1">
-                 <layout class="QHBoxLayout" name="text_shadow_angle_row">
-                  <item><widget class="QSlider" name="text_shadow_angle_slider"><property name="maximum"><number>359</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QSpinBox" name="text_shadow_angle_spin"><property name="suffix"><string>°</string></property><property name="maximum"><number>359</number></property></widget></item>
-                 </layout>
-                </item>
-                <item row="6" column="0"><widget class="QLabel" name="lbl_ts_dist"><property name="text"><string>Distance</string></property></widget></item>
-                <item row="6" column="1">
-                 <layout class="QHBoxLayout" name="text_shadow_distance_row">
-                  <item><widget class="QSlider" name="text_shadow_distance_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QDoubleSpinBox" name="text_shadow_distance_spin"><property name="suffix"><string> pt</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                 </layout></item>
+                 <property name="title">
+                  <string>Shadow</string>
+                 </property>
+                 <layout class="QVBoxLayout" name="grp_text_shadow_layout">
+                  <property name="spacing">
+                   <number>4</number>
+                  </property>
+                  <item>
+                   <layout class="QFormLayout" name="grp_text_shadow_form">
+                    <property name="fieldGrowthPolicy">
+                     <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+                    </property>
+                    <item row="0" column="0">
+                     <widget class="QLabel" name="lbl_ts_presets">
+                      <property name="text">
+                       <string>Presets</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="0" column="1">
+                     <widget class="QPushButton" name="btn_text_shadow_presets">
+                      <property name="text">
+                       <string/>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="0">
+                     <widget class="QLabel" name="lbl_ts_color">
+                      <property name="text">
+                       <string>Color</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="1">
+                     <widget class="QPushButton" name="btn_text_shadow_color">
+                      <property name="text">
+                       <string/>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="2" column="0">
+                     <widget class="QLabel" name="lbl_ts_transp">
+                      <property name="text">
+                       <string>Transparency</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="2" column="1">
+                     <layout class="QHBoxLayout" name="text_shadow_transparency_row">
+                      <item>
+                       <widget class="QSlider" name="text_shadow_transparency_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QSpinBox" name="text_shadow_transparency_spin">
+                        <property name="suffix">
+                         <string>%</string>
+                        </property>
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item row="3" column="0">
+                     <widget class="QLabel" name="lbl_ts_size">
+                      <property name="text">
+                       <string>Size</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="3" column="1">
+                     <layout class="QHBoxLayout" name="text_shadow_size_row">
+                      <item>
+                       <widget class="QSlider" name="text_shadow_size_slider">
+                        <property name="maximum">
+                         <number>200</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QSpinBox" name="text_shadow_size_spin">
+                        <property name="suffix">
+                         <string>%</string>
+                        </property>
+                        <property name="maximum">
+                         <number>200</number>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item row="4" column="0">
+                     <widget class="QLabel" name="lbl_ts_blur">
+                      <property name="text">
+                       <string>Blur</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="4" column="1">
+                     <layout class="QHBoxLayout" name="text_shadow_blur_row">
+                      <item>
+                       <widget class="QSlider" name="text_shadow_blur_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QDoubleSpinBox" name="text_shadow_blur_spin">
+                        <property name="suffix">
+                         <string> pt</string>
+                        </property>
+                        <property name="maximum">
+                         <double>100.000000000000000</double>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item row="5" column="0">
+                     <widget class="QLabel" name="lbl_ts_angle">
+                      <property name="text">
+                       <string>Angle</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="5" column="1">
+                     <layout class="QHBoxLayout" name="text_shadow_angle_row">
+                      <item>
+                       <widget class="QSlider" name="text_shadow_angle_slider">
+                        <property name="maximum">
+                         <number>359</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QSpinBox" name="text_shadow_angle_spin">
+                        <property name="suffix">
+                         <string>°</string>
+                        </property>
+                        <property name="maximum">
+                         <number>359</number>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item row="6" column="0">
+                     <widget class="QLabel" name="lbl_ts_dist">
+                      <property name="text">
+                       <string>Distance</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="6" column="1">
+                     <layout class="QHBoxLayout" name="text_shadow_distance_row">
+                      <item>
+                       <widget class="QSlider" name="text_shadow_distance_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QDoubleSpinBox" name="text_shadow_distance_spin">
+                        <property name="suffix">
+                         <string> pt</string>
+                        </property>
+                        <property name="maximum">
+                         <double>100.000000000000000</double>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                   </layout>
+                  </item>
                  </layout>
                 </widget>
                </item>
                <item>
                 <widget class="QGroupBox" name="grp_text_reflection">
-                 <property name="title"><string>Reflection</string></property>
-                 <layout class="QVBoxLayout" name="grp_text_reflection_layout"><property name="spacing"><number>4</number></property>
-                 <item><layout class="QFormLayout" name="grp_text_reflection_form">
-                  <property name="fieldGrowthPolicy"><enum>QFormLayout::AllNonFixedFieldsGrow</enum></property>
-                <item row="0" column="0"><widget class="QLabel" name="lbl_tr_presets"><property name="text"><string>Presets</string></property></widget></item>
-                <item row="0" column="1"><widget class="QPushButton" name="btn_text_reflection_presets"><property name="text"><string/></property><property name="maximumWidth"><number>48</number></property></widget></item>
-                <item row="1" column="0"><widget class="QLabel" name="lbl_tr_transp"><property name="text"><string>Transparency</string></property></widget></item>
-                <item row="1" column="1">
-                 <layout class="QHBoxLayout" name="text_reflection_transparency_row">
-                  <item><widget class="QSlider" name="text_reflection_transparency_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QSpinBox" name="text_reflection_transparency_spin"><property name="suffix"><string>%</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                <item row="2" column="0"><widget class="QLabel" name="lbl_tr_size"><property name="text"><string>Size</string></property></widget></item>
-                <item row="2" column="1">
-                 <layout class="QHBoxLayout" name="text_reflection_size_row">
-                  <item><widget class="QSlider" name="text_reflection_size_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QSpinBox" name="text_reflection_size_spin"><property name="suffix"><string>%</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                <item row="3" column="0"><widget class="QLabel" name="lbl_tr_blur"><property name="text"><string>Blur</string></property></widget></item>
-                <item row="3" column="1">
-                 <layout class="QHBoxLayout" name="text_reflection_blur_row">
-                  <item><widget class="QSlider" name="text_reflection_blur_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QDoubleSpinBox" name="text_reflection_blur_spin"><property name="suffix"><string> pt</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                <item row="4" column="0"><widget class="QLabel" name="lbl_tr_dist"><property name="text"><string>Distance</string></property></widget></item>
-                <item row="4" column="1">
-                 <layout class="QHBoxLayout" name="text_reflection_distance_row">
-                  <item><widget class="QSlider" name="text_reflection_distance_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QDoubleSpinBox" name="text_reflection_distance_spin"><property name="suffix"><string> pt</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                 </layout></item>
+                 <property name="title">
+                  <string>Reflection</string>
+                 </property>
+                 <layout class="QVBoxLayout" name="grp_text_reflection_layout">
+                  <property name="spacing">
+                   <number>4</number>
+                  </property>
+                  <item>
+                   <layout class="QFormLayout" name="grp_text_reflection_form">
+                    <property name="fieldGrowthPolicy">
+                     <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+                    </property>
+                    <item row="0" column="0">
+                     <widget class="QLabel" name="lbl_tr_presets">
+                      <property name="text">
+                       <string>Presets</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="0" column="1">
+                     <widget class="QPushButton" name="btn_text_reflection_presets">
+                      <property name="text">
+                       <string/>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="0">
+                     <widget class="QLabel" name="lbl_tr_transp">
+                      <property name="text">
+                       <string>Transparency</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="1">
+                     <layout class="QHBoxLayout" name="text_reflection_transparency_row">
+                      <item>
+                       <widget class="QSlider" name="text_reflection_transparency_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QSpinBox" name="text_reflection_transparency_spin">
+                        <property name="suffix">
+                         <string>%</string>
+                        </property>
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item row="2" column="0">
+                     <widget class="QLabel" name="lbl_tr_size">
+                      <property name="text">
+                       <string>Size</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="2" column="1">
+                     <layout class="QHBoxLayout" name="text_reflection_size_row">
+                      <item>
+                       <widget class="QSlider" name="text_reflection_size_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QSpinBox" name="text_reflection_size_spin">
+                        <property name="suffix">
+                         <string>%</string>
+                        </property>
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item row="3" column="0">
+                     <widget class="QLabel" name="lbl_tr_blur">
+                      <property name="text">
+                       <string>Blur</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="3" column="1">
+                     <layout class="QHBoxLayout" name="text_reflection_blur_row">
+                      <item>
+                       <widget class="QSlider" name="text_reflection_blur_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QDoubleSpinBox" name="text_reflection_blur_spin">
+                        <property name="suffix">
+                         <string> pt</string>
+                        </property>
+                        <property name="maximum">
+                         <double>100.000000000000000</double>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item row="4" column="0">
+                     <widget class="QLabel" name="lbl_tr_dist">
+                      <property name="text">
+                       <string>Distance</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="4" column="1">
+                     <layout class="QHBoxLayout" name="text_reflection_distance_row">
+                      <item>
+                       <widget class="QSlider" name="text_reflection_distance_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QDoubleSpinBox" name="text_reflection_distance_spin">
+                        <property name="suffix">
+                         <string> pt</string>
+                        </property>
+                        <property name="maximum">
+                         <double>100.000000000000000</double>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                   </layout>
+                  </item>
                  </layout>
                 </widget>
                </item>
                <item>
                 <widget class="QGroupBox" name="grp_text_glow">
-                 <property name="title"><string>Glow</string></property>
-                 <layout class="QVBoxLayout" name="grp_text_glow_layout"><property name="spacing"><number>4</number></property>
-                 <item><layout class="QFormLayout" name="grp_text_glow_form">
-                  <property name="fieldGrowthPolicy"><enum>QFormLayout::AllNonFixedFieldsGrow</enum></property>
-                <item row="0" column="0"><widget class="QLabel" name="lbl_tg_presets"><property name="text"><string>Presets</string></property></widget></item>
-                <item row="0" column="1"><widget class="QPushButton" name="btn_text_glow_presets"><property name="text"><string/></property><property name="maximumWidth"><number>48</number></property></widget></item>
-                <item row="1" column="0"><widget class="QLabel" name="lbl_tg_color"><property name="text"><string>Color</string></property></widget></item>
-                <item row="1" column="1"><widget class="QPushButton" name="btn_text_glow_color"><property name="text"><string/></property><property name="maximumWidth"><number>48</number></property></widget></item>
-                <item row="2" column="0"><widget class="QLabel" name="lbl_tg_size"><property name="text"><string>Size</string></property></widget></item>
-                <item row="2" column="1">
-                 <layout class="QHBoxLayout" name="text_glow_size_row">
-                  <item><widget class="QSlider" name="text_glow_size_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QDoubleSpinBox" name="text_glow_size_spin"><property name="suffix"><string> pt</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                <item row="3" column="0"><widget class="QLabel" name="lbl_tg_transp"><property name="text"><string>Transparency</string></property></widget></item>
-                <item row="3" column="1">
-                 <layout class="QHBoxLayout" name="text_glow_transparency_row">
-                  <item><widget class="QSlider" name="text_glow_transparency_slider"><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QSpinBox" name="text_glow_transparency_spin"><property name="suffix"><string>%</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                 </layout></item>
+                 <property name="title">
+                  <string>Glow</string>
+                 </property>
+                 <layout class="QVBoxLayout" name="grp_text_glow_layout">
+                  <property name="spacing">
+                   <number>4</number>
+                  </property>
+                  <item>
+                   <layout class="QFormLayout" name="grp_text_glow_form">
+                    <property name="fieldGrowthPolicy">
+                     <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+                    </property>
+                    <item row="0" column="0">
+                     <widget class="QLabel" name="lbl_tg_presets">
+                      <property name="text">
+                       <string>Presets</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="0" column="1">
+                     <widget class="QPushButton" name="btn_text_glow_presets">
+                      <property name="text">
+                       <string/>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="0">
+                     <widget class="QLabel" name="lbl_tg_color">
+                      <property name="text">
+                       <string>Color</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="1">
+                     <widget class="QPushButton" name="btn_text_glow_color">
+                      <property name="text">
+                       <string/>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="2" column="0">
+                     <widget class="QLabel" name="lbl_tg_size">
+                      <property name="text">
+                       <string>Size</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="2" column="1">
+                     <layout class="QHBoxLayout" name="text_glow_size_row">
+                      <item>
+                       <widget class="QSlider" name="text_glow_size_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QDoubleSpinBox" name="text_glow_size_spin">
+                        <property name="suffix">
+                         <string> pt</string>
+                        </property>
+                        <property name="maximum">
+                         <double>100.000000000000000</double>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item row="3" column="0">
+                     <widget class="QLabel" name="lbl_tg_transp">
+                      <property name="text">
+                       <string>Transparency</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="3" column="1">
+                     <layout class="QHBoxLayout" name="text_glow_transparency_row">
+                      <item>
+                       <widget class="QSlider" name="text_glow_transparency_slider">
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QSpinBox" name="text_glow_transparency_spin">
+                        <property name="suffix">
+                         <string>%</string>
+                        </property>
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                   </layout>
+                  </item>
                  </layout>
                 </widget>
                </item>
                <item>
                 <widget class="QGroupBox" name="grp_text_soft_edges">
-                 <property name="title"><string>Soft Edges</string></property>
-                 <layout class="QVBoxLayout" name="grp_text_soft_edges_layout"><property name="spacing"><number>4</number></property>
-                 <item><layout class="QFormLayout" name="grp_text_soft_edges_form">
-                  <property name="fieldGrowthPolicy"><enum>QFormLayout::AllNonFixedFieldsGrow</enum></property>
-                <item row="0" column="0"><widget class="QLabel" name="lbl_tse_presets"><property name="enabled"><bool>false</bool></property><property name="text"><string>Presets</string></property></widget></item>
-                <item row="0" column="1"><widget class="QPushButton" name="btn_text_soft_edges_presets"><property name="enabled"><bool>false</bool></property><property name="text"><string/></property><property name="maximumWidth"><number>48</number></property></widget></item>
-                <item row="1" column="0"><widget class="QLabel" name="lbl_tse_size"><property name="enabled"><bool>false</bool></property><property name="text"><string>Size</string></property></widget></item>
-                <item row="1" column="1">
-                 <layout class="QHBoxLayout" name="text_soft_edges_size_row">
-                  <item><widget class="QSlider" name="text_soft_edges_size_slider"><property name="enabled"><bool>false</bool></property><property name="maximum"><number>100</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-                  <item><widget class="QDoubleSpinBox" name="text_soft_edges_size_spin"><property name="enabled"><bool>false</bool></property><property name="suffix"><string> pt</string></property><property name="maximum"><number>100</number></property></widget></item>
-                 </layout>
-                </item>
-                 </layout></item>
+                 <property name="title">
+                  <string>Soft Edges</string>
+                 </property>
+                 <layout class="QVBoxLayout" name="grp_text_soft_edges_layout">
+                  <property name="spacing">
+                   <number>4</number>
+                  </property>
+                  <item>
+                   <layout class="QFormLayout" name="grp_text_soft_edges_form">
+                    <property name="fieldGrowthPolicy">
+                     <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+                    </property>
+                    <item row="0" column="0">
+                     <widget class="QLabel" name="lbl_tse_presets">
+                      <property name="enabled">
+                       <bool>false</bool>
+                      </property>
+                      <property name="text">
+                       <string>Presets</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="0" column="1">
+                     <widget class="QPushButton" name="btn_text_soft_edges_presets">
+                      <property name="enabled">
+                       <bool>false</bool>
+                      </property>
+                      <property name="text">
+                       <string/>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="0">
+                     <widget class="QLabel" name="lbl_tse_size">
+                      <property name="enabled">
+                       <bool>false</bool>
+                      </property>
+                      <property name="text">
+                       <string>Size</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="1">
+                     <layout class="QHBoxLayout" name="text_soft_edges_size_row">
+                      <item>
+                       <widget class="QSlider" name="text_soft_edges_size_slider">
+                        <property name="enabled">
+                         <bool>false</bool>
+                        </property>
+                        <property name="maximum">
+                         <number>100</number>
+                        </property>
+                        <property name="orientation">
+                         <enum>Qt::Horizontal</enum>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QDoubleSpinBox" name="text_soft_edges_size_spin">
+                        <property name="enabled">
+                         <bool>false</bool>
+                        </property>
+                        <property name="suffix">
+                         <string> pt</string>
+                        </property>
+                        <property name="maximum">
+                         <double>100.000000000000000</double>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                   </layout>
+                  </item>
                  </layout>
                 </widget>
                </item>
                <item>
                 <widget class="QGroupBox" name="grp_text_3d_format">
-                 <property name="title"><string>3-D Format</string></property>
-                 <layout class="QVBoxLayout" name="grp_text_3d_format_layout"><property name="spacing"><number>4</number></property>
+                 <property name="title">
+                  <string>3-D Format</string>
+                 </property>
+                 <layout class="QVBoxLayout" name="grp_text_3d_format_layout">
+                  <property name="spacing">
+                   <number>4</number>
+                  </property>
                  </layout>
                 </widget>
                </item>
                <item>
                 <widget class="QGroupBox" name="grp_text_3d_rotation">
-                 <property name="title"><string>3-D Rotation</string></property>
-                 <layout class="QVBoxLayout" name="grp_text_3d_rotation_layout"><property name="spacing"><number>4</number></property>
+                 <property name="title">
+                  <string>3-D Rotation</string>
+                 </property>
+                 <layout class="QVBoxLayout" name="grp_text_3d_rotation_layout">
+                  <property name="spacing">
+                   <number>4</number>
+                  </property>
                  </layout>
                 </widget>
                </item>
@@ -1431,8 +2462,8 @@
                <rect>
                 <x>0</x>
                 <y>0</y>
-                <width>100</width>
-                <height>30</height>
+                <width>340</width>
+                <height>937</height>
                </rect>
               </property>
               <layout class="QVBoxLayout" name="text_box_layout">
@@ -1453,26 +2484,157 @@
                </property>
                <item>
                 <widget class="QGroupBox" name="grp_text_box">
-                 <property name="title"><string>Text Box</string></property>
+                 <property name="title">
+                  <string>Text Box</string>
+                 </property>
                  <layout class="QFormLayout" name="grp_text_box_form">
-                  <property name="fieldGrowthPolicy"><enum>QFormLayout::AllNonFixedFieldsGrow</enum></property>
-                <item row="0" column="0"><widget class="QLabel" name="lbl_tb_valign"><property name="text"><string>Vertical alignment</string></property></widget></item>
-                <item row="0" column="1"><widget class="QComboBox" name="tb_valign"><item><property name="text"><string>Top</string></property></item><item><property name="text"><string>Middle</string></property></item><item><property name="text"><string>Bottom</string></property></item></widget></item>
-                <item row="1" column="0"><widget class="QLabel" name="lbl_tb_text_direction"><property name="text"><string>Text direction</string></property></widget></item>
-                <item row="1" column="1"><widget class="QComboBox" name="tb_text_direction"><item><property name="text"><string>Horizontal</string></property></item><item><property name="text"><string>Rotate all text 90°</string></property></item><item><property name="text"><string>Rotate all text 270°</string></property></item><item><property name="text"><string>Stacked</string></property></item></widget></item>
-                <item row="2" column="0" colspan="2"><widget class="QRadioButton" name="tb_no_autofit"><property name="text"><string>Do not Autofit</string></property><property name="checked"><bool>true</bool></property></widget></item>
-                <item row="3" column="0" colspan="2"><widget class="QRadioButton" name="tb_shrink_text"><property name="text"><string>Shrink text on overflow</string></property></widget></item>
-                <item row="4" column="0" colspan="2"><widget class="QRadioButton" name="tb_resize_shape"><property name="text"><string>Resize shape to fit text</string></property></widget></item>
-                <item row="5" column="0"><widget class="QLabel" name="lbl_tb_margin_left"><property name="text"><string>Left margin</string></property></widget></item>
-                <item row="5" column="1"><widget class="QSpinBox" name="tb_margin_left"/></item>
-                <item row="6" column="0"><widget class="QLabel" name="lbl_tb_margin_right"><property name="text"><string>Right margin</string></property></widget></item>
-                <item row="6" column="1"><widget class="QSpinBox" name="tb_margin_right"/></item>
-                <item row="7" column="0"><widget class="QLabel" name="lbl_tb_margin_top"><property name="text"><string>Top margin</string></property></widget></item>
-                <item row="7" column="1"><widget class="QSpinBox" name="tb_margin_top"/></item>
-                <item row="8" column="0"><widget class="QLabel" name="lbl_tb_margin_bottom"><property name="text"><string>Bottom margin</string></property></widget></item>
-                <item row="8" column="1"><widget class="QSpinBox" name="tb_margin_bottom"/></item>
-                <item row="9" column="0" colspan="2"><widget class="QCheckBox" name="tb_wrap"><property name="text"><string>Wrap text in shape</string></property><property name="checked"><bool>true</bool></property></widget></item>
-                <item row="10" column="0" colspan="2"><widget class="QPushButton" name="tb_columns"><property name="text"><string>Columns...</string></property><property name="sizePolicy"><sizepolicy hsizetype="Fixed" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property></widget></item>
+                  <property name="fieldGrowthPolicy">
+                   <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+                  </property>
+                  <item row="0" column="0">
+                   <widget class="QLabel" name="lbl_tb_valign">
+                    <property name="text">
+                     <string>Vertical alignment</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="0" column="1">
+                   <widget class="QComboBox" name="tb_valign">
+                    <item>
+                     <property name="text">
+                      <string>Top</string>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>Middle</string>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>Bottom</string>
+                     </property>
+                    </item>
+                   </widget>
+                  </item>
+                  <item row="1" column="0">
+                   <widget class="QLabel" name="lbl_tb_text_direction">
+                    <property name="text">
+                     <string>Text direction</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="1" column="1">
+                   <widget class="QComboBox" name="tb_text_direction">
+                    <item>
+                     <property name="text">
+                      <string>Horizontal</string>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>Rotate all text 90°</string>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>Rotate all text 270°</string>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>Stacked</string>
+                     </property>
+                    </item>
+                   </widget>
+                  </item>
+                  <item row="2" column="0" colspan="2">
+                   <widget class="QRadioButton" name="tb_no_autofit">
+                    <property name="text">
+                     <string>Do not Autofit</string>
+                    </property>
+                    <property name="checked">
+                     <bool>true</bool>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="3" column="0" colspan="2">
+                   <widget class="QRadioButton" name="tb_shrink_text">
+                    <property name="text">
+                     <string>Shrink text on overflow</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="4" column="0" colspan="2">
+                   <widget class="QRadioButton" name="tb_resize_shape">
+                    <property name="text">
+                     <string>Resize shape to fit text</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="5" column="0">
+                   <widget class="QLabel" name="lbl_tb_margin_left">
+                    <property name="text">
+                     <string>Left margin</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="5" column="1">
+                   <widget class="QSpinBox" name="tb_margin_left"/>
+                  </item>
+                  <item row="6" column="0">
+                   <widget class="QLabel" name="lbl_tb_margin_right">
+                    <property name="text">
+                     <string>Right margin</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="6" column="1">
+                   <widget class="QSpinBox" name="tb_margin_right"/>
+                  </item>
+                  <item row="7" column="0">
+                   <widget class="QLabel" name="lbl_tb_margin_top">
+                    <property name="text">
+                     <string>Top margin</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="7" column="1">
+                   <widget class="QSpinBox" name="tb_margin_top"/>
+                  </item>
+                  <item row="8" column="0">
+                   <widget class="QLabel" name="lbl_tb_margin_bottom">
+                    <property name="text">
+                     <string>Bottom margin</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="8" column="1">
+                   <widget class="QSpinBox" name="tb_margin_bottom"/>
+                  </item>
+                  <item row="9" column="0" colspan="2">
+                   <widget class="QCheckBox" name="tb_wrap">
+                    <property name="text">
+                     <string>Wrap text in shape</string>
+                    </property>
+                    <property name="checked">
+                     <bool>true</bool>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="10" column="0" colspan="2">
+                   <widget class="QPushButton" name="tb_columns">
+                    <property name="sizePolicy">
+                     <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                      <horstretch>0</horstretch>
+                      <verstretch>0</verstretch>
+                     </sizepolicy>
+                    </property>
+                    <property name="text">
+                     <string>Columns...</string>
+                    </property>
+                   </widget>
+                  </item>
                  </layout>
                 </widget>
                </item>

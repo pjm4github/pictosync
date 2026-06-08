@@ -1,5 +1,5 @@
 PyQt6
-pillow
+pillow==12.2.0
 google-genai
 opencv-python
 numpy
@@ -8,5 +8,6 @@ python-pptx
 platformdirs
 tomli
 tomli-w
-pytest
+pytest==9.0.3
 antlr4-python3-runtime==4.13.2
+cairosvg

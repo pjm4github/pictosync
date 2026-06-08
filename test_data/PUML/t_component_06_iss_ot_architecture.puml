@@ -1,4 +1,5 @@
 @startuml t_component_06_iss_ot_architecture
+!pragma layout graphviz
 title ISS OT/IT Architecture — Full Grammar Stress Test\n(all component grammar features combined in realistic topology)
 
 allowmixing
