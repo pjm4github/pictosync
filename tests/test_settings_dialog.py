@@ -204,3 +204,39 @@ class TestGeminiSetup:
         assert title in ("GOOGLE_API_KEY is not set",
                          "google-genai is not installed")
         assert detail.strip()
+
+
+class TestGeminiModelDiscovery:
+    """Fetch-available-models parsing (the network call is not exercised)."""
+
+    def test_buttons_exist(self, dialog):
+        assert hasattr(dialog, "gemini_fetch_btn")
+        assert hasattr(dialog, "gemini_keys_btn")
+
+    def test_models_to_rows_filters_and_parses(self, dialog):
+        from settings_dialog import SettingsDialog
+        models = [
+            {"name": "models/gemini-2.5-flash",
+             "displayName": "Gemini 2.5 Flash",
+             "supportedGenerationMethods": ["generateContent", "countTokens"],
+             "inputTokenLimit": 1048576, "outputTokenLimit": 8192},
+            {"name": "models/text-embedding-004",
+             "supportedGenerationMethods": ["embedContent"]},
+            {"name": "models/gemini-x",  # snake_case + no displayName
+             "supported_generation_methods": ["generateContent"],
+             "input_token_limit": 4096, "output_token_limit": 2048},
+        ]
+        rows = SettingsDialog._models_to_rows(models)
+        names = [r["name"] for r in rows]
+        assert names == ["gemini-2.5-flash", "gemini-x"]   # embedding excluded
+        first = rows[0]
+        assert first["display"] == "Gemini 2.5 Flash"
+        assert first["in"] == 1048576 and first["out"] == 8192
+        # snake_case row falls back to name for display
+        assert rows[1]["display"] == "gemini-x"
+
+    def test_models_endpoint_url(self, dialog):
+        # The fetch uses the official v1beta models endpoint with the key.
+        import inspect
+        src = inspect.getsource(dialog._fetch_models_json)
+        assert "generativelanguage.googleapis.com/v1beta/models" in src

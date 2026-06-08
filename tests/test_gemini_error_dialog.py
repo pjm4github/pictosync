@@ -13,6 +13,10 @@ from main import MainWindow
 
 
 CASES = {
+    "Gemini project spend cap reached":
+        "429 RESOURCE_EXHAUSTED. {'error': {'message': 'Your project has "
+        "exceeded its monthly spending cap. Please go to AI Studio at "
+        "https://ai.studio/spend ...'}}",
     "Gemini quota exceeded":
         "429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': "
         "'You exceeded your current quota'}}\nTraceback (most recent call last):",

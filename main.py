@@ -2619,6 +2619,29 @@ class MainWindow(QMainWindow):
                     "The google-genai package is missing.",
                     "Install it and restart PictoSync:\n\n"
                     "    pip install google-genai")
+        if "spending cap" in el or ("spend" in el and "cap" in el):
+            return ("Gemini project spend cap reached",
+                    "Gemini rejected the request because your project has "
+                    "hit its monthly spending cap (HTTP 429). Your API key "
+                    "is valid and this is not a model-specific limit — every "
+                    "model is blocked until the cap is raised.",
+                    "Why this happens:\n"
+                    "Once a project has billing enabled it becomes a PAID "
+                    "project, so the free tier no longer applies — usage is "
+                    "governed by your monthly spend cap, not free quotas. "
+                    "When that cap is reached (or set to 0) every model "
+                    "returns this error, even ones that would be free on a "
+                    "non-billed project.\n\n"
+                    "How to fix (either one):\n"
+                    "• Raise or remove the spend cap (recommended if your "
+                    "account is funded):\n    https://ai.studio/spend\n"
+                    "• Or use an API key from a project with NO billing — "
+                    "that project gets real free-tier quota (e.g. "
+                    "gemini-2.5-flash) for testing. Add it in Settings → "
+                    "External Tools → Gemini AI.\n\n"
+                    "More info: https://ai.google.dev/gemini-api/docs/"
+                    "billing#project-spend-caps\n"
+                    "After updating, wait a moment and try Auto-Extract again.")
         if "resource_exhausted" in el or "429" in e:
             return ("Gemini quota exceeded",
                     "Gemini rejected the request because a usage limit was "

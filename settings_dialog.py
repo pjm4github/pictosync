@@ -398,6 +398,22 @@ class SettingsDialog(QDialog):
         note.setStyleSheet("color: #666; font-size: 11px;")
         gl.addWidget(note)
 
+        quota_note = QLabel(
+            "Free tier vs. billing: a project with NO billing uses the free "
+            "tier (limited requests — fine for testing). Enabling billing "
+            "makes it a PAID project governed by your monthly spend cap "
+            "(https://ai.studio/spend) — the free tier no longer applies. If "
+            "that cap is reached (or set to 0), every model returns a 429 "
+            "“spending cap” error even though your key is valid. "
+            "Fix: raise the cap, or use a key from a non-billed project."
+        )
+        quota_note.setWordWrap(True)
+        quota_note.setStyleSheet(
+            "color: #92400e; font-size: 11px; "
+            "background: #fffbeb; border: 1px solid #fde68a; "
+            "border-radius: 4px; padding: 4px;")
+        gl.addWidget(quota_note)
+
         gl.addWidget(QLabel("Available Models:"))
         self.gemini_model_list = QListWidget()
         self.gemini_model_list.setMaximumHeight(120)
@@ -421,6 +437,22 @@ class SettingsDialog(QDialog):
         self.gemini_validate_btn.clicked.connect(self._validate_gemini_model)
         default_row.addWidget(self.gemini_validate_btn)
         gl.addLayout(default_row)
+
+        discover_row = QHBoxLayout()
+        self.gemini_fetch_btn = QPushButton("Fetch Available Models…")
+        self.gemini_fetch_btn.setToolTip(
+            "Query the Gemini models API for the models your key can use "
+            "(also confirms the key is valid).")
+        self.gemini_fetch_btn.clicked.connect(self._fetch_gemini_models)
+        discover_row.addWidget(self.gemini_fetch_btn)
+        self.gemini_keys_btn = QPushButton("API Keys Page…")
+        self.gemini_keys_btn.setToolTip(
+            "Open Google AI Studio in your browser to manage / verify your "
+            "API key.")
+        self.gemini_keys_btn.clicked.connect(self._open_gemini_keys_page)
+        discover_row.addWidget(self.gemini_keys_btn)
+        discover_row.addStretch()
+        gl.addLayout(discover_row)
 
         self.gemini_status_label = QLabel("")
         self.gemini_status_label.setWordWrap(True)
@@ -510,6 +542,184 @@ class SettingsDialog(QDialog):
         box.setText(title)
         box.setInformativeText(detail)
         box.exec()
+
+    # ── Discover available models ────────────────────────────────────────
+
+    @staticmethod
+    def _fetch_models_json(key: str, timeout: int = 15) -> dict:
+        """GET the official models endpoint and return the parsed JSON.
+
+        Raises on HTTP / network errors so the caller can report them.
+        """
+        import json
+        import ssl
+        import urllib.request
+        url = ("https://generativelanguage.googleapis.com/v1beta/models"
+               f"?key={key}&pageSize=1000")
+        req = urllib.request.Request(url, headers={"User-Agent": "PictoSync"})
+        ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    @staticmethod
+    def _models_to_rows(models: list) -> list:
+        """Reduce the raw models JSON to generateContent-capable rows.
+
+        Returns a sorted list of dicts: name, display, methods, in, out.
+        Handles both REST (camelCase) and SDK (snake_case) field names.
+        """
+        def g(m, *keys, default=None):
+            for k in keys:
+                if k in m and m[k] not in (None, ""):
+                    return m[k]
+            return default
+
+        rows = []
+        for m in models or []:
+            methods = g(m, "supportedGenerationMethods",
+                        "supported_generation_methods",
+                        "supportedActions", "supported_actions",
+                        default=[]) or []
+            if "generateContent" not in methods:
+                continue
+            name = (g(m, "name", default="") or "").split("/")[-1]
+            if not name:
+                continue
+            rows.append({
+                "name": name,
+                "display": g(m, "displayName", "display_name", default=name),
+                "methods": ", ".join(methods),
+                "in": g(m, "inputTokenLimit", "input_token_limit", default=""),
+                "out": g(m, "outputTokenLimit", "output_token_limit", default=""),
+            })
+        rows.sort(key=lambda r: r["name"])
+        return rows
+
+    def _open_gemini_keys_page(self):
+        """Open the Google AI Studio API-keys page in the default browser."""
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+        QDesktopServices.openUrl(QUrl("https://aistudio.google.com/apikey"))
+
+    def _fetch_gemini_models(self):
+        """Query the models API, confirm the key, and offer to add models."""
+        import os
+        import urllib.error
+        from PyQt6.QtCore import Qt as _Qt
+        from PyQt6.QtWidgets import QApplication
+
+        key = os.environ.get("GOOGLE_API_KEY", "").strip()
+        if not key:
+            QMessageBox.warning(
+                self, "Gemini",
+                "GOOGLE_API_KEY is not set.\n\nSet the environment variable "
+                "to your Gemini API key and restart PictoSync, then try again.")
+            return
+
+        self.gemini_status_label.setText("Fetching models…")
+        err = None
+        data = None
+        QApplication.setOverrideCursor(_Qt.CursorShape.WaitCursor)
+        try:
+            data = self._fetch_models_json(key)
+        except urllib.error.HTTPError as ex:
+            body = ""
+            try:
+                body = ex.read().decode("utf-8", "ignore")[:600]
+            except Exception:
+                pass
+            err = (f"The models request was rejected (HTTP {ex.code}).",
+                   (body or str(ex)) + ("\n\nA 400/403 usually means the API "
+                    "key is invalid, disabled, or restricted. Open the API "
+                    "Keys page to check it."))
+        except Exception as ex:
+            err = ("Couldn't reach the Gemini models API.",
+                   f"{type(ex).__name__}: {ex}\n\nCheck your network/proxy and "
+                   "that generativelanguage.googleapis.com is reachable.")
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        if err:
+            self.gemini_status_label.setText(
+                "<b style='color:#dc2626'>Could not fetch models</b>")
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Critical)
+            box.setWindowTitle("Gemini")
+            box.setText(err[0])
+            box.setInformativeText(err[1])
+            box.exec()
+            return
+
+        rows = self._models_to_rows(data.get("models", []))
+        self.gemini_status_label.setText(
+            f"<b style='color:#16a34a'>API key valid — {len(rows)} usable "
+            "models</b>")
+        self._show_gemini_models_dialog(rows)
+
+    def _show_gemini_models_dialog(self, rows: list):
+        """Show a table of usable models and let the user add a selection."""
+        from PyQt6.QtWidgets import (
+            QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+            QTableWidget, QTableWidgetItem, QAbstractItemView,
+        )
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Available Gemini Models")
+        dlg.resize(660, 440)
+        lay = QVBoxLayout(dlg)
+
+        note = QLabel(
+            "Models your API key can use for content generation. Select "
+            "rows and click “Add Selected” to add them to your model list.\n"
+            "Token limits come from the API. Per-minute/day rate limits and "
+            "pricing are NOT returned by the API — see "
+            "https://ai.google.dev/gemini-api/docs/rate-limits and the "
+            "Gemini pricing page.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #666; font-size: 11px;")
+        lay.addWidget(note)
+
+        table = QTableWidget(len(rows), 4, dlg)
+        table.setHorizontalHeaderLabels(
+            ["Model", "Capabilities", "Input tokens", "Output tokens"])
+        table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.verticalHeader().setVisible(False)
+        for i, r in enumerate(rows):
+            table.setItem(i, 0, QTableWidgetItem(r["name"]))
+            table.setItem(i, 1, QTableWidgetItem(r["methods"]))
+            table.setItem(i, 2, QTableWidgetItem(str(r["in"])))
+            table.setItem(i, 3, QTableWidgetItem(str(r["out"])))
+        table.resizeColumnsToContents()
+        table.horizontalHeader().setStretchLastSection(True)
+        lay.addWidget(table)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        add_btn = QPushButton("Add Selected")
+        close_btn = QPushButton("Close")
+        btn_row.addWidget(add_btn)
+        btn_row.addWidget(close_btn)
+        lay.addLayout(btn_row)
+
+        def add_selected():
+            existing = [self.gemini_model_list.item(i).text()
+                        for i in range(self.gemini_model_list.count())]
+            added = 0
+            for row in sorted({ix.row() for ix in table.selectedIndexes()}):
+                nm = rows[row]["name"]
+                if nm and nm not in existing:
+                    self.gemini_model_list.addItem(nm)
+                    existing.append(nm)
+                    added += 1
+            self._sync_gemini_default_combo()
+            if added:
+                dlg.accept()
+
+        add_btn.clicked.connect(add_selected)
+        close_btn.clicked.connect(dlg.reject)
+        dlg.exec()
 
     # =========================================================================
     # Editor Tab
