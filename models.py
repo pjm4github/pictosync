@@ -693,7 +693,7 @@ def hex_to_css_color(hex_color: str) -> str:
     return hex_color
 
 
-def _blocks_to_legacy_text(blocks: List[TextBlock]) -> str:
+def _blocks_to_legacy_text(blocks: List[TextBlock], frame_halign: str = "") -> str:
     """Produce a simple HTML body string from blocks for legacy canvas rendering.
 
     Only handles basic bold/italic/underline/color/font run formats.
@@ -701,6 +701,13 @@ def _blocks_to_legacy_text(blocks: List[TextBlock]) -> str:
 
     Args:
         blocks: List of ``TextBlock`` objects.
+        frame_halign: Document-level default alignment.  A block carries its
+            own ``halign`` only as an OVERRIDE (sparse) — blocks that match the
+            frame default emit no ``halign``.  Qt's ``setHtml`` does NOT honour
+            a document's ``defaultTextOption`` for parsed ``<p>`` (it defaults
+            them to left), so the alignment must be written into each ``<p>``.
+            Passing the frame default here makes every paragraph carry the
+            correct ``text-align`` and survive the round-trip.
 
     Returns:
         HTML body fragment string (no ``<html>/<head>/<body>`` wrapper).
@@ -742,7 +749,7 @@ def _blocks_to_legacy_text(blocks: List[TextBlock]) -> str:
         align_css = {
             "left": "left", "center": "center",
             "right": "right", "justified": "justify",
-        }.get(blk.halign, "")
+        }.get(blk.halign or frame_halign, "")
         styles = ["margin:0"]
         if align_css:
             styles.append(f"text-align:{align_css}")

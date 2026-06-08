@@ -1684,6 +1684,7 @@ class MetaTextItem(InPlaceTextEditMixin, QGraphicsTextItem, MetaMixin, LinkedMix
 
         meta = self.meta
         _eff_fmt = meta.effective_default_format()
+        _eff_halign = meta.effective_frame().halign
 
         font_family = _eff_fmt.font_family
         font_size = max(6, int(_eff_fmt.font_size or 12))
@@ -1703,7 +1704,7 @@ class MetaTextItem(InPlaceTextEditMixin, QGraphicsTextItem, MetaMixin, LinkedMix
         self.document().blockSignals(True)
 
         if meta.blocks is not None:
-            html_text = _blocks_to_legacy_text(meta.blocks)
+            html_text = _blocks_to_legacy_text(meta.blocks, _eff_halign)
             self.setHtml(html_text if html_text else "")
         elif getattr(meta, "text", ""):
             self.setHtml(meta.text)

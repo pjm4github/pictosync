@@ -113,10 +113,27 @@ class InPlaceTextEditMixin:
         if eff.color:
             self.setDefaultTextColor(hex_to_qcolor(eff.color, self.defaultTextColor()))
 
+        # Seed the document's default alignment from the frame so the caret /
+        # new paragraphs pick up the configured horizontal alignment instead
+        # of Qt's hard-coded AlignLeft.
+        from PyQt6.QtGui import QTextBlockFormat
+        halign = (self._inplace_meta().effective_frame().halign or "center")
+        flag = {
+            "left": Qt.AlignmentFlag.AlignLeft,
+            "center": Qt.AlignmentFlag.AlignHCenter,
+            "right": Qt.AlignmentFlag.AlignRight,
+            "justified": Qt.AlignmentFlag.AlignJustify,
+        }.get(halign, Qt.AlignmentFlag.AlignHCenter)
+        opt = self.document().defaultTextOption()
+        opt.setAlignment(flag)
+        self.document().setDefaultTextOption(opt)
+
         # Seed the typing format only when the box is empty, so existing runs
         # keep their own formatting.
         if self.toPlainText():
             return
+        bf = QTextBlockFormat()
+        bf.setAlignment(flag)
         tcf = QTextCharFormat()
         if fam:
             tcf.setFontFamilies([fam])
@@ -132,6 +149,7 @@ class InPlaceTextEditMixin:
         if eff.color:
             tcf.setForeground(hex_to_qcolor(eff.color, self.defaultTextColor()))
         cur = self.textCursor()
+        cur.setBlockFormat(bf)
         cur.setCharFormat(tcf)
         self.setTextCursor(cur)
 

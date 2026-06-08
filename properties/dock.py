@@ -2951,54 +2951,67 @@ class PropertyPanel(QWidget):
     def _on_halign_changed(self, index: int):
         """Handle horizontal text alignment change.
 
-        When the text editor has focus, applies the alignment to the current
-        paragraph (block-level format).  Always updates ``meta.frame.halign``
-        as the document-level default.
+        Applies the alignment to the active canvas document — to the current
+        selection, or to all paragraphs when there is no selection — and sets
+        the document-level default (``meta.frame.halign``) so new paragraphs
+        inherit it.  Commits to ``meta.blocks`` and the JSON via the shared
+        ``_refocus_text_contents`` path.
         """
         item = self._current_item
         if item is None or not hasattr(item, "meta"):
             return
         halign_values = ["left", "center", "justified", "right"]
-        if 0 <= index < len(halign_values):
-            old_val = getattr(item.meta, "halign", "center")
-            new_val = halign_values[index]
+        if not (0 <= index < len(halign_values)):
+            return
+        old_val = getattr(item.meta, "halign", "center")
+        new_val = halign_values[index]
+        if new_val == old_val:
+            return
 
-            # Apply to current paragraph — no hasFocus() check needed (combo
-            # steals focus but cursor position/selection is preserved).
-            from PyQt6.QtGui import QTextBlockFormat as _TBF
-            from PyQt6.QtCore import Qt as _Qt
-            _flag_map = {
-                "left":      _Qt.AlignmentFlag.AlignLeft,
-                "center":    _Qt.AlignmentFlag.AlignHCenter,
-                "right":     _Qt.AlignmentFlag.AlignRight,
-                "justified": _Qt.AlignmentFlag.AlignJustify,
-            }
-            blk_fmt = _TBF()
-            blk_fmt.setAlignment(_flag_map.get(new_val, _Qt.AlignmentFlag.AlignLeft))
-            cursor = self._te().textCursor()
-            cursor.mergeBlockFormat(blk_fmt)
-            self._te().setTextCursor(cursor)
-            self._apply_align_to_textedit(new_val)
+        from PyQt6.QtGui import QTextBlockFormat as _TBF, QTextCursor as _TC
+        from PyQt6.QtCore import Qt as _Qt
+        flag = {
+            "left":      _Qt.AlignmentFlag.AlignLeft,
+            "center":    _Qt.AlignmentFlag.AlignHCenter,
+            "right":     _Qt.AlignmentFlag.AlignRight,
+            "justified": _Qt.AlignmentFlag.AlignJustify,
+        }.get(new_val, _Qt.AlignmentFlag.AlignHCenter)
 
-            # Write to flat field and nested frame (document-level default)
-            item.meta.halign = new_val
-            if item.meta.frame is None:
-                item.meta.frame = item.meta.effective_frame()
-            item.meta.frame.halign = new_val
+        # Document-level default first (so empty/new paragraphs inherit it).
+        item.meta.halign = new_val
+        if item.meta.frame is None:
+            item.meta.frame = item.meta.effective_frame()
+        item.meta.frame.halign = new_val
 
+        t = self._active_text()
+        if t is not None:
+            doc = t.document()
+            opt = doc.defaultTextOption()
+            opt.setAlignment(flag)
+            doc.setDefaultTextOption(opt)
+            cur = t.textCursor()
+            if not cur.hasSelection():
+                cur.select(_TC.SelectionType.Document)
+            bf = _TBF()
+            bf.setAlignment(flag)
+            cur.mergeBlockFormat(bf)
+            t.setTextCursor(cur)
+            self._refocus_text_contents()   # extract blocks → render → notify
+        else:
             if isinstance(item, MetaTextItem):
                 item._render_from_meta()
             elif hasattr(item, "_update_label_text"):
                 item._update_label_text()
             if hasattr(item, "_notify_changed"):
                 item._notify_changed()
-            self._refocus_text_contents()
-            if self.undo_stack:
-                def update_func():
-                    if hasattr(item, "_update_label_text"):
-                        item._update_label_text()
-                cmd = ChangeMetaCommand(item, {"halign": old_val}, {"halign": new_val}, update_func)
-                self.undo_stack.push(cmd)
+
+        if self.undo_stack:
+            def update_func():
+                if hasattr(item, "_update_label_text"):
+                    item._update_label_text()
+            self.undo_stack.push(
+                ChangeMetaCommand(item, {"halign": old_val},
+                                  {"halign": new_val}, update_func))
 
     def _on_font_size_changed(self, value: int):
         """Handle font size change for the selected run."""

@@ -271,3 +271,75 @@ class TestDefaultStyleOnEmptyBox:
         blocks = item.meta.blocks
         assert blocks[0].plain_text() == "X"
         assert blocks[0].runs[0].format is None or not blocks[0].runs[0].format.to_dict(sparse=True)
+
+
+class TestAlignment:
+    """Horizontal alignment is seeded on edit start and applied from the panel."""
+
+    def test_alignment_seeded_from_frame_on_edit_start(self, main_window, qapp):
+        mw = main_window
+        item, _ = _make(mw, qapp, "rect")
+        if item.meta.frame is None:
+            item.meta.frame = item.meta.effective_frame()
+        item.meta.frame.halign = "right"
+        item.meta.halign = "right"
+        item._update_label_text()
+        lbl = item._label_item
+        lbl._begin_edit_at(QPointF(20, 20))
+        cur = lbl.textCursor()
+        cur.insertText("hi")
+        lbl.setTextCursor(cur)
+        align = lbl.document().begin().blockFormat().alignment()
+        assert bool(align & Qt.AlignmentFlag.AlignRight)
+
+    def test_panel_halign_applies_immediately(self, main_window, qapp):
+        mw = main_window
+        item, _ = _make(mw, qapp, "rect")
+        mw.scene.clearSelection()
+        item.setSelected(True)
+        mw.props.set_item(item)
+        qapp.processEvents()
+        lbl = item._label_item
+        lbl._begin_edit_at(QPointF(20, 20))
+        cur = lbl.textCursor()
+        cur.select(QTextCursor.SelectionType.Document)
+        cur.insertText("hello")
+        lbl.setTextCursor(cur)
+        # combo index 1 == center → fires _on_halign_changed (no crash)
+        mw.props.text_halign_combo.setCurrentIndex(1)
+        qapp.processEvents()
+        align = lbl.document().begin().blockFormat().alignment()
+        assert bool(align & Qt.AlignmentFlag.AlignHCenter)
+        assert item.meta.frame.halign == "center"
+
+
+class TestAlignmentRoundTrip:
+    """Alignment survives the commit/re-render round-trip across new blocks."""
+
+    def test_new_blocks_keep_frame_alignment(self, main_window, qapp):
+        mw = main_window
+        item, _ = _make(mw, qapp, "rect")
+        if item.meta.frame is None:
+            item.meta.frame = item.meta.effective_frame()
+        item.meta.frame.halign = "center"
+        item.meta.halign = "center"
+        item._update_label_text()
+        lbl = item._label_item
+        lbl._begin_edit_at(QPointF(20, 20))
+        cur = lbl.textCursor()
+        cur.insertText("a\n\nb")          # two paragraphs + a blank line
+        lbl.setTextCursor(cur)
+        lbl._commit_edit()
+        item._update_label_text()          # re-render from blocks
+        qapp.processEvents()
+
+        doc = item._label_item.document()
+        aligns = []
+        b = doc.begin()
+        while b.isValid():
+            aligns.append(bool(b.blockFormat().alignment()
+                               & Qt.AlignmentFlag.AlignHCenter))
+            b = b.next()
+        assert aligns == [True, True, True]   # all paragraphs stay centered
+        # blank middle line preserved as an empty block
+        assert [bl.plain_text() for bl in item.meta.blocks] == ["a", "", "b"]

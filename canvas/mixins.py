@@ -201,7 +201,7 @@ class MetaMixin:
 
         # Render: prefer overlay-2.0 blocks, fall back to legacy HTML
         if meta.blocks is not None:
-            html_text = _blocks_to_legacy_text(meta.blocks)
+            html_text = _blocks_to_legacy_text(meta.blocks, halign)
             self._label_item.setHtml(html_text if html_text else "")
             # Apply line spacing to the label's document blocks.
             _spacing_type_map = {
@@ -711,7 +711,7 @@ class MetaMixin:
         self._label_item.document().setDefaultTextOption(_opt)
 
         if self.meta.blocks is not None:
-            html_text = _blocks_to_legacy_text(self.meta.blocks)
+            html_text = _blocks_to_legacy_text(self.meta.blocks, halign)
             self._label_item.setHtml(html_text if html_text else "")
             # Apply line spacing to the label's document blocks.
             # setHtml doesn't carry line-height; we must set it per-block.
