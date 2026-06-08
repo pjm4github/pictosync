@@ -746,6 +746,13 @@ def _blocks_to_legacy_text(blocks: List[TextBlock]) -> str:
         styles = ["margin:0"]
         if align_css:
             styles.append(f"text-align:{align_css}")
+        # An empty paragraph (blank line) must be tagged with Qt's own
+        # ``-qt-paragraph-type:empty`` marker so setHtml preserves it as its
+        # own empty block (a bare ``<p></p>`` collapses; a ``<br/>`` survives
+        # but re-parses as a U+2028 line-separator run, not a clean empty
+        # block).  This keeps the blocks round-trip lossless for blank lines.
+        if not runs_html:
+            styles.append("-qt-paragraph-type:empty")
         parts.append(f"<p style='{';'.join(styles)}'>{runs_html}</p>")
     return "\n".join(parts)
 

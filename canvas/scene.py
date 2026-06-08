@@ -202,6 +202,14 @@ class AnnotatorScene(QGraphicsScene):
 
     def keyPressEvent(self, event):
         """Handle key press events."""
+        # While a text item is being edited in place, every key belongs to its
+        # document — caret movement, typing, and Escape (handled by the item).
+        # Forward to the focus item and do NOT nudge/select/cancel here, so the
+        # arrow keys move the caret instead of the enclosing shape.
+        fi = self.focusItem()
+        if fi is not None and getattr(fi, "_editing", False):
+            super().keyPressEvent(event)
+            return
         if event.key() == Qt.Key.Key_Escape:
             # Cancel polygon drawing on Escape
             if self.mode == Mode.POLYGON and self._polygon_points:

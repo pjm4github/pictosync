@@ -91,14 +91,53 @@ class InPlaceTextEditMixin:
             self._inplace_reflow()
 
     def focusOutEvent(self, event):
-        """Commit on losing focus — unless the mini-toolbar is interacting."""
-        if self._editing:
-            tb = self._mini_toolbar
-            if tb is not None and tb.isVisible():
-                super().focusOutEvent(event)
-                return
+        """Commit on losing focus — unless focus moved to a formatting surface.
+
+        Interacting with the floating mini-toolbar, opening a combo/colour
+        popup, or clicking a property-panel format control must NOT end the
+        edit: those handlers act on (and must preserve) the live selection.
+        The edit commits only when focus truly leaves (empty canvas, another
+        item, etc.).  The model/JSON stay current regardless because each
+        format change re-extracts the document to ``meta.blocks``.
+        """
+        if self._editing and not self._keep_editing_on_focus_out(event):
             self._commit_edit()
         super().focusOutEvent(event)
+
+    def _keep_editing_on_focus_out(self, event) -> bool:
+        tb = self._mini_toolbar
+        if tb is not None and tb.isVisible():
+            return True
+        # A popup / dialog opened (combo dropdown, colour dialog).
+        if event.reason() in (Qt.FocusReason.PopupFocusReason,
+                              Qt.FocusReason.ActiveWindowFocusReason):
+            return True
+        # Focus moved into the property panel's format controls.
+        from PyQt6.QtWidgets import QApplication
+        w = QApplication.focusWidget()
+        while w is not None:
+            if type(w).__name__ in ("PropertyPanel", "PropertyDock"):
+                return True
+            w = w.parentWidget()
+        return False
+
+    def keyPressEvent(self, event):
+        """Escape commits the edit and selects the enclosing shape.
+
+        All other keys (arrows, typing, Home/End, …) fall through to
+        ``QGraphicsTextItem`` so the document's caret/selection responds
+        natively.  The text only loses focus on Escape or a click outside.
+        """
+        if self._editing and event.key() == Qt.Key.Key_Escape:
+            self._commit_edit()
+            shape = getattr(self, "_owner", None) or self
+            sc = self.scene()
+            if sc is not None:
+                sc.clearSelection()
+            shape.setSelected(True)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def contextMenuEvent(self, event):
         """Right-click over a selection while editing → mini format toolbar."""

@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>1066</width>
-    <height>574</height>
+    <height>656</height>
    </rect>
   </property>
   <property name="minimumSize">
@@ -39,7 +39,7 @@
      </property>
      <widget class="QWidget" name="tab_main">
       <attribute name="title">
-       <string>Style</string>
+       <string>Shape Options</string>
       </attribute>
       <layout class="QHBoxLayout" name="horizontalLayout_55">
        <item>
@@ -1607,7 +1607,7 @@
      </widget>
      <widget class="QWidget" name="tab_text">
       <attribute name="title">
-       <string>Contents</string>
+       <string>Text Options</string>
       </attribute>
       <layout class="QHBoxLayout" name="horizontalLayout_57">
        <item>
@@ -1617,26 +1617,6 @@
            <property name="orientation">
             <enum>Qt::Horizontal</enum>
            </property>
-           <widget class="QTextEdit" name="text">
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-              <horstretch>0</horstretch>
-              <verstretch>1</verstretch>
-             </sizepolicy>
-            </property>
-            <property name="minimumSize">
-             <size>
-              <width>0</width>
-              <height>80</height>
-             </size>
-            </property>
-            <property name="acceptRichText">
-             <bool>true</bool>
-            </property>
-            <property name="placeholderText">
-             <string>Enter text content ...</string>
-            </property>
-           </widget>
            <widget class="QGroupBox" name="group_graphic_url">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
@@ -1792,9 +1772,9 @@
             <property name="geometry">
              <rect>
               <x>0</x>
-              <y>-136</y>
+              <y>0</y>
               <width>251</width>
-              <height>725</height>
+              <height>674</height>
              </rect>
             </property>
             <layout class="QVBoxLayout" name="verticalLayout_12">

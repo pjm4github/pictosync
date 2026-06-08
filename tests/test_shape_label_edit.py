@@ -159,3 +159,87 @@ class TestMiniToolbarOnShape:
         runs = [(r.text, r.format) for b in item.meta.blocks for r in b.runs]
         assert [t for t, _ in runs] == ["Hello ", "world"]
         assert runs[1][1].bold
+
+
+class TestPanelFormattingOnSelection:
+    """Panel format controls drive the in-place canvas selection (the panel no
+    longer hosts its own QTextEdit)."""
+
+    def test_panel_bold_applies_to_selection_only_and_keeps_it(self, main_window, qapp):
+        mw = main_window
+        item, _ = _make(mw, qapp, "rect")
+        mw.scene.clearSelection()
+        item.setSelected(True)
+        mw.props.set_item(item)
+        qapp.processEvents()
+
+        lbl = item._label_item
+        lbl._begin_edit_at(QPointF(20, 20))
+        cur = lbl.textCursor()
+        cur.select(QTextCursor.SelectionType.Document)
+        cur.insertText("Hello world")
+        lbl.setTextCursor(cur)
+        # select "world"
+        cur = lbl.textCursor()
+        cur.setPosition(6)
+        cur.setPosition(11, QTextCursor.MoveMode.KeepAnchor)
+        lbl.setTextCursor(cur)
+
+        mw.props._on_bold_changed(True)
+        qapp.processEvents()
+
+        runs = [(r.text, bool(r.format and r.format.bold))
+                for b in item.meta.blocks for r in b.runs]
+        assert runs == [("Hello ", False), ("world", True)]   # only selection
+        assert lbl.textCursor().selectedText() == "world"      # still selected
+        assert lbl._editing is True                            # still editing
+
+    def test_focusout_to_popup_keeps_editing(self, main_window, qapp):
+        from PyQt6.QtGui import QFocusEvent
+        mw = main_window
+        item, _ = _make(mw, qapp, "rect")
+        lbl = item._label_item
+        lbl._begin_edit_at(QPointF(20, 20))
+        # A combo dropdown / colour dialog opening must not end the edit.
+        lbl.focusOutEvent(QFocusEvent(QFocusEvent.Type.FocusOut,
+                                      Qt.FocusReason.PopupFocusReason))
+        assert lbl._editing is True
+
+
+class TestKeyboardDuringEdit:
+    """While editing a label, keys belong to the document; Escape exits."""
+
+    def test_arrow_moves_caret_not_shape(self, main_window, qapp):
+        from PyQt6.QtGui import QKeyEvent
+        from PyQt6.QtCore import QEvent
+        mw = main_window
+        item, _ = _make(mw, qapp, "rect")
+        mw.scene.clearSelection(); item.setSelected(True)
+        mw.props.set_item(item); qapp.processEvents()
+        lbl = item._label_item
+        lbl._begin_edit_at(QPointF(20, 20))
+        cur = lbl.textCursor()
+        cur.select(QTextCursor.SelectionType.Document)
+        cur.insertText("Hello world")
+        cur = lbl.textCursor(); cur.setPosition(11); lbl.setTextCursor(cur)
+        pos_before = (item.pos().x(), item.pos().y())
+        ev = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Left,
+                       Qt.KeyboardModifier.NoModifier)
+        mw.scene.keyPressEvent(ev)
+        assert (item.pos().x(), item.pos().y()) == pos_before   # shape didn't move
+        assert lbl.textCursor().position() == 10                 # caret moved left
+
+    def test_escape_commits_and_selects_shape(self, main_window, qapp):
+        from PyQt6.QtGui import QKeyEvent
+        from PyQt6.QtCore import QEvent
+        mw = main_window
+        item, _ = _make(mw, qapp, "rect")
+        lbl = item._label_item
+        lbl._begin_edit_at(QPointF(20, 20))
+        cur = lbl.textCursor(); cur.insertText("hi"); lbl.setTextCursor(cur)
+        ev = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Escape,
+                       Qt.KeyboardModifier.NoModifier)
+        lbl.keyPressEvent(ev)
+        assert lbl._editing is False
+        assert item.isSelected() is True
+        assert item.meta.blocks[0].plain_text() == "hi"   # committed

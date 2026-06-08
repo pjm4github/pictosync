@@ -140,13 +140,13 @@ class TestTabPresence:
 
     def test_has_tabs(self, main_window):
         props = main_window.props
-        assert props.tabs.count() >= 2  # at least Style + Contents
+        assert props.tabs.count() >= 2  # at least Shape Options + Text Options
 
     def test_tab_names(self, main_window):
         props = main_window.props
         tab_names = [props.tabs.tabText(i) for i in range(props.tabs.count())]
-        assert "Style" in tab_names
-        assert "Contents" in tab_names
+        assert "Shape Options" in tab_names
+        assert "Text Options" in tab_names
 
 
 class TestPenColorSync:

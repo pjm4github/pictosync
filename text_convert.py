@@ -121,7 +121,11 @@ def qtextdoc_to_blocks(doc, doc_default_format: Optional[CharFormat] = None) -> 
                 runs.append(run)
             it += 1
 
-        if runs:
+        # Emit one block per QTextBlock — INCLUDING empty paragraphs (a blank
+        # line typed as a double-return has no text fragment, so ``runs`` is
+        # empty).  Skipping them here would silently drop blank lines on the
+        # round-trip and shift/merge the surrounding paragraphs.
+        if True:
             blk: dict = {"runs": runs}
             if halign:
                 blk["halign"] = halign
