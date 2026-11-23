@@ -1,0 +1,246 @@
+@startuml t_component_03_group_containers
+title Component Diagram — Group Container Types\n(package, node, folder, frame, cloud, database — nested recursively)
+
+allowmixing
+
+skinparam package {
+    BackgroundColor #F8F9FA
+    BorderColor #6C757D
+    FontSize 12
+    RoundCorner 8
+}
+skinparam node {
+    BackgroundColor #E3F2FD
+    BorderColor #1565C0
+}
+skinparam cloud {
+    BackgroundColor #F1F8E9
+    BorderColor #33691E
+}
+skinparam database {
+    BackgroundColor #FCE4EC
+    BorderColor #880E4F
+}
+skinparam frame {
+    BackgroundColor #FFF8E1
+    BorderColor #F57F17
+}
+skinparam folder {
+    BackgroundColor #F3E5F5
+    BorderColor #4A148C
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. ALL SIX CONTAINER KEYWORD FORMS — plain
+' ══════════════════════════════════════════════════════════════════════════
+
+package "Package Container" as PKG1 {
+    component PkgComp1
+    component PkgComp2
+}
+
+node "Node Container" as NODE1 {
+    component NodeComp1
+    component NodeComp2
+}
+
+folder "Folder Container" as FLD1 {
+    component FolderComp1
+    component FolderComp2
+}
+
+frame "Frame Container" as FRM1 {
+    component FrameComp1
+    component FrameComp2
+}
+
+cloud "Cloud Container" as CLD1 {
+    component CloudComp1
+    component CloudComp2
+}
+
+database "Database Container" as DB1 {
+    component DBComp1
+    component DBComp2
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. CONTAINERS WITH STEREOTYPES AND COLORS
+' ══════════════════════════════════════════════════════════════════════════
+
+package "Styled Package" as PKG_STYLED <<subsystem>> #EDE7F6 {
+    component StyledPkgComp1 <<service>>
+    component StyledPkgComp2 <<repository>>
+    interface "StyledIface" as SIFACE
+}
+
+node "Styled Node" as NODE_STYLED <<server>> #E8F5E9 {
+    component StyledNodeComp <<runtime>>
+}
+
+cloud "Styled Cloud" as CLD_STYLED <<aws>> #E1F5FE {
+    component CloudSvc1 <<lambda>>
+    component CloudSvc2 <<s3>>
+}
+
+database "Styled DB" as DB_STYLED <<postgresql>> #FFF3E0 {
+    component Schema1
+    component Schema2
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. TWO-LEVEL NESTING
+' ══════════════════════════════════════════════════════════════════════════
+
+package "Outer Package" as OUTER {
+
+    package "Inner Package A" as INNER_A #EEF2FF {
+        component InnerA_Comp1
+        component InnerA_Comp2
+        () "InnerA_Iface" as IAI
+    }
+
+    package "Inner Package B" as INNER_B #FFF8E1 {
+        component InnerB_Comp1
+        component InnerB_Comp2
+    }
+
+    node "Inner Node" as INNER_NODE #E8F5E9 {
+        component InnerNode_Comp
+    }
+
+    component OuterOnlyComp
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. THREE-LEVEL NESTING (deep recursion test)
+' ══════════════════════════════════════════════════════════════════════════
+
+cloud "Enterprise Cloud" as ENT_CLOUD {
+
+    node "Region: us-east-1" as REGION_E {
+
+        package "VPC: 10.0.0.0/16" as VPC_E #E8EAF6 {
+
+            frame "Public Subnet" as PUB_E #E8F5E9 {
+                component LoadBalancer <<alb>>
+                component WAF <<waf>>
+            }
+
+            frame "Private Subnet" as PRIV_E #FFF3E0 {
+                component AppServer1 <<ec2>>
+                component AppServer2 <<ec2>>
+                component CacheLayer <<elasticache>>
+            }
+
+            database "Data Subnet" as DATA_E #FCE4EC {
+                component PrimaryDB <<rds>>
+                component ReplicaDB <<rds-replica>>
+            }
+        }
+    }
+
+    node "Region: eu-west-1" as REGION_W {
+        package "VPC: 10.1.0.0/16" as VPC_W #F3E5F5 {
+            frame "DR Subnet" as DR_W #FFF8E1 {
+                component DRAppServer <<ec2>>
+                component DRDatabase <<rds>>
+            }
+        }
+    }
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. MIXED CONTAINER TYPES AT SAME LEVEL (sibling containers)
+' ══════════════════════════════════════════════════════════════════════════
+
+package "Microservice System" as MS_SYS {
+    folder "Services" as SVC_FOLDER {
+        component AuthService <<microservice>>
+        component OrderService <<microservice>>
+        component PaymentService <<microservice>>
+    }
+    database "Persistence" as SVC_DB {
+        component UserStore <<mongodb>>
+        component OrderStore <<postgresql>>
+    }
+    frame "Messaging" as MSG_FRM {
+        component EventBus <<kafka>>
+        component DeadLetter <<sqs>>
+    }
+    cloud "External" as EXT_CLD {
+        component PaymentGateway <<stripe>>
+        component EmailProvider <<sendgrid>>
+    }
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. CONTAINER BODY WITH PORTS
+' ══════════════════════════════════════════════════════════════════════════
+
+component "Port Host Component" as PHC {
+    port northPort
+    portin southIn
+    portout eastOut
+    port "West Port" as WP
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' INTER-CONTAINER LINKS
+' ══════════════════════════════════════════════════════════════════════════
+
+' Cross-package
+PkgComp1 --> NodeComp1 : cross-container
+FolderComp1 ..> FrameComp1 : cross-type
+
+' Within nested
+InnerA_Comp1 --> InnerB_Comp1 : inner cross
+InnerA_Comp1 --> IAI : provides
+IAI --( InnerB_Comp2 : consumes
+OuterOnlyComp --> InnerA_Comp2 : outer-to-inner
+
+' Deep nesting cross-links
+LoadBalancer --> AppServer1 : HTTPS :443
+LoadBalancer --> AppServer2 : HTTPS :443
+AppServer1 --> CacheLayer : RESP2 :6379
+AppServer1 --> PrimaryDB : JDBC :5432
+PrimaryDB --> ReplicaDB : async repl
+PrimaryDB ..> DRDatabase : cross-region repl
+
+' Microservice internal
+AuthService --> UserStore : read/write
+OrderService --> OrderStore : CRUD
+OrderService --> EventBus : publish
+PaymentService ..> PaymentGateway : REST
+AuthService ..> EmailProvider : SMTP
+
+' Styled containers cross-link
+StyledPkgComp1 --> StyledNodeComp : deploy
+StyledNodeComp --> CloudSvc1 : invoke
+CloudSvc1 --> Schema1 : persist
+
+' Port links
+northPort --> CloudComp1
+DBComp1 --> southIn
+eastOut --> FrameComp2
+
+note right of OUTER
+    **Parser targets:**
+    - package/node/folder/frame/cloud/database keywords
+    - Quoted name + alias
+    - Stereotype on container
+    - Color on container
+    - Recursive nesting (2-3 levels)
+    - Sibling containers
+    - Cross-container transitions
+end note
+
+note bottom of ENT_CLOUD
+    **Deep nesting test:**
+    cloud > node > package > frame
+    4 levels of container recursion.
+    Aliases must resolve across
+    all nesting scopes.
+end note
+
+@enduml

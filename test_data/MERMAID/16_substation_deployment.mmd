@@ -1,0 +1,296 @@
+---
+title: Substation Edge Compute — deployment context (IEC 61850 SAS reference, 16:9 widescreen)
+config:
+  flowchart:
+    curve: linear
+    nodeSpacing: 22
+    rankSpacing: 28
+    padding: 6
+---
+%%{init: {'flowchart': {'curve': 'linear', 'nodeSpacing': 22, 'rankSpacing': 28, 'padding': 6}}}%%
+flowchart TB
+    classDef hv fill:#fee2e2,stroke:#991b1b,stroke-width:2px
+    classDef mv fill:#fed7aa,stroke:#9a3412,stroke-width:2px
+    classDef xfmr fill:#fde68a,stroke:#92400e,stroke-width:3px
+    classDef proc fill:#dbeafe,stroke:#1e40af,stroke-width:1px
+    classDef ied fill:#dcfce7,stroke:#166534,stroke-width:1px
+    classDef station fill:#e0e7ff,stroke:#3730a3,stroke-width:1px
+    classDef bus fill:#f3e8ff,stroke:#6b21a8,stroke-width:2px
+    classDef sensor fill:#fdf2f8,stroke:#9d174d,stroke-width:1px
+    classDef secsens fill:#fce7f3,stroke:#be185d,stroke-width:1px
+    classDef wire fill:#ecfeff,stroke:#0e7490,stroke-width:1px
+    classDef appliance fill:#fef3c7,stroke:#92400e,stroke-width:3px
+    classDef ui fill:#cffafe,stroke:#155e75,stroke-width:2px
+    classDef wan fill:#f1f5f9,stroke:#475569,stroke-dasharray:5 5
+    classDef note fill:#f1f5f9,stroke:#475569,stroke-dasharray:3 3
+
+    %% =====================================================================
+    %% LANE 1 — Switchyard primary plant + sensor swarms
+    %% =====================================================================
+    subgraph Lane1["⚡ Switchyard + sensors"]
+        direction TB
+
+        subgraph Switchyard["Switchyard (outdoor)"]
+            direction TB
+            subgraph HVRow["HV side · 230 kV"]
+                direction LR
+                line_in["230 kV in"]:::hv
+                LineBay["Line bay<br/>SA·DS·CB·CT·VT·ES"]:::hv
+                HvBus["HV bus<br/>double bus + coupler"]:::hv
+                XfmrBay["Xfmr bay<br/>CT/CB (HV)"]:::hv
+                xfmr["Power xfmr<br/>230/69 kV · 100 MVA · OLTC"]:::xfmr
+                line_in --> LineBay --> HvBus --> XfmrBay --> xfmr
+            end
+            subgraph MVRow["MV side · 69 kV"]
+                direction LR
+                LvSide["LV side<br/>CB/CT (LV)"]:::mv
+                MvBus["MV bus<br/>double bus + coupler"]:::mv
+                FeederBay["Feeder bay<br/>CT·CB·DS"]:::mv
+                fdr_out["69 kV out → distribution"]:::mv
+                LvSide --> MvBus --> FeederBay --> fdr_out
+            end
+            xfmr -.->|"secondary"| LvSide
+        end
+
+        subgraph ACM["Asset-condition sensors (PHY · APP)"]
+            direction LR
+            dga["DGA<br/>oil gases"]:::sensor
+            pd["PD<br/>UHF+acoustic+HFCT"]:::sensor
+            bush["Bushing tap<br/>C · tan δ"]:::sensor
+            vib["Vibration /<br/>acoustic"]:::sensor
+            tmp["Top-oil + winding<br/>RTD · FBG"]:::sensor
+            oltc["OLTC monitor"]:::sensor
+            sf6["SF6 density"]:::sensor
+            batt["Station battery<br/>V · IR · ripple"]:::sensor
+            env["Ctrl-house env<br/>T · RH · door"]:::sensor
+        end
+
+        subgraph PhysSec["Physical security + perimeter"]
+            direction LR
+            cam_dome["IP dome / PTZ<br/>PoE · ONVIF/RTSP"]:::secsens
+            cam_thermal["Thermal IR cam<br/>ONVIF + GenICam"]:::secsens
+            fence["Fence-line intrusion<br/>fiber / piezo cable"]:::secsens
+            gate["Gate access reader<br/>RFID · OSDP (RS-485)"]:::secsens
+            door["Door/window +<br/>motion PIR · tamper"]:::secsens
+            nvr["Local NVR / VMS<br/>H.264/H.265"]:::secsens
+            cam_dome --> nvr
+            cam_thermal --> nvr
+        end
+
+        %% sensor → primary plant (physical attachment)
+        dga -.-> xfmr
+        pd -.-> xfmr
+        bush -.-> xfmr
+        vib -.-> xfmr
+        tmp -.-> xfmr
+        oltc -.-> xfmr
+        sf6 -.-> LineBay
+        sf6 -.-> XfmrBay
+    end
+
+    %% =====================================================================
+    %% LANE 2 — Process level + process bus + bay-level IEDs
+    %% =====================================================================
+    subgraph Lane2["🔀 Process / bay"]
+        direction LR
+
+        subgraph ProcessLevel["Process level (MUs + PIUs)"]
+            direction LR
+            mu_line["MU line<br/>SV 9-2LE + GOOSE"]:::proc
+            mu_xfmr["MU xfmr<br/>HV + LV SV"]:::proc
+            mu_bus["MU bus<br/>3φ V SV"]:::proc
+            mu_fdr["MU feeder<br/>SV + GOOSE"]:::proc
+            piu_line["PIU line<br/>CB/DS/ES + trip"]:::proc
+            piu_xfmr["PIU xfmr<br/>OLTC · cooling"]:::proc
+            piu_fdr["PIU feeder"]:::proc
+        end
+
+        pbus["Process bus<br/>L2 Ethernet · PRP / HSR · SV (9-2 LE) + GOOSE + PTP (9-3)"]:::bus
+
+        subgraph BayLevel["Bay level IEDs"]
+            direction LR
+            ied_21["21<br/>line distance"]:::ied
+            ied_87t["87T<br/>xfmr diff"]:::ied
+            ied_87b["87B<br/>busbar diff"]:::ied
+            ied_5051["50/51/51N<br/>OC / EF"]:::ied
+            ied_bay["Bay controller<br/>interlocking · SOE"]:::ied
+        end
+
+        mu_line --> pbus
+        mu_xfmr --> pbus
+        mu_bus --> pbus
+        mu_fdr --> pbus
+        piu_line --> pbus
+        piu_xfmr --> pbus
+        piu_fdr --> pbus
+        pbus --> ied_21
+        pbus --> ied_87t
+        pbus --> ied_87b
+        pbus --> ied_5051
+        pbus --> ied_bay
+    end
+
+    %% CT/VT secondaries → MUs · CB aux → PIUs · GOOSE trip → PIUs
+    LineBay -.->|"CT/VT sec"| mu_line
+    XfmrBay -.-> mu_xfmr
+    LvSide -.-> mu_xfmr
+    HvBus -.-> mu_bus
+    FeederBay -.-> mu_fdr
+    LineBay -.->|"aux + trip coil"| piu_line
+    xfmr -.->|"OLTC + cooling"| piu_xfmr
+    FeederBay -.-> piu_fdr
+    ied_21 -.->|"GOOSE trip"| piu_line
+    ied_87t -.->|"GOOSE trip"| piu_xfmr
+    ied_5051 -.->|"GOOSE trip"| piu_fdr
+
+    %% =====================================================================
+    %% LANE 3 — Station bus + station level
+    %% =====================================================================
+    subgraph Lane3["🏢 Station"]
+        direction LR
+
+        sbus["Station bus<br/>Ethernet (PRP) · MMS + GOOSE + PTP"]:::bus
+
+        subgraph StationLevel["Station level (control house)"]
+            direction LR
+            hmi["Station HMI"]:::station
+            ctrl["Station ctrl<br/>logic / seq"]:::station
+            scada_gw["SCADA gateway<br/>DNP3 / 60870-5-104"]:::station
+            eng_ws["Engineering WS<br/>SCL·CID·IID"]:::station
+            ptp_gm["PTP grandmaster<br/>GPS-disciplined<br/>1588v2 / 9-3"]:::station
+            gw_router["Remote-access router<br/>corp WAN · jump"]:::station
+        end
+
+        sbus --> hmi
+        sbus --> ctrl
+        sbus --> scada_gw
+        sbus --> eng_ws
+        ptp_gm -.->|"PTP master"| sbus
+    end
+
+    ied_21 --> sbus
+    ied_87t --> sbus
+    ied_87b --> sbus
+    ied_5051 --> sbus
+    ied_bay --> sbus
+    ptp_gm -.->|"PTP master"| pbus
+
+    %% =====================================================================
+    %% LANE 4 — Substation Edge Compute (this appliance)
+    %% =====================================================================
+    subgraph Lane4["⚙ Substation Edge Compute (this appliance)"]
+        direction TB
+
+        subgraph SEC_inputs["Inputs (4 channels)"]
+            direction TB
+            tap_pbus["Process-bus tap<br/>SPAN (RO) · SV + GOOSE"]:::appliance
+            tap_sbus["Station-bus tap<br/>SPAN (RO) · MMS + SOE + GOOSE"]:::appliance
+            acm_in["Asset-cond aggregator<br/>RS-485 · 4-20 mA+HART · Modbus TCP ·<br/>DNP3 · 61850 MMS · SNMP"]:::appliance
+            sec_in["Security aggregator<br/>RTSP/ONVIF · OSDP · BACnet MS/TP ·<br/>dry contacts · NVR API"]:::appliance
+        end
+
+        subgraph SEC_host["x86 HOST · Cloud Hypervisor microVMs"]
+            direction LR
+            mcp["mcp_edge"]:::appliance
+            orch["llm_orchestrator"]:::appliance
+            llmapi["frontier_llm_api"]:::appliance
+            seal["seal_authority<br/>« stub »"]:::appliance
+        end
+
+        gpu[(GPU Platform · frontier LLM · PCIe)]:::appliance
+
+        subgraph SEC_safety["Safety Module daughtercard"]
+            direction LR
+            dsp["dsp_frontend"]:::appliance
+            emit["token_emitter"]:::appliance
+            parse["grammar_parser"]:::appliance
+            detect["anomaly_detector"]:::appliance
+            store[(capsule_store)]:::appliance
+            voice["voice_tag"]:::appliance
+        end
+
+        seal -.->|"power gate"| gpu
+        tap_pbus --> dsp
+        tap_sbus --> parse
+        acm_in --> emit
+        sec_in --> emit
+    end
+
+    %% Bus taps + sensor feeds
+    pbus -.->|"SPAN / mirror"| tap_pbus
+    sbus -.->|"SPAN / mirror"| tap_sbus
+    dga -.-> acm_in
+    pd -.-> acm_in
+    bush -.-> acm_in
+    vib -.-> acm_in
+    tmp -.-> acm_in
+    oltc -.-> acm_in
+    sf6 -.-> acm_in
+    batt -.-> acm_in
+    env -.-> acm_in
+    cam_dome -.-> sec_in
+    cam_thermal -.-> sec_in
+    fence -.-> sec_in
+    gate -.-> sec_in
+    door -.-> sec_in
+    nvr -.-> sec_in
+
+    %% =====================================================================
+    %% LANE 5 — Operator + wireless / remote + upstream
+    %% =====================================================================
+    subgraph Lane5["👤 Operator · wireless · upstream"]
+        direction LR
+
+        subgraph Operator["Operator surfaces"]
+            direction TB
+            sme_ws["SME workstation<br/>PyQt6 UI<br/>State Viewer · bus emulator ·<br/>LLM loop · session console"]:::ui
+        end
+
+        subgraph WirelessRemote["Wireless / remote access (phone connectivity)"]
+            direction LR
+            cell["Cellular modem<br/>4G LTE / 5G NSA<br/>APN + IPsec VPN<br/>MQTT / HTTPS uplink"]:::wire
+            wifi["Wi-Fi AP<br/>802.11ac · WPA2-Ent<br/>(engineering only)"]:::wire
+            ble["Bluetooth LE<br/>field-engineer tool<br/>(pairing-gated)"]:::wire
+            sms_push["SME phone notify<br/>SMS / push call-out"]:::wire
+        end
+
+        subgraph Upstream["Upstream (out of substation)"]
+            direction LR
+            cc["Utility control centre<br/>EMS / DMS / OMS<br/>DNP3 / 60870-5-104"]:::wan
+            am["Asset-mgmt portal<br/>batch · NERC CIP"]:::wan
+            sme_remote["Remote SME (on-call)<br/>secure tunnel"]:::wan
+        end
+
+        sme_ws -.-> sms_push
+        sms_push -.->|"SMS / push"| sme_remote
+        cell -.->|"WAN backhaul"| sme_remote
+        cell -.->|"audit egress"| am
+    end
+
+    %% Cross-lane connections to/from SEC
+    store --> sme_ws
+    detect --> sme_ws
+    seal -.->|"mode events · SSE"| sme_ws
+    scada_gw -->|"telemetry + control"| cc
+    sme_ws -.->|"audit egress (batched)"| am
+    gw_router -.-> sme_remote
+    sme_remote -.->|"handshake → INVESTIGATION"| sme_ws
+
+    %% Wireless integration: control-house Wi-Fi for engineering laptops,
+    %% BLE for the appliance's local service tool, cellular for redundant WAN
+    wifi -.->|"engineering laptop"| eng_ws
+    ble -.->|"local service tool"| seal
+    cell -.->|"redundant WAN"| gw_router
+
+    %% =====================================================================
+    %% NOTES
+    %% =====================================================================
+    note_taps["Read-only by design.<br/>Passive listener on both buses (SPAN/mirror);<br/>never publishes GOOSE, never commands MMS,<br/>never trips a breaker. Surfaces evidence to the SME."]:::note
+    note_modes["Seal contract gates GPU power.<br/>SEALED ⇄ AWAITING_SME ⇄ INVESTIGATION is the<br/>SME flow. GPU unpowered in SEALED."]:::note
+    note_time["One time domain.<br/>The substation PTP grandmaster disciplines both<br/>buses AND the edge compute's signal-plane clock<br/>(origin_ns sealed at ingest)."]:::note
+    note_sec["Physical-security feeds are read-only too —<br/>capture + correlate, never command. Camera + PD<br/>cross-correlation is a target Stage 7e+ use case."]:::note
+
+    Lane4 -.- note_taps
+    seal -.- note_modes
+    ptp_gm -.- note_time
+    PhysSec -.- note_sec

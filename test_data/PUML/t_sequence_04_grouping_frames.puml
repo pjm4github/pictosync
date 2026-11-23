@@ -1,0 +1,320 @@
+@startuml t_sequence_04_grouping_frames
+title Sequence Diagram — Grouping Frames\n(alt, opt, loop, par, break, critical, group — all forms + nesting)
+
+participant "Client"  as C
+participant "Server"  as S
+participant "DB"      as D
+participant "Cache"   as CA
+participant "Worker"  as W
+participant "Logger"  as L
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. ALT / ELSE / END — conditional branching
+' ══════════════════════════════════════════════════════════════════════════
+
+== alt / else ==
+
+C -> S : authenticate(token)
+activate S
+
+alt token valid
+    S -> D : lookupUser(token)
+    activate D
+    D --> S : user record
+    deactivate D
+    S --> C : 200 OK + session
+else token expired
+    S --> C : 401 Unauthorized\n(expired)
+else token malformed
+    S --> C : 400 Bad Request
+else no token provided
+    S --> C : 401 Unauthorized\n(missing)
+end
+
+deactivate S
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. OPT — optional block
+' ══════════════════════════════════════════════════════════════════════════
+
+== opt ==
+
+C -> S : getProfile(userId)
+activate S
+
+S -> CA : checkCache(userId)
+activate CA
+CA --> S : cache miss
+deactivate CA
+
+S -> D : fetchProfile(userId)
+activate D
+D --> S : profile data
+deactivate D
+
+opt profile has avatar
+    S -> CA : storeAvatar(data)
+    activate CA
+    CA --> S : cached
+    deactivate CA
+end
+
+S --> C : profile response
+deactivate S
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. LOOP — with and without bounds
+' ══════════════════════════════════════════════════════════════════════════
+
+== loop (unbounded) ==
+
+C -> S : streamEvents()
+activate S
+
+loop while connected
+    S -> D : pollEvents()
+    activate D
+    D --> S : event batch
+    deactivate D
+    S --> C : event data
+end
+
+deactivate S
+
+== loop (bounded N,M) ==
+
+C -> S : retryRequest()
+activate S
+
+loop 1,3 retry attempts
+    S -> D : tryOperation()
+    activate D
+
+    alt operation succeeds
+        D --> S : success
+        deactivate D
+    else operation fails
+        D --> S : failure
+        deactivate D
+    end
+
+end
+
+S --> C : final result
+deactivate S
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. PAR — parallel execution
+' ══════════════════════════════════════════════════════════════════════════
+
+== par ==
+
+C -> S : processOrder(orderId)
+activate S
+
+par inventory check
+    S -> D : checkInventory(orderId)
+    activate D
+    D --> S : stock OK
+    deactivate D
+else payment processing
+    S -> W : processPayment(orderId)
+    activate W
+    W --> S : payment authorized
+    deactivate W
+else notification
+    S -> L : logOrderReceived(orderId)
+    activate L
+    L --> S : logged
+    deactivate L
+end
+
+S --> C : order confirmed
+deactivate S
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. BREAK — early exit from a group
+' ══════════════════════════════════════════════════════════════════════════
+
+== break ==
+
+C -> S : processWithBreak()
+activate S
+
+loop processing items
+    S -> D : getNextItem()
+    activate D
+    D --> S : item or EOF
+    deactivate D
+
+    break on EOF
+        S --> C : processing complete
+    end
+
+    S -> W : processItem()
+    activate W
+    W --> S : item done
+    deactivate W
+end
+
+deactivate S
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. CRITICAL — exclusive access region
+' ══════════════════════════════════════════════════════════════════════════
+
+== critical ==
+
+C -> S : updateSharedResource()
+activate S
+
+critical shared resource lock
+    S -> D : acquireLock()
+    activate D
+    D --> S : lock acquired
+    S -> D : updateRecord()
+    D --> S : updated
+    S -> D : releaseLock()
+    D --> S : released
+    deactivate D
+end
+
+S --> C : resource updated
+deactivate S
+
+' ══════════════════════════════════════════════════════════════════════════
+' 7. GROUP — custom label
+' ══════════════════════════════════════════════════════════════════════════
+
+== group (plain) ==
+
+C -> S : customGrouped()
+activate S
+
+group My Custom Group Label
+    S -> D : step one
+    activate D
+    D --> S : result one
+    deactivate D
+    S -> W : step two
+    activate W
+    W --> S : result two
+    deactivate W
+end
+
+S --> C : grouped complete
+deactivate S
+
+== group with color ==
+
+C -> S : coloredGroup()
+activate S
+
+group Colored Group [#E3F2FD]
+    S -> CA : cachedStep()
+    activate CA
+    CA --> S : cached result
+    deactivate CA
+end
+
+S --> C : done
+deactivate S
+
+' ══════════════════════════════════════════════════════════════════════════
+' 8. NESTED GROUPS (3 levels deep)
+' ══════════════════════════════════════════════════════════════════════════
+
+== nested groups ==
+
+C -> S : nestedRequest()
+activate S
+
+alt outer condition A
+    S -> D : outerQuery()
+    activate D
+
+    loop inner retry
+        D -> W : innerWork()
+        activate W
+
+        opt optional inner step
+            W -> L : innerLog()
+            activate L
+            L --> W : logged
+            deactivate L
+        end
+
+        W --> D : inner result
+        deactivate W
+    end
+
+    D --> S : outer result
+    deactivate D
+else outer condition B
+    group fallback processing
+        S -> CA : fallbackCache()
+        activate CA
+        CA --> S : cached data
+        deactivate CA
+    end
+    S --> C : fallback response
+end
+
+S --> C : nested complete
+deactivate S
+
+' ══════════════════════════════════════════════════════════════════════════
+' 9. GROUPS WITH DIVIDERS AND NOTES
+' ══════════════════════════════════════════════════════════════════════════
+
+== groups + dividers + notes ==
+
+C -> S : fullFlow()
+activate S
+
+note over S : pre-condition check
+
+opt pre-check passes
+    S -> D : preCheck()
+    activate D
+    D --> S : OK
+    deactivate D
+end
+
+== divider inside outer flow ==
+
+alt main branch
+    loop up to 5 times
+        S -> W : doWork()
+        activate W
+        W --> S : workDone
+        deactivate W
+    end
+    note right of S
+        Work loop completed
+    end note
+else fallback branch
+    break abort on error
+        S --> C : error response
+    end
+end
+
+S --> C : complete
+deactivate S
+
+note right of D
+    **Grammar targets (groups):**
+    alt [guard] / else [guard] / end
+    opt [guard] / end
+    loop [guard] / end
+    loop N,M / end
+    par [label] / else [label] / end
+    break [guard] / end
+    critical [label] / end
+    group "label" / end
+    group "label" [#color] / end
+    Nested groups (3 levels tested)
+    Groups containing notes + dividers
+end note
+
+@enduml

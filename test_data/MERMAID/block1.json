@@ -1,0 +1,530 @@
+{
+  "version": "draft-1",
+  "image": {
+    "width": 603,
+    "height": 257
+  },
+  "annotations": [
+    {
+      "id": "m000001",
+      "kind": "ellipse",
+      "geom": {
+        "x": 288.16,
+        "y": 13.06,
+        "w": 26.88,
+        "h": 26.88
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "DB",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true
+      }
+    },
+    {
+      "id": "m000002",
+      "kind": "polygon",
+      "geom": {
+        "x": 272.86,
+        "y": 64.0,
+        "w": 57.47,
+        "h": 31.0,
+        "points": [
+          [
+            0.5,
+            1.0
+          ],
+          [
+            0.0,
+            0.871
+          ],
+          [
+            0.3045,
+            0.871
+          ],
+          [
+            0.3045,
+            0.0
+          ],
+          [
+            0.6955,
+            0.0
+          ],
+          [
+            0.6955,
+            0.871
+          ],
+          [
+            1.0,
+            0.871
+          ]
+        ]
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true
+      }
+    },
+    {
+      "id": "m000003",
+      "kind": "rect",
+      "geom": {
+        "x": 5.0,
+        "y": 107.0,
+        "w": 593.19,
+        "h": 43.0
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true
+      }
+    },
+    {
+      "id": "m000004",
+      "kind": "rect",
+      "geom": {
+        "x": 13.0,
+        "y": 115.0,
+        "w": 187.06,
+        "h": 27.0
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "A",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true
+      }
+    },
+    {
+      "id": "m000005",
+      "kind": "rect",
+      "geom": {
+        "x": 208.06,
+        "y": 115.0,
+        "w": 187.06,
+        "h": 27.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333",
+          "width": 4.0,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#939"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "A wide one in the middle",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true
+      }
+    },
+    {
+      "id": "m000006",
+      "kind": "rect",
+      "geom": {
+        "x": 403.12,
+        "y": 115.0,
+        "w": 187.06,
+        "h": 27.0
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "C",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true
+      }
+    },
+    {
+      "id": "m000007",
+      "kind": "rect",
+      "geom": {
+        "x": 5.0,
+        "y": 209.0,
+        "w": 593.19,
+        "h": 43.0
+      },
+      "style": {
+        "pen": {
+          "color": "#9370DB",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30,
+          "dash_solid_percent": 50
+        },
+        "fill": {
+          "color": "#ECECFF"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        }
+      },
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [
+          {
+            "runs": [
+              {
+                "type": "text",
+                "text": "D",
+                "format": {
+                  "bold": true,
+                  "color": "#333333"
+                }
+              }
+            ]
+          }
+        ],
+        "wrap": true
+      }
+    },
+    {
+      "id": "m000008",
+      "kind": "line",
+      "geom": {
+        "x1": 301.59,
+        "y1": 150.0,
+        "x2": 301.59,
+        "y2": 205.0
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true
+      }
+    },
+    {
+      "id": "m000009",
+      "kind": "curve",
+      "geom": {
+        "x": 346.25,
+        "y": 142.0,
+        "w": 124.58,
+        "h": 65.15,
+        "nodes": [
+          {
+            "cmd": "M",
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "cmd": "L",
+            "x": 0.9041,
+            "y": 0.0959
+          },
+          {
+            "cmd": "C",
+            "x": 0.4496,
+            "y": 0.5504,
+            "c1x": 0.8081,
+            "c1y": 0.1919,
+            "c2x": 0.6163,
+            "c2y": 0.3838
+          },
+          {
+            "cmd": "C",
+            "x": 0.0707,
+            "y": 0.9293,
+            "c1x": 0.2829,
+            "c1y": 0.7171,
+            "c2x": 0.1415,
+            "c2y": 0.8585
+          },
+          {
+            "cmd": "L",
+            "x": 0.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "style": {
+        "pen": {
+          "color": "#333333",
+          "width": 1,
+          "dash": "solid",
+          "dash_pattern_length": 30.0,
+          "dash_solid_percent": 50.0
+        },
+        "fill": {
+          "color": "#00000000"
+        },
+        "text": {
+          "color": "#333333",
+          "size_pt": 10.0
+        },
+        "arrow_size": 12.0,
+        "arrow": "end"
+      },
+      "contents": {
+        "frame": {
+          "margin_left": 4.0,
+          "margin_right": 4.0,
+          "margin_top": 4.0,
+          "margin_bottom": 4.0,
+          "valign": "top",
+          "halign": "center"
+        },
+        "default_format": {
+          "font_size": 12,
+          "color": "#333333",
+          "font_family": ""
+        },
+        "blocks": [],
+        "wrap": true
+      }
+    }
+  ]
+}

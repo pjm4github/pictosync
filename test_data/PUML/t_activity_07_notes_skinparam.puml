@@ -1,0 +1,296 @@
+@startuml t_activity_07_notes_skinparam
+title Activity Diagram — Notes, Skinparam & Style Directives\n(all note forms, skinparam blocks, style, title, header, footer)
+
+' ══════════════════════════════════════════════════════════════════════════
+' SKINPARAM — comprehensive block configuration
+' ══════════════════════════════════════════════════════════════════════════
+
+skinparam backgroundColor #FEFEFE
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+
+skinparam activity {
+    BackgroundColor #E8F4FD
+    BorderColor #1565C0
+    BorderThickness 1.2
+    FontSize 12
+    FontColor #0D47A1
+    ArrowColor #444444
+    ArrowFontSize 10
+    ArrowFontColor #333333
+    ArrowThickness 1.2
+    StartColor #2E7D32
+    EndColor #C62828
+    DiamondBackgroundColor #FFF9C4
+    DiamondBorderColor #F9A825
+    DiamondFontSize 11
+    DiamondFontColor #E65100
+    swimlaneBorderThickness 1.5
+    swimlaneBorderColor #9E9E9E
+}
+
+skinparam note {
+    BackgroundColor #FFFDE7
+    BorderColor #F9A825
+    FontSize 10
+    FontColor #4E342E
+    BorderThickness 1.0
+}
+
+skinparam partition {
+    BackgroundColor #F3E5F5
+    BorderColor #6A1B9A
+    FontSize 12
+    FontStyle bold
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' TITLE / HEADER / FOOTER (multi-line block form)
+' ══════════════════════════════════════════════════════════════════════════
+
+header
+    **System:** OT Edge AI Platform
+    **Module:** Diagnostic Workflow
+    **Version:** 2.4.1
+end header
+
+footer
+    Page %page% of %lastpage%
+    Confidential — Internal Use Only
+end footer
+
+' ══════════════════════════════════════════════════════════════════════════
+' SCALE directive
+' ══════════════════════════════════════════════════════════════════════════
+
+scale 1.0
+
+start
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. NOTE RIGHT / NOTE LEFT — inline single-line (floating note)
+' ══════════════════════════════════════════════════════════════════════════
+
+:Action with right note;
+note right: This is a right-side note
+
+:Action with left note;
+note left: This is a left-side note
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. NOTE RIGHT / NOTE LEFT — block (multi-line)
+' ══════════════════════════════════════════════════════════════════════════
+
+:Action before multi-line right note;
+note right
+    Multi-line right note
+    spanning two lines
+end note
+
+:Action before multi-line left note;
+note left
+    Multi-line left note
+    line one
+    line two
+    line three
+end note
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. FLOATING NOTE  (note ... end note — not attached to action)
+' ══════════════════════════════════════════════════════════════════════════
+
+note
+    This is a standalone floating note.
+    Not attached to any specific action.
+    Parser must handle: note\n...\nend note
+end note
+
+:Continue after floating note;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. COLORED NOTES  note #color
+' ══════════════════════════════════════════════════════════════════════════
+
+:Action before colored notes;
+note right #FF8888 : Red right note
+
+:Another action;
+note left #88FF88 : Green left note
+
+:Yet another action;
+note right #E3F2FD
+    Blue multi-line note
+    with color applied
+end note
+
+note left #FFF3E0
+    Orange floating note
+    multi-line with color
+end note
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. CREOLE MARKUP INSIDE NOTES
+' ══════════════════════════════════════════════════════════════════════════
+
+:Trigger creole note;
+note right
+    **Bold text** in note
+    //Italic text// in note
+    ""Monospace"" in note
+    --Strikethrough-- in note
+    <color:red>Red text</color>
+    <back:yellow>Highlighted</back>
+    <size:14>Larger font</size>
+    ====
+    Horizontal rule above
+    ----
+    Another separator
+    * Bullet item one
+    * Bullet item two
+    # Numbered item one
+    # Numbered item two
+end note
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. NOTES INSIDE CONDITIONALS
+' ══════════════════════════════════════════════════════════════════════════
+
+if (condition for note test?) then (yes)
+    :True branch action;
+    note right: Note inside if-true branch
+    :Continue true branch;
+else (no)
+    :False branch action;
+    note left: Note inside if-false branch
+    :Continue false branch;
+endif
+
+' ══════════════════════════════════════════════════════════════════════════
+' 7. NOTES INSIDE LOOPS
+' ══════════════════════════════════════════════════════════════════════════
+
+while (loop items remain?) is (yes)
+    :Process loop item;
+    note right: Note inside while loop body
+    :Validate result;
+endwhile (done)
+
+repeat
+    :Repeat body action;
+    note left
+        Multi-line note
+        inside repeat body
+    end note
+    :Check condition;
+repeat while (repeat condition?) is (no) not (yes)
+
+' ══════════════════════════════════════════════════════════════════════════
+' 8. NOTES INSIDE FORK
+' ══════════════════════════════════════════════════════════════════════════
+
+fork
+    :Fork branch 1;
+    note right: Note in fork branch 1
+    :Branch 1 work;
+fork again
+    :Fork branch 2;
+    note left
+        Multi-line note
+        in fork branch 2
+    end note
+    :Branch 2 work;
+end fork
+
+' ══════════════════════════════════════════════════════════════════════════
+' 9. NOTES INSIDE PARTITIONS
+' ══════════════════════════════════════════════════════════════════════════
+
+partition "Partition with Notes" #E8F4FD {
+    :First action in partition;
+    note right: Note inside partition
+    :Second action;
+    note left
+        Block note inside
+        partition container
+    end note
+    :Third action;
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 10. STYLE BLOCK  <style>...</style>
+' ══════════════════════════════════════════════════════════════════════════
+
+' <style>
+' activityDiagram {
+'   activity {
+'     BackgroundColor #E8F4FD
+'     BorderColor #1565C0
+'   }
+'   diamond {
+'     BackgroundColor #FFF9C4
+'   }
+'   arrow {
+'     FontColor #444444
+'   }
+' }
+' </style>
+' (style block declared in comment to avoid rendering conflicts with skinparam above)
+
+' ══════════════════════════════════════════════════════════════════════════
+' 11. PRAGMA DIRECTIVES
+' ══════════════════════════════════════════════════════════════════════════
+
+' !pragma svek true
+' !pragma layout smetana
+' (declared in comments — grammar must parse !pragma as directive)
+
+' ══════════════════════════════════════════════════════════════════════════
+' 12. COMMENTS — single-line and multi-line
+' ══════════════════════════════════════════════════════════════════════════
+
+' This is a single-line comment
+
+:Action after single-line comment;
+
+/'
+    This is a multi-line comment.
+    It can span multiple lines.
+    Parser must consume everything between the delimiters.
+    
+    :This action is commented out;
+    if (this condition) then (is hidden)
+        :hidden action;
+    endif
+'/
+
+:Action after multi-line comment;
+
+/' Another multi-line block '/
+
+:Action after inline multi-line comment;
+
+stop
+
+note right
+    **Grammar targets (notes/misc):**
+    note right: text
+    note left: text
+    note right\n...\nend note
+    note left\n...\nend note
+    note\n...\nend note  (floating)
+    note right #color
+    Creole markup in notes
+    Notes inside if/while/repeat/fork/partition
+    skinparam activity { } block
+    skinparam note { }
+    skinparam partition { }
+    header / end header
+    footer / end footer
+    scale N.N
+    ' single-line comment
+    /' multi-line comment '/
+    !pragma directive
+    <style>...</style>
+end note
+
+@enduml

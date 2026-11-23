@@ -18,36 +18,14 @@ import sys
 
 import pytest
 from PyQt6.QtCore import QPointF
-from PyQt6.QtWidgets import QApplication
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from settings import SettingsManager
 from properties.dock import ADJUST_CONFIG
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-@pytest.fixture(scope="session")
-def qapp():
-    """Provide a single QApplication for the entire test session."""
-    app = QApplication.instance() or QApplication(sys.argv)
-    yield app
-
-
-@pytest.fixture()
-def main_window(qapp):
-    """Create a fresh MainWindow for each test."""
-    from main import MainWindow
-    sm = SettingsManager()
-    mw = MainWindow(sm)
-    mw.show()
-    qapp.processEvents()
-    yield mw
-    mw.close()
-
 
 # ---------------------------------------------------------------------------
 # Helpers

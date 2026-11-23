@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from plantuml.parser import _normalize_annotations
 from mermaid.parser import parse_mermaid_svg_to_annotations
 from mermaid.flowchart_source_parser import (
     FlowEdge,
@@ -229,8 +230,10 @@ def merge_flowchart_source_with_svg(
     Returns:
         Annotation dict with ``version``, ``image``, and ``annotations`` keys.
     """
-    # Get SVG geometry from the generic parser
-    data = parse_mermaid_svg_to_annotations(svg_path)
+    # Get SVG geometry from the generic parser.  Defer normalization so the
+    # raw ``meta`` (label, src_id) is available for matching and enrichment;
+    # we normalize to overlay-2.0 ``contents`` at the end.
+    data = parse_mermaid_svg_to_annotations(svg_path, normalize=False)
     annotations = data.get("annotations", [])
 
     # Classify
@@ -278,7 +281,12 @@ def merge_flowchart_source_with_svg(
             "text": {"color": "#333333"},
         }
         if src_sg is not None:
-            svg_c["meta"]["label"] = src_sg.title
+            # Keep the SVG-extracted title — the rendered text is reliable,
+            # whereas the source parser can mangle titles containing
+            # parentheses.  Fall back to the source title only when the SVG
+            # provided none.
+            if not svg_c["meta"].get("label"):
+                svg_c["meta"]["label"] = src_sg.title
             svg_c["meta"]["dsl"] = _make_dsl_flowchart(
                 type="subgraph",
                 subgraph_id=src_sg.subgraph_id,
@@ -288,5 +296,8 @@ def merge_flowchart_source_with_svg(
     # ── Clean up internal src_id from all annotations ──
     for ann in annotations:
         ann.get("meta", {}).pop("src_id", None)
+
+    # ── Normalize flat meta → overlay-2.0 contents (preserves meta.dsl) ──
+    _normalize_annotations(annotations)
 
     return data

@@ -131,7 +131,7 @@ class EditorSyntaxSettings:
         key_bold: True
         string_color: "#27AE60"
         number_color: "#8E44AD"
-        keyword_color: "#D35400"
+        keyword_color: "#16A085"
         keyword_bold: True
         brace_color: "#566573"
         brace_bold: True
@@ -140,7 +140,7 @@ class EditorSyntaxSettings:
     key_bold: bool = True            # Default: True
     string_color: str = "#27AE60"    # Default: green
     number_color: str = "#8E44AD"    # Default: purple
-    keyword_color: str = "#D35400"   # Default: orange
+    keyword_color: str = "#16A085"   # Default: muted teal
     keyword_bold: bool = True        # Default: True
     brace_color: str = "#566573"     # Default: gray
     brace_bold: bool = True          # Default: True
@@ -427,6 +427,76 @@ class ItemDefaults:
     contents: DefaultContentsSettings = field(default_factory=DefaultContentsSettings)
 
 
+def _system_kind_style(pen: str, fill: str = "#00000000") -> DefaultStyleSettings:
+    return DefaultStyleSettings(pen_color=pen, fill_color=fill)
+
+
+def _system_kind_contents(color: str) -> DefaultContentsSettings:
+    return DefaultContentsSettings(color=color)
+
+
+# Built-in per-kind colours matching the original hardcoded item __init__ values.
+# These are the lowest-priority defaults — user settings override them.
+SYSTEM_KIND_DEFAULTS: Dict[str, ItemDefaults] = {
+    "rect": ItemDefaults(
+        style=_system_kind_style("#FF0000FF"),                      # red
+        contents=_system_kind_contents("#FF0000FF"),
+    ),
+    "roundedrect": ItemDefaults(
+        style=_system_kind_style("#FF00FFFF"),                      # magenta
+        contents=_system_kind_contents("#FF00FFFF"),
+    ),
+    "ellipse": ItemDefaults(
+        style=_system_kind_style("#00FF00FF"),                      # green
+        contents=_system_kind_contents("#00FF00FF"),
+    ),
+    "line": ItemDefaults(
+        style=_system_kind_style("#0000FFFF"),                      # blue
+        contents=_system_kind_contents("#0000FFFF"),
+    ),
+    "text": ItemDefaults(
+        style=DefaultStyleSettings(),
+        contents=_system_kind_contents("#1E293BFF"),                 # slate-800
+    ),
+    "hexagon": ItemDefaults(
+        style=_system_kind_style("#008080FF"),                      # darkCyan
+        contents=_system_kind_contents("#008080FF"),
+    ),
+    "cylinder": ItemDefaults(
+        style=_system_kind_style("#800080FF"),                      # darkMagenta
+        contents=_system_kind_contents("#800080FF"),
+    ),
+    "blockarrow": ItemDefaults(
+        style=_system_kind_style("#808000FF"),                      # darkYellow
+        contents=_system_kind_contents("#808000FF"),
+    ),
+    "polygon": ItemDefaults(
+        style=_system_kind_style("#008080FF"),                      # darkCyan
+        contents=_system_kind_contents("#008080FF"),
+    ),
+    "curve": ItemDefaults(
+        style=_system_kind_style("#800080FF"),                      # darkMagenta
+        contents=_system_kind_contents("#800080FF"),
+    ),
+    "orthocurve": ItemDefaults(
+        style=_system_kind_style("#800080FF"),                      # darkMagenta
+        contents=_system_kind_contents("#800080FF"),
+    ),
+    "isocube": ItemDefaults(
+        style=_system_kind_style("#000000FF", "#C8C8C8C8"),         # black, light grey semi-opaque
+        contents=_system_kind_contents("#000000FF"),
+    ),
+    "seqblock": ItemDefaults(
+        style=_system_kind_style("#9370DBFF", "#ECECFF40"),         # medium purple, light purple low-alpha
+        contents=_system_kind_contents("#333333FF"),
+    ),
+    "port": ItemDefaults(
+        style=_system_kind_style("#0066CCFF", "#CCE5FFFF"),         # bright blue, light blue
+        contents=_system_kind_contents("#333333FF"),
+    ),
+}
+
+
 # =============================================================================
 # Gemini AI Settings
 # =============================================================================
@@ -444,6 +514,63 @@ class GeminiSettings:
         "gemini-3-pro-image-preview",
     ])
     default_model: str = "gemini-2.5-flash-image"
+
+
+# =============================================================================
+# Multi-provider AI Settings
+# =============================================================================
+
+@dataclass
+class AIProviderConfig:
+    """Per-provider configuration for the multi-provider extraction seam.
+
+    The API key itself is never stored here — only the *name* of the
+    environment variable that holds it. The name is user-editable so a key
+    can be dedicated to PictoSync + a provider (e.g. ``PICTOSYNC_OPENAI_KEY``).
+
+    Attributes:
+        env_key: Environment variable name that holds this provider's key.
+        models: Known model ids the user has added for this provider.
+        default_model: The model selected for this provider.
+    """
+    env_key: str = ""
+    models: List[str] = field(default_factory=list)
+    default_model: str = ""
+
+
+def _default_ai_providers() -> "Dict[str, AIProviderConfig]":
+    """Seed provider configs with vendor-default key names and starter models."""
+    return {
+        "gemini": AIProviderConfig(
+            env_key="GOOGLE_API_KEY",
+            models=["gemini-2.5-flash-image", "gemini-3-pro-image-preview"],
+            default_model="gemini-2.5-flash-image",
+        ),
+        "openai": AIProviderConfig(
+            env_key="OPENAI_API_KEY",
+            models=["gpt-4o", "gpt-4.1"],
+            default_model="gpt-4o",
+        ),
+        "anthropic": AIProviderConfig(
+            env_key="ANTHROPIC_API_KEY",
+            models=["claude-opus-4-8", "claude-sonnet-5-5"],
+            default_model="claude-opus-4-8",
+        ),
+    }
+
+
+@dataclass
+class AIProvidersSettings:
+    """Settings for the provider-agnostic extraction seam.
+
+    Attributes:
+        active: Id of the provider used by default (``gemini`` / ``openai`` /
+            ``anthropic``).
+        providers: Per-provider configuration keyed by provider id.
+    """
+    active: str = "gemini"
+    providers: Dict[str, AIProviderConfig] = field(
+        default_factory=_default_ai_providers)
 
 
 # =============================================================================
@@ -465,6 +592,7 @@ class ExternalToolsSettings:
         mmdc_png_scale: 4
         c4_shapes_per_row: 4
         c4_boundaries_per_row: 2
+        mermaid_render_backend: "mmdc"
     """
     java_path: str = ""              # Default: "" (auto-detect)
     plantuml_jar_path: str = ""      # Default: "" (auto-detect)
@@ -473,6 +601,9 @@ class ExternalToolsSettings:
     mmdc_png_scale: int = 4          # Default: 4 (CSS scale factor for PNG output)
     c4_shapes_per_row: int = 4       # Default: 4 (Mermaid C4 c4ShapeInRow)
     c4_boundaries_per_row: int = 2   # Default: 2 (Mermaid C4 c4BoundaryInRow)
+    # Mermaid render backend: "mmdc" (headless browser via Mermaid CLI) or
+    # "browser" (render in the user's default browser, no headless browser).
+    mermaid_render_backend: str = "mmdc"
 
 
 # =============================================================================
@@ -508,6 +639,7 @@ class AppSettings:
     style: DefaultStyleSettings = field(default_factory=DefaultStyleSettings)
     item_defaults: Dict[str, ItemDefaults] = field(default_factory=dict)
     gemini: GeminiSettings = field(default_factory=GeminiSettings)
+    ai_providers: AIProvidersSettings = field(default_factory=AIProvidersSettings)
     external_tools: ExternalToolsSettings = field(default_factory=ExternalToolsSettings)
 
 
@@ -703,7 +835,12 @@ class SettingsManager:
         self.settings = self.load()
 
     def get_item_defaults(self, kind: str) -> "ItemDefaults":
-        """Return defaults for *kind*, falling back to global defaults.
+        """Return defaults for *kind*.
+
+        Cascade order (highest priority first):
+        1. User per-kind overrides  (``settings.item_defaults[kind]``)
+        2. System per-kind defaults (``SYSTEM_KIND_DEFAULTS[kind]``)
+        3. Global style + contents  (``settings.style`` / ``settings.defaults``)
 
         Args:
             kind: Canvas item kind string.
@@ -713,6 +850,8 @@ class SettingsManager:
         """
         if kind in self.settings.item_defaults:
             return self.settings.item_defaults[kind]
+        if kind in SYSTEM_KIND_DEFAULTS:
+            return SYSTEM_KIND_DEFAULTS[kind]
         return ItemDefaults(
             style=self.settings.style,
             contents=self.settings.defaults,
@@ -905,6 +1044,28 @@ class SettingsManager:
             if settings.gemini.models:
                 settings.gemini.default_model = settings.gemini.models[0]
 
+        # Multi-provider AI section
+        ai = data.get("ai_providers", {})
+        if isinstance(ai, dict):
+            settings.ai_providers.active = ai.get(
+                "active", settings.ai_providers.active)
+            raw_providers = ai.get("providers", {})
+            if isinstance(raw_providers, dict):
+                for pid, cfg in raw_providers.items():
+                    if not isinstance(cfg, dict):
+                        continue
+                    entry = settings.ai_providers.providers.get(pid)
+                    if entry is None:
+                        entry = AIProviderConfig()
+                        settings.ai_providers.providers[pid] = entry
+                    entry.env_key = cfg.get("env_key", entry.env_key)
+                    if isinstance(cfg.get("models"), list):
+                        entry.models = list(cfg["models"])
+                    entry.default_model = cfg.get(
+                        "default_model", entry.default_model)
+                    if entry.default_model not in entry.models and entry.models:
+                        entry.default_model = entry.models[0]
+
         # External tools section
         ext = data.get("external_tools", {})
         settings.external_tools.java_path = ext.get("java_path", settings.external_tools.java_path)
@@ -914,6 +1075,7 @@ class SettingsManager:
         settings.external_tools.mmdc_png_scale = int(ext.get("mmdc_png_scale", settings.external_tools.mmdc_png_scale))
         settings.external_tools.c4_shapes_per_row = int(ext.get("c4_shapes_per_row", settings.external_tools.c4_shapes_per_row))
         settings.external_tools.c4_boundaries_per_row = int(ext.get("c4_boundaries_per_row", settings.external_tools.c4_boundaries_per_row))
+        settings.external_tools.mermaid_render_backend = ext.get("mermaid_render_backend", settings.external_tools.mermaid_render_backend)
 
     def _to_toml_dict(self, settings: "Optional[AppSettings]" = None) -> Dict[str, Any]:
         """Serialize *settings* (or current merged settings) to a TOML-compatible dictionary."""
@@ -1030,6 +1192,17 @@ class SettingsManager:
                 "models": s.gemini.models,
                 "default_model": s.gemini.default_model,
             },
+            "ai_providers": {
+                "active": s.ai_providers.active,
+                "providers": {
+                    pid: {
+                        "env_key": cfg.env_key,
+                        "models": cfg.models,
+                        "default_model": cfg.default_model,
+                    }
+                    for pid, cfg in s.ai_providers.providers.items()
+                },
+            },
             "external_tools": {
                 "java_path": s.external_tools.java_path,
                 "plantuml_jar_path": s.external_tools.plantuml_jar_path,
@@ -1038,6 +1211,7 @@ class SettingsManager:
                 "mmdc_png_scale": s.external_tools.mmdc_png_scale,
                 "c4_shapes_per_row": s.external_tools.c4_shapes_per_row,
                 "c4_boundaries_per_row": s.external_tools.c4_boundaries_per_row,
+                "mermaid_render_backend": s.external_tools.mermaid_render_backend,
             },
         }
         return d

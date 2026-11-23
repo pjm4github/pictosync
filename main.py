@@ -142,6 +142,7 @@ from undo_commands import (
     DeleteItemCommand, DeleteMultipleItemsCommand, AddItemCommand,
     GroupItemsCommand, UngroupItemsCommand,
     MoveItemCommand, ItemGeometryCommand, TextEditCommand,
+    ChangeMetaCommand,
 )
 from canvas.mixins import LinkedMixin, MetaMixin
 from domains import scan_domains, DomainInfo, DomainTool
@@ -198,6 +199,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.settings_manager = settings_manager
         self._current_file: str | None = None
+        # Snapshot of the draft JSON at the last save/load, used to detect
+        # unsaved work before destructive actions (close, open, new graphic).
+        # None = never saved/loaded this session.
+        self._saved_signature: str | None = None
         self._update_title()
 
         # Scene and view
@@ -303,6 +308,10 @@ class MainWindow(QMainWindow):
         self.scene.set_on_select_mouse_up(self._on_select_mouse_up)
         LinkedMixin.on_resize_finished = self._on_item_resize_finished
         MetaTextItem.on_text_edit_finished = self._on_text_edit_finished
+        # Shape labels share the same in-place-edit undo path (the owner shape
+        # is passed as the edited item).
+        from canvas.text_edit import EditableLabelItem
+        EditableLabelItem.on_text_edit_finished = self._on_text_edit_finished
 
         # Give property panel and scene access to undo stack/actions
         self.props.undo_stack = self.undo_stack
@@ -330,6 +339,16 @@ class MainWindow(QMainWindow):
         # Focus alignment (Gemini) worker thread
         self._focus_align_thread: Optional[QThread] = None
         self._focus_align_worker: Optional[FocusedAlignWorker] = None
+
+    def _update_scene_rect(self):
+        """Expand scene rect to include all items (PNG + annotations)."""
+        items_rect = self.scene.itemsBoundingRect()
+        current = self.scene.sceneRect()
+        if not items_rect.isNull():
+            combined = current.united(items_rect)
+            margin = 50
+            combined = combined.adjusted(-margin, -margin, margin, margin)
+            self.scene.setSceneRect(combined)
 
     def _build_menus(self):
         """Build the application menu bar."""
@@ -572,8 +591,16 @@ class MainWindow(QMainWindow):
         self.act_port = QAction("Port", self)
         self.act_port.setCheckable(True)
         self.act_port.setShortcut("O")
-        self.act_port.setToolTip("Place a connector port on a shape edge (O)")
-        self.act_port.setStatusTip("Place a connector port on a shape perimeter")
+        self.act_port.setToolTip(
+            "Place a connector port on a shape edge (O).\n"
+            "Tip: in Select mode, Alt+click grabs a port underneath an "
+            "overlapping line/curve endpoint so you can drag it along the "
+            "shape's perimeter."
+        )
+        self.act_port.setStatusTip(
+            "Place a connector port on a shape perimeter "
+            "(Alt+click in Select mode to grab a port under a line endpoint)"
+        )
         self.act_port.triggered.connect(lambda checked: self._on_mode_action_triggered(Mode.PORT))
         self._icon_actions[self.act_port] = "port"
         tb.addAction(self.act_port)
@@ -697,6 +724,22 @@ class MainWindow(QMainWindow):
         self.zoom_fit_act.setStatusTip("Fit entire scene in view")
         self._icon_actions[self.zoom_fit_act] = "zoom_fit"
         tb.addAction(self.zoom_fit_act)
+
+        tb.addSeparator()
+
+        # Auto-connect: scan every line/curve, attach unconnected endpoints to
+        # nearby shapes via new ports.
+        self.auto_connect_act = QAction("Auto-Connect", self)
+        self.auto_connect_act.triggered.connect(self.auto_connect_lines_curves)
+        self.auto_connect_act.setToolTip(
+            "Scan all lines and curves; create ports on nearby shapes and "
+            "connect each unconnected endpoint to the closest one"
+        )
+        self.auto_connect_act.setStatusTip(
+            "Auto-attach line/curve endpoints to the nearest shape via ports"
+        )
+        self._icon_actions[self.auto_connect_act] = "auto_connect"
+        tb.addAction(self.auto_connect_act)
 
         # Gemini token counter (far right)
         self._gemini_tokens = 0
@@ -894,6 +937,53 @@ class MainWindow(QMainWindow):
             act.setCheckable(True)
             act.setChecked(name == self.model_name)
             act.triggered.connect(lambda checked, n=name: self._on_model_selected(n))
+        self.model_menu.addSeparator()
+        vault_act = self.model_menu.addAction("Set up key vault…")
+        vault_act.setToolTip(
+            "Create or unlock the single vault key that encrypts all your "
+            "API keys.")
+        vault_act.triggered.connect(self.open_vault_wizard)
+        setup_act = self.model_menu.addAction("Set up a provider (keys & libraries)…")
+        setup_act.setToolTip(
+            "Walk through installing a provider's library and setting its "
+            "API key.")
+        setup_act.triggered.connect(self.open_provider_setup_wizard)
+        try_act = self.model_menu.addAction("Try a model on an image…")
+        try_act.setToolTip(
+            "Open a harness to run any provider/model on an image and "
+            "inspect the extracted schema.")
+        try_act.triggered.connect(self.open_try_model_dialog)
+
+    def open_vault_wizard(self):
+        """Open the API-key vault setup / unlock wizard."""
+        from vault_wizard import VaultSetupDialog
+        VaultSetupDialog(self.settings_manager, parent=self).exec()
+
+    def open_provider_setup_wizard(self):
+        """Open the provider setup wizard for the active provider."""
+        from provider_setup_wizard import ProviderSetupWizard
+
+        active = self.settings_manager.settings.ai_providers.active
+        wiz = ProviderSetupWizard(self.settings_manager, active, parent=self)
+        wiz.exec()
+
+    def open_try_model_dialog(self):
+        """Open the multi-provider 'Try a Model on an Image' harness."""
+        from try_model_dialog import TryModelDialog
+
+        def _send_to_canvas(data: dict):
+            pretty = json.dumps(data, indent=2)
+            self._set_draft_text_programmatically(
+                pretty, enable_import=True,
+                status="Draft from Try-a-Model. Click Import to link JSON<->Scene.",
+                focus_id=None)
+            self.statusBar().showMessage("Draft received from Try-a-Model harness.")
+
+        dlg = TryModelDialog(
+            self.settings_manager, parent=self,
+            image_path=self.bg_path or "",
+            on_send_to_canvas=_send_to_canvas)
+        dlg.show()
 
     def _on_model_selected(self, name: str):
         """Handle model selection from the dropdown menu."""
@@ -935,27 +1025,24 @@ class MainWindow(QMainWindow):
         self.draft.focus_mode_btn.setIcon(icon)
 
     def _setup_text_editing_callbacks(self):
-        """Set up callbacks to disable shortcuts during text editing."""
-        def on_editing_started():
-            # Disable mode shortcuts when editing text
-            for action in self.mode_actions:
-                action.setShortcut("")
+        """Set up callbacks for MetaTextItem and shape property changes."""
+        def on_request_edit(item):
+            """In-place edit started → surface the Contents tab.
 
-        def on_editing_finished():
-            # Re-enable mode shortcuts when done editing
-            shortcuts = ["S", "R", "U", "E", "L", "T", "H", "Y", "A", "P", "V"]
-            for action, shortcut in zip(self.mode_actions, shortcuts):
-                action.setShortcut(shortcut)
+            The caret lives on the canvas item, so this only switches the
+            property panel to the Contents tab (making its format controls
+            visible).  It must NOT grab keyboard focus — doing so would pull
+            focus off the graphics item and immediately commit the edit.
+            """
+            self.props.tabs.setCurrentIndex(1)  # Switch to Contents tab
 
-        def on_text_changed(text: str):
-            # Sync text changes to the Note field in properties panel
-            self.props.note_edit.blockSignals(True)
-            self.props.note_edit.setText(text)
-            self.props.note_edit.blockSignals(False)
-
-        MetaTextItem.on_editing_started = on_editing_started
-        MetaTextItem.on_editing_finished = on_editing_finished
-        MetaTextItem.on_text_changed = on_text_changed
+        MetaTextItem.on_request_edit = on_request_edit
+        from canvas.text_edit import EditableLabelItem, EditableSectionItem
+        EditableLabelItem.on_request_edit = on_request_edit
+        EditableSectionItem.on_request_edit = on_request_edit
+        MetaSeqBlockItem.on_section_edit_finished = (
+            self._on_seqblock_section_edit_finished
+        )
 
         # Set up callbacks for shape property changes (adjust1/adjust2)
         MetaRoundedRectItem.on_adjust1_changed = self.props.update_adjust1_display
@@ -1040,7 +1127,11 @@ class MainWindow(QMainWindow):
 
     def set_mode(self, mode: str, from_item_created: bool = False):
         """Set the current drawing mode."""
-        self.scene.clearSelection()
+        # When returning to SELECT after item creation, keep the newly created
+        # item selected so the user can immediately inspect/move it.
+        # Clear selection only when the user explicitly switches drawing tools.
+        if not from_item_created:
+            self.scene.clearSelection()
         self.scene.set_mode(mode)
         mapping = {
             Mode.SELECT: self.act_select,
@@ -1284,6 +1375,8 @@ class MainWindow(QMainWindow):
 
     def open_graphic_dialog(self):
         """Open a file dialog to select a PNG image, PlantUML, Mermaid SVG, or Mermaid source file."""
+        if not self._maybe_confirm_discard():
+            return
         path, _ = QFileDialog.getOpenFileName(
             self, "Open Graphic", "",
             "All Supported (*.png *.puml *.svg *.mmd *.mermaid);;"
@@ -1571,9 +1664,26 @@ class MainWindow(QMainWindow):
                 except (ValueError, OSError):
                     pass  # Not a flowchart diagram — fall through to generic
 
+            # ── Choose render backend ──
+            # "browser" renders in the user's default browser (no headless
+            # browser needed); "mmdc" uses the Mermaid CLI.  Fall back to the
+            # browser automatically when mmdc isn't installed.
+            from settings import get_settings
+            from mermaid.renderer import find_mmdc
+            backend = get_settings().settings.external_tools.mermaid_render_backend
+            use_browser = backend == "browser" or (
+                backend == "mmdc" and find_mmdc() is None
+            )
+
             # ── Render to SVG (fatal — no annotations without SVG) ──
             try:
-                svg_path = render_mmd_to_svg(mmd_path)
+                if use_browser:
+                    from mermaid.browser_renderer import (
+                        render_mmd_to_svg as render_mmd_to_svg_browser,
+                    )
+                    svg_path = render_mmd_to_svg_browser(mmd_path)
+                else:
+                    svg_path = render_mmd_to_svg(mmd_path)
             except RuntimeError as e:
                 QMessageBox.warning(
                     self, "Mermaid Rendering",
@@ -1592,36 +1702,72 @@ class MainWindow(QMainWindow):
                 vb_w = round(float(_vb[2])) if len(_vb) >= 3 else None
                 vb_h = round(float(_vb[3])) if len(_vb) >= 4 else None
 
-                from mermaid.renderer import render_mmd_to_png
-                png_path = render_mmd_to_png(
-                    mmd_path,
-                    viewport_width=vb_w,
-                    viewport_height=vb_h,
-                )
+                # Cap diagram size at a PowerPoint-friendly maximum.  Slide
+                # max is 56 inches (≈5376 px at 9525 EMU/px); use 5000 to
+                # leave headroom for arrow overshoot and text-box overflow.
+                # Larger diagrams also exceed QPixmap's loadable size limit.
+                # The PIL resize below targets the (scaled) vb_w/vb_h, and
+                # the annotations are scaled by the same factor after merge.
+                _PPTX_SAFE_MAX_PX = 5000
+                import_scale = 1.0
+                if vb_w and vb_h and max(vb_w, vb_h) > _PPTX_SAFE_MAX_PX:
+                    import_scale = _PPTX_SAFE_MAX_PX / max(vb_w, vb_h)
+                    vb_w = round(vb_w * import_scale)
+                    vb_h = round(vb_h * import_scale)
+
+                if use_browser:
+                    # No headless browser: rasterise the returned SVG with Qt.
+                    from mermaid.renderer import render_svg_to_png
+                    png_path = render_svg_to_png(svg_path)
+                else:
+                    from mermaid.renderer import render_mmd_to_png
+                    png_path = render_mmd_to_png(
+                        mmd_path,
+                        viewport_width=vb_w,
+                        viewport_height=vb_h,
+                    )
 
                 from debug_trace import trace
-                pm = QPixmap(png_path)
-                trace(f"PNG from mmdc: {pm.width()}x{pm.height()} (viewport={vb_w}x{vb_h})", "IMPORT")
-
-                # Rescale to viewBox dimensions so coordinates are 1:1
-                if vb_w and vb_h and not pm.isNull() and (pm.width() != vb_w or pm.height() != vb_h):
-                    pm = pm.scaled(
-                        vb_w, vb_h,
-                        Qt.AspectRatioMode.IgnoreAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                    import tempfile
-                    tmp_png = tempfile.mktemp(suffix=".png", prefix="pictosync_bg_")
-                    ok = pm.save(tmp_png, "PNG")
-                    trace(f"PNG rescaled: {pm.width()}x{pm.height()} ok={ok}", "IMPORT")
-                    if ok:
-                        png_path = tmp_png
+                # Resize to viewBox dimensions via PIL so coordinates are 1:1
+                # AND so QPixmap can actually load the result.  mmdc at the
+                # default scale=4 can emit 80+ megapixel PNGs that QPixmap
+                # silently fails to load, surfacing as "Could not load image"
+                # in load_background_png even though the file is on disk.
+                if vb_w and vb_h:
+                    try:
+                        from PIL import Image
+                        # mmdc at scale=4 can emit 200+ megapixel PNGs which
+                        # exceed PIL's default decompression-bomb threshold.
+                        # The file is one we just generated locally, so the
+                        # safety check isn't useful here — disable it.
+                        Image.MAX_IMAGE_PIXELS = None
+                        with Image.open(png_path) as _im:
+                            src_w, src_h = _im.size
+                            if (src_w, src_h) != (vb_w, vb_h):
+                                _im = _im.resize((vb_w, vb_h), Image.LANCZOS)
+                                import tempfile
+                                tmp_png = tempfile.mktemp(
+                                    suffix=".png", prefix="pictosync_bg_",
+                                )
+                                _im.save(tmp_png, "PNG")
+                                trace(
+                                    f"PNG resized via PIL: {src_w}x{src_h} -> {vb_w}x{vb_h}",
+                                    "IMPORT",
+                                )
+                                png_path = tmp_png
+                            else:
+                                trace(
+                                    f"PNG background: {src_w}x{src_h} (already viewBox-sized)",
+                                    "IMPORT",
+                                )
+                    except Exception as _e:
+                        trace(f"PIL PNG resize skipped: {_e}", "IMPORT")
 
                 self.load_background_png(png_path)
             except RuntimeError as e:
                 QMessageBox.warning(
                     self, "Mermaid Rendering",
-                    f"Could not render PNG background (mmdc issue).\n"
+                    f"Could not render PNG background.\n"
                     f"Annotations will still be parsed from SVG.\n\n{e}",
                 )
 
@@ -1650,8 +1796,26 @@ class MainWindow(QMainWindow):
 
             # Apply classDef styles from the source file — handles cases
             # where mmdc doesn't render :::className in the SVG output.
-            from mermaid.parser import apply_classdef_styles
+            from mermaid.parser import apply_classdef_styles, convert_br_to_newlines
             apply_classdef_styles(data.get("annotations", []), mmd_path)
+
+            # Convert <br/> line-break markup in labels to real newlines so the
+            # serialized JSON carries the actual newline character.
+            convert_br_to_newlines(data.get("annotations", []))
+
+            # Apply the diagram-fit scaling decided earlier (see the PNG
+            # handling block).  Brings annotation coords and font sizes into
+            # the same coordinate system as the resized background PNG so
+            # everything lines up and stays within PowerPoint's slide limit.
+            if import_scale != 1.0:
+                from utils import scale_annotations_uniformly
+                scale_annotations_uniformly(
+                    data.get("annotations", []), import_scale,
+                )
+                img = data.get("image", {})
+                if isinstance(img, dict):
+                    img["width"] = vb_w
+                    img["height"] = vb_h
 
             num_annotations = len(data.get("annotations", []))
             pretty = json.dumps(data, indent=2)
@@ -1710,6 +1874,7 @@ class MainWindow(QMainWindow):
         self.scene.addItem(self.bg_item)
 
         self.bg_path = path
+        # Reset scene rect to the new PNG extent (not expanded by old items)
         self.scene.setSceneRect(QRectF(pm.rect()))
         self.view.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
 
@@ -1798,8 +1963,93 @@ class MainWindow(QMainWindow):
             if self._png_hidden_indicator is not None:
                 self._png_hidden_indicator.setVisible(False)
 
-    def clear_overlay(self):
-        """Clear all overlay items from the scene."""
+    # ── Unsaved-work guard ───────────────────────────────────────────────
+
+    def _current_work_signature(self) -> str:
+        """The current draft JSON text (the source of truth for work)."""
+        try:
+            return self.draft.get_json_text().strip()
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _draft_has_annotations(text: str) -> bool:
+        try:
+            data = json.loads(text) if text else {}
+            return bool(isinstance(data, dict) and data.get("annotations"))
+        except Exception:
+            # Unparseable text means the user has an edit in progress.
+            return bool(text.strip())
+
+    def _has_unsaved_work(self) -> bool:
+        cur = self._current_work_signature()
+        if self._saved_signature is None:
+            # Never saved/loaded — unsaved only if there is actual content.
+            return self._draft_has_annotations(cur)
+        return cur != self._saved_signature
+
+    def _mark_saved(self):
+        """Record the current draft as the clean baseline."""
+        self._saved_signature = self._current_work_signature()
+
+    def _maybe_confirm_discard(self) -> bool:
+        """Prompt to save/discard when there is unsaved work.
+
+        Returns True if it is safe to proceed (saved or discarded), False if
+        the user cancelled.
+        """
+        if not self._has_unsaved_work():
+            return True
+        reply = QMessageBox.warning(
+            self, "Unsaved changes",
+            "You have unsaved changes that will be lost.\n\n"
+            "Save your work before continuing?",
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Save,
+        )
+        if reply == QMessageBox.StandardButton.Save:
+            return bool(self.save_project_dialog())  # False if save cancelled
+        if reply == QMessageBox.StandardButton.Discard:
+            return True
+        return False  # Cancel
+
+    def closeEvent(self, event):
+        """Confirm before closing if there is unsaved work."""
+        if self._maybe_confirm_discard():
+            event.accept()
+        else:
+            event.ignore()
+
+    def clear_overlay(self, *args):
+        """Clear all overlay items from the scene (with confirmation).
+
+        Destructive: removes every annotation and empties the draft JSON, so
+        confirm first whenever there is anything to lose.  ``*args`` absorbs
+        the ``checked`` bool that ``QAction.triggered`` passes.
+        """
+        has_items = any(
+            hasattr(it, "meta") and it is not self.bg_item
+            and it is not self._png_hidden_indicator
+            for it in self.scene.items()
+        )
+        has_json = bool(
+            self._draft_data
+            and isinstance(self._draft_data.get("annotations"), list)
+            and self._draft_data["annotations"]
+        )
+        if has_items or has_json:
+            reply = QMessageBox.question(
+                self, "Clear Overlay",
+                "Delete ALL annotations and clear the draft JSON text?\n\n"
+                "This cannot be undone.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
         self.scene.clearSelection()
         self.scene.blockSignals(True)
         try:
@@ -2012,9 +2262,26 @@ class MainWindow(QMainWindow):
         cmd = ItemGeometryCommand(item, old_state, new_state)
         self.undo_stack.push(cmd)
 
-    def _on_text_edit_finished(self, item, old_text, new_text):
-        """Handle text edit finished — push TextEditCommand to undo stack."""
-        cmd = TextEditCommand(item, old_text, new_text)
+    def _on_text_edit_finished(self, item, old_blocks, new_blocks):
+        """Handle in-place text edit finished — push TextEditCommand.
+
+        ``old_blocks`` / ``new_blocks`` are overlay-2.0 block snapshots
+        (lists of dicts) captured by the item on entering / committing edit.
+        """
+        cmd = TextEditCommand(item, old_blocks, new_blocks)
+        self.undo_stack.push(cmd)
+
+    def _on_seqblock_section_edit_finished(self, item, old_tech, new_tech):
+        """Handle a committed seqblock section edit — push an undo command.
+
+        Sequence-block region text is stored as the pipe-separated ``tech``
+        field, so this round-trips through ChangeMetaCommand on ``tech`` and
+        re-renders the bracketed sections.
+        """
+        cmd = ChangeMetaCommand(
+            item, {"tech": old_tech}, {"tech": new_tech},
+            update_func=item._update_label_text,
+        )
         self.undo_stack.push(cmd)
 
     def keyPressEvent(self, event):
@@ -2088,7 +2355,7 @@ class MainWindow(QMainWindow):
             self, "Save Project", workspace, "JSON (*.json)"
         )
         if not path:
-            return
+            return False
 
         save_dir = os.path.dirname(path)
         data = self._export_overlay_json()
@@ -2111,11 +2378,16 @@ class MainWindow(QMainWindow):
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
             self.statusBar().showMessage(f"Saved project: {path}")
+            self._mark_saved()
+            return True
         except Exception as e:
             QMessageBox.critical(self, "Save failed", str(e))
+            return False
 
     def open_project_dialog(self):
         """Open a project (overlay JSON) from workspace directory."""
+        if not self._maybe_confirm_discard():
+            return
         workspace = str(self.settings_manager.get_workspace_dir())
         path, _ = QFileDialog.getOpenFileName(
             self, "Open Project", workspace, "JSON (*.json)"
@@ -2130,14 +2402,28 @@ class MainWindow(QMainWindow):
             return
         self._apply_overlay_import(data, base_dir=os.path.dirname(path))
         self.statusBar().showMessage(f"Opened project: {path}")
+        self._mark_saved()
 
     def export_pptx_dialog(self):
         """Export canvas to PowerPoint file."""
+        # Default the Save dialog to the loaded file's directory and base name
+        # (same name shown in the title bar — see _update_title).  _current_file
+        # is the source of truth for the currently loaded file; if nothing is
+        # loaded fall back to the pptx_export_to_source_dir setting's bg_path.
         initial_dir = ""
-        if self.settings_manager.settings.pptx_export_to_source_dir and self.bg_path:
+        if self._current_file:
+            initial_dir = os.path.dirname(self._current_file)
+        elif self.settings_manager.settings.pptx_export_to_source_dir and self.bg_path:
             initial_dir = os.path.dirname(self.bg_path)
+        default_path = initial_dir
+        if self._current_file:
+            base = os.path.splitext(os.path.basename(self._current_file))[0]
+            default_name = f"{base}.pptx"
+            default_path = (
+                os.path.join(initial_dir, default_name) if initial_dir else default_name
+            )
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export PowerPoint", initial_dir, "PowerPoint (*.pptx)"
+            self, "Export PowerPoint", default_path, "PowerPoint (*.pptx)"
         )
         if not path:
             return
@@ -2146,17 +2432,32 @@ class MainWindow(QMainWindow):
         if not path.lower().endswith(".pptx"):
             path += ".pptx"
 
-        # Collect annotations from canvas (skip group children)
+        # Collect annotations from canvas (skip group children).  Capture
+        # each port's absolute scene position into port_positions so the
+        # PowerPoint export can place the transparent-ellipse port and
+        # connect lines/curves to it — the port record stores t along the
+        # parent's perimeter, not an absolute x/y.
+        from canvas.items import MetaPortItem as _MetaPortItem
+        from PyQt6.QtCore import QPointF as _QPointF
         annotations = []
+        port_positions: Dict[str, tuple] = {}
         for it in self.scene.items():
             if hasattr(it, "to_record") and hasattr(it, "meta"):
                 if isinstance(it.parentItem(), MetaGroupItem):
                     continue
-                annotations.append(it.to_record())
+                rec = it.to_record()
+                annotations.append(rec)
+                if isinstance(it, _MetaPortItem):
+                    p = it.mapToScene(_QPointF(0, 0))
+                    port_positions[rec.get("id", "")] = (p.x(), p.y())
         annotations.reverse()  # Maintain z-order
 
-        # Get scene rect for proper sizing
-        sr = self.scene.sceneRect()
+        # Use the items' bounding rect (actual PNG + annotations extent)
+        # rather than sceneRect, which _update_scene_rect grows by 50 px on
+        # every call and quickly bloats into the tens of thousands of pixels
+        # — that would either overflow PowerPoint's slide-size cap or
+        # squash the PNG/annotations into a corner with vast empty margin.
+        sr = self.scene.itemsBoundingRect()
         scene_rect = {"x": sr.x(), "y": sr.y(), "w": sr.width(), "h": sr.height()}
 
         try:
@@ -2165,10 +2466,175 @@ class MainWindow(QMainWindow):
                 output_path=path,
                 scene_rect=scene_rect,
                 background_png=self.bg_path,
+                port_positions=port_positions,
             )
             self.statusBar().showMessage(f"Exported PowerPoint: {path}")
         except Exception as e:
             QMessageBox.critical(self, "Export failed", str(e))
+
+    def auto_connect_lines_curves(self):
+        """Scan every line and curve; attach unconnected endpoints to nearby
+        shapes via new ports.
+
+        For each ``MetaLineItem``/``MetaCurveItem`` (including
+        ``MetaOrthoCurveItem``) on the scene, each endpoint that is not
+        already wired to a port is matched against the closest
+        ``PORTEABLE_KINDS`` shape by perimeter distance.  When that distance
+        is within ``threshold`` pixels a new ``MetaPortItem`` is created at
+        the closest perimeter ``t`` on that shape, the endpoint snaps to it,
+        and the bidirectional connection is recorded — exactly what the
+        manual drag-snap path does on mouse release.
+        """
+        from PyQt6.QtCore import QPointF, QLineF
+        from canvas.items import (
+            MetaCurveItem,
+            MetaLineItem,
+            MetaOrthoCurveItem,
+            MetaPortItem,
+        )
+        from canvas.perimeter import (
+            PORTEABLE_KINDS, perimeter_point, t_from_local_point,
+        )
+
+        threshold = 500.0  # generous — Mermaid imports place endpoints
+        # very close to shapes (single-digit px); larger leaves room for
+        # hand-drawn diagrams.
+        port_radius = 6.0
+
+        scene = self.scene
+        shapes = [
+            it for it in scene.items()
+            if hasattr(it, "kind") and it.kind in PORTEABLE_KINDS
+        ]
+        connectors = [
+            it for it in scene.items()
+            if isinstance(it, (MetaLineItem, MetaCurveItem))
+        ]
+
+        if not connectors or not shapes:
+            self.statusBar().showMessage(
+                "Auto-Connect: nothing to do (no lines/curves or no shapes)",
+                5000,
+            )
+            return
+
+        created = 0
+
+        def _endpoints(it):
+            """Return [(which, scene_point), ...] for an item's endpoints."""
+            if isinstance(it, MetaCurveItem):
+                if not getattr(it, "_nodes", None) or len(it._nodes) < 2:
+                    return []
+                return [
+                    ("start", it._node_scene_pos(0)),
+                    ("end", it._node_scene_pos(len(it._nodes) - 1)),
+                ]
+            p1, p2 = it._endpoints_scene()
+            return [("start", p1), ("end", p2)]
+
+        def _already_connected(it, which: str) -> bool:
+            ends = getattr(it, "_port_endpoints", None)
+            return bool(ends) and which in ends.values()
+
+        def _set_line_endpoint(it, which, port_pos):
+            p1, p2 = it._endpoints_scene()
+            if which == "start":
+                it.setPos(port_pos)
+                it.setLine(QLineF(
+                    0, 0, p2.x() - port_pos.x(), p2.y() - port_pos.y(),
+                ))
+            else:
+                it.setPos(p1)
+                it.setLine(QLineF(
+                    0, 0, port_pos.x() - p1.x(), port_pos.y() - p1.y(),
+                ))
+
+        def _set_curve_endpoint(it, which, port_pos):
+            idx = 0 if which == "start" else len(it._nodes) - 1
+            w = it._width if it._width > 0 else 1.0
+            h = it._height if it._height > 0 else 1.0
+            rx = (port_pos.x() - it.pos().x()) / w
+            ry = (port_pos.y() - it.pos().y()) / h
+            node = it._nodes[idx]
+            cmd = node.get("cmd", "L")
+            if cmd == "H":
+                node["x"] = rx
+            elif cmd == "V":
+                node["y"] = ry
+            else:
+                node["x"] = rx
+                node["y"] = ry
+            # Mirror the orthocurve adjustment the manual snap path does on
+            # the second-to-last node so the orthogonal segments stay aligned.
+            if isinstance(it, MetaOrthoCurveItem) and idx >= 1:
+                adj = it._nodes[idx - 1]
+                adj_cmd = adj.get("cmd", "L")
+                if cmd == "H" and adj_cmd in ("V", "M", "L"):
+                    adj["y"] = ry
+                elif cmd == "V" and adj_cmd in ("H", "M", "L"):
+                    adj["x"] = rx
+                elif cmd in ("M", "L"):
+                    if adj_cmd == "H":
+                        adj["x"] = rx
+                    elif adj_cmd == "V":
+                        adj["y"] = ry
+            it.prepareGeometryChange()
+            it._update_path()
+            it._update_label_position()
+            it._update_transform_origin()
+
+        for it in connectors:
+            for which, ep in _endpoints(it):
+                if _already_connected(it, which):
+                    continue
+
+                best_shape = None
+                best_t = 0.0
+                best_d = threshold
+                for shape in shapes:
+                    local = shape.mapFromScene(ep)
+                    kind = getattr(shape, "kind", "rect")
+                    try:
+                        t = t_from_local_point(kind, shape, local.x(), local.y())
+                        perim_local = perimeter_point(kind, shape, t)
+                        perim_scene = shape.mapToScene(perim_local)
+                        d = QLineF(ep, perim_scene).length()
+                    except Exception:
+                        continue
+                    if d < best_d:
+                        best_d = d
+                        best_t = t
+                        best_shape = shape
+
+                if best_shape is None:
+                    continue
+
+                ann_id = scene._make_id() if scene._make_id else "local"
+                port = MetaPortItem(
+                    best_t, port_radius, best_shape, ann_id,
+                    scene._on_item_changed,
+                )
+                if scene._on_new_item:
+                    scene._on_new_item(port)
+
+                port_pos = port.mapToScene(QPointF(0, 0))
+                if isinstance(it, MetaCurveItem):
+                    _set_curve_endpoint(it, which, port_pos)
+                else:
+                    _set_line_endpoint(it, which, port_pos)
+
+                if it.ann_id not in port._connections:
+                    port.add_connection(it.ann_id)
+                if port.ann_id not in it._port_ids:
+                    it._port_ids.append(port.ann_id)
+                it._port_endpoints[port.ann_id] = which
+                port._notify_changed()
+                it._notify_changed()
+                created += 1
+
+        self.statusBar().showMessage(
+            f"Auto-Connect: created {created} connection(s)", 5000,
+        )
 
     def _export_overlay_json(self) -> Dict[str, Any]:
         """Export current overlay as JSON."""
@@ -2272,9 +2738,114 @@ class MainWindow(QMainWindow):
         self._set_draft_text_programmatically(pretty, enable_import=True, status="Draft ready. Click Import to link JSON<->Scene.", focus_id=None)
         self.statusBar().showMessage("AI draft received.")
 
+    @staticmethod
+    def _friendly_gemini_error(err: str):
+        """Turn a raw Gemini/worker error string into a user-facing
+        ``(title, summary, how_to_fix)`` triple.  The raw text is still shown
+        via the dialog's collapsible Details section."""
+        e = err or ""
+        el = e.lower()
+
+        def first_line(s: str) -> str:
+            for ln in s.splitlines():
+                if ln.strip():
+                    return ln.strip()
+            return s.strip()
+
+        if "google_api_key" in el and "not set" in el:
+            return ("Gemini API key not set",
+                    "PictoSync couldn't find your Gemini API key.",
+                    "Set the GOOGLE_API_KEY environment variable to your key, "
+                    "then restart PictoSync.\n"
+                    "Create a key at: https://aistudio.google.com/apikey")
+        if "google-genai" in el and ("not installed" in el or "install" in el):
+            return ("Gemini SDK not installed",
+                    "The google-genai package is missing.",
+                    "Install it and restart PictoSync:\n\n"
+                    "    pip install google-genai")
+        if "spending cap" in el or ("spend" in el and "cap" in el):
+            return ("Gemini project spend cap reached",
+                    "Gemini rejected the request because your project has "
+                    "hit its monthly spending cap (HTTP 429). Your API key "
+                    "is valid and this is not a model-specific limit — every "
+                    "model is blocked until the cap is raised.",
+                    "Why this happens:\n"
+                    "Once a project has billing enabled it becomes a PAID "
+                    "project, so the free tier no longer applies — usage is "
+                    "governed by your monthly spend cap, not free quotas. "
+                    "When that cap is reached (or set to 0) every model "
+                    "returns this error, even ones that would be free on a "
+                    "non-billed project.\n\n"
+                    "How to fix (either one):\n"
+                    "• Raise or remove the spend cap (recommended if your "
+                    "account is funded):\n    https://ai.studio/spend\n"
+                    "• Or use an API key from a project with NO billing — "
+                    "that project gets real free-tier quota (e.g. "
+                    "gemini-2.5-flash) for testing. Add it in Settings → "
+                    "External Tools → Gemini AI.\n\n"
+                    "More info: https://ai.google.dev/gemini-api/docs/"
+                    "billing#project-spend-caps\n"
+                    "After updating, wait a moment and try Auto-Extract again.")
+        if "resource_exhausted" in el or "429" in e:
+            return ("Gemini quota exceeded",
+                    "Gemini rejected the request because a usage limit was "
+                    "reached (HTTP 429, RESOURCE_EXHAUSTED).",
+                    "How to fix:\n"
+                    "• The selected model may have no free-tier quota "
+                    "(free-tier limit 0 — e.g. the image-preview models). "
+                    "In Settings → External Tools → Gemini AI, set "
+                    "Default Model to one your plan allows (e.g. "
+                    "gemini-2.5-flash-image) and click “Validate "
+                    "Connection”.\n"
+                    "• Or enable billing / raise the quota for this model:\n"
+                    "    https://ai.google.dev/gemini-api/docs/rate-limits\n"
+                    "    https://aistudio.google.com/\n"
+                    "• If this is a per-minute rate limit, wait a few "
+                    "seconds and try Auto-Extract again.")
+        if ("permission_denied" in el or "unauthenticated" in el
+                or "api key not valid" in el or "api_key_invalid" in el
+                or "401" in e or "403" in e):
+            return ("Gemini authentication failed",
+                    "Gemini rejected the request as unauthorized.",
+                    "How to fix:\n"
+                    "• Check that GOOGLE_API_KEY is correct and active.\n"
+                    "• Ensure the Generative Language API is enabled for "
+                    "the key:\n    https://aistudio.google.com/apikey")
+        if ("not_found" in el or "is not found for api version" in el
+                or ("404" in e and "model" in el)):
+            return ("Gemini model not available",
+                    "The selected Gemini model isn't available to your API key.",
+                    "How to fix:\n"
+                    "• In Settings → External Tools → Gemini AI, "
+                    "pick a different Default Model.\n"
+                    "• Use “Validate Connection” there to list "
+                    "the models your key can use.")
+        if any(k in el for k in (
+                "timed out", "timeout", "connection", "ssl", "network",
+                "getaddrinfo", "temporarily unavailable", "deadline",
+                "failed to establish")):
+            return ("Could not reach Gemini",
+                    "PictoSync couldn't connect to the Gemini service.",
+                    "How to fix:\n"
+                    "• Check your internet connection / proxy.\n"
+                    "• Confirm access to generativelanguage.googleapis.com "
+                    "is allowed.\n"
+                    "• Then try Auto-Extract again.")
+        return ("Auto-Extract failed", first_line(e),
+                "Gemini returned an unexpected error. Expand Details below, "
+                "or see https://ai.google.dev/gemini-api/docs")
+
     def on_ai_failed(self, err: str):
-        """Handle AI extraction failure."""
-        QMessageBox.critical(self, "Auto-Extract failed", err)
+        """Handle AI extraction failure with a user-friendly dialog."""
+        title, summary, how_to_fix = self._friendly_gemini_error(err)
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Auto-Extract failed")
+        box.setText(title)
+        box.setInformativeText(summary + "\n\n" + how_to_fix)
+        if err:
+            box.setDetailedText(err)   # raw error + traceback (collapsible)
+        box.exec()
         self._set_draft_text_programmatically(self.draft.get_json_text(), enable_import=False, status="Auto-Extract failed.", focus_id=None)
         self.statusBar().showMessage("Auto-Extract failed.")
 
@@ -2432,12 +3003,10 @@ class MainWindow(QMainWindow):
                     rec.setdefault("style", {
                         "pen": {"color": "#FF0000", "width": 2},
                         "fill": {"color": "#00000000"},
-                        "text": {"color": "#FFFF00", "size_pt": 12},
                     })
-                    if isinstance(rec["style"], dict):
-                        rec["style"].setdefault("text", {"color": "#FFFF00", "size_pt": 12})
-                        if isinstance(rec["style"].get("text"), dict):
-                            rec["style"]["text"].setdefault("size_pt", 12)
+                    # Legacy style.text is no longer injected — text color
+                    # now lives in contents.default_format.color (overlay-2.0).
+                    # Injecting #FFFF00 here would override the actual color.
 
             trace("Rebuilding ID index...", "SYNC")
             self._rebuild_id_index()
@@ -2494,11 +3063,17 @@ class MainWindow(QMainWindow):
             trace("No draft data, returning", "REBUILD")
             return
 
-        # Remember selected item ID to restore selection after rebuild
+        # Remember selected item ID to restore selection after rebuild.
+        # Check multiple sources: scene selection, editor cursor annotation,
+        # and the property panel's current item (which survives focus changes).
         selected_id = None
         selected_items = self.scene.selectedItems()
         if selected_items:
             selected_id = selected_items[0].data(ANN_ID_KEY)
+        if not selected_id and hasattr(self, 'draft') and hasattr(self.draft, 'text'):
+            selected_id = self.draft.text._find_annotation_at_cursor()
+        if not selected_id and self.props._current_item is not None:
+            selected_id = getattr(self.props._current_item, 'ann_id', None)
 
         self._syncing_from_json = True
         try:
@@ -2642,6 +3217,9 @@ class MainWindow(QMainWindow):
         finally:
             self._syncing_from_json = False
 
+        # Expand scene rect to cover all items (annotations may extend beyond PNG)
+        self._update_scene_rect()
+
         # After syncing is done, update the editor highlight/scroll for restored selection.
         # This must happen after _syncing_from_json is False so the handlers don't bail out.
         if restored_id:
@@ -2669,7 +3247,7 @@ class MainWindow(QMainWindow):
 
         defs = get_settings().get_item_defaults(kind)
         _red = _QColor(Qt.GlobalColor.red)
-        _yellow = _QColor(Qt.GlobalColor.yellow)
+        _black = _QColor(0, 0, 0, 255)
 
         # ── Style ────────────────────────────────────────────────────────
         item.pen_color = _hq(defs.style.pen_color, _red)
@@ -2710,7 +3288,7 @@ class MainWindow(QMainWindow):
         if hasattr(item, "text_size_pt"):
             item.text_size_pt = defs.contents.font_size
         if hasattr(item, "text_color"):
-            item.text_color = _hq(defs.contents.color, _yellow)
+            item.text_color = _hq(defs.contents.color, _black)
 
     def _on_new_scene_item(self, item: QGraphicsItem):
         """Handle new item added to scene."""
@@ -2790,6 +3368,17 @@ class MainWindow(QMainWindow):
 
         self._rebuild_id_index()
         self._push_draft_data_to_editor(status="Added item from scene; draft JSON updated.", focus_id=rec["id"])
+
+        # Guarantee the newly created item is selected and the property panel
+        # reflects the fully initialised state (after _apply_item_defaults).
+        # Block signals during clearSelection so the panel doesn't flash None,
+        # then let setSelected fire normally to refresh props via selectionChanged.
+        # TEXT/PORT items already called setSelected(True) in scene.py, but
+        # before defaults were applied; this re-select picks up the final state.
+        self.scene.blockSignals(True)
+        self.scene.clearSelection()
+        self.scene.blockSignals(False)
+        item.setSelected(True)
 
         if isinstance(item, MetaTextItem):
             self.draft.jump_to_note_field_for_id(rec["id"])
@@ -2874,6 +3463,10 @@ class MainWindow(QMainWindow):
 
         if item in self.scene.selectedItems():
             self.props.set_item(item)
+
+        # Expand scene rect if item moved outside current bounds
+        if not interacting:
+            self._update_scene_rect()
 
     def _do_group_items(self, items):
         """Group selected items into a MetaGroupItem."""
@@ -4033,6 +4626,19 @@ def main():
 
     # Ensure settings file has all sections
     settings_manager.ensure_file_complete()
+
+    # Unlock the API-key vault (if a vault key is remembered on this machine)
+    # and load the stored keys into the environment, so they survive
+    # restarts/reboots regardless of how the app was launched. A real
+    # environment variable of the same name always takes precedence.
+    try:
+        from vault import load_vault_key_into_env, load_keys_into_env
+        load_vault_key_into_env(settings_manager)
+        n_keys = load_keys_into_env(settings_manager)
+        if n_keys:
+            trace(f"Loaded {n_keys} API key(s) from vault into environment", "MAIN")
+    except Exception as _e:  # never block startup on key loading
+        trace(f"Vault load failed: {_e}", "MAIN")
 
     # Apply saved theme (or default if not set)
     initial_style = settings_manager.settings.theme

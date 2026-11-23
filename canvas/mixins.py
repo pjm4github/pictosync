@@ -7,7 +7,7 @@ Mixin classes for graphics items providing annotation ID linking and metadata ha
 from __future__ import annotations
 
 import math
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import Qt, QPointF, QLineF
 from PyQt6.QtGui import QColor
@@ -84,7 +84,7 @@ class MetaMixin:
         self.pen_color = QColor(Qt.GlobalColor.red)
         self.pen_width = 2
         self.brush_color = QColor(0, 0, 0, 0)  # transparent
-        self.text_color = QColor(Qt.GlobalColor.yellow)
+        self.text_color = QColor(0, 0, 0, 255)  # black — overridden by per-kind defaults
         self.text_size_pt = 12  # font size in points
         self.line_dash = "solid"  # solid | dashed
         self.dash_pattern_length = 30.0  # total length of one dash+gap cycle in pixels
@@ -93,6 +93,154 @@ class MetaMixin:
         # Rotation state
         self._rotating = False
         self._rotation_start_angle = 0.0
+
+    def _get_text_margins(self):
+        """Return (left, right, top, bottom) margins from the effective TextFrame.
+
+        Falls back to (4, 4, 4, 4) when no metadata is available.
+        """
+        if hasattr(self, "meta") and hasattr(self.meta, "effective_frame"):
+            frame = self.meta.effective_frame()
+            return (frame.margin_left, frame.margin_right,
+                    frame.margin_top, frame.margin_bottom)
+        return (4.0, 4.0, 4.0, 4.0)
+
+    def _position_label_in_rect(self, area_x: float, area_y: float,
+                                area_w: float, area_h: float):
+        """Position ``_label_item`` inside a content rectangle using TextFrame margins.
+
+        Args:
+            area_x, area_y: Top-left of the shape's content area (after any
+                shape-specific insets such as cylinder caps or hexagon indent).
+            area_w, area_h: Size of that content area.
+
+        Behaviour:
+            * **wrap=True** (default): text wraps at ``right margin``; if text
+              is taller than the available height the bottom boundary is ignored.
+            * **wrap=False**: ``setTextWidth(-1)`` — text extends beyond the
+              right margin without wrapping.
+            * **valign=top**: text starts at ``top margin``.
+            * **valign=bottom**: text bottom sits at ``bottom margin``; if text
+              is taller it overflows above the top boundary.
+            * **valign=middle**: text is centred between top and bottom margins.
+        """
+        ml, mr, mt, mb = self._get_text_margins()
+        wrap = getattr(self.meta, "wrap", True) if hasattr(self, "meta") else True
+
+        text_area_w = area_w - ml - mr
+        if wrap:
+            self._label_item.setTextWidth(max(10, text_area_w))
+        else:
+            self._label_item.setTextWidth(-1)
+
+        text_height = self._label_item.boundingRect().height()
+        text_area_h = area_h - mt - mb
+
+        # Resolve vertical alignment — prefer effective_frame, then legacy field
+        valign = "top"
+        if hasattr(self, "meta"):
+            if hasattr(self.meta, "effective_frame"):
+                valign = self.meta.effective_frame().valign or "top"
+            else:
+                valign = getattr(self.meta, "valign",
+                                 getattr(self.meta, "text_valign", "top"))
+
+        if valign == "middle":
+            y_pos = area_y + mt + (text_area_h - text_height) / 2
+        elif valign == "bottom":
+            y_pos = area_y + area_h - mb - text_height
+        else:  # top (default)
+            y_pos = area_y + mt
+
+        self._label_item.setPos(area_x + ml, y_pos)
+
+    def _render_label_from_meta(self):
+        """Rebuild ``_label_item`` HTML from meta blocks (or legacy text).
+
+        Uses the overlay-2.0 blocks path when available, falling back to
+        the pre-built ``meta.text`` HTML.  Sets font, color, and alignment
+        on the ``_label_item`` QGraphicsTextItem, then calls the item's
+        ``_update_label_position()`` for shape-specific placement.
+        """
+        from PyQt6.QtGui import QFont as _QFont, QTextOption as _QTextOption
+        from PyQt6.QtCore import Qt as _Qt
+        from models import _blocks_to_legacy_text
+
+        meta = getattr(self, "meta", None)
+        if meta is None:
+            return
+
+        _eff_frame = meta.effective_frame()
+        _eff_fmt = meta.effective_default_format()
+
+        font_family = _eff_fmt.font_family
+        font_size = max(6, int(_eff_fmt.font_size or 12))
+        halign = _eff_frame.halign
+        color_str = _eff_fmt.color or ""
+
+        # Sync text_color from resolved color
+        if color_str:
+            from utils import hex_to_qcolor as _htq
+            self.text_color = _htq(color_str, self.text_color)
+
+        fnt = _QFont(font_family) if font_family else _QFont()
+        fnt.setPointSize(font_size)
+        self._label_item.setFont(fnt)
+        self._label_item.setDefaultTextColor(self.text_color)
+
+        # Apply halign as document default alignment
+        _halign_flag = {
+            "left":      _Qt.AlignmentFlag.AlignLeft,
+            "center":    _Qt.AlignmentFlag.AlignHCenter,
+            "right":     _Qt.AlignmentFlag.AlignRight,
+            "justified": _Qt.AlignmentFlag.AlignJustify,
+        }.get(halign, _Qt.AlignmentFlag.AlignHCenter)
+        _opt = self._label_item.document().defaultTextOption()
+        _opt.setAlignment(_halign_flag)
+        self._label_item.document().setDefaultTextOption(_opt)
+
+        # Render: prefer overlay-2.0 blocks, fall back to legacy HTML
+        if meta.blocks is not None:
+            html_text = _blocks_to_legacy_text(meta.blocks, halign)
+            self._label_item.setHtml(html_text if html_text else "")
+            # Apply line spacing to the label's document blocks.
+            _spacing_type_map = {
+                "single": 0, "proportional": 1, "fixed": 2,
+                "minimum": 3, "line_distance": 4,
+            }
+            _eff_fmt = meta.effective_default_format()
+            _def_sp_type = getattr(_eff_fmt, "spacing_type", "single")
+            _def_sp_val = getattr(_eff_fmt, "spacing_value", 0.0)
+            from PyQt6.QtGui import QTextCursor as _QTC
+            doc = self._label_item.document()
+            blk = doc.begin()
+            blk_idx = 0
+            while blk.isValid():
+                sp_type = _def_sp_type
+                sp_val = _def_sp_val
+                if meta.blocks and blk_idx < len(meta.blocks):
+                    mb = meta.blocks[blk_idx]
+                    if getattr(mb, "spacing_type", ""):
+                        sp_type = mb.spacing_type
+                        sp_val = getattr(mb, "spacing_value", 0.0)
+                qt_type = _spacing_type_map.get(sp_type, 0)
+                _qt_val = 0.0 if qt_type == 0 else float(sp_val)
+                c = _QTC(doc)
+                c.setPosition(blk.position())
+                bf = c.blockFormat()
+                bf.setLineHeight(_qt_val, qt_type)
+                if meta.blocks and blk_idx < len(meta.blocks):
+                    bf.setTopMargin(getattr(meta.blocks[blk_idx], "space_before", 0.0))
+                    bf.setBottomMargin(getattr(meta.blocks[blk_idx], "space_after", 0.0))
+                c.setBlockFormat(bf)
+                blk = blk.next()
+                blk_idx += 1
+        elif getattr(meta, "text", ""):
+            self._label_item.setHtml(meta.text)
+        else:
+            self._label_item.setHtml("")
+
+        self._update_label_position()
 
     def _should_paint_handles(self) -> bool:
         """Check if this item should paint selection handles.
@@ -107,17 +255,31 @@ class MetaMixin:
         self.meta = meta
 
     @property
-    def ports(self) -> List[str]:
-        """Annotation IDs of child port items attached to this shape."""
+    def ports(self) -> List[Tuple[str, float]]:
+        """Child port ``(ann_id, t)`` pairs attached to this shape.
+
+        ``t`` is the port's parametric position on the shape's perimeter
+        (0.0–1.0).  Exposing it alongside the id keeps the JSON record
+        (``"ports": [["a000005", 0.8435], ...]``) and the Properties panel
+        "Ports" list self-describing — readers can see where each port sits
+        without having to look up the port item separately.
+        """
         if not hasattr(self, 'childItems'):
             return []
-        return [child.ann_id for child in self.childItems()
-                if hasattr(child, 'kind') and child.kind == 'port'
-                and hasattr(child, 'ann_id')]
+        out: List[Tuple[str, float]] = []
+        for child in self.childItems():
+            if (hasattr(child, 'kind') and child.kind == 'port'
+                    and hasattr(child, 'ann_id')):
+                t = round(float(getattr(child, '_t', 0.0)), 4)
+                out.append((child.ann_id, t))
+        return out
 
     def _ports_dict(self) -> Dict[str, Any]:
-        """Return ``{"ports": [...]}`` for JSON serialization."""
-        return {"ports": self.ports}
+        """Return ``{"ports": [[id, t], ...]}`` for JSON serialization."""
+        # ``json.dumps`` writes tuples as arrays, so an explicit list[list]
+        # cast is not required, but makes the type at the JSON boundary
+        # consistent with the on-disk format.
+        return {"ports": [[pid, t] for pid, t in self.ports]}
 
     def _meta_dict(self, meta: AnnotationMeta) -> Dict[str, Any]:
         """Convert contents to dict for JSON serialization.
@@ -509,6 +671,87 @@ class MetaMixin:
         self._end_resize_tracking()
         self._rotating = False
         self._notify_changed()
+
+    def _render_label_from_meta(self):
+        """Shared label rendering using overlay-2.0 blocks path.
+
+        Resolves effective frame + default_format, sets font/alignment
+        on ``_label_item``, then renders from blocks (preferred) or
+        legacy HTML text fallback.  Finishes with ``_update_label_position()``.
+        """
+        from PyQt6.QtGui import QFont as _QFont, QTextOption as _QTextOption
+        from PyQt6.QtCore import Qt as _Qt
+        from models import _blocks_to_legacy_text
+
+        _eff_frame = self.meta.effective_frame()
+        _eff_fmt = self.meta.effective_default_format()
+
+        font_family = _eff_fmt.font_family
+        font_size = max(6, int(_eff_fmt.font_size or 12))
+        halign = _eff_frame.halign
+        color_str = _eff_fmt.color or getattr(self.meta, "color", "")
+
+        if color_str:
+            from utils import hex_to_qcolor as _htq
+            self.text_color = _htq(color_str, self.text_color)
+
+        fnt = _QFont(font_family) if font_family else _QFont()
+        fnt.setPointSize(font_size)
+        self._label_item.setFont(fnt)
+        self._label_item.setDefaultTextColor(self.text_color)
+
+        _halign_flag = {
+            "left":      _Qt.AlignmentFlag.AlignLeft,
+            "center":    _Qt.AlignmentFlag.AlignHCenter,
+            "right":     _Qt.AlignmentFlag.AlignRight,
+            "justified": _Qt.AlignmentFlag.AlignJustify,
+        }.get(halign, _Qt.AlignmentFlag.AlignHCenter)
+        _opt = self._label_item.document().defaultTextOption()
+        _opt.setAlignment(_halign_flag)
+        self._label_item.document().setDefaultTextOption(_opt)
+
+        if self.meta.blocks is not None:
+            html_text = _blocks_to_legacy_text(self.meta.blocks, halign)
+            self._label_item.setHtml(html_text if html_text else "")
+            # Apply line spacing to the label's document blocks.
+            # setHtml doesn't carry line-height; we must set it per-block.
+            _spacing_type_map = {
+                "single": 0, "proportional": 1, "fixed": 2,
+                "minimum": 3, "line_distance": 4,
+            }
+            _def_sp_type = _eff_fmt.spacing_type if hasattr(_eff_fmt, "spacing_type") else "single"
+            _def_sp_val = _eff_fmt.spacing_value if hasattr(_eff_fmt, "spacing_value") else 0.0
+            from PyQt6.QtGui import QTextCursor as _QTC
+            doc = self._label_item.document()
+            blk = doc.begin()
+            blk_idx = 0
+            while blk.isValid():
+                # Resolve: per-block override → default_format
+                sp_type = _def_sp_type
+                sp_val = _def_sp_val
+                if self.meta.blocks and blk_idx < len(self.meta.blocks):
+                    mb = self.meta.blocks[blk_idx]
+                    if getattr(mb, "spacing_type", ""):
+                        sp_type = mb.spacing_type
+                        sp_val = getattr(mb, "spacing_value", 0.0)
+                qt_type = _spacing_type_map.get(sp_type, 0)
+                _qt_val = 0.0 if qt_type == 0 else float(sp_val)
+                c = _QTC(doc)
+                c.setPosition(blk.position())
+                bf = c.blockFormat()
+                bf.setLineHeight(_qt_val, qt_type)
+                if self.meta.blocks and blk_idx < len(self.meta.blocks):
+                    bf.setTopMargin(getattr(self.meta.blocks[blk_idx], "space_before", 0.0))
+                    bf.setBottomMargin(getattr(self.meta.blocks[blk_idx], "space_after", 0.0))
+                c.setBlockFormat(bf)
+                blk = blk.next()
+                blk_idx += 1
+        elif getattr(self.meta, "text", ""):
+            self._label_item.setHtml(self.meta.text)
+        else:
+            self._label_item.setHtml("")
+
+        self._update_label_position()
 
     def _add_angle_to_geom(self, geom: dict) -> dict:
         """Add angle to geom dict if non-zero. Call from to_record().

@@ -1,0 +1,108 @@
+---
+title: Signal-Tier Data Contract — C-ABI state blob + Token v1
+config:
+  flowchart:
+    curve: linear
+---
+%%{init: {'flowchart': {'curve': 'linear'}}}%%
+flowchart TB
+    classDef abi fill:#dbeafe,stroke:#1e40af,stroke-width:2px
+    classDef params fill:#dcfce7,stroke:#166534,stroke-width:2px
+    classDef working fill:#fef3c7,stroke:#92400e,stroke-width:2px
+    classDef token fill:#f3e8ff,stroke:#6b21a8,stroke-width:2px
+    classDef sot fill:#fce7f3,stroke:#9d174d,stroke-width:2px
+    classDef wire fill:#fee2e2,stroke:#991b1b,stroke-width:2px
+    classDef rule stroke-dasharray:4 3,stroke:#b91c1c
+    classDef guard fill:#e0e7ff,stroke:#3730a3,stroke-width:1px
+    classDef note fill:#f1f5f9,stroke:#475569,stroke-dasharray:3 3
+
+    %% =====================================================================
+    %% 1. The C-ABI surface — what kernels see and what the runtime owns
+    %% =====================================================================
+    subgraph ABI["rs_signal_abi.h — ABI_VERSION = 1"]
+        direction TB
+        meta["rs_block_meta<br/>origin_ns u64<br/>sample_index u64<br/>cycle_index u32<br/>sync_state u32"]:::abi
+        layout["rs_state_layout<br/>params_off / params_len<br/>working_off / working_len<br/>total_len"]:::abi
+        vtable["rs_kernel_vtable<br/>init / process /<br/>migrate / teardown"]:::abi
+    end
+
+    %% =====================================================================
+    %% 2. State blob — kernel-facing data the runtime owns
+    %% =====================================================================
+    subgraph Blob["State blob — arena-allocated, runtime-owned"]
+        direction LR
+        params["PARAMS region<br/>control-plane-owned<br/>kernel-READ-ONLY at process<br/>e.g. window_len, threshold, mu"]:::params
+        working["WORKING region<br/>kernel-owned, CP-OPAQUE<br/>delay lines, accumulators,<br/>cursors, weights"]:::working
+        state_loop["state-out loops back<br/>state != data"]:::note
+        working --> state_loop --> working
+    end
+
+    %% Two distinct write-disciplines on the blob (BBSP-gated;
+    %% guarded at CI time by Stage 7b Phase 9 — no_kernel_state_writes).
+    cp_write["Control plane<br/>writes PARAMS at BBSP<br/>(ParamBankWriter — see 15)"]:::rule
+    snap["BBSP-only WORKING writes:<br/>snapshot / restore<br/>(restore = signal_restore — BOOTSTRAP)<br/>restart_to_init<br/>(signal_restart_to_init — BOOTSTRAP)<br/>swap_in_graph migrate<br/>(signal_admit_candidate — BOOTSTRAP)<br/>see 14 for BBSP mechanism · 15 for hot-swap"]:::rule
+    cp_write -.->|between blocks| params
+    snap -.->|between blocks| working
+
+    %% =====================================================================
+    %% 3. Token v1 — the forward-flowing data-plane contract
+    %% =====================================================================
+    subgraph TokenV1["Token v1 — TOKEN_SCHEMA_VERSION = 1, 14 columns"]
+        direction TB
+        t_time["t_start_ns / t_end_ns<br/>sample_index / cycle_index<br/>timing_quality"]:::token
+        t_value["feature_type — dict int16 to str<br/>feature_value — f64 decoded<br/>feature_value_q — i64 raw Q<br/>confidence — f64"]:::token
+        t_prov["kernel_id / kernel_version<br/>episode_id / sequence_index<br/>metadata — map, max 256B"]:::token
+    end
+
+    %% =====================================================================
+    %% 4. Sources of truth + CI guards (POR §7)
+    %% =====================================================================
+    subgraph SoT["Sources of truth + drift guards"]
+        direction TB
+        py["Python dataclass<br/>dsp_frontend.token.Token<br/>authoritative"]:::sot
+        js["golden/token_schema_v1.json<br/>derived, diffable"]:::sot
+        vocab["golden/token_vocabulary_v1.json<br/>feature_type to int16 dict"]:::sot
+        hdr["rs_signal_abi.h<br/>authoritative for ABI"]:::sot
+        mirror["abi.py ctypes mirror<br/>+ assert_abi_in_sync"]:::guard
+        ci["CI guards (seven always-on):<br/>partition · no_wallclock ·<br/>no_stray_constants · token_schema_v1 ·<br/>token_vocabulary_v1 ·<br/>no_kernel_state_writes (Stage 7b §9) ·<br/>no_uncatalogued_kernel_admission (Stage 7c §9) ·<br/>check_timing — t_start == origin_ns"]:::guard
+    end
+
+    %% =====================================================================
+    %% 5. On-wire encoding at the tier boundary
+    %% =====================================================================
+    subgraph Wire["Tier boundary: Arrow / Feather — dsp_frontend[arrow]"]
+        direction TB
+        batch["RecordBatch<br/>columnar Token v1<br/>+ batch metadata:<br/>signal_abi_version, schema_version,<br/>vocabulary_version, producer_kernel_*,<br/>q_format"]:::wire
+        feather["Feather file<br/>probe output, replay corpus"]:::wire
+        batch --> feather
+    end
+
+    %% =====================================================================
+    %% Relationships
+    %% =====================================================================
+    %% ABI -> blob layout
+    layout -->|describes regions of| Blob
+
+    %% process inputs/outputs
+    vtable -->|"process: blob + meta + in to out"| Blob
+    meta -->|"carried INTO process"| vtable
+    vtable -->|"emits per-block"| TokenV1
+
+    %% THE carry rule — central invariant (use a labeled passthrough so
+    %% the renderer never has to draw a curved 'emphasis' edge)
+    carry["CARRY RULE<br/>t_start ← origin_ns<br/>never re-stamped"]:::rule
+    quality["sync_state →<br/>TimingQuality enum"]:::rule
+    meta --> carry --> t_time
+    meta --> quality --> t_time
+
+    %% Tokens flow forward (state already loops back inside Blob, above)
+    TokenV1 -->|"data plane —<br/>flows forward to fusion,<br/>bridge, orchestration"| batch
+
+    %% SoT wiring
+    py -->|"to_arrow_dict drives column order"| batch
+    js -->|"schema-drift check"| py
+    vocab -->|"feature_type dict<br/>encode / decode"| t_value
+    hdr -->|"regex header-drift check"| mirror
+    mirror -->|"matches struct fields"| ABI
+    ci -.->|"fails build on drift /<br/>wall-clock read /<br/>carry-rule violation"| TokenV1
+    ci -.-> ABI

@@ -1,0 +1,336 @@
+@startuml t_sequence_08_parser_stress_test
+title Sequence Diagram — Parser Stress Test\n(edge cases, alias collisions, deep nesting, all arrow×note×group combos)
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. ALIASES THAT MATCH RESERVED WORDS
+'    Parser must NOT tokenise these as keywords when used as aliases
+' ══════════════════════════════════════════════════════════════════════════
+
+participant "Participant A" as note
+participant "Participant B" as activate
+participant "Participant C" as loop
+participant "Participant D" as alt
+participant "Participant E" as end
+participant "Participant F" as group
+participant "Participant G" as ref
+participant "Participant H" as box
+participant "Participant I" as return
+
+note -> activate : alias=note → alias=activate
+activate -> loop : alias=activate → alias=loop
+loop -> alt : alias=loop → alias=alt
+alt -> end : alias=alt → alias=end
+end -> group : alias=end → alias=group
+group -> ref : alias=group → alias=ref
+ref -> box : alias=ref → alias=box
+box -> return : alias=box → alias=return
+return --> note : alias=return → alias=note
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. QUOTED NAMES WITH SPECIAL CHARACTERS
+' ══════════════════════════════════════════════════════════════════════════
+
+participant "Service/v2"           as SVC_SLASH
+participant "My-Service"           as SVC_DASH
+participant "Service.Core"         as SVC_DOT
+participant "Service (legacy)"     as SVC_PAREN
+participant "API: port 8080"       as SVC_COLON
+participant "v1.2.3-beta"          as SVC_SEMVER
+participant "DB <primary>"         as SVC_ANGLE
+participant "Queue [high]"         as SVC_BRACKET
+participant "Comp & Router"        as SVC_AMP
+participant "Svc\nMultiLine"       as SVC_NL
+
+SVC_SLASH -> SVC_DASH    : slash to dash
+SVC_DASH -> SVC_DOT      : dash to dot
+SVC_DOT -> SVC_PAREN     : dot to paren
+SVC_PAREN -> SVC_COLON   : paren to colon
+SVC_COLON -> SVC_SEMVER  : colon to semver
+SVC_SEMVER -> SVC_ANGLE  : semver to angle
+SVC_ANGLE -> SVC_BRACKET : angle to bracket
+SVC_BRACKET -> SVC_AMP   : bracket to amp
+SVC_AMP -> SVC_NL        : amp to newline
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. ARROW LABEL EDGE CASES
+'    Labels containing chars that could confuse the lexer
+' ══════════════════════════════════════════════════════════════════════════
+
+participant "LabelSrc" as LS
+participant "LabelTgt" as LT
+
+LS -> LT : label with -> inside text
+LS --> LT : label with --> inside text
+LS -> LT : label with [brackets] inside
+LS -> LT : label with (parens) inside
+LS -> LT : label with "quotes" inside
+LS -> LT : label: with colon
+LS -> LT : label\nwith\nnewlines
+LS -> LT : **bold** //italic// ""mono""
+LS -> LT : <color:red>red</color> <back:blue>blue</back>
+LS -> LT : <<stereotype>> as label
+LS -> LT : [guard-like condition]
+LS -> LT : 1. Numbered label step
+LS -> LT : label with == equals ==
+LS -> LT : label with ... dots ...
+LS -> LT : label with ||| pipes |||
+LS -[#FF0000,bold]-> LT : colored [#FF0000,bold] label
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. ALL ARROW FORMS IN ONE BLOCK (cross-reference)
+' ══════════════════════════════════════════════════════════════════════════
+
+participant "ArrowA" as AA
+participant "ArrowB" as AB
+
+AA -> AB    : ->
+AA --> AB   : -->
+AA <- AB    : <-
+AA <-- AB   : <--
+AA ->> AB   : ->>
+AA -->> AB  : -->>
+AA <<- AB   : <<-
+AA <<-- AB  : <<--
+AA ->o AB   : ->o
+AA -->o AB  : -->o
+AA o-> AB   : o->
+AA o--> AB  : o-->
+AA o->o AB  : o->o
+AA o-->o AB : o-->o
+AA ->x AB   : ->x
+AA -->x AB  : -->x
+AA x-> AB   : x->
+AA x--> AB  : x-->
+AA x->x AB  : x->x
+[-> AA      : [->
+[--> AA     : [-->
+AA ->]      : ->]
+AA -->]     : -->]
+[<- AA      : [<-
+[<-- AA     : [<--
+AA <-]      : <-]
+AA <--]     : <--]
+?-> AA      : ?->
+?--> AA     : ?-->
+AA ->?      : ->?
+AA -->?     : -->?
+AA -[#red]-> AB       : -[#red]->
+AA -[#00FF00]--> AB   : -[#00FF00]-->
+AA -[#blue,bold]-> AB : -[#blue,bold]->
+AA -[#red,dashed]->> AB : -[#red,dashed]->>
+AA -[hidden]-> AB     : -[hidden]->
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. DEEPLY NESTED GROUPS (5 levels)
+' ══════════════════════════════════════════════════════════════════════════
+
+participant "Nest_A" as NA
+participant "Nest_B" as NB
+participant "Nest_C" as NC
+
+alt level-1 condition A
+    NA -> NB : L1 message
+    opt level-2 optional
+        NB -> NC : L2 message
+        loop level-3 retry
+            NC -> NA : L3 message
+            par level-4 parallel branch 1
+                NA -> NB : L4-par1
+            else level-4 parallel branch 2
+                group level-4 group label
+                    NB -> NC : L4-group
+                    critical level-5 critical
+                        NC -> NA : L5 message
+                        NA --> NC : L5 response
+                    end
+                    NC --> NB : L4-group done
+                end
+                NB -> NA : L4-par2
+            end
+        end
+        NC --> NB : L2 done
+    end
+    NB --> NA : L1 done
+else level-1 condition B
+    NA -> NC : direct L1-B
+    NC --> NA : L1-B response
+end
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. NOTE IMMEDIATELY BEFORE / AFTER EVERY GROUP TYPE
+' ══════════════════════════════════════════════════════════════════════════
+
+participant "NoteGA" as NGA
+participant "NoteGB" as NGB
+
+note over NGA, NGB : before alt group
+
+alt condition X
+    note right of NGA : inside alt before message
+    NGA -> NGB : alt message
+    note left of NGB : inside alt after message
+else condition Y
+    note over NGA : inside else
+    NGB -> NGA : else message
+end
+
+note over NGA, NGB : between groups
+
+opt optional thing
+    note right of NGA : inside opt
+    NGA -> NGB : opt message
+end
+
+note over NGB : before loop
+
+loop 3 times
+    note right of NGA : inside loop iteration
+    NGA -> NGB : loop message
+    note left of NGB : inside loop after message
+end
+
+note over NGA, NGB : after all groups
+
+' ══════════════════════════════════════════════════════════════════════════
+' 7. ACTIVATE/DEACTIVATE INSIDE EVERY GROUP TYPE
+' ══════════════════════════════════════════════════════════════════════════
+
+participant "ActGA" as AGA
+participant "ActGB" as AGB
+participant "ActGC" as AGC
+
+alt activate inside alt
+    AGA -> AGB : start
+    activate AGB #E3F2FD
+    AGB -> AGC : nested
+    activate AGC #E8F5E9
+    AGC --> AGB : nested response
+    deactivate AGC
+    AGB --> AGA : alt response
+    deactivate AGB
+else deactivate in else
+    AGA -> AGC : direct
+    activate AGC
+    AGC --> AGA : else response
+    deactivate AGC
+end
+
+loop with activation
+    AGA -> AGB : loop start
+    activate AGB
+    AGB -> AGC : loop inner
+    activate AGC
+    AGC --> AGB : inner done
+    deactivate AGC
+    AGB --> AGA : loop done
+    deactivate AGB
+end
+
+par parallel activate
+    AGA -> AGB : par branch 1
+    activate AGB
+    AGB --> AGA : branch 1 done
+    deactivate AGB
+else parallel branch 2
+    AGA -> AGC : par branch 2
+    activate AGC
+    AGC --> AGA : branch 2 done
+    deactivate AGC
+end
+
+' ══════════════════════════════════════════════════════════════════════════
+' 8. AUTONUMBER + GROUPS + NOTES INTERLEAVED
+' ══════════════════════════════════════════════════════════════════════════
+
+participant "NumA" as NMA
+participant "NumB" as NMB
+
+autonumber 1
+
+NMA -> NMB : numbered 1
+
+note right of NMA : note after message 1
+
+autonumber stop
+NMA -> NMB : unnumbered gap
+autonumber resume 2
+
+NMA -> NMB : resumed 3
+
+alt numbered inside alt
+    NMA -> NMB : numbered 5
+    note over NMA, NMB : note inside numbered alt
+else numbered else branch
+    NMB -> NMA : numbered in else
+end
+
+autonumber stop
+
+' ══════════════════════════════════════════════════════════════════════════
+' 9. DIVIDERS INSIDE GROUPS
+' ══════════════════════════════════════════════════════════════════════════
+
+participant "DivA" as DA2
+participant "DivB" as DB2
+
+alt group containing divider
+    DA2 -> DB2 : message before divider
+
+    == divider inside alt ==
+
+    DB2 -> DA2 : message after divider
+else
+    DA2 -> DB2 : else branch
+
+    ... delay inside else ...
+
+    DB2 -> DA2 : after delay
+end
+
+loop group with spacer
+    DA2 -> DB2 : before spacer
+
+    |||
+
+    DB2 -> DA2 : after spacer
+
+    ||30||
+
+    DA2 -> DB2 : after 30px spacer
+end
+
+' ══════════════════════════════════════════════════════════════════════════
+' 10. REF INSIDE GROUP
+' ══════════════════════════════════════════════════════════════════════════
+
+participant "RefA" as RA
+participant "RefB" as RB
+
+alt with ref
+    RA -> RB : trigger
+
+    ref over RA, RB : External Subprocess\nRef Diagram v2
+    
+    RB --> RA : ref complete
+else without ref
+    RA -> RB : direct message
+    RB --> RA : direct response
+end
+
+note right of NA
+    **Parser stress targets:**
+    Aliases matching reserved words
+    (note, activate, loop, alt,
+     end, group, ref, box, return)
+    Quoted names with / - . () : < > [] &
+    Arrow labels with -> [] () "" << >>
+    5-level nested group depth
+    Notes before/after/inside groups
+    Activate inside every group type
+    autonumber + groups + notes
+    Dividers/delays/spacers in groups
+    ref inside alt group
+    All 30+ arrow forms in sequence
+end note
+
+@enduml

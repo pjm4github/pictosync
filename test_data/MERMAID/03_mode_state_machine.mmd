@@ -1,0 +1,98 @@
+---
+title: Operational Mode State Machine
+---
+stateDiagram-v2
+    direction LR
+    [*] --> FACTORY: Manufacturing
+
+    FACTORY: 🏭 FACTORY
+    FACTORY: Shipped state
+    FACTORY: All ops disabled
+    FACTORY: GPU Platform unpowered
+
+    BOOTSTRAP: 🔵 BOOTSTRAP
+    BOOTSTRAP: Training / learning window
+    BOOTSTRAP: Orchestrator active
+    BOOTSTRAP: GPU Platform POWERED
+    BOOTSTRAP: Writes allowed
+
+    SEALED: 🔒 SEALED
+    SEALED: Production operations
+    SEALED: Front end tokenizes the waveform
+    SEALED: and scans for anomalies
+    SEALED: No orchestration writes
+    SEALED: GPU Platform UNPOWERED
+    SEALED: Capture + queue only
+
+    AWAITING_SME: 📞 AWAITING_SME
+    AWAITING_SME: Handshake gate (~60-s default)
+    AWAITING_SME: System has called the SME and
+    AWAITING_SME: is waiting for them to accept
+    AWAITING_SME: GPU Platform PRE-WARMED (L1.2 ready, no inference)
+    AWAITING_SME: No orchestration writes
+    AWAITING_SME: Auto-returns to SEALED on timeout
+
+    INVESTIGATION: 🔍 INVESTIGATION
+    INVESTIGATION: Live SME troubleshooting (15-min session)
+    INVESTIGATION: GPU Platform POWERED (inference only)
+    INVESTIGATION: NO orchestration writes
+    INVESTIGATION: Read station + process bus
+    INVESTIGATION: Read settings + COMTRADE
+    INVESTIGATION: Extra relay protection ENABLED
+
+    FACTORY --> BOOTSTRAP: commission_to_bootstrap()<br/>single-key auth<br/>commissioning engineer
+
+    BOOTSTRAP --> SEALED: seal_for_operations()<br/>TWO-KEY auth<br/>cooldown enforced<br/>powers down GPU Platform
+
+    SEALED --> BOOTSTRAP: open_bootstrap_window()<br/>TWO-KEY auth<br/>cooldown enforced<br/>powers up GPU Platform
+
+    SEALED --> AWAITING_SME: request_sme_handshake()<br/>single-key auth<br/>NO cooldown — armed immediately<br/>powers GPU Platform to L1.2 (pre-warm)<br/>handshake timer resets
+
+    AWAITING_SME --> INVESTIGATION: sme_accepts_handshake()<br/>single-key auth, no cooldown<br/>GPU Platform L1.2 → full inference<br/>extra relay protection ON<br/>starts 15-min session timer
+
+    AWAITING_SME --> SEALED: cancel_handshake() or<br/>handshake_timed_out()<br/>no cooldown<br/>powers down GPU Platform (L1.2 → off)<br/>(SME declined or did not answer)
+
+    INVESTIGATION --> SEALED: sme_hangs_up() (manual) or<br/>investigation_timer_expires() (timeout)<br/>no cooldown<br/>microVMs powered off<br/>RAM cryptographically erased<br/>audit hash sealed in permanent memory<br/>powers down GPU Platform
+
+    note right of BOOTSTRAP
+        Bootstrap window typical durations:
+        • Initial commission: 30 days
+        • Quarterly recal: 1-2 days
+        • Post-incident: hours to days
+    end note
+
+    note right of SEALED
+        Default production state.
+        Voice tags queue for next BOOTSTRAP.
+        Novel events flagged for review.
+        Catch-up batch on next open.
+    end note
+
+    note left of FACTORY
+        One-way: cannot return to FACTORY.
+        Commissioning is irreversible.
+    end note
+
+    note right of INVESTIGATION
+        Short-lived diagnostic mode.
+        On exit (SME hangs up OR timer):
+          • microVMs powered off
+          • RAM crypto-erased
+          • erase-hash committed to
+            permanent audit memory
+        Auto-returns to SEALED.
+    end note
+
+    note left of AWAITING_SME
+        Handshake gate.
+        INVESTIGATION cannot be entered
+        without the SME explicitly
+        accepting the call here.
+        GPU Platform is pre-warmed to L1.2
+        during the wait so accept→
+        inference is sub-second.
+        If they don't answer, the
+        handshake_timed_out event
+        returns the system to SEALED
+        and powers the GPU Platform back down.
+    end note

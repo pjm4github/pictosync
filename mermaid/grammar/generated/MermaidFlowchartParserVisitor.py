@@ -1,4 +1,4 @@
-# Generated from C:\Users\pmora\OneDrive\Documents\Git\GitHub\pictosync\mermaid\grammar\MermaidFlowchartParser.g4 by ANTLR 4.13.0
+# Generated from MermaidFlowchartParser.g4 by ANTLR 4.13.0
 from antlr4 import *
 if "." in __name__:
     from .MermaidFlowchartParser import MermaidFlowchartParser
@@ -56,11 +56,6 @@ class MermaidFlowchartParserVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by MermaidFlowchartParser#nodeLabel.
     def visitNodeLabel(self, ctx:MermaidFlowchartParser.NodeLabelContext):
-        return self.visitChildren(ctx)
-
-
-    # Visit a parse tree produced by MermaidFlowchartParser#labelText.
-    def visitLabelText(self, ctx:MermaidFlowchartParser.LabelTextContext):
         return self.visitChildren(ctx)
 
 

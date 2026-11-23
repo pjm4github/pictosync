@@ -20,9 +20,7 @@ import sys
 import pytest
 from PyQt6.QtCore import QPointF
 from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QApplication
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from canvas.items import (
     MetaRectItem,
@@ -38,7 +36,6 @@ from canvas.items import (
     MetaOrthoCurveItem,
     MetaIsoCubeItem,
 )
-from settings import SettingsManager
 
 # ============================================================================
 # Item config table: kind -> (ItemClass, constructor_args)
@@ -107,25 +104,6 @@ TEXT_KINDS = {"text"}
 # Fixtures
 # ---------------------------------------------------------------------------
 
-@pytest.fixture(scope="session")
-def qapp():
-    """Provide a single QApplication for the entire test session."""
-    app = QApplication.instance() or QApplication(sys.argv)
-    yield app
-
-
-@pytest.fixture()
-def main_window(qapp):
-    """Create a fresh MainWindow for each test."""
-    from main import MainWindow
-    sm = SettingsManager()
-    mw = MainWindow(sm)
-    mw.show()
-    qapp.processEvents()
-    yield mw
-    mw.close()
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -184,6 +162,17 @@ def _get_ann(mw, ann_id):
     ann = _find_ann(data, ann_id)
     assert ann is not None, f"Annotation {ann_id} not found in editor JSON"
     return ann
+
+
+def _meta_field(ann, name):
+    """Read a label/tech/note projection from a blocks-only contents dict.
+
+    The serialized JSON contract is blocks-only — label/tech/note are no
+    longer emitted as aliases — so reconstruct the model and read the
+    block-0/1/2 projection properties.
+    """
+    from models import AnnotationContents
+    return getattr(AnnotationContents.from_dict(ann.get("contents", {})), name)
 
 
 def _all_ids(mw):
@@ -261,7 +250,7 @@ class TestItemCreationAndJSON:
         mw = main_window
         item, ann_id = _create_item(mw, kind, qapp)
         ann = _get_ann(mw, ann_id)
-        assert "meta" in ann, f"No 'meta' key for {kind}"
+        assert "contents" in ann, f"No 'contents' key for {kind}"
         assert "style" in ann, f"No 'style' key for {kind}"
 
     @pytest.mark.parametrize("kind", ALL_KINDS)
@@ -294,7 +283,7 @@ class TestPropertyPanelMeta:
         qapp.processEvents()
 
         ann = _get_ann(mw, ann_id)
-        assert ann["meta"]["label"] == "TestLabel"
+        assert _meta_field(ann, "label") == "TestLabel"
 
     @pytest.mark.parametrize("kind", ALL_KINDS)
     def test_tech_edit(self, main_window, qapp, kind):
@@ -308,7 +297,7 @@ class TestPropertyPanelMeta:
         qapp.processEvents()
 
         ann = _get_ann(mw, ann_id)
-        assert ann["meta"]["tech"] == "gRPC"
+        assert _meta_field(ann, "tech") == "gRPC"
 
     @pytest.mark.parametrize("kind", ALL_KINDS)
     def test_note_edit(self, main_window, qapp, kind):
@@ -322,7 +311,7 @@ class TestPropertyPanelMeta:
         qapp.processEvents()
 
         ann = _get_ann(mw, ann_id)
-        assert ann["meta"]["note"] == "A useful note"
+        assert _meta_field(ann, "note") == "A useful note"
 
     @pytest.mark.parametrize("kind", ALL_KINDS)
     def test_all_meta_fields_together(self, main_window, qapp, kind):
@@ -338,9 +327,9 @@ class TestPropertyPanelMeta:
         qapp.processEvents()
 
         ann = _get_ann(mw, ann_id)
-        assert ann["meta"]["label"] == "MyService"
-        assert ann["meta"]["tech"] == "HTTPS/JSON"
-        assert ann["meta"]["note"] == "Main service"
+        assert _meta_field(ann, "label") == "MyService"
+        assert _meta_field(ann, "tech") == "HTTPS/JSON"
+        assert _meta_field(ann, "note") == "Main service"
 
 
 # ---------------------------------------------------------------------------
@@ -361,7 +350,7 @@ class TestPenColorChange:
 
         ann = _get_ann(mw, ann_id)
         pen_color = ann["style"]["pen"]["color"].upper()
-        assert pen_color == "#00FF00"
+        assert pen_color in ("#00FF00", "#00FF00FF")
 
     @pytest.mark.parametrize("kind", ALL_KINDS)
     def test_pen_color_custom(self, main_window, qapp, kind):
@@ -374,7 +363,7 @@ class TestPenColorChange:
 
         ann = _get_ann(mw, ann_id)
         pen_color = ann["style"]["pen"]["color"].upper()
-        assert pen_color == "#AB12CD"
+        assert pen_color in ("#AB12CD", "#AB12CDFF")
 
 
 # ---------------------------------------------------------------------------

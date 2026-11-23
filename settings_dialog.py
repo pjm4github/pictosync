@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
     QRadioButton,
     QButtonGroup,
     QSizePolicy,
+    QMessageBox,
 )
 from PyQt6.QtGui import QColor
 
@@ -63,40 +64,61 @@ CANVAS_ITEM_KINDS = [
 
 
 class ColorButton(QPushButton):
-    """A button that displays and allows selection of a color."""
+    """A button that displays and allows selection of a color (#RRGGBBAA).
 
-    def __init__(self, color: str = "#000000", parent=None):
+    The button background matches the stored color, and the text label
+    is rendered in a contrasting colour (black or white) so it remains
+    readable regardless of the chosen colour.  Alpha is blended against
+    a light-grey dock background for the luminance calculation.
+    """
+
+    def __init__(self, color: str = "#000000FF", parent=None):
         super().__init__(parent)
         self._color = color
         self._update_style()
         self.clicked.connect(self._pick_color)
-        self.setFixedWidth(60)
+        self.setFixedWidth(80)
 
     def _update_style(self):
-        """Update button appearance to show current color."""
-        # Determine text color based on luminance
-        qc = QColor(self._color)
-        luminance = 0.299 * qc.red() + 0.587 * qc.green() + 0.114 * qc.blue()
-        text_color = "#000000" if luminance > 128 else "#FFFFFF"
+        """Update button appearance to show current color with contrast text."""
+        from utils import hex_to_qcolor
+        qc = hex_to_qcolor(self._color, QColor(0, 0, 0, 255))
+        r, g, b, a = qc.red(), qc.green(), qc.blue(), qc.alpha()
+        af = a / 255.0
+        # Blend with assumed light background (240, 240, 240) for luminance
+        vis_r = int(r * af + 240 * (1 - af))
+        vis_g = int(g * af + 240 * (1 - af))
+        vis_b = int(b * af + 240 * (1 - af))
+        lum = 0.299 * vis_r + 0.587 * vis_g + 0.114 * vis_b
+        fg = "#000000" if lum > 140 else "#FFFFFF"
+        bg = f"rgba({r}, {g}, {b}, {af:.2f})"
         self.setStyleSheet(
-            f"background-color: {self._color}; color: {text_color}; "
-            f"border: 1px solid #888; padding: 2px 8px;"
+            f"background-color: {bg}; color: {fg}; "
+            f"border: 1px solid #888; padding: 2px 4px;"
         )
-        self.setText(self._color)
+        # Show short hex label
+        self.setText(f"#{r:02X}{g:02X}{b:02X}" if a == 255
+                     else f"#{r:02X}{g:02X}{b:02X}{a:02X}")
 
     def _pick_color(self):
-        """Open color picker dialog."""
-        color = QColorDialog.getColor(QColor(self._color), self, "Select Color")
+        """Open color picker dialog with alpha support."""
+        from utils import hex_to_qcolor
+        initial = hex_to_qcolor(self._color, QColor(0, 0, 0, 255))
+        color = QColorDialog.getColor(
+            initial, self, "Select Color",
+            QColorDialog.ColorDialogOption.ShowAlphaChannel,
+        )
         if color.isValid():
-            self._color = color.name()
+            r, g, b, a = color.red(), color.green(), color.blue(), color.alpha()
+            self._color = f"#{r:02X}{g:02X}{b:02X}{a:02X}"
             self._update_style()
 
     def color(self) -> str:
-        """Get current color as hex string."""
+        """Get current color as #RRGGBBAA hex string."""
         return self._color
 
     def setColor(self, color: str):
-        """Set current color from hex string."""
+        """Set current color from hex string (#RRGGBB or #RRGGBBAA)."""
         self._color = color
         self._update_style()
 
@@ -304,38 +326,9 @@ class SettingsDialog(QDialog):
         workspace_layout.addRow("", self.pptx_source_dir_cb)
 
         layout.addWidget(workspace_group)
-
-        # Gemini AI group
-        gemini_group = QGroupBox("Gemini AI")
-        gemini_layout = QVBoxLayout(gemini_group)
-        gemini_layout.setContentsMargins(6, 4, 6, 4)
-        gemini_layout.setSpacing(4)
-
-        model_label = QLabel("Available Models:")
-        gemini_layout.addWidget(model_label)
-
-        self.gemini_model_list = QListWidget()
-        self.gemini_model_list.setMaximumHeight(120)
-        gemini_layout.addWidget(self.gemini_model_list)
-
-        model_btn_row = QHBoxLayout()
-        self.gemini_add_btn = QPushButton("Add...")
-        self.gemini_add_btn.clicked.connect(self._add_gemini_model)
-        model_btn_row.addWidget(self.gemini_add_btn)
-
-        self.gemini_remove_btn = QPushButton("Remove")
-        self.gemini_remove_btn.clicked.connect(self._remove_gemini_model)
-        model_btn_row.addWidget(self.gemini_remove_btn)
-        model_btn_row.addStretch()
-        gemini_layout.addLayout(model_btn_row)
-
-        default_row = QFormLayout()
-        self.gemini_default_combo = QComboBox()
-        default_row.addRow("Default Model:", self.gemini_default_combo)
-        gemini_layout.addLayout(default_row)
-
-        layout.addWidget(gemini_group)
         layout.addStretch()
+
+        # (The Gemini AI group now lives in the External Tools tab.)
 
         return widget
 
@@ -382,6 +375,351 @@ class SettingsDialog(QDialog):
         idx = self.gemini_default_combo.findText(current_default)
         if idx >= 0:
             self.gemini_default_combo.setCurrentIndex(idx)
+
+    # =========================================================================
+    # Gemini AI group (lives in the External Tools tab)
+    # =========================================================================
+
+    def _build_gemini_group(self) -> QGroupBox:
+        """Build the Gemini AI group: model list, default model, and a button
+        to validate that the selected model is reachable/active."""
+        group = QGroupBox("Gemini AI")
+        gl = QVBoxLayout(group)
+        gl.setContentsMargins(6, 4, 6, 4)
+        gl.setSpacing(4)
+
+        note = QLabel(
+            "Gemini powers AI extraction of annotations from a diagram image. "
+            "Set the GOOGLE_API_KEY environment variable to your API key "
+            "(get one at https://aistudio.google.com/apikey), then use "
+            "Validate to confirm the selected model is reachable."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #666; font-size: 11px;")
+        gl.addWidget(note)
+
+        quota_note = QLabel(
+            "Free tier vs. billing: a project with NO billing uses the free "
+            "tier (limited requests — fine for testing). Enabling billing "
+            "makes it a PAID project governed by your monthly spend cap "
+            "(https://ai.studio/spend) — the free tier no longer applies. If "
+            "that cap is reached (or set to 0), every model returns a 429 "
+            "“spending cap” error even though your key is valid. "
+            "Fix: raise the cap, or use a key from a non-billed project."
+        )
+        quota_note.setWordWrap(True)
+        quota_note.setStyleSheet(
+            "color: #92400e; font-size: 11px; "
+            "background: #fffbeb; border: 1px solid #fde68a; "
+            "border-radius: 4px; padding: 4px;")
+        gl.addWidget(quota_note)
+
+        gl.addWidget(QLabel("Available Models:"))
+        self.gemini_model_list = QListWidget()
+        self.gemini_model_list.setMaximumHeight(120)
+        gl.addWidget(self.gemini_model_list)
+
+        btn_row = QHBoxLayout()
+        self.gemini_add_btn = QPushButton("Add...")
+        self.gemini_add_btn.clicked.connect(self._add_gemini_model)
+        btn_row.addWidget(self.gemini_add_btn)
+        self.gemini_remove_btn = QPushButton("Remove")
+        self.gemini_remove_btn.clicked.connect(self._remove_gemini_model)
+        btn_row.addWidget(self.gemini_remove_btn)
+        btn_row.addStretch()
+        gl.addLayout(btn_row)
+
+        default_row = QHBoxLayout()
+        default_row.addWidget(QLabel("Default Model:"))
+        self.gemini_default_combo = QComboBox()
+        default_row.addWidget(self.gemini_default_combo, 1)
+        self.gemini_validate_btn = QPushButton("Validate Connection")
+        self.gemini_validate_btn.clicked.connect(self._validate_gemini_model)
+        default_row.addWidget(self.gemini_validate_btn)
+        gl.addLayout(default_row)
+
+        discover_row = QHBoxLayout()
+        self.gemini_fetch_btn = QPushButton("Fetch Available Models…")
+        self.gemini_fetch_btn.setToolTip(
+            "Query the Gemini models API for the models your key can use "
+            "(also confirms the key is valid).")
+        self.gemini_fetch_btn.clicked.connect(self._fetch_gemini_models)
+        discover_row.addWidget(self.gemini_fetch_btn)
+        self.gemini_keys_btn = QPushButton("API Keys Page…")
+        self.gemini_keys_btn.setToolTip(
+            "Open Google AI Studio in your browser to manage / verify your "
+            "API key.")
+        self.gemini_keys_btn.clicked.connect(self._open_gemini_keys_page)
+        discover_row.addWidget(self.gemini_keys_btn)
+        discover_row.addStretch()
+        gl.addLayout(discover_row)
+
+        self.gemini_status_label = QLabel("")
+        self.gemini_status_label.setWordWrap(True)
+        self.gemini_status_label.setStyleSheet("font-size: 11px;")
+        gl.addWidget(self.gemini_status_label)
+        return group
+
+    @staticmethod
+    def _check_gemini_connection(model: str):
+        """Test connectivity to Gemini and whether *model* is available.
+
+        Returns ``(ok, level, title, detail)`` where *level* is one of
+        ``"ok"`` / ``"warn"`` / ``"error"``.  Performs a network call.
+        """
+        import os
+        try:
+            from google import genai
+        except Exception:
+            return (False, "error", "google-genai is not installed",
+                    "The Gemini SDK is missing. Install it and restart "
+                    "PictoSync:\n\n    pip install google-genai")
+        key = os.environ.get("GOOGLE_API_KEY", "").strip()
+        if not key:
+            return (False, "error", "GOOGLE_API_KEY is not set",
+                    "Set the GOOGLE_API_KEY environment variable to your "
+                    "Gemini API key, then restart PictoSync.\n\n"
+                    "Create a key at:\n  https://aistudio.google.com/apikey")
+        try:
+            client = genai.Client(api_key=key)
+            available = []
+            for m in client.models.list():
+                name = (getattr(m, "name", "") or "").split("/")[-1]
+                if name:
+                    available.append(name)
+        except Exception as e:
+            return (False, "error", "Could not connect to Gemini",
+                    "The connection test failed:\n\n"
+                    f"{type(e).__name__}: {e}\n\n"
+                    "Check that:\n"
+                    "  • your network/proxy allows access to "
+                    "generativelanguage.googleapis.com\n"
+                    "  • GOOGLE_API_KEY is valid and the Generative "
+                    "Language API is enabled for it")
+        short = model.split("/")[-1]
+        if short in available:
+            return (True, "ok", "Connected — model is active",
+                    f"Gemini is reachable and '{model}' is available for "
+                    "your API key.")
+        listed = "\n".join("  • " + a for a in sorted(available)[:20])
+        return (False, "warn", "Connected, but model not confirmed",
+                f"Gemini is reachable, but '{model}' was not found in the "
+                "models available to your API key (it may be a preview or "
+                "restricted model that still works).\n\n"
+                "Models reported as available:\n"
+                + (listed or "  (none returned)"))
+
+    def _validate_gemini_model(self):
+        """Validate the selected Gemini model and show a status dialog."""
+        from PyQt6.QtCore import Qt as _Qt
+        from PyQt6.QtWidgets import QApplication
+
+        model = self.gemini_default_combo.currentText().strip()
+        if not model and self.gemini_model_list.currentItem():
+            model = self.gemini_model_list.currentItem().text().strip()
+        if not model:
+            QMessageBox.warning(self, "Gemini",
+                                "Select a model to validate first.")
+            return
+
+        self.gemini_status_label.setText("Checking…")
+        QApplication.setOverrideCursor(_Qt.CursorShape.WaitCursor)
+        try:
+            ok, level, title, detail = self._check_gemini_connection(model)
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        color = {"ok": "#16a34a", "warn": "#d97706",
+                 "error": "#dc2626"}.get(level, "#666")
+        self.gemini_status_label.setText(
+            f"<b style='color:{color}'>{title}</b>")
+
+        box = QMessageBox(self)
+        box.setWindowTitle("Gemini Connection")
+        box.setIcon(QMessageBox.Icon.Information if level == "ok"
+                    else QMessageBox.Icon.Warning if level == "warn"
+                    else QMessageBox.Icon.Critical)
+        box.setText(title)
+        box.setInformativeText(detail)
+        box.exec()
+
+    # ── Discover available models ────────────────────────────────────────
+
+    @staticmethod
+    def _fetch_models_json(key: str, timeout: int = 15) -> dict:
+        """GET the official models endpoint and return the parsed JSON.
+
+        Raises on HTTP / network errors so the caller can report them.
+        """
+        import json
+        import ssl
+        import urllib.request
+        url = ("https://generativelanguage.googleapis.com/v1beta/models"
+               f"?key={key}&pageSize=1000")
+        req = urllib.request.Request(url, headers={"User-Agent": "PictoSync"})
+        ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    @staticmethod
+    def _models_to_rows(models: list) -> list:
+        """Reduce the raw models JSON to generateContent-capable rows.
+
+        Returns a sorted list of dicts: name, display, methods, in, out.
+        Handles both REST (camelCase) and SDK (snake_case) field names.
+        """
+        def g(m, *keys, default=None):
+            for k in keys:
+                if k in m and m[k] not in (None, ""):
+                    return m[k]
+            return default
+
+        rows = []
+        for m in models or []:
+            methods = g(m, "supportedGenerationMethods",
+                        "supported_generation_methods",
+                        "supportedActions", "supported_actions",
+                        default=[]) or []
+            if "generateContent" not in methods:
+                continue
+            name = (g(m, "name", default="") or "").split("/")[-1]
+            if not name:
+                continue
+            rows.append({
+                "name": name,
+                "display": g(m, "displayName", "display_name", default=name),
+                "methods": ", ".join(methods),
+                "in": g(m, "inputTokenLimit", "input_token_limit", default=""),
+                "out": g(m, "outputTokenLimit", "output_token_limit", default=""),
+            })
+        rows.sort(key=lambda r: r["name"])
+        return rows
+
+    def _open_gemini_keys_page(self):
+        """Open the Google AI Studio API-keys page in the default browser."""
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+        QDesktopServices.openUrl(QUrl("https://aistudio.google.com/apikey"))
+
+    def _fetch_gemini_models(self):
+        """Query the models API, confirm the key, and offer to add models."""
+        import os
+        import urllib.error
+        from PyQt6.QtCore import Qt as _Qt
+        from PyQt6.QtWidgets import QApplication
+
+        key = os.environ.get("GOOGLE_API_KEY", "").strip()
+        if not key:
+            QMessageBox.warning(
+                self, "Gemini",
+                "GOOGLE_API_KEY is not set.\n\nSet the environment variable "
+                "to your Gemini API key and restart PictoSync, then try again.")
+            return
+
+        self.gemini_status_label.setText("Fetching models…")
+        err = None
+        data = None
+        QApplication.setOverrideCursor(_Qt.CursorShape.WaitCursor)
+        try:
+            data = self._fetch_models_json(key)
+        except urllib.error.HTTPError as ex:
+            body = ""
+            try:
+                body = ex.read().decode("utf-8", "ignore")[:600]
+            except Exception:
+                pass
+            err = (f"The models request was rejected (HTTP {ex.code}).",
+                   (body or str(ex)) + ("\n\nA 400/403 usually means the API "
+                    "key is invalid, disabled, or restricted. Open the API "
+                    "Keys page to check it."))
+        except Exception as ex:
+            err = ("Couldn't reach the Gemini models API.",
+                   f"{type(ex).__name__}: {ex}\n\nCheck your network/proxy and "
+                   "that generativelanguage.googleapis.com is reachable.")
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        if err:
+            self.gemini_status_label.setText(
+                "<b style='color:#dc2626'>Could not fetch models</b>")
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Critical)
+            box.setWindowTitle("Gemini")
+            box.setText(err[0])
+            box.setInformativeText(err[1])
+            box.exec()
+            return
+
+        rows = self._models_to_rows(data.get("models", []))
+        self.gemini_status_label.setText(
+            f"<b style='color:#16a34a'>API key valid — {len(rows)} usable "
+            "models</b>")
+        self._show_gemini_models_dialog(rows)
+
+    def _show_gemini_models_dialog(self, rows: list):
+        """Show a table of usable models and let the user add a selection."""
+        from PyQt6.QtWidgets import (
+            QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+            QTableWidget, QTableWidgetItem, QAbstractItemView,
+        )
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Available Gemini Models")
+        dlg.resize(660, 440)
+        lay = QVBoxLayout(dlg)
+
+        note = QLabel(
+            "Models your API key can use for content generation. Select "
+            "rows and click “Add Selected” to add them to your model list.\n"
+            "Token limits come from the API. Per-minute/day rate limits and "
+            "pricing are NOT returned by the API — see "
+            "https://ai.google.dev/gemini-api/docs/rate-limits and the "
+            "Gemini pricing page.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #666; font-size: 11px;")
+        lay.addWidget(note)
+
+        table = QTableWidget(len(rows), 4, dlg)
+        table.setHorizontalHeaderLabels(
+            ["Model", "Capabilities", "Input tokens", "Output tokens"])
+        table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.verticalHeader().setVisible(False)
+        for i, r in enumerate(rows):
+            table.setItem(i, 0, QTableWidgetItem(r["name"]))
+            table.setItem(i, 1, QTableWidgetItem(r["methods"]))
+            table.setItem(i, 2, QTableWidgetItem(str(r["in"])))
+            table.setItem(i, 3, QTableWidgetItem(str(r["out"])))
+        table.resizeColumnsToContents()
+        table.horizontalHeader().setStretchLastSection(True)
+        lay.addWidget(table)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        add_btn = QPushButton("Add Selected")
+        close_btn = QPushButton("Close")
+        btn_row.addWidget(add_btn)
+        btn_row.addWidget(close_btn)
+        lay.addLayout(btn_row)
+
+        def add_selected():
+            existing = [self.gemini_model_list.item(i).text()
+                        for i in range(self.gemini_model_list.count())]
+            added = 0
+            for row in sorted({ix.row() for ix in table.selectedIndexes()}):
+                nm = rows[row]["name"]
+                if nm and nm not in existing:
+                    self.gemini_model_list.addItem(nm)
+                    existing.append(nm)
+                    added += 1
+            self._sync_gemini_default_combo()
+            if added:
+                dlg.accept()
+
+        add_btn.clicked.connect(add_selected)
+        close_btn.clicked.connect(dlg.reject)
+        dlg.exec()
 
     # =========================================================================
     # Editor Tab
@@ -836,16 +1174,31 @@ class SettingsDialog(QDialog):
         return outer
 
     def _load_item_defaults(self, s) -> None:
-        """Populate the item-kind widgets from *s.item_defaults*.
+        """Populate the item-kind widgets from the appropriate defaults.
+
+        When viewing the *user* layer (normal editing mode), the 3-tier
+        cascade (user → system kind → global) from
+        ``SettingsManager.get_item_defaults()`` is used so the dialog shows
+        the colours the user will actually see when creating items.
+
+        When viewing *builtin* or *system* layers the raw ``s.item_defaults``
+        dict is used (with ``SYSTEM_KIND_DEFAULTS`` fallback for builtin) so
+        each layer's own values are displayed accurately.
 
         Args:
             s: An ``AppSettings`` instance (may be merged, single-layer, or built-in).
         """
-        from settings import ItemDefaults
+        from settings import ItemDefaults, SYSTEM_KIND_DEFAULTS
         for kind, _label in CANVAS_ITEM_KINDS:
             if kind not in self._item_kind_widgets:
                 continue
-            id_obj = s.item_defaults.get(kind, ItemDefaults())
+            if self._active_layer == "user":
+                id_obj = self.settings_manager.get_item_defaults(kind)
+            elif self._active_layer == "builtin":
+                id_obj = SYSTEM_KIND_DEFAULTS.get(kind, ItemDefaults())
+            else:
+                id_obj = s.item_defaults.get(
+                    kind, SYSTEM_KIND_DEFAULTS.get(kind, ItemDefaults()))
             w = self._item_kind_widgets[kind]
             # Style
             w["pen_color"].setColor(id_obj.style.pen_color)
@@ -1068,6 +1421,27 @@ class SettingsDialog(QDialog):
         self.tools_mmdc_status.setStyleSheet("font-size: 11px;")
         mmdc_layout.addWidget(self.tools_mmdc_status)
 
+        # Render backend selector
+        backend_row = QHBoxLayout()
+        backend_label = QLabel("Render backend:")
+        backend_label.setToolTip(
+            "How Mermaid diagrams are rendered.\n"
+            "• Mermaid CLI (mmdc): headless browser; pixel-faithful layout.\n"
+            "• Default browser: renders in your regular browser (no headless\n"
+            "  browser needed) and sends the SVG back automatically.\n"
+            "If mmdc is not installed, the browser backend is used automatically."
+        )
+        backend_row.addWidget(backend_label)
+        self.tools_render_backend_combo = QComboBox()
+        self.tools_render_backend_combo.addItem("Mermaid CLI (mmdc)", "mmdc")
+        self.tools_render_backend_combo.addItem("Default browser (no headless)", "browser")
+        _cur_backend = self.settings_manager.settings.external_tools.mermaid_render_backend
+        _bidx = self.tools_render_backend_combo.findData(_cur_backend)
+        self.tools_render_backend_combo.setCurrentIndex(_bidx if _bidx >= 0 else 0)
+        backend_row.addWidget(self.tools_render_backend_combo)
+        backend_row.addStretch()
+        mmdc_layout.addLayout(backend_row)
+
         # PNG scale factor
         scale_row = QHBoxLayout()
         scale_label = QLabel("PNG scale factor:")
@@ -1127,6 +1501,9 @@ class SettingsDialog(QDialog):
         mmdc_layout.addLayout(c4_bnd_row)
 
         layout.addWidget(mmdc_group)
+
+        # ── Gemini AI ──
+        layout.addWidget(self._build_gemini_group())
 
         layout.addStretch()
 
@@ -1360,6 +1737,7 @@ class SettingsDialog(QDialog):
             "tools_nodejs_path": s.external_tools.nodejs_path,
             "tools_mmdc_path": s.external_tools.mmdc_path,
             "tools_mmdc_png_scale": s.external_tools.mmdc_png_scale,
+            "tools_mermaid_render_backend": s.external_tools.mermaid_render_backend,
             "tools_c4_shapes_per_row": s.external_tools.c4_shapes_per_row,
             "tools_c4_boundaries_per_row": s.external_tools.c4_boundaries_per_row,
         }
@@ -1585,6 +1963,7 @@ class SettingsDialog(QDialog):
         if not self.tools_mmdc_edit.isReadOnly():
             s.external_tools.mmdc_path = self.tools_mmdc_edit.text().strip()
         s.external_tools.mmdc_png_scale = self.tools_mmdc_scale_spin.value()
+        s.external_tools.mermaid_render_backend = self.tools_render_backend_combo.currentData()
         s.external_tools.c4_shapes_per_row = self.tools_c4_shapes_spin.value()
         s.external_tools.c4_boundaries_per_row = self.tools_c4_bnd_spin.value()
 
@@ -1697,6 +2076,7 @@ class SettingsDialog(QDialog):
         s.external_tools.nodejs_path = snapshot["tools_nodejs_path"]
         s.external_tools.mmdc_path = snapshot["tools_mmdc_path"]
         s.external_tools.mmdc_png_scale = snapshot["tools_mmdc_png_scale"]
+        s.external_tools.mermaid_render_backend = snapshot["tools_mermaid_render_backend"]
         s.external_tools.c4_shapes_per_row = snapshot["tools_c4_shapes_per_row"]
         s.external_tools.c4_boundaries_per_row = snapshot["tools_c4_boundaries_per_row"]
 

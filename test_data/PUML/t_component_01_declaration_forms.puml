@@ -1,0 +1,112 @@
+@startuml t_component_01_declaration_forms
+title Component Diagram — Declaration Forms\n(bracket, keyword, interface, alias, stereotype, color, tag)
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. BRACKET FORM  [Name]
+' ══════════════════════════════════════════════════════════════════════════
+package "Bracket Form Declarations" as PKG_BRACKET #EEF2FF {
+    [SimpleComponent]
+    [Component With Spaces] as CWS
+    [Multi\nLine\nLabel] as MLL
+    [Stereotyped] <<service>>
+    [Tagged] $alpha $beta
+    [Colored] #FFE0B2
+    [StereotypeAndColor] <<controller>> #E8F5E9
+    [AliasStereotypeTag] as AST <<repository>> $repo #F3E5F5
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. KEYWORD FORM  component
+' ══════════════════════════════════════════════════════════════════════════
+package "Keyword Form Declarations" as PKG_KEYWORD #FFF8E1 {
+    component SimpleKeyword
+    component "Quoted Name" as QN
+    component "Long Quoted\nMultiline" as LQM
+    component KeywordStereo <<facade>>
+    component KeywordTagged $gamma
+    component KeywordColored #B3E5FC
+    component "Full Featured" as FF <<gateway>> $gw #FCE4EC
+    component KeywordBody [
+        This is a multi-line
+        description body
+        inside square brackets
+    ]
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. INTERFACE — CIRCLE-PAREN FORM  ()
+' ══════════════════════════════════════════════════════════════════════════
+package "Interface Declarations" as PKG_IFACE #E8F5E9 {
+    () "SimpleInterface"
+    () "Aliased Interface" as AI
+    () "Stereo Interface" as SI
+    interface KeywordInterface
+    interface "Keyword Quoted" as KQI
+    interface KWStereo <<provided>>
+    interface "KW Full" as KWF <<required>> #FFF9C4
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. PORT DECLARATIONS (inside a component body)
+' ══════════════════════════════════════════════════════════════════════════
+component "Port Host" as PORT_HOST {
+    port pIn
+    portin pIn2
+    portout pOut
+    port "Named Port" as NP
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. RELATIONSHIPS — all forms
+' ══════════════════════════════════════════════════════════════════════════
+
+' Standard solid arrows
+[SimpleComponent] --> [Stereotyped] : uses
+[Stereotyped] --> QN : depends
+
+' Dotted / dependency arrows
+CWS ..> MLL : realizes
+LQM .> FF : imports
+
+' Interface lollipop wiring
+KeywordInterface -- [SimpleKeyword] : provided by
+AI --( [KeywordStereo] : required
+
+' Bidirectional
+[Colored] <--> [KeywordColored] : sync
+
+' Named interface connection
+KQI -- PORT_HOST
+pOut --> SimpleInterface : exposes
+
+' Bracket to keyword cross
+[Tagged] --> KeywordTagged : cross-form link
+[AliasStereotypeTag] ..> "Full Featured" : async
+
+note right of PKG_BRACKET
+    **Parser targets:**
+    - [Name] bracket tokenization
+    - alias resolution (as)
+    - <<stereotype>> token
+    - $tag token (one or more)
+    - #RRGGBB color token
+    - Combined attribute ordering
+end note
+
+note right of PKG_KEYWORD
+    **Parser targets:**
+    - component keyword
+    - quoted vs unquoted name
+    - multi-line body [...] block
+    - attribute combination order
+end note
+
+note bottom of PKG_IFACE
+    **Parser targets:**
+    - () circle-paren form
+    - interface keyword form
+    - <<provided>> / <<required>> stereotypes
+    - port / portin / portout keywords
+end note
+
+@enduml

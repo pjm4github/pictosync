@@ -841,7 +841,7 @@ class JsonCodeEditor(QPlainTextEdit):
             self._suppress_cursor_signal = False
 
     # Read-only JSON keys — character input is blocked on these lines
-    _READONLY_KEYS = frozenset({"ports"})
+    _READONLY_KEYS = frozenset({"ports", "label", "tech", "note"})
 
     def _is_cursor_on_readonly_field(self) -> bool:
         """Check if the cursor is on a line belonging to a read-only field.
@@ -901,7 +901,7 @@ class JsonCodeEditor(QPlainTextEdit):
             cursor_rect = self.cursorRect()
             global_pos = self.mapToGlobal(cursor_rect.bottomLeft())
             QToolTip.showText(global_pos,
-                              "These are read-only ports. To remove or change a port, edit the port ID itself.",
+                              "This field is read-only. Edit the blocks/runs text instead.",
                               self, self.cursorRect(), 2000)
             event.accept()
             return

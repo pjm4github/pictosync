@@ -19,16 +19,146 @@ from typing import Any, Dict, List, Optional, Tuple
 from models import normalize_meta
 
 
+def _extract_text_format(text_els, ns: str = "") -> Dict[str, Any]:
+    """Extract text formatting from a list of SVG ``<text>`` elements.
+
+    Returns dict with ``text_color``, ``text_size``, ``text_family`` from
+    the first text element that has styling attributes.
+    """
+    result: Dict[str, Any] = {}
+    for t in text_els if isinstance(text_els, list) else [text_els]:
+        if t is None:
+            continue
+        # Color: fill attribute or style fill
+        fill = t.get("fill", "")
+        if not fill:
+            style = t.get("style", "")
+            m = re.search(r'fill:\s*(#[0-9A-Fa-f]{3,8})', style)
+            if m:
+                fill = m.group(1)
+        if fill and fill.lower() not in ("none", ""):
+            result.setdefault("text_color", fill)
+
+        # Font size
+        fs = t.get("font-size", "")
+        if not fs:
+            style = t.get("style", "")
+            m = re.search(r'font-size:\s*(\d+(?:\.\d+)?)', style)
+            if m:
+                fs = m.group(1)
+        if fs:
+            try:
+                result.setdefault("text_size", float(fs))
+            except ValueError:
+                pass
+
+        # Font family
+        ff = t.get("font-family", "")
+        if not ff:
+            style = t.get("style", "")
+            m = re.search(r"font-family:\s*['\"]?([^;'\"]+)", style)
+            if m:
+                ff = m.group(1).strip()
+        if ff:
+            result.setdefault("text_family", ff)
+
+        # Stop once we have all three
+        if "text_color" in result and "text_size" in result:
+            break
+    return result
+
+
 def _normalize_annotations(annotations: List[Dict[str, Any]]) -> None:
-    """Apply formatting defaults to all annotation meta dicts in place."""
+    """Convert flat meta dicts to overlay-2.0 contents with blocks/runs.
+
+    Replaces the ``meta`` key with ``contents`` containing ``blocks``,
+    ``frame``, and ``default_format``.  Recurses into group children.
+    """
     for ann in annotations:
         if isinstance(ann, dict) and "meta" in ann:
-            kind = ann.get("kind", "")
-            ann["meta"] = normalize_meta(ann["meta"], kind)
-        for child in ann.get("children", []):
-            if isinstance(child, dict) and "meta" in child:
-                kind = child.get("kind", "")
-                child["meta"] = normalize_meta(child["meta"], kind)
+            _meta_to_contents(ann)
+        # Recurse into children (nested groups)
+        _normalize_annotations(ann.get("children", []))
+
+
+def _meta_to_contents(ann: Dict[str, Any]) -> None:
+    """Convert a single annotation's flat meta to overlay-2.0 contents."""
+    from models import (AnnotationContents, CharFormat, TextBlock,
+                        TextRun, TextFrame)
+    meta = ann.get("meta", {})
+    kind = ann.get("kind", "")
+
+    label = meta.get("label", "")
+    tech = meta.get("tech", "")
+    note = meta.get("note", "")
+    dsl = meta.get("dsl")
+
+    # Text formatting from SVG (set by parser if available)
+    # Fall back to per-kind settings defaults for missing values
+    from settings import get_settings
+    kind_defs = get_settings().get_item_defaults(kind)
+    kind_color = getattr(kind_defs.contents, "color", "")
+    kind_font_family = getattr(kind_defs.contents, "font_family", "")
+    kind_font_size = getattr(kind_defs.contents, "font_size", 12)
+
+    text_color = meta.get("text_color", "") or kind_color
+    text_size = meta.get("text_size", 0) or kind_font_size
+    text_family = meta.get("text_family", "") or kind_font_family
+
+    label_size = text_size or meta.get("label_size", 12)
+    tech_size = meta.get("tech_size", 0) or (label_size * 0.83)
+    note_size = meta.get("note_size", 0) or (label_size * 0.83)
+
+    blocks = []
+    if label:
+        blocks.append(TextBlock(runs=[TextRun(
+            type="text", text=label,
+            format=CharFormat(bold=True, font_size=label_size,
+                              color=text_color, font_family=text_family))]))
+    if tech:
+        blocks.append(TextBlock(runs=[TextRun(
+            type="text", text=tech,
+            format=CharFormat(italic=True, font_size=round(tech_size, 1),
+                              color=text_color, font_family=text_family))]))
+    if note and note != label:
+        blocks.append(TextBlock(runs=[TextRun(
+            type="text", text=note,
+            format=CharFormat(font_size=round(note_size, 1),
+                              color=text_color, font_family=text_family))]))
+
+    halign = meta.get("label_align", "center")
+    valign = meta.get("text_valign", "top")
+    frame = TextFrame(halign=halign, valign=valign)
+
+    # Build default_format dict with only non-empty SVG-extracted values.
+    # Missing keys will be filled by normalize_meta from settings defaults.
+    df_dict: Dict[str, Any] = {"font_size": label_size}
+    if text_color:
+        df_dict["color"] = text_color
+    if text_family:
+        df_dict["font_family"] = text_family
+
+    contents: Dict[str, Any] = {
+        "frame": frame.to_dict(),
+        "default_format": df_dict,
+        "blocks": [b.to_dict() for b in blocks],
+        "wrap": meta.get("wrap", True),
+    }
+
+    # Preserve extra fields (dsl, text_box_*, anchor_*)
+    for key in ("text_box_width", "text_box_height", "text_anchor",
+                "text_anchor_v", "anchor_value"):
+        if key in meta:
+            contents[key] = meta[key]
+    if dsl:
+        contents["dsl"] = dsl
+
+    # Apply formatting defaults
+    contents = normalize_meta(contents, kind)
+
+    # Replace meta with contents
+    ann["contents"] = contents
+    del ann["meta"]
 
 
 # ───────────────────────────────────────────────
@@ -78,6 +208,30 @@ def _normalize_color(color: str) -> str:
         color = "#" + color
     # Ensure uppercase hex
     return color.upper()
+
+
+def _detect_arrow_mode(polys, path_id: str = "", link_type: str = "") -> str:
+    """Determine arrow mode from SVG polygon arrowheads and path ID.
+
+    Args:
+        polys: List of ``<polygon>`` elements (arrowhead markers).
+        path_id: The SVG path ``id`` attribute (e.g. ``"A-to-B"`` or ``"A-backto-B"``).
+        link_type: The ``data-link-type`` attribute (e.g. ``"association"``).
+
+    Returns:
+        Arrow mode: ``"none"``, ``"start"``, ``"end"``, or ``"both"``.
+    """
+    if link_type == "association":
+        return "none"
+    n = len(polys) if polys is not None else 0
+    if n == 0:
+        return "none"
+    if n >= 2:
+        return "both"
+    # Single polygon — check if it's a reverse arrow
+    if "backto" in path_id.lower():
+        return "start"
+    return "end"
 
 
 def _make_line_style(
@@ -145,6 +299,38 @@ def _parse_label(raw: str) -> Tuple[str, str, str]:
     if m and not tech:
         label = m.group(1).strip()
         tech = m.group(2).strip()
+
+    return _dedup_label_tech_note(label, tech, note)
+
+
+def _dedup_label_tech_note(label: str, tech: str, note: str) -> Tuple[str, str, str]:
+    """Remove duplicate text across label, tech, and note fields.
+
+    Priority order: label > tech > note.  If tech duplicates label it is
+    cleared.  If note duplicates label or tech it is cleared.  Comparison
+    is case-insensitive and whitespace-normalised.
+
+    Args:
+        label: Primary display text.
+        tech:  Technology / stereotype text.
+        note:  Description / note text.
+
+    Returns:
+        Tuple of (label, tech, note) with duplicates removed.
+    """
+    def _norm(s: str) -> str:
+        return " ".join(s.split()).lower().strip()
+
+    nl = _norm(label)
+    nt = _norm(tech)
+    nn = _norm(note)
+
+    if nt and nt == nl:
+        tech = ""
+        nt = ""
+    if nn:
+        if nn == nl or nn == nt:
+            note = ""
 
     return label, tech, note
 
@@ -403,6 +589,91 @@ def _path_bbox(d: str) -> Tuple[float, float, float, float]:
     min_x, max_x = min(xs), max(xs)
     min_y, max_y = min(ys), max(ys)
     return (round(min_x, 2), round(min_y, 2), round(max_x - min_x, 2), round(max_y - min_y, 2))
+
+
+def _path_to_curve_polygon(
+    d: str, bx: float, by: float, bw: float, bh: float,
+) -> list:
+    """Extract SVG path M/C/L commands as polygon points with curve annotations.
+
+    Produces the extended ``_rel_points`` format used by MetaPolygonItem:
+    - ``[rx, ry]`` for straight segments (M, L)
+    - ``[rx, ry, "C", c1x, c1y, c2x, c2y]`` for cubic bezier (C)
+    - ``[rx, ry, "Q", cx, cy]`` for quadratic bezier (Q)
+
+    All coordinates are relative (0-1) within the bounding box.
+
+    Args:
+        d: SVG path ``d`` attribute string.
+        bx, by, bw, bh: Bounding box of the path.
+
+    Returns:
+        List of point entries in the extended polygon format.
+    """
+    if bw < 1e-6 or bh < 1e-6:
+        return []
+
+    def _rel(x: float, y: float) -> Tuple[float, float]:
+        return (round((x - bx) / bw, 4), round((y - by) / bh, 4))
+
+    points: list = []
+    # Parse M (moveto) and L (lineto) — straight segments
+    for m in re.finditer(r'[ML]\s*([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)', d):
+        rx, ry = _rel(float(m.group(1)), float(m.group(2)))
+        points.append([rx, ry])
+
+    # Parse C (cubic bezier) — replace the last straight point with curve
+    for m in re.finditer(
+        r'C\s*([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)\s+'
+        r'([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)\s+'
+        r'([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)',
+        d,
+    ):
+        c1x, c1y = _rel(float(m.group(1)), float(m.group(2)))
+        c2x, c2y = _rel(float(m.group(3)), float(m.group(4)))
+        rx, ry = _rel(float(m.group(5)), float(m.group(6)))
+        points.append([rx, ry, "C", c1x, c1y, c2x, c2y])
+
+    # Parse Q (quadratic bezier)
+    for m in re.finditer(
+        r'Q\s*([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)\s+'
+        r'([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)',
+        d,
+    ):
+        cx, cy = _rel(float(m.group(1)), float(m.group(2)))
+        rx, ry = _rel(float(m.group(3)), float(m.group(4)))
+        points.append([rx, ry, "Q", cx, cy])
+
+    # Re-sort by order of appearance in the path string to maintain
+    # the correct vertex sequence.  Each regex match has a start position.
+    # Instead, let's walk the path in order.
+    # --- Redo: walk commands sequentially ---
+    points = []
+    pos = 0
+    cmd_pat = re.compile(
+        r'([MLCQZz])\s*'
+        r'((?:[-+]?\d*\.?\d+[,\s]*)*)',
+    )
+    for cm in cmd_pat.finditer(d):
+        cmd = cm.group(1)
+        coords_str = cm.group(2).strip()
+        nums = [float(x) for x in re.findall(r'[-+]?\d*\.?\d+', coords_str)]
+
+        if cmd in ('M', 'L') and len(nums) >= 2:
+            rx, ry = _rel(nums[0], nums[1])
+            points.append([rx, ry])
+        elif cmd == 'C' and len(nums) >= 6:
+            c1x, c1y = _rel(nums[0], nums[1])
+            c2x, c2y = _rel(nums[2], nums[3])
+            rx, ry = _rel(nums[4], nums[5])
+            points.append([rx, ry, "C", c1x, c1y, c2x, c2y])
+        elif cmd == 'Q' and len(nums) >= 4:
+            cx, cy = _rel(nums[0], nums[1])
+            rx, ry = _rel(nums[2], nums[3])
+            points.append([rx, ry, "Q", cx, cy])
+        # Z/z — close path, no coordinates needed
+
+    return points
 
 
 def _path_points(d: str) -> List[List[float]]:
@@ -726,6 +997,7 @@ def _parse_svg_positions(svg_path: str) -> Dict[str, Any]:
         path_el = g.find(f"{{{ns}}}path")
         style = path_el.get("style", "") if path_el is not None else ""
         d_attr = path_el.get("d", "") if path_el is not None else ""
+        path_id = path_el.get("id", "") if path_el is not None else ""
         polys = g.findall(f"{{{ns}}}polygon")
 
         svg_links.append({
@@ -735,6 +1007,7 @@ def _parse_svg_positions(svg_path: str) -> Dict[str, Any]:
             "style": style,
             "path_d": d_attr,
             "has_arrowhead": len(polys) > 0,
+            "arrow_mode": _detect_arrow_mode(polys, path_id),
         })
 
     return {
@@ -764,12 +1037,659 @@ def _apply_svg_link_style(conn: Dict[str, Any], svg_style: str) -> None:
 
 
 # ───────────────────────────────────────────────
+# Activity diagram ANTLR source parser
+# ───────────────────────────────────────────────
+
+
+def _parse_activity_source(puml_text: str) -> Dict[str, Any]:
+    """Parse PlantUML activity source with the ANTLR4 grammar.
+
+    Returns a dict with extracted semantic information::
+
+        {
+            "title": "Diagram Title",
+            "actions": [
+                {"text": "Action label", "color": "#Red", "stereotype": "<<input>>",
+                 "swimlane": "Customer"},
+                ...
+            ],
+            "conditions": [
+                {"type": "if", "condition": "x?", "then_label": "yes",
+                 "else_label": "no", "branches": [...]},
+                ...
+            ],
+            "loops": [
+                {"type": "repeat"|"while", "condition": "done?",
+                 "backward": "Retry action", ...},
+                ...
+            ],
+            "forks": [
+                {"type": "fork"|"split", "branches": 3, "join_spec": "and"},
+                ...
+            ],
+            "containers": [
+                {"type": "partition", "name": "MyPartition", "color": "#E8F5E9"},
+                ...
+            ],
+            "swimlanes": [
+                {"name": "Customer", "color": "#FFE0B2"},
+                ...
+            ],
+            "connectors": ["A", "B", "C"],
+            "labels": ["retryPoint", "jumpTarget1"],
+            "notes": [
+                {"side": "right", "text": "Note text", "color": ""},
+                ...
+            ],
+            "arrows": [
+                {"style": "", "label": "arrow label"},
+                ...
+            ],
+            "controls": ["start", "stop", "end", "detach", "kill", "break"],
+        }
+
+    Returns an empty dict if the grammar is unavailable or parsing fails.
+    """
+    try:
+        from antlr4 import CommonTokenStream, InputStream
+        from plantuml.grammar.generated.PlantUMLActivityLexer import PlantUMLActivityLexer
+        from plantuml.grammar.generated.PlantUMLActivityParser import PlantUMLActivityParser
+        from plantuml.grammar.generated.PlantUMLActivityVisitor import PlantUMLActivityVisitor
+    except ImportError:
+        return {}
+
+    class _Visitor(PlantUMLActivityVisitor):
+        def __init__(self):
+            self.title = ""
+            self.actions: List[Dict[str, Any]] = []
+            self.conditions: List[Dict[str, Any]] = []
+            self.loops: List[Dict[str, Any]] = []
+            self.forks: List[Dict[str, Any]] = []
+            self.containers: List[Dict[str, Any]] = []
+            self.swimlanes: List[Dict[str, Any]] = []
+            self.connectors: List[str] = []
+            self.labels: List[str] = []
+            self.notes: List[Dict[str, Any]] = []
+            self.arrows: List[Dict[str, Any]] = []
+            self.controls: List[str] = []
+            self._current_swimlane = ""
+
+        # ── Helpers ────────────────────────────────────────
+
+        @staticmethod
+        def _parse_action_token(token_text: str) -> Dict[str, str]:
+            """Parse ACTION token text like '#Red:Action text;' or ':text;'.
+
+            Returns dict with 'text', 'color', and 'bullet' keys.
+            """
+            t = token_text.strip()
+            color = ""
+            if t.startswith("#"):
+                # #color:text;  — find the first ':' after '#'
+                colon_idx = t.index(":")
+                color = t[: colon_idx]
+                t = t[colon_idx:]
+            # Strip leading ':' and trailing ';'
+            if t.startswith(":"):
+                t = t[1:]
+            if t.endswith(";"):
+                t = t[:-1]
+            text = t.strip()
+            # Detect embedded bullet lines
+            bullet = ""
+            for line in text.split("\n"):
+                stripped = line.strip()
+                if stripped.startswith("- ") or stripped.startswith("* ") or stripped.startswith("** "):
+                    bullet = stripped[0]  # '-' or '*'
+                    break
+            return {"text": text, "color": color, "bullet": bullet}
+
+        @staticmethod
+        def _parse_swimlane_token(token_text: str) -> Dict[str, str]:
+            """Parse SWIMLANE token '|#color|Name|' or '|Name|'.
+
+            Returns dict with 'name' and 'color' keys.
+            """
+            t = token_text.strip()
+            # Strip outer pipes
+            if t.startswith("|"):
+                t = t[1:]
+            if t.endswith("|"):
+                t = t[:-1]
+            # Trailing text after last | (title for alias form)
+            parts = t.split("|")
+            color = ""
+            name = ""
+            if len(parts) >= 2 and parts[0].startswith("#"):
+                color = parts[0]
+                name = parts[1].strip()
+            elif len(parts) >= 1:
+                name = parts[0].strip()
+            return {"name": name, "color": color}
+
+        @staticmethod
+        def _parse_arrow_token(token_text: str) -> str:
+            """Extract style info from ARROW token like '-[#red,bold]->'."""
+            t = token_text.strip()
+            if "[" in t and "]" in t:
+                return t[t.index("[") + 1: t.index("]")]
+            return ""
+
+        @staticmethod
+        def _paren_text(ctx) -> str:
+            """Extract text from a parenContent context."""
+            if ctx is None:
+                return ""
+            return ctx.getText().strip()
+
+        @staticmethod
+        def _parse_note_token(token_text: str) -> Dict[str, str]:
+            """Parse NOTE_INLINE_TOKEN or NOTE_BLOCK_TOKEN.
+
+            Returns dict with 'side', 'text', 'color'.
+            """
+            t = token_text.strip()
+            side = ""
+            color = ""
+            text = ""
+
+            # Inline: note left|right [#color] : text
+            if ":" in t:
+                before_colon, _, text = t.partition(":")
+                text = text.strip()
+                before_colon = before_colon.strip()
+            else:
+                # Block: note [left|right] [#color]\n...\nend note
+                # Find first newline — everything after is body
+                nl_idx = t.find("\n")
+                if nl_idx >= 0:
+                    before_colon = t[:nl_idx].strip()
+                    body = t[nl_idx + 1:]
+                    # Strip trailing 'end note'
+                    end_idx = body.rfind("end note")
+                    if end_idx >= 0:
+                        body = body[:end_idx]
+                    text = body.strip()
+                else:
+                    before_colon = t
+                    text = ""
+
+            lower = before_colon.lower()
+            if "right" in lower:
+                side = "right"
+            elif "left" in lower:
+                side = "left"
+
+            # Extract #color
+            import re as _re
+            cm = _re.search(r'#[a-zA-Z0-9]+', before_colon)
+            if cm:
+                color = cm.group(0)
+
+            return {"side": side, "text": text, "color": color}
+
+        # ── Visitor overrides ──────────────────────────────
+
+        def visitTitleStmt(self, ctx):
+            if ctx.restOfLine():
+                self.title = ctx.restOfLine().getText().strip()
+            return self.visitChildren(ctx)
+
+        def visitActionStmt(self, ctx):
+            action_tok = ctx.ACTION()
+            if action_tok:
+                info = self._parse_action_token(action_tok.getText())
+                stereo = ctx.STEREO()
+                if stereo:
+                    info["stereotype"] = stereo.getText().strip()
+                else:
+                    info["stereotype"] = ""
+                info["swimlane"] = self._current_swimlane
+                self.actions.append(info)
+            return self.visitChildren(ctx)
+
+        def visitListActionStmt(self, ctx):
+            bullet = ""
+            if ctx.BULLET_DASH():
+                bullet = "-"
+            elif ctx.BULLET_STAR():
+                bullet = ctx.BULLET_STAR().getText()
+            text = ctx.restOfLine().getText().strip() if ctx.restOfLine() else ""
+            self.actions.append({
+                "text": text, "color": "", "stereotype": "",
+                "swimlane": self._current_swimlane,
+                "bullet": bullet,
+            })
+            return self.visitChildren(ctx)
+
+        def visitControlStmt(self, ctx):
+            text = ctx.getText().strip()
+            self.controls.append(text)
+            return self.visitChildren(ctx)
+
+        def visitSwimlaneStmt(self, ctx):
+            tok = ctx.SWIMLANE()
+            if tok:
+                info = self._parse_swimlane_token(tok.getText())
+                self._current_swimlane = info["name"]
+                # Add to swimlanes list if not already present
+                if not any(s["name"] == info["name"] for s in self.swimlanes):
+                    self.swimlanes.append(info)
+            return self.visitChildren(ctx)
+
+        def visitConnectorStmt(self, ctx):
+            id_tok = ctx.ID()
+            if id_tok:
+                name = id_tok.getText()
+                if name not in self.connectors:
+                    self.connectors.append(name)
+            return self.visitChildren(ctx)
+
+        def visitArrowStmt(self, ctx):
+            arrow_tok = ctx.ARROW()
+            style = self._parse_arrow_token(arrow_tok.getText()) if arrow_tok else ""
+            label = ""
+            if ctx.arrowLabel():
+                label = ctx.arrowLabel().getText().strip()
+                if label.endswith(";"):
+                    label = label[:-1].strip()
+            self.arrows.append({"style": style, "label": label})
+            return self.visitChildren(ctx)
+
+        def visitIfBlock(self, ctx):
+            cond = self._paren_text(ctx.condExpr().parenContent()) if ctx.condExpr() else ""
+            then_label = ""
+            cond_op = ctx.condOp()
+            if cond_op and cond_op.thenLabel() and cond_op.thenLabel().parenContent():
+                then_label = self._paren_text(cond_op.thenLabel().parenContent())
+
+            # Count branches
+            elseif_count = len(ctx.elseifBranch()) if ctx.elseifBranch() else 0
+            has_else = ctx.elseBranch() is not None
+            else_label = ""
+            if has_else and ctx.elseBranch().parenContent():
+                else_label = self._paren_text(ctx.elseBranch().parenContent())
+
+            self.conditions.append({
+                "type": "if",
+                "condition": cond,
+                "then_label": then_label,
+                "else_label": else_label,
+                "elseif_count": elseif_count,
+                "has_else": has_else,
+            })
+            return self.visitChildren(ctx)
+
+        def visitSwitchBlock(self, ctx):
+            cond = self._paren_text(ctx.condExpr().parenContent()) if ctx.condExpr() else ""
+            case_count = len(ctx.caseBranch()) if ctx.caseBranch() else 0
+            case_labels = []
+            for cb in (ctx.caseBranch() or []):
+                if cb.parenContent():
+                    case_labels.append(self._paren_text(cb.parenContent()))
+            self.conditions.append({
+                "type": "switch",
+                "condition": cond,
+                "case_count": case_count,
+                "case_labels": case_labels,
+            })
+            return self.visitChildren(ctx)
+
+        def visitRepeatBlock(self, ctx):
+            start_action = ""
+            if ctx.ACTION():
+                start_action = self._parse_action_token(ctx.ACTION().getText())["text"]
+            cond = ""
+            rw = ctx.condExpr()
+            if rw and rw.parenContent():
+                cond = self._paren_text(rw.parenContent())
+            backward = ""
+            bc = ctx.backwardClause()
+            if bc and bc.ACTION():
+                backward = self._parse_action_token(bc.ACTION().getText())["text"]
+            # is/not labels
+            is_label = ""
+            not_label = ""
+            rwl = ctx.repeatWhileLabels()
+            if rwl:
+                for pc in (rwl.parenContent() or []):
+                    text = self._paren_text(pc)
+                    # First parenContent after KW_IS, second after KW_NOT
+                    if not is_label and rwl.KW_IS():
+                        is_label = text
+                    elif not not_label:
+                        not_label = text
+            self.loops.append({
+                "type": "repeat",
+                "condition": cond,
+                "start_action": start_action,
+                "backward": backward,
+                "is_label": is_label,
+                "not_label": not_label,
+            })
+            return self.visitChildren(ctx)
+
+        def visitWhileBlock(self, ctx):
+            cond = ""
+            if ctx.condExpr() and ctx.condExpr().parenContent():
+                cond = self._paren_text(ctx.condExpr().parenContent())
+            is_label = ""
+            # while (cond) is (label) — parenContent after KW_IS
+            pcs = ctx.parenContent()
+            if pcs:
+                # Could be list, get first
+                if isinstance(pcs, list):
+                    is_label = self._paren_text(pcs[0]) if pcs else ""
+                else:
+                    is_label = self._paren_text(pcs)
+            backward = ""
+            bc = ctx.backwardClause()
+            if bc and bc.ACTION():
+                backward = self._parse_action_token(bc.ACTION().getText())["text"]
+            end_label = ""
+            # endwhile (label) — parenContent at end
+            # The endwhile label parenContent is the last one outside the is()
+            # Get it from the raw children after KW_ENDWHILE
+            for i, child in enumerate(ctx.children or []):
+                tok_text = getattr(child, 'symbol', None)
+                if tok_text and hasattr(tok_text, 'text') and tok_text.text == 'endwhile':
+                    # Look for LPAREN...RPAREN after endwhile
+                    for j in range(i + 1, len(ctx.children)):
+                        c = ctx.children[j]
+                        pc_ctx = getattr(c, 'getRuleIndex', None)
+                        if pc_ctx is not None:
+                            try:
+                                from plantuml.grammar.generated.PlantUMLActivityParser import PlantUMLActivityParser
+                                if c.getRuleIndex() == PlantUMLActivityParser.RULE_parenContent:
+                                    end_label = self._paren_text(c)
+                            except Exception:
+                                pass
+                            break
+                    break
+            self.loops.append({
+                "type": "while",
+                "condition": cond,
+                "is_label": is_label,
+                "backward": backward,
+                "end_label": end_label,
+            })
+            return self.visitChildren(ctx)
+
+        def visitForkBlock(self, ctx):
+            branch_count = 1 + len(ctx.forkAgainBranch() or [])
+            join_spec = ""
+            term = ctx.forkTerminator()
+            if term:
+                if term.KW_END_MERGE():
+                    join_spec = "merge"
+                elif term.joinSpec():
+                    join_spec = term.joinSpec().ID().getText() if term.joinSpec().ID() else ""
+                elif term.KW_ENDFORK():
+                    join_spec = ""
+            self.forks.append({
+                "type": "fork",
+                "branches": branch_count,
+                "join_spec": join_spec,
+            })
+            return self.visitChildren(ctx)
+
+        def visitSplitBlock(self, ctx):
+            branch_count = 1 + len(ctx.splitAgainBranch() or [])
+            self.forks.append({
+                "type": "split",
+                "branches": branch_count,
+                "join_spec": "",
+            })
+            return self.visitChildren(ctx)
+
+        def visitContainerBlock(self, ctx):
+            kw = ctx.containerKeyword().getText() if ctx.containerKeyword() else ""
+            name = ""
+            if ctx.containerName():
+                name = ctx.containerName().getText().strip().strip('"')
+            color = ctx.COLOR().getText() if ctx.COLOR() else ""
+            self.containers.append({
+                "type": kw,
+                "name": name,
+                "color": color,
+            })
+            return self.visitChildren(ctx)
+
+        def visitNoteStmt(self, ctx):
+            tok = ctx.NOTE_INLINE_TOKEN()
+            if tok:
+                info = self._parse_note_token(tok.getText())
+                self.notes.append(info)
+            return self.visitChildren(ctx)
+
+        def visitNoteBlock(self, ctx):
+            tok = ctx.NOTE_BLOCK_TOKEN()
+            if tok:
+                info = self._parse_note_token(tok.getText())
+                self.notes.append(info)
+            return self.visitChildren(ctx)
+
+        def visitLabelStmt(self, ctx):
+            id_tok = ctx.ID()
+            if id_tok:
+                name = id_tok.getText()
+                if name not in self.labels:
+                    self.labels.append(name)
+            return self.visitChildren(ctx)
+
+        def visitGotoStmt(self, ctx):
+            # Gotos reference labels — tracked in labels
+            return self.visitChildren(ctx)
+
+    try:
+        input_stream = InputStream(puml_text)
+        lexer = PlantUMLActivityLexer(input_stream)
+        lexer.removeErrorListeners()
+        token_stream = CommonTokenStream(lexer)
+        parser = PlantUMLActivityParser(token_stream)
+        parser.removeErrorListeners()
+        tree = parser.diagram()
+
+        visitor = _Visitor()
+        visitor.visit(tree)
+
+        return {
+            "title": visitor.title,
+            "actions": visitor.actions,
+            "conditions": visitor.conditions,
+            "loops": visitor.loops,
+            "forks": visitor.forks,
+            "containers": visitor.containers,
+            "swimlanes": visitor.swimlanes,
+            "connectors": visitor.connectors,
+            "labels": visitor.labels,
+            "notes": visitor.notes,
+            "arrows": visitor.arrows,
+            "controls": visitor.controls,
+        }
+    except Exception:
+        return {}
+
+
+def _merge_activity_source_info(
+    annotations: List[Dict[str, Any]],
+    src_info: Dict[str, Any],
+) -> None:
+    """Merge ANTLR-parsed activity source info into SVG annotations.
+
+    Enriches ``contents.dsl`` (or ``meta.dsl``) with activity-specific
+    semantic data from the ANTLR parse: stereotypes, swimlane membership,
+    condition expressions, loop types, fork join specs, container types,
+    notes, connectors, labels, and arrows.
+
+    Args:
+        annotations: List of annotation dicts (mutated in-place).
+        src_info: Dict returned by ``_parse_activity_source()``.
+    """
+    if not src_info:
+        return
+
+    actions = list(src_info.get("actions", []))
+    conditions = list(src_info.get("conditions", []))
+    loops = list(src_info.get("loops", []))
+    forks = list(src_info.get("forks", []))
+    containers = list(src_info.get("containers", []))
+    swimlanes = src_info.get("swimlanes", [])
+    notes_list = list(src_info.get("notes", []))
+    arrows_list = list(src_info.get("arrows", []))
+    controls = list(src_info.get("controls", []))
+    connectors = src_info.get("connectors", [])
+    labels = src_info.get("labels", [])
+
+    # Build swimlane name→color index
+    lane_colors: Dict[str, str] = {}
+    for sl in swimlanes:
+        if sl.get("color"):
+            lane_colors[sl["name"]] = sl["color"]
+
+    # Build action text → info index for matching
+    action_index: Dict[str, Dict[str, Any]] = {}
+    for a in actions:
+        key = a["text"].strip().lower()
+        # Use first line for matching (multi-line actions)
+        first_line = key.split("\n")[0].strip()
+        if first_line:
+            action_index[first_line] = a
+        if key != first_line and key:
+            action_index[key] = a
+
+    def _get_label(ann: Dict[str, Any]) -> str:
+        """Extract label text from annotation (contents or meta)."""
+        contents = ann.get("contents") or ann.get("meta") or {}
+        blocks = contents.get("blocks", [])
+        if blocks:
+            for b in blocks:
+                for r in b.get("runs", []):
+                    t = r.get("text", "").strip()
+                    if t:
+                        return t
+        return contents.get("label", "")
+
+    def _set_dsl(ann: Dict[str, Any], dsl_data: Dict[str, Any]) -> None:
+        """Set dsl data on annotation's contents or meta."""
+        target = ann.get("contents") or ann.get("meta")
+        if target is None:
+            return
+        existing_dsl = target.get("dsl", {})
+        existing_dsl.update(dsl_data)
+        target["dsl"] = existing_dsl
+
+    def _enrich(ann_list: List[Dict[str, Any]]) -> None:
+        for ann in ann_list:
+            kind = ann.get("kind", "")
+            label = _get_label(ann).lower()
+            first_line = label.split("\n")[0].strip()
+
+            # Match activities (roundedrect) to ANTLR actions
+            if kind == "roundedrect" and first_line:
+                match = action_index.get(first_line) or action_index.get(label)
+                if match:
+                    dsl: Dict[str, Any] = {"element_type": "action"}
+                    if match.get("stereotype"):
+                        dsl["stereotype"] = match["stereotype"]
+                    if match.get("color"):
+                        dsl["action_color"] = match["color"]
+                    if match.get("swimlane"):
+                        dsl["swimlane"] = match["swimlane"]
+                        if match["swimlane"] in lane_colors:
+                            dsl["swimlane_color"] = lane_colors[match["swimlane"]]
+                    if match.get("bullet"):
+                        dsl["bullet"] = match["bullet"]
+                    _set_dsl(ann, dsl)
+
+            # Match ellipses (start/stop/end nodes) to controls
+            elif kind == "ellipse":
+                if controls:
+                    ctrl = controls[0]
+                    if label.lower() in ("start", "end", "stop"):
+                        _set_dsl(ann, {"element_type": ctrl})
+                        # Don't pop — there might be multiple start/stop
+
+            # Match diamonds (conditions) to ANTLR conditions
+            elif kind == "diamond":
+                if conditions:
+                    cond = conditions.pop(0)
+                    dsl = {"element_type": cond["type"],
+                           "condition": cond.get("condition", "")}
+                    if cond["type"] == "if":
+                        dsl["then_label"] = cond.get("then_label", "")
+                        dsl["else_label"] = cond.get("else_label", "")
+                        dsl["elseif_count"] = cond.get("elseif_count", 0)
+                    elif cond["type"] == "switch":
+                        dsl["case_labels"] = cond.get("case_labels", [])
+                    _set_dsl(ann, dsl)
+
+            # Match partition rects to containers
+            elif kind == "rect":
+                for ci, cont in enumerate(containers):
+                    cname = cont["name"].lower()
+                    if cname and (cname == first_line or cname in label):
+                        dsl = {
+                            "element_type": cont["type"],
+                            "container_name": cont["name"],
+                        }
+                        if cont.get("color"):
+                            dsl["container_color"] = cont["color"]
+                        _set_dsl(ann, dsl)
+                        containers.pop(ci)
+                        break
+
+            # Match lines to ANTLR arrows by order
+            elif kind == "line":
+                if arrows_list:
+                    arrow = arrows_list.pop(0)
+                    dsl = {"element_type": "arrow"}
+                    if arrow.get("style"):
+                        dsl["arrow_style"] = arrow["style"]
+                    if arrow.get("label"):
+                        dsl["arrow_label"] = arrow["label"]
+                    _set_dsl(ann, dsl)
+
+            # Recurse into group children
+            children = ann.get("children", [])
+            if children:
+                _enrich(children)
+
+    _enrich(annotations)
+
+    # Add diagram-level DSL metadata to first annotation or as standalone
+    diagram_dsl = {}
+    if src_info.get("title"):
+        diagram_dsl["title"] = src_info["title"]
+    if swimlanes:
+        diagram_dsl["swimlanes"] = swimlanes
+    if connectors:
+        diagram_dsl["connectors"] = connectors
+    if labels:
+        diagram_dsl["labels"] = labels
+    if notes_list:
+        diagram_dsl["notes"] = notes_list
+    if forks:
+        diagram_dsl["forks"] = forks
+    if loops:
+        diagram_dsl["loops"] = loops
+    if conditions:
+        diagram_dsl["remaining_conditions"] = conditions
+    if controls:
+        diagram_dsl["controls"] = controls
+
+    if diagram_dsl and annotations:
+        _set_dsl(annotations[0], {"diagram": diagram_dsl})
+
+
+# ───────────────────────────────────────────────
 # Activity diagram SVG parser
 # ───────────────────────────────────────────────
 
 
 def _parse_activity_diagram_svg(
     tree: ET.ElementTree,
+    puml_text: str = "",
 ) -> Dict[str, Any]:
     """Parse an activity diagram SVG into PictoSync annotations.
 
@@ -1164,11 +2084,305 @@ def _parse_activity_diagram_svg(
         top_level.sort(key=_child_y)
 
     _normalize_annotations(top_level)
+
+    # ── Enrich with ANTLR activity source semantics ──
+    if puml_text:
+        src_info = _parse_activity_source(puml_text)
+        if src_info:
+            _merge_activity_source_info(top_level, src_info)
+
     return {
         "version": "draft-1",
         "image": {"width": canvas_w, "height": canvas_h},
         "annotations": top_level,
     }
+
+
+# ───────────────────────────────────────────────
+# Sequence diagram source parser (ANTLR4)
+# ───────────────────────────────────────────────
+
+
+def _parse_sequence_source(puml_text: str) -> Dict[str, Any]:
+    """Parse PlantUML sequence diagram source with the ANTLR4 grammar.
+
+    Returns a dict with extracted semantic information::
+
+        {
+            "title": "Diagram Title",
+            "participants": [
+                {"name": "Alice", "keyword": "participant", "alias": "",
+                 "stereotype": "", "color": ""},
+                ...
+            ],
+            "messages": [
+                {"source": "Alice", "target": "Bob", "label": "hello",
+                 "arrow": "->"},
+                ...
+            ],
+            "groups": [
+                {"keyword": "alt", "label": "condition"},
+                ...
+            ],
+            "notes": [
+                {"text": "some note"},
+                ...
+            ],
+            "activations": 0,
+            "deactivations": 0,
+            "destroys": 0,
+            "returns": 0,
+            "boxes": [
+                {"name": "Internal", "color": "#LightBlue"},
+                ...
+            ],
+            "dividers": 0,
+            "refs": 0,
+            "newpages": 0,
+            "creates": 0,
+        }
+
+    Returns an empty dict if the grammar is unavailable or parsing fails.
+    """
+    try:
+        from antlr4 import CommonTokenStream, InputStream
+        from plantuml.grammar.generated.PlantUMLSequenceLexer import PlantUMLSequenceLexer
+        from plantuml.grammar.generated.PlantUMLSequenceParser import PlantUMLSequenceParser
+        from plantuml.grammar.generated.PlantUMLSequenceVisitor import PlantUMLSequenceVisitor
+    except ImportError:
+        return {}
+
+    class _Visitor(PlantUMLSequenceVisitor):
+        def __init__(self):
+            self.title = ""
+            self.participants: List[Dict[str, str]] = []
+            self.messages: List[Dict[str, str]] = []
+            self.groups: List[Dict[str, str]] = []
+            self.notes: List[Dict[str, str]] = []
+            self.activations = 0
+            self.deactivations = 0
+            self.destroys = 0
+            self.returns = 0
+            self.boxes: List[Dict[str, str]] = []
+            self.dividers = 0
+            self.refs = 0
+            self.newpages = 0
+            self.creates = 0
+
+        # ── Helpers ────────────────────────────────────────
+
+        @staticmethod
+        def _strip_quotes(text: str) -> str:
+            """Remove surrounding double-quotes if present."""
+            if len(text) >= 2 and text.startswith('"') and text.endswith('"'):
+                return text[1:-1]
+            return text
+
+        @staticmethod
+        def _participant_name_text(ctx) -> str:
+            """Extract cleaned name from a participantName context."""
+            if ctx is None:
+                return ""
+            raw = ctx.getText().strip()
+            if len(raw) >= 2 and raw.startswith('"') and raw.endswith('"'):
+                return raw[1:-1]
+            return raw
+
+        # ── Visitor overrides ──────────────────────────────
+
+        def visitTitleStmt(self, ctx):
+            if ctx.restOfLine():
+                self.title = ctx.restOfLine().getText().strip()
+            return self.visitChildren(ctx)
+
+        def visitTitleBlock(self, ctx):
+            # Multi-line title — collect noteBodyLine texts
+            lines = []
+            for bl in (ctx.noteBodyLine() or []):
+                lines.append(bl.getText().strip())
+            if lines:
+                self.title = "\n".join(lines)
+            return self.visitChildren(ctx)
+
+        def visitParticipantDecl(self, ctx):
+            keyword = ""
+            pt = ctx.participantType()
+            if pt and pt.participantKeyword():
+                keyword = pt.participantKeyword().getText().strip()
+            name = self._participant_name_text(ctx.participantName())
+            alias = ""
+            ac = ctx.aliasClause()
+            if ac and ac.participantName():
+                alias = self._participant_name_text(ac.participantName())
+            stereotype = ""
+            color = ""
+            for mod in (ctx.participantModifier() or []):
+                sc = mod.stereotypeClause()
+                if sc:
+                    stereotype = sc.getText().strip()
+                cs = mod.colorSpec()
+                if cs:
+                    color = cs.getText().strip()
+            self.participants.append({
+                "name": name,
+                "keyword": keyword,
+                "alias": alias,
+                "stereotype": stereotype,
+                "color": color,
+            })
+            return self.visitChildren(ctx)
+
+        def visitMessageStmt(self, ctx):
+            # Source
+            src_ctx = ctx.messageSource()
+            source = ""
+            if src_ctx:
+                pr = src_ctx.participantRef()
+                if pr and pr.participantName():
+                    source = self._participant_name_text(pr.participantName())
+                elif src_ctx.LBRACK():
+                    source = "["
+                elif src_ctx.QMARK():
+                    source = "?"
+
+            # Target
+            tgt_ctx = ctx.messageTarget()
+            target = ""
+            if tgt_ctx:
+                pr = tgt_ctx.participantRef()
+                if pr and pr.participantName():
+                    target = self._participant_name_text(pr.participantName())
+                elif tgt_ctx.RBRACK():
+                    target = "]"
+                elif tgt_ctx.QMARK():
+                    target = "?"
+
+            # Arrow
+            arrow = ""
+            as_ctx = ctx.arrowSpec()
+            if as_ctx and as_ctx.ARROW():
+                arrow = as_ctx.ARROW().getText().strip()
+
+            # Label
+            label = ""
+            ml = ctx.messageLabel()
+            if ml:
+                label = ml.getText().strip()
+
+            self.messages.append({
+                "source": source,
+                "target": target,
+                "label": label,
+                "arrow": arrow,
+            })
+            return self.visitChildren(ctx)
+
+        def visitGroupBlock(self, ctx):
+            keyword = ""
+            gk = ctx.groupKeyword()
+            if gk:
+                keyword = gk.getText().strip()
+            label = ""
+            gl = ctx.groupLabel()
+            if gl:
+                label = gl.getText().strip()
+            self.groups.append({"keyword": keyword, "label": label})
+            return self.visitChildren(ctx)
+
+        def visitNoteStmt(self, ctx):
+            text = ""
+            rol = ctx.restOfLine()
+            if rol:
+                text = rol.getText().strip()
+            self.notes.append({"text": text})
+            return self.visitChildren(ctx)
+
+        def visitNoteBlock(self, ctx):
+            lines = []
+            for bl in (ctx.noteBodyLine() or []):
+                lines.append(bl.getText().strip())
+            text = "\n".join(lines) if lines else ""
+            self.notes.append({"text": text})
+            return self.visitChildren(ctx)
+
+        def visitActivateStmt(self, ctx):
+            self.activations += 1
+            return self.visitChildren(ctx)
+
+        def visitDeactivateStmt(self, ctx):
+            self.deactivations += 1
+            return self.visitChildren(ctx)
+
+        def visitDestroyStmt(self, ctx):
+            self.destroys += 1
+            return self.visitChildren(ctx)
+
+        def visitReturnStmt(self, ctx):
+            self.returns += 1
+            return self.visitChildren(ctx)
+
+        def visitBoxBlock(self, ctx):
+            name = ""
+            qs = ctx.QUOTED_STRING()
+            if qs:
+                name = self._strip_quotes(qs.getText().strip())
+            color = ""
+            cs = ctx.colorSpec()
+            if cs:
+                color = cs.getText().strip()
+            self.boxes.append({"name": name, "color": color})
+            return self.visitChildren(ctx)
+
+        def visitDividerStmt(self, ctx):
+            self.dividers += 1
+            return self.visitChildren(ctx)
+
+        def visitRefStmt(self, ctx):
+            self.refs += 1
+            return self.visitChildren(ctx)
+
+        def visitRefBlock(self, ctx):
+            self.refs += 1
+            return self.visitChildren(ctx)
+
+        def visitNewpageStmt(self, ctx):
+            self.newpages += 1
+            return self.visitChildren(ctx)
+
+        def visitCreateStmt(self, ctx):
+            self.creates += 1
+            return self.visitChildren(ctx)
+
+    try:
+        input_stream = InputStream(puml_text)
+        lexer = PlantUMLSequenceLexer(input_stream)
+        lexer.removeErrorListeners()
+        token_stream = CommonTokenStream(lexer)
+        parser = PlantUMLSequenceParser(token_stream)
+        parser.removeErrorListeners()
+        tree = parser.diagram()
+
+        visitor = _Visitor()
+        visitor.visit(tree)
+
+        return {
+            "title": visitor.title,
+            "participants": visitor.participants,
+            "messages": visitor.messages,
+            "groups": visitor.groups,
+            "notes": visitor.notes,
+            "activations": visitor.activations,
+            "deactivations": visitor.deactivations,
+            "destroys": visitor.destroys,
+            "returns": visitor.returns,
+            "boxes": visitor.boxes,
+            "dividers": visitor.dividers,
+            "refs": visitor.refs,
+            "newpages": visitor.newpages,
+            "creates": visitor.creates,
+        }
+    except Exception:
+        return {}
 
 
 # ───────────────────────────────────────────────
@@ -1220,6 +2434,11 @@ def _parse_sequence_diagram_svg(
     phase_texts: List[ET.Element] = []
     phase_label_rects: List[ET.Element] = []
     separator_lines: List[ET.Element] = []
+    # Note shapes: path pairs (folded corner), bare rects (rnote), polygons (hnote)
+    note_path_pairs: List[Tuple[ET.Element, ET.Element]] = []
+    note_rects: List[ET.Element] = []        # rnote rectangles
+    note_polygons: List[ET.Element] = []     # hnote hexagons
+    _prev_note_path: Optional[ET.Element] = None
 
     seen_activation_keys: set = set()
 
@@ -1236,10 +2455,47 @@ def _parse_sequence_diagram_svg(
 
         elif tag == "rect":
             h = float(child.get("height", 0))
+            w = float(child.get("width", 0))
             style = child.get("style", "")
+            rfill = child.get("fill", "none").lower()
+            # rnote rectangles: note fill color, wider than activation boxes
+            if rfill.startswith("#fe") and w > 30:
+                note_rects.append(child)
             # Phase label rects: ~19.5px tall, black stroke border
-            if 15 < h < 25 and "stroke:#000000" in style:
+            elif 15 < h < 25 and "stroke:#000000" in style:
                 phase_label_rects.append(child)
+
+        elif tag == "polygon":
+            # hnote hexagons: polygon with note fill color
+            pgfill = child.get("fill", "none").lower()
+            if pgfill.startswith("#fe") or pgfill.startswith("#fb"):
+                note_polygons.append(child)
+
+        elif tag == "path":
+            # Note paths: filled paths with note-like colors.
+            # Notes are always pairs (body + folded corner) in sequence.
+            # Note fills: #FEFFDD, #FEFFDD, #FBFB77, custom note colors
+            # Group/frame fills: #F0F0F0, #E0E0E0 — skip these
+            pfill = child.get("fill", "none")
+            pfill_lower = pfill.lower()
+            is_note_fill = (pfill_lower not in ("none", "")
+                            and pfill_lower.startswith("#")
+                            and pfill_lower not in ("#f0f0f0", "#e0e0e0",
+                                                     "#e2e2f0", "#ffffff"))
+            if is_note_fill:
+                if _prev_note_path is not None:
+                    # Check if same fill = pair (body + corner)
+                    prev_fill = _prev_note_path.get("fill", "").lower()
+                    if prev_fill == pfill_lower:
+                        note_path_pairs.append((_prev_note_path, child))
+                        _prev_note_path = None
+                    else:
+                        # Different fill — previous was orphan, start new
+                        _prev_note_path = child
+                else:
+                    _prev_note_path = child
+            # Don't reset on non-note paths — notes may be interleaved with
+            # other elements (group frames, etc.)
 
         elif tag == "line":
             # Bare <line> elements are phase separator rules
@@ -1762,6 +3018,159 @@ def _parse_sequence_diagram_svg(
             ),
         })
 
+    # ── Notes (path pairs with note fill + nearby text) ─────
+    # Collect all bare <text> elements for note text matching
+    all_bare_texts = [
+        c for c in root_g
+        if c.tag.rsplit("}", 1)[-1] == "text"
+    ]
+    for body_path, corner_path in note_path_pairs:
+        d = body_path.get("d", "")
+        bx, by, bw, bh = _path_bbox(d)
+        if bw < 1 or bh < 1:
+            continue
+        fill = body_path.get("fill", "#FEFFDD")
+        stroke_color, stroke_width = _extract_stroke(body_path)
+
+        # Find text elements inside the note bbox
+        note_texts: List[str] = []
+        for t in all_bare_texts:
+            tx = float(t.get("x", 0))
+            ty = float(t.get("y", 0))
+            if bx <= tx <= bx + bw and by <= ty <= by + bh:
+                txt = (t.text or "").strip()
+                if txt:
+                    note_texts.append(txt)
+
+        if not note_texts:
+            continue
+
+        label = note_texts[0]
+        note_body = "\n".join(note_texts)
+        label, _tech, note_body = _dedup_label_tech_note(label, "", note_body)
+        text_fmt = _extract_text_format(
+            [t for t in all_bare_texts
+             if bx <= float(t.get("x", 0)) <= bx + bw
+             and by <= float(t.get("y", 0)) <= by + bh])
+
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        # TODO: Replace "rect" with a dedicated "note" item type
+        note_meta: Dict[str, Any] = {
+            "label": label,
+            "tech": "",
+            "note": note_body,
+        }
+        note_meta.update(text_fmt)
+        annotations.append({
+            "id": ann_id,
+            "kind": "rect",
+            "geom": {
+                "x": round(bx, 2), "y": round(by, 2),
+                "w": round(bw, 2), "h": round(bh, 2),
+            },
+            "meta": note_meta,
+            "style": {
+                "pen": {
+                    "color": stroke_color,
+                    "width": stroke_width,
+                    "dash": "solid",
+                },
+                "fill": {"color": _safe_fill(fill)},
+            },
+        })
+
+    # ── rnotes (bare <rect> with note fill) ─────────────────
+    for nr in note_rects:
+        rx = float(nr.get("x", 0))
+        ry = float(nr.get("y", 0))
+        rw = float(nr.get("width", 0))
+        rh = float(nr.get("height", 0))
+        if rw < 1 or rh < 1:
+            continue
+        fill = nr.get("fill", "#FEFFDD")
+        stroke_color, stroke_width = _extract_stroke(nr)
+        note_texts = []
+        for t in all_bare_texts:
+            tx = float(t.get("x", 0))
+            ty = float(t.get("y", 0))
+            if rx <= tx <= rx + rw and ry <= ty <= ry + rh:
+                txt = (t.text or "").strip()
+                if txt:
+                    note_texts.append(txt)
+        if not note_texts:
+            continue
+        label = note_texts[0]
+        note_body = "\n".join(note_texts)
+        label, _tech, note_body = _dedup_label_tech_note(label, "", note_body)
+        text_fmt = _extract_text_format(
+            [t for t in all_bare_texts
+             if rx <= float(t.get("x", 0)) <= rx + rw
+             and ry <= float(t.get("y", 0)) <= ry + rh])
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        note_meta = {"label": label, "tech": "rnote", "note": note_body}
+        note_meta.update(text_fmt)
+        annotations.append({
+            "id": ann_id,
+            "kind": "rect",
+            "geom": {"x": round(rx, 2), "y": round(ry, 2),
+                     "w": round(rw, 2), "h": round(rh, 2)},
+            "meta": note_meta,
+            "style": {"pen": {"color": stroke_color, "width": stroke_width,
+                              "dash": "solid"},
+                      "fill": {"color": _safe_fill(fill)}},
+        })
+
+    # ── hnotes (bare <polygon> with note fill) ────────────
+    for np in note_polygons:
+        pts_str = np.get("points", "")
+        pts = re.findall(r'([-+]?\d*\.?\d+),([-+]?\d*\.?\d+)', pts_str)
+        if len(pts) < 4:
+            continue
+        xs = [float(p[0]) for p in pts]
+        ys = [float(p[1]) for p in pts]
+        px, py = min(xs), min(ys)
+        pw, ph = max(xs) - px, max(ys) - py
+        if pw < 1 or ph < 1:
+            continue
+        fill = np.get("fill", "#FEFFDD")
+        stroke_color, stroke_width = _extract_stroke(np)
+        note_texts = []
+        for t in all_bare_texts:
+            tx = float(t.get("x", 0))
+            ty = float(t.get("y", 0))
+            if px <= tx <= px + pw and py <= ty <= py + ph:
+                txt = (t.text or "").strip()
+                if txt:
+                    note_texts.append(txt)
+        if not note_texts:
+            continue
+        label = note_texts[0]
+        note_body = "\n".join(note_texts)
+        label, _tech, note_body = _dedup_label_tech_note(label, "", note_body)
+        text_fmt = _extract_text_format(
+            [t for t in all_bare_texts
+             if px <= float(t.get("x", 0)) <= px + pw
+             and py <= float(t.get("y", 0)) <= py + ph])
+        ann_id = f"p{counter:06d}"
+        counter += 1
+        note_meta = {"label": label, "tech": "hnote", "note": note_body}
+        note_meta.update(text_fmt)
+        annotations.append({
+            "id": ann_id,
+            "kind": "polygon",
+            "geom": {"x": round(px, 2), "y": round(py, 2),
+                     "w": round(pw, 2), "h": round(ph, 2),
+                     "points": [[round((float(p[0]) - px) / pw, 4),
+                                  round((float(p[1]) - py) / ph, 4)]
+                                 for p in pts]},
+            "meta": note_meta,
+            "style": {"pen": {"color": stroke_color, "width": stroke_width,
+                              "dash": "solid"},
+                      "fill": {"color": _safe_fill(fill)}},
+        })
+
     _normalize_annotations(annotations)
     return {
         "version": "draft-1",
@@ -1775,8 +3184,396 @@ def _parse_sequence_diagram_svg(
 # ───────────────────────────────────────────────
 
 
+def _is_node_box_polygon(pts: list) -> bool:
+    """Detect PlantUML "node" 3D-box polygon shape.
+
+    PlantUML renders ``node`` elements as a 7-point polygon with a diagonal
+    tab in the top-left corner (the 3D extrusion effect).  The pattern is:
+
+    ::
+
+        p0=(x, y+tab)  p1=(x+tab, y)  p2=(x+w, y)
+        p6=(x, y+h)                    p3=(x+w, y+h-tab)
+                                       p4=(x+w-tab, y+h)
+
+    Returns True when the polygon matches this 7-point rectangular-tab
+    pattern within a small tolerance.
+    """
+    if len(pts) not in (7, 8):  # 7 unique + optional close-repeat
+        return False
+    xs = [p[0] for p in pts[:7]]
+    ys = [p[1] for p in pts[:7]]
+    x_min, x_max = min(xs), max(xs)
+    y_min, y_max = min(ys), max(ys)
+    w = x_max - x_min
+    h = y_max - y_min
+    if w < 5 or h < 5:
+        return False
+    # Check that the bounding box is roughly rectangular and the tab
+    # size is a small fraction (5-25%) of the total dimensions.
+    tab_sizes = set()
+    for p in pts[:7]:
+        dx = abs(p[0] - x_min) + abs(p[0] - x_max)
+        dy = abs(p[1] - y_min) + abs(p[1] - y_max)
+        # Points not on the bounding box edge indicate the tab
+        if dx > w + 2 and dy > h + 2:
+            return False  # point too far from edges
+    # Count points near each edge to validate the rectangular shape
+    tol = max(w, h) * 0.02 + 1
+    on_left = sum(1 for p in pts[:7] if abs(p[0] - x_min) < tol)
+    on_right = sum(1 for p in pts[:7] if abs(p[0] - x_max) < tol)
+    on_top = sum(1 for p in pts[:7] if abs(p[1] - y_min) < tol)
+    on_bottom = sum(1 for p in pts[:7] if abs(p[1] - y_max) < tol)
+    # A node box: left side has 2 pts, right side has 2 pts,
+    # top has 2 pts, bottom has 2 pts, with 1 diagonal tab point
+    return (on_left >= 2 and on_right >= 2 and
+            on_top >= 1 and on_bottom >= 1)
+
+
+# ───────────────────────────────────────────────
+# ANTLR4-based PlantUML deployment source parser
+# ───────────────────────────────────────────────
+
+def _parse_deployment_source(puml_text: str) -> Dict[str, Dict[str, Any]]:
+    """Parse PlantUML deployment source with the ANTLR4 grammar.
+
+    Returns a dict keyed by element name (lowercase) with values::
+
+        {
+            "keyword": "node",          # PlantUML element keyword
+            "name": "WebServer",        # original name
+            "alias": "ws",              # declared alias or ""
+            "stereotype": "<<Docker>>", # stereotype text or ""
+            "children": [...],          # child element names
+        }
+
+    Returns an empty dict if the grammar is unavailable or parsing fails.
+    """
+    try:
+        from antlr4 import CommonTokenStream, InputStream
+        from plantuml.grammar.generated.PlantUMLDeploymentLexer import PlantUMLDeploymentLexer
+        from plantuml.grammar.generated.PlantUMLDeploymentParser import PlantUMLDeploymentParser
+        from plantuml.grammar.generated.PlantUMLDeploymentVisitor import PlantUMLDeploymentVisitor
+    except ImportError:
+        return {}
+
+    class _Visitor(PlantUMLDeploymentVisitor):
+        def __init__(self):
+            self.elements: Dict[str, Dict[str, Any]] = {}
+
+        def _extract_name(self, ctx) -> str:
+            if ctx.elementName():
+                return ctx.elementName().getText()
+            if ctx.BRACKET_COMP():
+                raw = ctx.BRACKET_COMP().getText()
+                return raw.strip("[]")
+            if ctx.ACTOR_COLON():
+                raw = ctx.ACTOR_COLON().getText()
+                return raw.strip(":")
+            if hasattr(ctx, "USECASE_PAREN") and ctx.USECASE_PAREN():
+                raw = ctx.USECASE_PAREN().getText()
+                return raw.strip("()")
+            if hasattr(ctx, "CIRCLE_IFACE") and ctx.CIRCLE_IFACE():
+                raw = ctx.CIRCLE_IFACE().getText()
+                return raw.strip('() "')
+            return ""
+
+        def _extract_stereotype(self, ctx) -> str:
+            mods = ctx.elementModifier() if hasattr(ctx, "elementModifier") else []
+            for mod in mods:
+                sc = mod.stereotypeClause() if hasattr(mod, "stereotypeClause") else None
+                if sc:
+                    return sc.getText()
+            return ""
+
+        def _store(self, name: str, keyword: str, alias: str, stereotype: str):
+            if not name:
+                return
+            # Strip quotes from names
+            clean_name = name.strip('"')
+            clean_alias = alias.strip('"')
+            key = (clean_alias or clean_name).lower()
+            self.elements[key] = {
+                "keyword": keyword,
+                "name": clean_name,
+                "alias": clean_alias,
+                "stereotype": stereotype,
+            }
+
+        def visitElementDecl(self, ctx):
+            name = self._extract_name(ctx)
+            keyword = ctx.elementKeyword().getText() if ctx.elementKeyword() else ""
+            alias = ""
+            if ctx.aliasClause():
+                alias = ctx.aliasClause().elementName().getText()
+            stereotype = self._extract_stereotype(ctx)
+            self._store(name, keyword, alias, stereotype)
+            return self.visitChildren(ctx)
+
+        def visitElementBlock(self, ctx):
+            keyword = ctx.elementKeyword().getText() if ctx.elementKeyword() else ""
+            name = ctx.elementName().getText() if ctx.elementName() else ""
+            alias = ""
+            if ctx.aliasClause():
+                alias = ctx.aliasClause().elementName().getText()
+            stereotype = self._extract_stereotype(ctx)
+            self._store(name, keyword, alias, stereotype)
+            return self.visitChildren(ctx)
+
+    try:
+        input_stream = InputStream(puml_text)
+        lexer = PlantUMLDeploymentLexer(input_stream)
+        lexer.removeErrorListeners()
+        token_stream = CommonTokenStream(lexer)
+        parser = PlantUMLDeploymentParser(token_stream)
+        parser.removeErrorListeners()
+        tree = parser.diagram()
+        if parser.getNumberOfSyntaxErrors() > 0:
+            return {}
+        visitor = _Visitor()
+        visitor.visit(tree)
+        return visitor.elements
+    except Exception:
+        return {}
+
+
+# ───────────────────────────────────────────────
+# ANTLR4-based PlantUML component source parser
+# ───────────────────────────────────────────────
+
+def _parse_component_source(puml_text: str) -> Dict[str, Any]:
+    """Parse PlantUML component diagram source with the ANTLR4 grammar.
+
+    Returns a dict with semantic elements extracted from the source::
+
+        {
+            "title": str,
+            "components": [{"name", "keyword", "alias", "stereotype", "color"}],
+            "interfaces": [{"name", "alias"}],
+            "groups": [{"keyword", "name", "color"}],
+            "relations": [{"source", "target", "label"}],
+            "notes": [{"text"}],
+            "sprites": [str],
+        }
+
+    Returns an empty dict if the grammar is unavailable or parsing fails.
+    """
+    try:
+        from antlr4 import CommonTokenStream, InputStream
+        from plantuml.grammar.generated.PlantUMLComponentLexer import PlantUMLComponentLexer
+        from plantuml.grammar.generated.PlantUMLComponentParser import PlantUMLComponentParser
+        from plantuml.grammar.generated.PlantUMLComponentVisitor import PlantUMLComponentVisitor
+    except ImportError:
+        return {}
+
+    def _strip_quotes(s: str) -> str:
+        if s and len(s) >= 2 and s[0] == '"' and s[-1] == '"':
+            return s[1:-1]
+        return s
+
+    def _ctx_original_text(ctx) -> str:
+        """Recover original source text (with whitespace) from a parse-tree node."""
+        if ctx is None:
+            return ""
+        start = ctx.start
+        stop = ctx.stop
+        if start is None or stop is None:
+            return ctx.getText()
+        stream = start.source[1]  # the InputStream
+        return stream.getText(start.start, stop.stop)
+
+    class _Visitor(PlantUMLComponentVisitor):
+        def __init__(self):
+            self.title: str = ""
+            self.components: List[Dict[str, str]] = []
+            self.interfaces: List[Dict[str, str]] = []
+            self.groups: List[Dict[str, str]] = []
+            self.relations: List[Dict[str, str]] = []
+            self.notes: List[Dict[str, str]] = []
+            self.sprites: List[str] = []
+
+        # ── helpers ──────────────────────────────────
+
+        def _get_alias(self, ctx) -> str:
+            ac = ctx.aliasClause() if hasattr(ctx, "aliasClause") else None
+            if ac and ac.elementName():
+                return _strip_quotes(ac.elementName().getText())
+            return ""
+
+        def _get_stereotype(self, ctx) -> str:
+            mods = ctx.componentModifier() if hasattr(ctx, "componentModifier") else []
+            for mod in mods:
+                sc = mod.stereotypeClause()
+                if sc:
+                    return sc.getText()  # e.g. <<Docker>>
+            return ""
+
+        def _get_color(self, ctx) -> str:
+            mods = ctx.componentModifier() if hasattr(ctx, "componentModifier") else []
+            for mod in mods:
+                c = mod.COLOR()
+                if c:
+                    return c.getText()
+            return ""
+
+        def _relation_ref_name(self, ref_ctx) -> str:
+            """Extract the name string from a relationRef context."""
+            if ref_ctx.BRACKET_COMP():
+                return ref_ctx.BRACKET_COMP().getText().strip("[]").strip()
+            if ref_ctx.QUOTED_STRING():
+                return _strip_quotes(ref_ctx.QUOTED_STRING().getText())
+            if ref_ctx.CIRCLE_IFACE() and ref_ctx.elementName():
+                return _strip_quotes(ref_ctx.elementName().getText())
+            if ref_ctx.ID():
+                return ref_ctx.ID().getText()
+            # Fallback for keyword tokens used as identifiers
+            txt = ref_ctx.getText()
+            return _strip_quotes(txt) if txt else ""
+
+        # ── visitor methods ──────────────────────────
+
+        def visitComponentFullDecl(self, ctx):
+            name = ""
+            keyword = "component"
+            if ctx.BRACKET_COMP():
+                raw = ctx.BRACKET_COMP().getText()
+                name = raw.strip("[]").strip()
+            elif ctx.elementName():
+                name = _strip_quotes(ctx.elementName().getText())
+            alias = self._get_alias(ctx)
+            stereotype = self._get_stereotype(ctx)
+            color = self._get_color(ctx)
+            if name:
+                self.components.append({
+                    "name": name,
+                    "keyword": keyword,
+                    "alias": alias,
+                    "stereotype": stereotype,
+                    "color": color,
+                })
+            return self.visitChildren(ctx)
+
+        def visitInterfaceDecl(self, ctx):
+            name = ""
+            if ctx.elementName():
+                name = _strip_quotes(ctx.elementName().getText())
+            alias = self._get_alias(ctx)
+            if name:
+                self.interfaces.append({
+                    "name": name,
+                    "alias": alias,
+                })
+            return self.visitChildren(ctx)
+
+        def visitPortDecl(self, ctx):
+            # Ports are treated like components with a port keyword
+            name = ""
+            keyword = "port"
+            if ctx.KW_PORTIN():
+                keyword = "portin"
+            elif ctx.KW_PORTOUT():
+                keyword = "portout"
+            if ctx.elementName():
+                name = _strip_quotes(ctx.elementName().getText())
+            alias = self._get_alias(ctx)
+            if name:
+                self.components.append({
+                    "name": name,
+                    "keyword": keyword,
+                    "alias": alias,
+                    "stereotype": "",
+                    "color": "",
+                })
+            return self.visitChildren(ctx)
+
+        def visitGroupBlock(self, ctx):
+            keyword = ctx.groupKeyword().getText() if ctx.groupKeyword() else ""
+            name = ""
+            if ctx.elementName():
+                name = _strip_quotes(ctx.elementName().getText())
+            color = self._get_color(ctx)
+            if name or keyword:
+                self.groups.append({
+                    "keyword": keyword,
+                    "name": name,
+                    "color": color,
+                })
+            return self.visitChildren(ctx)
+
+        def visitRelationStmt(self, ctx):
+            refs = ctx.relationRef()
+            if len(refs) >= 2:
+                source = self._relation_ref_name(refs[0])
+                target = self._relation_ref_name(refs[1])
+                label = ""
+                if ctx.restOfLine():
+                    label = _ctx_original_text(ctx.restOfLine()).strip()
+                self.relations.append({
+                    "source": source,
+                    "target": target,
+                    "label": label,
+                })
+            return self.visitChildren(ctx)
+
+        def visitNoteStmt(self, ctx):
+            text = ""
+            if ctx.restOfLine():
+                text = _ctx_original_text(ctx.restOfLine()).strip()
+            if text:
+                self.notes.append({"text": text})
+            return self.visitChildren(ctx)
+
+        def visitNoteBlock(self, ctx):
+            lines = []
+            for body_line in ctx.noteBodyLine():
+                raw = _ctx_original_text(body_line).strip()
+                if raw:
+                    lines.append(raw)
+            text = "\n".join(lines)
+            if text:
+                self.notes.append({"text": text})
+            return self.visitChildren(ctx)
+
+        def visitTitleStmt(self, ctx):
+            if ctx.restOfLine():
+                self.title = _ctx_original_text(ctx.restOfLine()).strip()
+            return self.visitChildren(ctx)
+
+        def visitSpriteDecl(self, ctx):
+            tag = ctx.TAG()
+            if tag:
+                # TAG is $name — strip the leading $
+                self.sprites.append(tag.getText().lstrip("$"))
+            return self.visitChildren(ctx)
+
+    try:
+        input_stream = InputStream(puml_text)
+        lexer = PlantUMLComponentLexer(input_stream)
+        lexer.removeErrorListeners()
+        token_stream = CommonTokenStream(lexer)
+        parser = PlantUMLComponentParser(token_stream)
+        parser.removeErrorListeners()
+        tree = parser.diagram()
+        if parser.getNumberOfSyntaxErrors() > 0:
+            return {}
+        visitor = _Visitor()
+        visitor.visit(tree)
+        return {
+            "title": visitor.title,
+            "components": visitor.components,
+            "interfaces": visitor.interfaces,
+            "groups": visitor.groups,
+            "relations": visitor.relations,
+            "notes": visitor.notes,
+            "sprites": visitor.sprites,
+        }
+    except Exception:
+        return {}
+
+
 def _parse_description_diagram_svg(
     tree: ET.ElementTree,
+    puml_text: str = "",
 ) -> Dict[str, Any]:
     """Parse a DESCRIPTION diagram SVG into PictoSync annotations.
 
@@ -1911,7 +3708,21 @@ def _parse_description_diagram_svg(
                              round((float(py) - y) / h, 4)]
                             for px, py in pts
                         ]
-                    kind = "polygon"
+                    # Detect PlantUML "node" 3D-box shape → isocube
+                    abs_pts = [(float(p[0]), float(p[1])) for p in pts]
+                    if _is_node_box_polygon(abs_pts):
+                        kind = "isocube"
+                        # Compute tab size (extrusion depth) from the
+                        # diagonal offset between p0 and p1
+                        tab_x = abs(abs_pts[1][0] - abs_pts[0][0])
+                        tab_y = abs(abs_pts[1][1] - abs_pts[0][1])
+                        tab = max(tab_x, tab_y)
+                        geom["adjust1"] = 14
+                        geom["adjust2"] = 220
+                        # Remove points — isocube uses adjust params
+                        geom.pop("points", None)
+                    else:
+                        kind = "polygon"
                 fill = polygon_el.get("fill", "#FFFFFF")
                 stroke_color, stroke_width = _extract_stroke(polygon_el)
 
@@ -1920,12 +3731,15 @@ def _parse_description_diagram_svg(
                 has_curves = bool(re.search(r'[CcSsQqTt]', d))
                 bx, by, bw, bh = _path_bbox(d)
                 geom = {"x": bx, "y": by, "w": bw, "h": bh}
+                kind = "polygon"
                 if has_curves:
-                    # Cloud shape — use ellipse kind with bounding box
-                    kind = "ellipse"
+                    # Cloud shape — extract cubic bezier curve vertices
+                    # as polygon points with "C" curve type annotations.
+                    rel_pts = _path_to_curve_polygon(d, bx, by, bw, bh)
+                    if rel_pts:
+                        geom["points"] = rel_pts
                 else:
-                    # Package / frame tab — polygon with path points
-                    kind = "polygon"
+                    # Package / frame tab — polygon with straight points
                     rel_pts = _path_points(d)
                     if rel_pts:
                         geom["points"] = rel_pts
@@ -1942,13 +3756,14 @@ def _parse_description_diagram_svg(
                 fill = rect_el.get("fill", "#FFFFFF")
                 stroke_color, stroke_width = _extract_stroke(rect_el)
 
-            # Text labels
+            # Text labels (dedup across label/tech/note)
             texts = [t.text for t in g.findall(f"{{{ns}}}text") if t.text]
             label = texts[0] if texts else (
                 qname.rsplit(".", 1)[-1] if qname else ""
             )
             tech = texts[1] if len(texts) > 1 else ""
             note = " ".join(texts[2:]) if len(texts) > 2 else ""
+            label, tech, note = _dedup_label_tech_note(label, tech, note)
 
             cluster_info[ent_id] = {
                 "kind": kind,
@@ -1984,31 +3799,58 @@ def _parse_description_diagram_svg(
             stroke_width = 1
 
             if ellipse_el is not None:
-                # Actor (stick figure) or use-case ellipse
                 cx = float(ellipse_el.get("cx", 0))
                 cy = float(ellipse_el.get("cy", 0))
                 rx = float(ellipse_el.get("rx", 8))
                 ry = float(ellipse_el.get("ry", 8))
-                all_x: List[float] = [cx - rx, cx + rx]
-                all_y: List[float] = [cy - ry, cy + ry]
-                if path_el is not None:
-                    d = path_el.get("d", "")
-                    for pm in re.finditer(
-                        r'[ML]\s*([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)',
-                        d,
-                    ):
-                        all_x.append(float(pm.group(1)))
-                        all_y.append(float(pm.group(2)))
-                x = min(all_x)
-                y = min(all_y)
-                geom = {
-                    "x": round(x, 2), "y": round(y, 2),
-                    "w": round(max(all_x) - x, 2),
-                    "h": round(max(all_y) - y, 2),
-                }
-                kind = "ellipse"
-                fill = ellipse_el.get("fill", "#FFFFFF")
-                stroke_color, stroke_width = _extract_stroke(ellipse_el)
+
+                if rects:
+                    # Interface entity: ellipse (circle icon) + rect (name box)
+                    # TODO: Replace "rect" with a dedicated "interface" item type
+                    main_rect = max(
+                        rects,
+                        key=lambda r: (
+                            float(r.get("width", 0)) * float(r.get("height", 0))
+                        ),
+                    )
+                    r_x = float(main_rect.get("x", 0))
+                    r_y = float(main_rect.get("y", 0))
+                    r_w = float(main_rect.get("width", 0))
+                    r_h = float(main_rect.get("height", 0))
+                    # Include ellipse in bounding box
+                    x = min(r_x, cx - rx)
+                    y = min(r_y, cy - ry)
+                    w = max(r_x + r_w, cx + rx) - x
+                    h = max(r_y + r_h, cy + ry) - y
+                    geom = {
+                        "x": round(x, 2), "y": round(y, 2),
+                        "w": round(w, 2), "h": round(h, 2),
+                    }
+                    kind = "rect"  # TODO: dedicated interface item type
+                    fill = main_rect.get("fill", "#FFFFFF")
+                    stroke_color, stroke_width = _extract_stroke(main_rect)
+                else:
+                    # Actor (stick figure) or use-case ellipse (no rect)
+                    all_x: List[float] = [cx - rx, cx + rx]
+                    all_y: List[float] = [cy - ry, cy + ry]
+                    if path_el is not None:
+                        d = path_el.get("d", "")
+                        for pm in re.finditer(
+                            r'[ML]\s*([-+]?\d*\.?\d+)[,\s]([-+]?\d*\.?\d+)',
+                            d,
+                        ):
+                            all_x.append(float(pm.group(1)))
+                            all_y.append(float(pm.group(2)))
+                    x = min(all_x)
+                    y = min(all_y)
+                    geom = {
+                        "x": round(x, 2), "y": round(y, 2),
+                        "w": round(max(all_x) - x, 2),
+                        "h": round(max(all_y) - y, 2),
+                    }
+                    kind = "ellipse"
+                    fill = ellipse_el.get("fill", "#FFFFFF")
+                    stroke_color, stroke_width = _extract_stroke(ellipse_el)
 
             elif rects:
                 # Find main rect (largest by area)
@@ -2032,24 +3874,90 @@ def _parse_description_diagram_svg(
                 stroke_color, stroke_width = _extract_stroke(main_rect)
 
             elif path_el is not None:
-                # Note shape or other path-based entity
-                d = path_el.get("d", "")
-                bx, by, bw, bh = _path_bbox(d)
-                geom = {"x": bx, "y": by, "w": bw, "h": bh}
-                kind = "roundedrect"
-                fill = path_el.get("fill", "#FFFFFF")
-                stroke_color, stroke_width = _extract_stroke(path_el)
+                # Check for interface entity: has ellipse + rect + path
+                # (ellipse = circle icon, rect = name box, path = decoration)
+                # TODO: Replace "rect" with a dedicated "interface" item type
+                ellipse_el = g.find(f"{{{ns}}}ellipse")
+                rect_el2 = g.find(f"{{{ns}}}rect")
+                if ellipse_el is not None and rect_el2 is not None:
+                    # Interface entity — use the rect as main geometry
+                    rx = float(rect_el2.get("x", 0))
+                    ry = float(rect_el2.get("y", 0))
+                    rw = float(rect_el2.get("width", 0))
+                    rh = float(rect_el2.get("height", 0))
+                    # Include the ellipse in the bounding box
+                    ecx = float(ellipse_el.get("cx", 0))
+                    ecy = float(ellipse_el.get("cy", 0))
+                    erx = float(ellipse_el.get("rx", 9))
+                    ex, ey = ecx - erx, ecy - erx
+                    x = min(rx, ex)
+                    y = min(ry, ey)
+                    w = max(rx + rw, ex + erx * 2) - x
+                    h = max(ry + rh, ey + erx * 2) - y
+                    geom = {
+                        "x": round(x, 2), "y": round(y, 2),
+                        "w": round(w, 2), "h": round(h, 2),
+                    }
+                    kind = "rect"  # TODO: dedicated interface item type
+                    fill = rect_el2.get("fill", "#FFFFFF")
+                    stroke_color, stroke_width = _extract_stroke(rect_el2)
+                else:
+                    # Note shape or other path-based entity
+                    d = path_el.get("d", "")
+                    bx, by, bw, bh = _path_bbox(d)
+                    geom = {"x": bx, "y": by, "w": bw, "h": bh}
+                    kind = "roundedrect"
+                    fill = path_el.get("fill", "#FFFFFF")
+                    stroke_color, stroke_width = _extract_stroke(path_el)
 
             else:
-                continue  # No recognizable shape
+                # Check for polygon-based entity (deployment node without
+                # children is rendered as entity, not cluster)
+                polygon_el = g.find(f"{{{ns}}}polygon")
+                if polygon_el is not None:
+                    pts_str = polygon_el.get("points", "")
+                    pts = re.findall(
+                        r'([-+]?\d*\.?\d+),([-+]?\d*\.?\d+)', pts_str,
+                    )
+                    if pts:
+                        xs = [float(p[0]) for p in pts]
+                        ys = [float(p[1]) for p in pts]
+                        x, y = min(xs), min(ys)
+                        w, h = max(xs) - x, max(ys) - y
+                        geom = {
+                            "x": round(x, 2), "y": round(y, 2),
+                            "w": round(w, 2), "h": round(h, 2),
+                        }
+                        abs_pts = [(float(p[0]), float(p[1])) for p in pts]
+                        if _is_node_box_polygon(abs_pts):
+                            kind = "isocube"
+                            tab_x = abs(abs_pts[1][0] - abs_pts[0][0])
+                            tab_y = abs(abs_pts[1][1] - abs_pts[0][1])
+                            geom["adjust1"] = 14
+                            geom["adjust2"] = 220
+                        else:
+                            kind = "polygon"
+                            if w > 0 and h > 0:
+                                geom["points"] = [
+                                    [round((float(px) - x) / w, 4),
+                                     round((float(py) - y) / h, 4)]
+                                    for px, py in pts
+                                ]
+                        fill = polygon_el.get("fill", "#FFFFFF")
+                        stroke_color, stroke_width = _extract_stroke(polygon_el)
+                    else:
+                        continue  # No recognizable shape
+                else:
+                    continue  # No recognizable shape
 
-            # Text labels
+            # Text labels (dedup across label/tech/note)
             texts = [t.text for t in g.findall(f"{{{ns}}}text") if t.text]
             label = texts[0] if texts else (
                 qname.rsplit(".", 1)[-1] if qname else ""
             )
             tech = texts[1] if len(texts) > 1 else ""
             note = " ".join(texts[2:]) if len(texts) > 2 else ""
+            label, tech, note = _dedup_label_tech_note(label, tech, note)
 
             entity_info[ent_id] = {
                 "kind": kind,
@@ -2073,24 +3981,69 @@ def _parse_description_diagram_svg(
                 continue
 
             texts = [t.text for t in g.findall(f"{{{ns}}}text") if t.text]
-            label = " ".join(texts)
+            all_paths = g.findall(f"{{{ns}}}path")
+            polys = g.findall(f"{{{ns}}}polygon")
 
-            link_path = g.find(f"{{{ns}}}path")
+            # Separate main link path (stroke, no fill) from note paths (filled)
+            link_path = None
+            note_paths = []
+            for p in all_paths:
+                pfill = p.get("fill", "none").lower()
+                if pfill in ("none", ""):
+                    if link_path is None:
+                        link_path = p
+                else:
+                    note_paths.append(p)
+
             style_str = (
                 link_path.get("style", "") if link_path is not None else ""
             )
             d_attr = (
                 link_path.get("d", "") if link_path is not None else ""
             )
-            polys = g.findall(f"{{{ns}}}polygon")
+            path_id = (
+                link_path.get("id", "") if link_path is not None else ""
+            )
+            arrow_mode = _detect_arrow_mode(polys, path_id)
+
+            # If note paths exist, split texts: first text = link label,
+            # remaining texts = note content
+            if note_paths:
+                link_label = texts[0] if texts else ""
+                note_texts = texts[1:] if len(texts) > 1 else []
+                # Extract note geometry from the first filled path
+                note_d = note_paths[0].get("d", "")
+                note_fill = note_paths[0].get("fill", "#FFFDE7")
+                nbx, nby, nbw, nbh = _path_bbox(note_d)
+                note_stroke_color, note_stroke_width = _extract_stroke(
+                    note_paths[0])
+                note_label = note_texts[0] if note_texts else ""
+                note_body = "\n".join(note_texts)
+                note_label, _nt, note_body = _dedup_label_tech_note(
+                    note_label, "", note_body)
+                text_fmt = _extract_text_format(
+                    g.findall(f"{{{ns}}}text"))
+                entity_info[f"__note_on_link_{len(entity_info)}"] = {
+                    "kind": "roundedrect",
+                    "geom": {"x": nbx, "y": nby, "w": nbw, "h": nbh},
+                    "fill": note_fill,
+                    "label": note_label,
+                    "tech": "",
+                    "note": note_body,
+                    "stroke_color": note_stroke_color or "#F57F17",
+                    "stroke_width": note_stroke_width or 1,
+                    **text_fmt,
+                }
+            else:
+                link_label = " ".join(texts)
 
             link_list.append({
                 "src_id": src_id,
                 "dst_id": dst_id,
-                "label": label,
+                "label": link_label,
                 "style": style_str,
                 "path_d": d_attr,
-                "has_arrowhead": len(polys) > 0,
+                "arrow_mode": arrow_mode,
             })
 
     if not cluster_info and not entity_info:
@@ -2263,7 +4216,7 @@ def _parse_description_diagram_svg(
         if has_curves:
             curve_nodes, (bx, by, bw, bh) = _parse_path_to_curve_nodes(d_attr)
             if curve_nodes and bw > 0 and bh > 0:
-                arrow = "end" if link.get("has_arrowhead") else "none"
+                arrow = link.get("arrow_mode", "end" if link.get("has_arrowhead") else "none")
                 ann_id = f"p{counter:06d}"
                 counter += 1
                 line_anns.append({
@@ -2272,6 +4225,32 @@ def _parse_description_diagram_svg(
                     "geom": {
                         "x": bx, "y": by, "w": bw, "h": bh,
                         "nodes": curve_nodes,
+                    },
+                    "meta": {
+                        "label": link["label"],
+                        "tech": "", "note": link["label"],
+                    },
+                    "style": _make_line_style(
+                        pen_color, pen_width, dashed=dashed, arrow=arrow,
+                    ),
+                })
+                continue
+
+        # Degenerate curve (vertical/horizontal) → extract line from path
+        if d_attr:
+            coords = re.findall(r'[-+]?\d*\.?\d+', d_attr)
+            if len(coords) >= 4:
+                all_x = [float(coords[i]) for i in range(0, len(coords), 2)]
+                all_y = [float(coords[i]) for i in range(1, len(coords), 2)]
+                arrow = link.get("arrow_mode", "end" if link.get("has_arrowhead") else "none")
+                ann_id = f"p{counter:06d}"
+                counter += 1
+                line_anns.append({
+                    "id": ann_id,
+                    "kind": "line",
+                    "geom": {
+                        "x1": round(all_x[0], 2), "y1": round(all_y[0], 2),
+                        "x2": round(all_x[-1], 2), "y2": round(all_y[-1], 2),
                     },
                     "meta": {
                         "label": link["label"],
@@ -2332,11 +4311,556 @@ def _parse_description_diagram_svg(
         top_level.sort(key=_child_y)
 
     _normalize_annotations(top_level)
+
+    # ── Enrich with ANTLR deployment source semantics ──
+    if puml_text:
+        src_info = _parse_deployment_source(puml_text)
+        if src_info:
+            _merge_deployment_source_info(top_level, src_info, id_to_qname)
+
     return {
         "version": "draft-1",
         "image": {"width": canvas_w, "height": canvas_h},
         "annotations": top_level,
     }
+
+
+def _merge_deployment_source_info(
+    annotations: List[Dict[str, Any]],
+    src_info: Dict[str, Dict[str, Any]],
+    id_to_qname: Dict[str, str],
+) -> None:
+    """Merge ANTLR-parsed deployment source info into SVG annotations.
+
+    Adds ``meta.dsl.puml_type`` (element keyword) and ``meta.dsl.stereotype``
+    for each annotation whose label or qualified name matches a source element.
+    Recurses into group children.
+    """
+    # Build a reverse index: name → info (for matching by display name)
+    name_index: Dict[str, Dict[str, Any]] = {}
+    for info in src_info.values():
+        name_index[info["name"].lower()] = info
+        if info["alias"]:
+            name_index[info["alias"].lower()] = info
+
+    def _enrich(ann: Dict[str, Any]) -> None:
+        meta = ann.get("meta", {})
+        label = meta.get("label", "").strip()
+
+        # Try matching by label, alias, or name (case-insensitive)
+        match = (src_info.get(label.lower())
+                 or name_index.get(label.lower())
+                 or name_index.get(label.strip('"').lower()))
+
+        if match:
+            dsl = meta.setdefault("dsl", {})
+            if match["keyword"]:
+                dsl["puml_type"] = match["keyword"]
+            if match["stereotype"]:
+                dsl["stereotype"] = match["stereotype"]
+
+        # Recurse into group children
+        for child in ann.get("children", []):
+            _enrich(child)
+
+    for ann in annotations:
+        _enrich(ann)
+
+
+# ───────────────────────────────────────────────
+# ANTLR4-based PlantUML state source parser
+# ───────────────────────────────────────────────
+
+def _parse_state_source(puml_text: str) -> Dict[str, Dict[str, Any]]:
+    """Parse PlantUML state source with the ANTLR4 grammar.
+
+    Returns a dict keyed by state name/alias (lowercase) with values::
+
+        {
+            "name": "ActiveState",
+            "alias": "active",
+            "stereotype": "<<choice>>",
+            "descriptions": ["entry / init", "do / process"],
+            "is_composite": True,
+            "has_concurrent": False,
+        }
+
+    Returns an empty dict if the grammar is unavailable or parsing fails.
+    """
+    try:
+        from antlr4 import CommonTokenStream, InputStream
+        from plantuml.grammar.generated.PlantUMLStateLexer import PlantUMLStateLexer
+        from plantuml.grammar.generated.PlantUMLStateParser import PlantUMLStateParser
+        from plantuml.grammar.generated.PlantUMLStateVisitor import PlantUMLStateVisitor
+    except ImportError:
+        return {}
+
+    class _Visitor(PlantUMLStateVisitor):
+        def __init__(self):
+            self.elements: Dict[str, Dict[str, Any]] = {}
+            self._descriptions: Dict[str, List[str]] = defaultdict(list)
+            self._parent_stack: List[str] = []  # stack of composite state keys
+            self.children: Dict[str, List[str]] = defaultdict(list)  # parent → [child keys]
+
+        def _store(self, ctx, name, alias, stereotype="",
+                   is_composite=False, has_concurrent=False):
+            if not name:
+                return
+            clean_name = name.strip('"')
+            clean_alias = alias.strip('"') if alias else ""
+            key = (clean_alias or clean_name).lower()
+            existing = self.elements.get(key)
+            if existing:
+                # Merge: keep richer data from earlier declaration
+                if clean_name and len(clean_name) > len(existing["name"]):
+                    existing["name"] = clean_name
+                if clean_alias and not existing["alias"]:
+                    existing["alias"] = clean_alias
+                if stereotype and not existing["stereotype"]:
+                    existing["stereotype"] = stereotype
+                if is_composite:
+                    existing["is_composite"] = True
+                if has_concurrent:
+                    existing["has_concurrent"] = True
+            else:
+                self.elements[key] = {
+                    "name": clean_name,
+                    "alias": clean_alias,
+                    "stereotype": stereotype,
+                    "descriptions": [],
+                    "is_composite": is_composite,
+                    "has_concurrent": has_concurrent,
+                    "children": [],
+                    "parent": "",
+                }
+            # Record parent-child relationship
+            if self._parent_stack:
+                parent_key = self._parent_stack[-1]
+                self.elements[key].setdefault("parent", "")
+                if not self.elements[key]["parent"]:
+                    self.elements[key]["parent"] = parent_key
+                if key not in self.children[parent_key]:
+                    self.children[parent_key].append(key)
+
+        def visitStateDecl(self, ctx):
+            name = ctx.stateName().getText() if ctx.stateName() else ""
+            alias = ""
+            if ctx.aliasClause():
+                alias = ctx.aliasClause().stateName().getText()
+            stereotype = ctx.stereotypeClause().getText() if ctx.stereotypeClause() else ""
+            self._store(ctx, name, alias, stereotype)
+            # Inline description: state Name <<stereo>> : text
+            if ctx.COLON() and ctx.restOfLine():
+                clean_name = name.strip('"')
+                clean_alias = alias.strip('"') if alias else ""
+                key = (clean_alias or clean_name).lower()
+                self._descriptions[key].append(ctx.restOfLine().getText().strip())
+            return self.visitChildren(ctx)
+
+        def visitCompositeBlock(self, ctx):
+            name = ctx.stateName().getText() if ctx.stateName() else ""
+            alias = ""
+            if ctx.aliasClause():
+                alias = ctx.aliasClause().stateName().getText()
+            stereotype = ctx.stereotypeClause().getText() if ctx.stereotypeClause() else ""
+            has_concurrent = False
+            for stmt in (ctx.statement() or []):
+                if stmt.concurrentSep():
+                    has_concurrent = True
+                    break
+            self._store(ctx, name, alias, stereotype,
+                        is_composite=True, has_concurrent=has_concurrent)
+            # Push onto parent stack so child states record this as parent
+            clean_alias = alias.strip('"') if alias else ""
+            clean_name = name.strip('"')
+            key = (clean_alias or clean_name).lower()
+            self._parent_stack.append(key)
+            result = self.visitChildren(ctx)
+            self._parent_stack.pop()
+            # Copy children list into element
+            if key in self.elements:
+                self.elements[key]["children"] = list(self.children.get(key, []))
+            return result
+
+        def visitDescriptionStmt(self, ctx):
+            try:
+                ref = ctx.stateRef().getText().strip('"')
+                desc = ctx.restOfLine().getText().strip() if ctx.restOfLine() else ""
+                if ref and desc:
+                    self._descriptions[ref.lower()].append(desc)
+            except Exception:
+                pass
+            return self.visitChildren(ctx)
+
+        def finalize(self):
+            """Merge collected descriptions into elements."""
+            for key, descs in self._descriptions.items():
+                if key in self.elements:
+                    self.elements[key]["descriptions"] = descs
+                else:
+                    self.elements[key] = {
+                        "name": key, "alias": "", "stereotype": "",
+                        "descriptions": descs,
+                        "is_composite": False, "has_concurrent": False,
+                        "children": [], "parent": "",
+                    }
+
+    try:
+        input_stream = InputStream(puml_text)
+        lexer = PlantUMLStateLexer(input_stream)
+        lexer.removeErrorListeners()
+        token_stream = CommonTokenStream(lexer)
+        parser = PlantUMLStateParser(token_stream)
+        parser.removeErrorListeners()
+        tree = parser.diagram()
+        if parser.getNumberOfSyntaxErrors() > 0:
+            # Parse with errors — still try to extract what we can
+            pass
+        visitor = _Visitor()
+        visitor.visit(tree)
+        visitor.finalize()
+        return visitor.elements
+    except Exception:
+        return {}
+
+
+def _merge_state_source_info(
+    annotations: List[Dict[str, Any]],
+    src_info: Dict[str, Dict[str, Any]],
+) -> None:
+    """Merge ANTLR-parsed state source info into SVG annotations.
+
+    Adds ``contents.dsl.stereotype``, ``contents.dsl.descriptions``,
+    ``contents.dsl.is_composite``, and ``contents.dsl.has_concurrent``
+    for each annotation whose label matches a source element.
+    Recurses into group children.
+    """
+    # Build reverse index: name/alias/full-name → info
+    name_index: Dict[str, Dict[str, Any]] = {}
+    for info in src_info.values():
+        name_index[info["name"].lower()] = info
+        if info["alias"]:
+            name_index[info["alias"].lower()] = info
+        # Also index with \n as literal for multiline matching
+        if "\\n" in info["name"]:
+            name_index[info["name"].lower()] = info
+
+    def _enrich(ann: Dict[str, Any]) -> None:
+        contents = ann.get("contents") or ann.get("meta") or {}
+
+        # Collect all text parts from blocks (label, tech, etc.)
+        blocks = contents.get("blocks", [])
+        text_parts = []
+        for b in blocks:
+            for r in b.get("runs", []):
+                t = r.get("text", "").strip()
+                if t:
+                    text_parts.append(t)
+
+        label = text_parts[0] if text_parts else contents.get("label", "")
+        # Build full name by joining label + tech lines (for multiline states)
+        full_text = "\\n".join(text_parts[:2]) if len(text_parts) >= 2 else label
+
+        match = (src_info.get(label.lower())
+                 or name_index.get(label.lower())
+                 or name_index.get(label.strip('"').lower()))
+
+        # Try matching by full multiline name (label + tech combined)
+        if not match and full_text != label:
+            match = name_index.get(full_text.lower())
+
+        # Try matching ANTLR name (with \n) against SVG combined text
+        if not match:
+            for info in src_info.values():
+                antlr_name = info["name"].replace("\\n", "\\n")
+                if antlr_name.lower() == full_text.lower():
+                    match = info
+                    break
+
+        # Fallback: match by first line only (when no ambiguity)
+        if not match:
+            first_line_matches = []
+            for info in src_info.values():
+                first_line = info["name"].split("\\n")[0].strip()
+                if first_line.lower() == label.lower():
+                    first_line_matches.append(info)
+            if len(first_line_matches) == 1:
+                match = first_line_matches[0]
+
+        # Pseudo-state matching deferred to second pass (see below)
+
+        # Choice diamond matching: [choice] label → match by <<choice>> stereotype
+        if not match and label == "[choice]":
+            candidates = [
+                (k, i) for k, i in src_info.items()
+                if i.get("stereotype", "").lower() == "<<choice>>"
+                and k not in matched_keys
+            ]
+            if len(candidates) == 1:
+                match = candidates[0][1]
+            elif len(candidates) >= 2:
+                # Multiple choices — match by proximity to annotation position
+                ann_y = ann.get("geom", {}).get("y", 0)
+                # Not enough info to disambiguate perfectly; take first unmatched
+                match = candidates[0][1]
+
+        # Fork/join bar matching: [fork/join] label → match by stereotype
+        if not match and label == "[fork/join]":
+            geom = ann.get("geom", {})
+            bar_y = geom.get("y", 0)
+            # Find unmatched entries with <<fork>> or <<join>> stereotypes
+            candidates = []
+            for k, info in src_info.items():
+                s = info.get("stereotype", "").lower()
+                if s in ("<<fork>>", "<<join>>") and k not in matched_keys:
+                    candidates.append((k, info))
+            if len(candidates) == 1:
+                match = candidates[0][1]
+            elif len(candidates) >= 2:
+                # Fork appears before join (lower y = higher up on screen)
+                fork_cands = [(k, i) for k, i in candidates if "fork" in i["stereotype"].lower()]
+                join_cands = [(k, i) for k, i in candidates if "join" in i["stereotype"].lower()]
+                if fork_cands and not _fork_join_bars:
+                    # First bar encountered → assign fork
+                    match = fork_cands[0][1]
+                elif join_cands:
+                    match = join_cands[0][1]
+            if match:
+                _fork_join_bars.append(ann)
+
+        if match:
+            matched_keys.add((match.get("alias") or match["name"]).lower())
+            # Get or create dsl dict in the right location
+            if "contents" in ann:
+                dsl = ann["contents"].setdefault("dsl", {})
+            elif "meta" in ann:
+                dsl = ann["meta"].setdefault("dsl", {})
+            else:
+                return
+            if match["stereotype"]:
+                dsl["stereotype"] = match["stereotype"]
+            if match["descriptions"]:
+                dsl["descriptions"] = match["descriptions"]
+            if match["is_composite"]:
+                dsl["is_composite"] = True
+            if match["has_concurrent"]:
+                dsl["has_concurrent"] = True
+            # Update label for pseudo-state bars/diamonds/points/pins
+            if label in ("[fork/join]", "[choice]", "[point]", "[pin]", "[expansion]"):
+                stereo = match["stereotype"].strip("<>")
+                # Use the declared name if available, else stereotype
+                new_label = match.get("name", "") or f"[{stereo}]"
+                if "contents" in ann:
+                    blocks = ann["contents"].get("blocks", [])
+                    if blocks and blocks[0].get("runs"):
+                        blocks[0]["runs"][0]["text"] = new_label
+
+        # Recurse into group children
+        for child in ann.get("children", []):
+            _enrich(child)
+
+    matched_keys: set = set()
+    _fork_join_bars: List[Dict[str, Any]] = []
+
+    for ann in annotations:
+        _enrich(ann)
+
+    # ── Second pass: deferred pseudo-state matching ──
+    # Collect unmatched pseudo-state annotations, sort by position,
+    # then pair with ANTLR entries in declaration order.
+    _PSEUDO_LABELS = ("[point]", "[pin]", "[expansion]")
+    _PSEUDO_STEREO_MAP = {
+        "[point]": ("<<entrypoint>>", "<<exitpoint>>",
+                    "<<inputpin>>", "<<outputpin>>"),
+        "[pin]": ("<<inputpin>>", "<<outputpin>>"),
+        "[expansion]": ("<<expansioninput>>", "<<expansionoutput>>"),
+    }
+
+    def _collect_pseudo(anns: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Collect all annotations with pseudo-state labels, recursively."""
+        result = []
+        for a in anns:
+            c = a.get("contents") or a.get("meta") or {}
+            blocks = c.get("blocks", [])
+            lbl = blocks[0]["runs"][0]["text"] if blocks and blocks[0].get("runs") else ""
+            if lbl in _PSEUDO_LABELS:
+                result.append(a)
+            result.extend(_collect_pseudo(a.get("children", [])))
+        return result
+
+    for pseudo_label in _PSEUDO_LABELS:
+        target_stereos = _PSEUDO_STEREO_MAP[pseudo_label]
+        # Get unmatched ANTLR entries with these stereotypes, in declaration order
+        antlr_entries = [
+            (k, i) for k, i in src_info.items()
+            if i.get("stereotype", "").lower() in target_stereos
+            and k not in matched_keys
+        ]
+        if not antlr_entries:
+            continue
+        # Get unmatched SVG annotations with this label, sorted by position (y, then x)
+        pseudo_anns = [
+            a for a in _collect_pseudo(annotations)
+            if (a.get("contents") or a.get("meta") or {}).get("blocks", [{}])[0]
+               .get("runs", [{}])[0].get("text", "") == pseudo_label
+        ]
+        pseudo_anns.sort(key=lambda a: (a.get("geom", {}).get("y", 0),
+                                         a.get("geom", {}).get("x", 0)))
+        # Pair them up: SVG sorted by position ↔ ANTLR in declaration order
+        for pa, (ak, ai) in zip(pseudo_anns, antlr_entries):
+            matched_keys.add(ak)
+            if "contents" in pa:
+                dsl = pa["contents"].setdefault("dsl", {})
+            elif "meta" in pa:
+                dsl = pa["meta"].setdefault("dsl", {})
+            else:
+                continue
+            if ai["stereotype"]:
+                dsl["stereotype"] = ai["stereotype"]
+            # Update label to declared name
+            new_label = ai.get("name", "") or ai["stereotype"].strip("<>")
+            if "contents" in pa:
+                blocks = pa["contents"].get("blocks", [])
+                if blocks and blocks[0].get("runs"):
+                    blocks[0]["runs"][0]["text"] = new_label
+
+    # ── Create synthetic groups for missing composite states ──
+    # Build ann lookup by label (lowercase) for child matching
+    ann_by_label: Dict[str, Dict[str, Any]] = {}
+    def _index_ann(ann: Dict[str, Any]) -> None:
+        c = ann.get("contents") or ann.get("meta") or {}
+        blocks = c.get("blocks", [])
+        if blocks:
+            for b in blocks:
+                for r in b.get("runs", []):
+                    t = r.get("text", "").strip()
+                    if t:
+                        ann_by_label[t.lower()] = ann
+                        break
+                break
+        for child in ann.get("children", []):
+            _index_ann(child)
+    for ann in annotations:
+        _index_ann(ann)
+
+    def _nesting_depth(key: str) -> int:
+        """Compute nesting depth from ANTLR parent chain."""
+        depth = 0
+        cur = key
+        seen: set = set()
+        while cur in src_info and src_info[cur].get("parent") and cur not in seen:
+            seen.add(cur)
+            cur = src_info[cur]["parent"]
+            depth += 1
+        return depth
+
+    # Find composites with children that ARE in the SVG but the composite itself is NOT
+    missing_composite_keys = []
+    for key, info in src_info.items():
+        if not info.get("is_composite") or not info.get("children"):
+            continue
+        if key in matched_keys:
+            continue
+        first_line = info["name"].split("\\n")[0].strip().lower()
+        if first_line in matched_keys:
+            continue
+        missing_composite_keys.append(key)
+
+    # Sort by depth (deepest first) so inner groups are created before outer
+    missing_composite_keys.sort(key=lambda x: _nesting_depth(x), reverse=True)
+
+    for key in missing_composite_keys:
+        info = src_info[key]
+        # Find child annotations (lookup at synthesis time so earlier synthetics are found)
+        child_anns = []
+        for child_key in info["children"]:
+            child_info = src_info.get(child_key, {})
+            child_name = child_info.get("name", child_key)
+            child_alias = child_info.get("alias", "")
+            ca = (ann_by_label.get(child_name.lower())
+                  or ann_by_label.get(child_alias.lower())
+                  or ann_by_label.get(child_key.lower())
+                  or ann_by_label.get(child_name.split("\\n")[0].strip().lower()))
+            if ca:
+                child_anns.append(ca)
+        if not child_anns:
+            print(f"[STATE] ANTLR composite not found in SVG (no children matched): "
+                  f"name={info['name']!r} alias={info['alias']!r}")
+            continue
+        # Compute bounding box from children
+        min_x = min(a["geom"]["x"] for a in child_anns)
+        min_y = min(a["geom"]["y"] for a in child_anns)
+        max_x = max(a["geom"]["x"] + a["geom"].get("w", 0) for a in child_anns)
+        max_y = max(a["geom"]["y"] + a["geom"].get("h", 0) for a in child_anns)
+        pad = 20  # padding around children
+        group_geom = {
+            "x": round(min_x - pad, 2),
+            "y": round(min_y - pad - 20, 2),  # extra top for label
+            "w": round(max_x - min_x + 2 * pad, 2),
+            "h": round(max_y - min_y + 2 * pad + 20, 2),
+        }
+
+        depth = _nesting_depth(key)
+        # Outer composites behind inner: deeper nesting = higher z (in front)
+        # depth 0 (outermost) = z=-10, depth 1 = z=-9, etc.
+        max_depth = max(_nesting_depth(k) for k in missing_composite_keys) if missing_composite_keys else 0
+        z_order = -(max_depth - depth) - 1
+
+        group_id = f"g_synth_{key}"
+        label = info["name"].split("\\n")[0].strip()
+        stereotype = info.get("stereotype", "")
+
+        # Build the group annotation as a roundedrect (not a PictoSync group)
+        # so it renders as a visible container behind its children.
+        # Use contents format directly since _normalize_annotations already ran.
+        from models import CharFormat, TextBlock, TextRun, TextFrame
+        tech_text = stereotype.strip("<>") if stereotype else ""
+        synth_blocks = [
+            TextBlock(runs=[TextRun(type="text", text=label,
+                                     format=CharFormat(bold=True, font_size=11))]),
+        ]
+        if tech_text:
+            synth_blocks.append(
+                TextBlock(runs=[TextRun(type="text", text=tech_text,
+                                         format=CharFormat(italic=True, font_size=9))]),
+            )
+        group_ann: Dict[str, Any] = {
+            "id": group_id,
+            "kind": "roundedrect",
+            "geom": group_geom,
+            "contents": {
+                "frame": TextFrame(halign="center", valign="top").to_dict(),
+                "default_format": CharFormat(font_size=11).to_dict(),
+                "blocks": [b.to_dict() for b in synth_blocks],
+                "wrap": True,
+                "dsl": {
+                    "is_composite": True,
+                    "synthesized": True,
+                },
+            },
+            "style": {
+                "pen": {"color": "#888888", "width": 1, "dash": "dashed"},
+                "fill": {"color": "#F8F8F820"},
+                "text": {"color": "#555555", "size_pt": 11.0},
+            },
+        }
+        if stereotype:
+            group_ann["contents"]["dsl"]["stereotype"] = stereotype
+        if z_order != 0:
+            group_ann["z"] = z_order
+
+        # Remove children from top_level and add the group
+        child_set = set(id(a) for a in child_anns)
+        annotations[:] = [a for a in annotations if id(a) not in child_set]
+        annotations.append(group_ann)
+        # Re-add children after the group (higher z = in front)
+        annotations.extend(child_anns)
+
+        # Register for further parent lookups
+        ann_by_label[label.lower()] = group_ann
+        matched_keys.add(key)
+        print(f"[STATE] Synthesized composite: {label!r} with "
+              f"{len(child_anns)} children, z={z_order}")
 
 
 # ───────────────────────────────────────────────
@@ -2345,6 +4869,7 @@ def _parse_description_diagram_svg(
 
 def _parse_state_diagram_svg(
     tree: ET.ElementTree,
+    puml_text: str = "",
 ) -> Dict[str, Any]:
     """Parse a STATE diagram SVG into PictoSync annotations.
 
@@ -2501,7 +5026,10 @@ def _parse_state_diagram_svg(
                 label = name_parts[0] if name_parts else ""
                 tech = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
                 note = "\n".join(desc_parts)
+                label, tech, note = _dedup_label_tech_note(label, tech, note)
 
+                text_fmt = _extract_text_format(
+                    child.findall(f"{{{ns}}}text"))
                 cluster_info[ent_id] = {
                     "kind": "roundedrect",
                     "geom": geom,
@@ -2511,6 +5039,7 @@ def _parse_state_diagram_svg(
                     "note": note,
                     "stroke_color": stroke_color,
                     "stroke_width": stroke_width,
+                    **text_fmt,
                 }
                 all_geom[ent_id] = {
                     "x": geom["x"], "y": geom["y"],
@@ -2523,39 +5052,172 @@ def _parse_state_diagram_svg(
                     continue
 
                 path_el = child.find(f"{{{ns}}}path")
-                if path_el is None:
-                    continue
+                rect_el = child.find(f"{{{ns}}}rect")
 
-                d = path_el.get("d", "")
-                bx, by, bw, bh = _path_bbox(d)
-                geom = {"x": bx, "y": by, "w": bw, "h": bh}
-                fill = path_el.get("fill", "#FEFFDD")
-                stroke_color, stroke_width = _extract_stroke(path_el)
+                if path_el is not None:
+                    # Note shape (path-based, e.g. folded corner)
+                    d = path_el.get("d", "")
+                    bx, by, bw, bh = _path_bbox(d)
+                    geom = {"x": bx, "y": by, "w": bw, "h": bh}
+                    fill = path_el.get("fill", "#FEFFDD")
+                    stroke_color, stroke_width = _extract_stroke(path_el)
 
-                # Collect texts, skip NBSP-only entries
-                texts: List[str] = []
-                for t in child.findall(f"{{{ns}}}text"):
-                    txt = (t.text or "").replace("\xa0", "").strip()
-                    if txt:
-                        texts.append(txt)
+                    texts: List[str] = []
+                    for t in child.findall(f"{{{ns}}}text"):
+                        txt = (t.text or "").replace("\xa0", "").strip()
+                        if txt:
+                            texts.append(txt)
 
-                label = texts[0] if texts else ""
-                note_text = "\n".join(texts)
+                    label = texts[0] if texts else ""
+                    note_text = "\n".join(texts)
+                    label, _tech, note_text = _dedup_label_tech_note(label, "", note_text)
+                    text_fmt = _extract_text_format(
+                        child.findall(f"{{{ns}}}text"))
 
-                note_info[ent_id] = {
-                    "kind": "roundedrect",
-                    "geom": geom,
-                    "fill": fill,
-                    "label": label,
-                    "tech": "",
-                    "note": note_text,
-                    "stroke_color": stroke_color,
-                    "stroke_width": stroke_width,
-                }
-                all_geom[ent_id] = {
-                    "x": geom["x"], "y": geom["y"],
-                    "w": geom["w"], "h": geom["h"],
-                }
+                    note_info[ent_id] = {
+                        "kind": "roundedrect",
+                        "geom": geom,
+                        "fill": fill,
+                        "label": label,
+                        "tech": "",
+                        "note": note_text,
+                        "stroke_color": stroke_color,
+                        "stroke_width": stroke_width,
+                        **text_fmt,
+                    }
+                    all_geom[ent_id] = {
+                        "x": geom["x"], "y": geom["y"],
+                        "w": geom["w"], "h": geom["h"],
+                    }
+
+                elif rect_el is not None:
+                    # Regular state (rect-based entity — same structure as
+                    # unnamed states but with class="entity" and an id)
+                    line_el = child.find(f"{{{ns}}}line")
+                    text_els = child.findall(f"{{{ns}}}text")
+                    geom = {
+                        "x": round(float(rect_el.get("x", 0)), 2),
+                        "y": round(float(rect_el.get("y", 0)), 2),
+                        "w": round(float(rect_el.get("width", 0)), 2),
+                        "h": round(float(rect_el.get("height", 0)), 2),
+                    }
+                    fill = rect_el.get("fill", "#F1F1F1")
+                    stroke_color, stroke_width = _extract_stroke(rect_el)
+
+                    div_y = float(line_el.get("y1", 9999)) if line_el is not None else 9999
+                    name_parts = []
+                    desc_parts = []
+                    for t in text_els:
+                        ty = float(t.get("y", 0))
+                        txt = (t.text or "").strip()
+                        if not txt:
+                            continue
+                        if ty < div_y:
+                            name_parts.append(txt)
+                        else:
+                            desc_parts.append(txt)
+
+                    label = name_parts[0] if name_parts else ""
+                    tech = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+                    note_text = "\n".join(desc_parts)
+                    label, tech, note_text = _dedup_label_tech_note(label, tech, note_text)
+
+                    text_fmt = _extract_text_format(text_els)
+                    unnamed_states.append({
+                        "kind": "roundedrect",
+                        "geom": geom,
+                        "fill": fill,
+                        "label": label,
+                        "tech": tech,
+                        "note": note_text,
+                        "stroke_color": stroke_color,
+                        "stroke_width": stroke_width,
+                        "name_parts": name_parts,
+                        "ent_id": ent_id,
+                        **text_fmt,
+                    })
+                    all_geom[ent_id] = {
+                        "x": geom["x"], "y": geom["y"],
+                        "w": geom["w"], "h": geom["h"],
+                    }
+
+                else:
+                    # Check for polygon (choice diamond <<choice>>)
+                    poly_el = child.find(f"{{{ns}}}polygon")
+                    if poly_el is not None:
+                        pts_str = poly_el.get("points", "")
+                        pts = re.findall(
+                            r'([-+]?\d*\.?\d+),([-+]?\d*\.?\d+)', pts_str,
+                        )
+                        if len(pts) >= 4:
+                            xs = [float(p[0]) for p in pts]
+                            ys = [float(p[1]) for p in pts]
+                            px, py = min(xs), min(ys)
+                            pw, ph = max(xs) - px, max(ys) - py
+                            fill = poly_el.get("fill", "#F1F1F1")
+                            stroke_color, stroke_width = _extract_stroke(poly_el)
+                            unnamed_states.append({
+                                "kind": "polygon",
+                                "geom": {
+                                    "x": round(px, 2), "y": round(py, 2),
+                                    "w": round(pw, 2), "h": round(ph, 2),
+                                    "points": [
+                                        [round((float(p[0]) - px) / pw, 4),
+                                         round((float(p[1]) - py) / ph, 4)]
+                                        for p in pts[:4]  # 4-point diamond
+                                    ],
+                                },
+                                "fill": fill,
+                                "label": "[choice]",
+                                "tech": "",
+                                "note": "",
+                                "stroke_color": stroke_color,
+                                "stroke_width": stroke_width,
+                                "name_parts": ["[choice]"],
+                                "ent_id": ent_id,
+                            })
+                            all_geom[ent_id] = {
+                                "x": round(px, 2), "y": round(py, 2),
+                                "w": round(pw, 2), "h": round(ph, 2),
+                            }
+
+            elif cls in ("start_entity", "end_entity"):
+                # [*] pseudo-state wrapped in a <g class="start_entity"> or "end_entity"
+                # Use a synthetic key to avoid colliding with entity IDs
+                # (PlantUML reuses ent_id for both the [*] and a regular entity)
+                ent_id = child.get("id", "")
+                ells = child.findall(f"{{{ns}}}ellipse")
+                ell = ells[0] if ells else None
+                if ell is not None:
+                    cx = float(ell.get("cx", 0))
+                    cy = float(ell.get("cy", 0))
+                    # Use outermost ellipse for geometry
+                    rx = max(float(e.get("rx", 10)) for e in ells)
+                    ry = max(float(e.get("ry", 10)) for e in ells)
+                    is_end = cls == "end_entity"
+                    prefix = "__end_" if is_end else "__start_"
+                    if is_end:
+                        # End state: white fill with thick black border (bullseye)
+                        fill = "#FFFFFFFF"
+                    else:
+                        # Start state: solid dark fill
+                        fill = ell.get("fill", "#222222")
+                    synth_id = f"{prefix}{ent_id}" if ent_id else f"{prefix}_"
+                    geom = {
+                        "x": round(cx - rx, 2),
+                        "y": round(cy - ry, 2),
+                        "w": round(rx * 2, 2),
+                        "h": round(ry * 2, 2),
+                    }
+                    initial_ellipses.append({
+                        "kind": "ellipse",
+                        "geom": geom,
+                        "fill": fill,
+                        "ent_id": synth_id,
+                        "svg_ent_id": ent_id,
+                        "is_end": is_end,
+                    })
+                    all_geom[synth_id] = dict(geom)
 
             elif cls == "link":
                 src_id = child.get("data-entity-1", "")
@@ -2564,12 +5226,10 @@ def _parse_state_diagram_svg(
                     continue
 
                 link_type = child.get("data-link-type", "dependency")
-                texts_el = [
-                    t.text
-                    for t in child.findall(f"{{{ns}}}text")
-                    if t.text
-                ]
+                link_text_els = child.findall(f"{{{ns}}}text")
+                texts_el = [t.text for t in link_text_els if t.text]
                 label = "\n".join(texts_el)
+                link_text_fmt = _extract_text_format(link_text_els)
 
                 link_path = child.find(f"{{{ns}}}path")
                 style_str = (
@@ -2598,11 +5258,14 @@ def _parse_state_diagram_svg(
                     "path_id": path_id,
                     "link_type": link_type,
                     "has_arrowhead": len(polys) > 0,
+                    "arrow_mode": _detect_arrow_mode(polys, path_id, link_type),
+                    "text_fmt": link_text_fmt,
                 })
 
             elif not cls:
-                # Unnamed <g> — detect regular state by structure:
+                # Unnamed <g> — detect regular state or composite container:
                 # <rect rx="12.5"> + <line> + <text>
+                # Composite containers have fill="none" (transparent border)
                 rect_el = child.find(f"{{{ns}}}rect")
                 line_el = child.find(f"{{{ns}}}line")
                 text_els = child.findall(f"{{{ns}}}text")
@@ -2613,6 +5276,54 @@ def _parse_state_diagram_svg(
                     and text_els
                     and float(rect_el.get("rx", 0)) >= 10
                 ):
+                    fill_val = rect_el.get("fill", "#F1F1F1")
+                    is_composite_rect = fill_val.lower() in ("none", "")
+
+                    geom = {
+                        "x": round(float(rect_el.get("x", 0)), 2),
+                        "y": round(float(rect_el.get("y", 0)), 2),
+                        "w": round(float(rect_el.get("width", 0)), 2),
+                        "h": round(float(rect_el.get("height", 0)), 2),
+                    }
+
+                    if is_composite_rect:
+                        # Composite state container (rendered without class="cluster")
+                        stroke_color, stroke_width = _extract_stroke(rect_el)
+                        div_y = float(line_el.get("y1", 0))
+                        name_parts = []
+                        desc_parts = []
+                        for t in text_els:
+                            ty = float(t.get("y", 0))
+                            txt = (t.text or "").strip()
+                            if not txt:
+                                continue
+                            if ty < div_y:
+                                name_parts.append(txt)
+                            else:
+                                desc_parts.append(txt)
+                        label = name_parts[0] if name_parts else ""
+                        tech = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+                        note_text = "\n".join(desc_parts)
+                        label, tech, note_text = _dedup_label_tech_note(label, tech, note_text)
+                        # Use a synthetic cluster ID
+                        synth_cid = f"__composite_{len(cluster_info)}"
+                        cluster_info[synth_cid] = {
+                            "kind": "roundedrect",
+                            "geom": geom,
+                            "fill": "#00000000",  # transparent
+                            "label": label,
+                            "tech": tech,
+                            "note": note_text,
+                            "stroke_color": stroke_color,
+                            "stroke_width": stroke_width,
+                            "adjust1": float(rect_el.get("rx", 10)),
+                        }
+                        all_geom[synth_cid] = {
+                            "x": geom["x"], "y": geom["y"],
+                            "w": geom["w"], "h": geom["h"],
+                        }
+                        continue
+
                     geom = {
                         "x": round(float(rect_el.get("x", 0)), 2),
                         "y": round(float(rect_el.get("y", 0)), 2),
@@ -2644,6 +5355,7 @@ def _parse_state_diagram_svg(
                     )
                     note_text = "\n".join(desc_parts)
 
+                    text_fmt = _extract_text_format(text_els)
                     unnamed_states.append({
                         "kind": "roundedrect",
                         "geom": geom,
@@ -2654,25 +5366,181 @@ def _parse_state_diagram_svg(
                         "stroke_color": stroke_color,
                         "stroke_width": stroke_width,
                         "name_parts": name_parts,
+                        **text_fmt,
                     })
 
+        elif tag_local == "rect":
+            # Bare <rect> at root level:
+            #   fill="none" + rx>=10      → composite state container
+            #   dark fill + rx=0 + thin   → fork/join bar pseudo-state
+            #   light fill + rx=0 + small → pin or expansion pseudo-state
+            fill_val = child.get("fill", "")
+            rx_val = float(child.get("rx", 0))
+            r_w = float(child.get("width", 0))
+            r_h = float(child.get("height", 0))
+            is_dark_fill = (fill_val.startswith("#") and fill_val.lower() not in (
+                "#ffffff", "#f1f1f1", "#fafafa", "#none", ""))
+            is_light_small = (not is_dark_fill and rx_val < 1
+                              and r_h <= 15 and r_w <= 60
+                              and fill_val.lower() not in ("none", ""))
+
+            # Fork/join bar: dark fill, rx=0, very thin
+            if (is_dark_fill and rx_val < 1
+                    and (r_h <= 10 or r_w <= 10)):
+                r_x = round(float(child.get("x", 0)), 2)
+                r_y = round(float(child.get("y", 0)), 2)
+                stroke_color, stroke_width = _extract_stroke(child)
+                # Determine fork vs join from ANTLR (will be enriched later)
+                unnamed_states.append({
+                    "kind": "rect",
+                    "geom": {
+                        "x": r_x, "y": r_y,
+                        "w": round(r_w, 2), "h": round(r_h, 2),
+                    },
+                    "fill": fill_val,
+                    "label": "[fork/join]",
+                    "tech": "",
+                    "note": "",
+                    "stroke_color": stroke_color or fill_val,
+                    "stroke_width": stroke_width or 1,
+                    "name_parts": ["[fork/join]"],
+                })
+
+            elif is_light_small:
+                # Pin (12x12) or expansion (48x12) pseudo-state
+                r_x = round(float(child.get("x", 0)), 2)
+                r_y = round(float(child.get("y", 0)), 2)
+                stroke_color, stroke_width = _extract_stroke(child)
+                # Expansion: wider rectangle; Pin: square
+                is_expansion = r_w > 20
+                label = "[expansion]" if is_expansion else "[pin]"
+                unnamed_states.append({
+                    "kind": "rect",
+                    "geom": {
+                        "x": r_x, "y": r_y,
+                        "w": round(r_w, 2), "h": round(r_h, 2),
+                    },
+                    "fill": fill_val,
+                    "label": label,
+                    "tech": "",
+                    "note": "",
+                    "stroke_color": stroke_color or "#222222",
+                    "stroke_width": stroke_width or 1,
+                    "name_parts": [label],
+                })
+
+            elif fill_val.lower() in ("none", ""):
+                rx_val = float(child.get("rx", 0))
+                if rx_val >= 10:
+                    x = round(float(child.get("x", 0)), 2)
+                    y = round(float(child.get("y", 0)), 2)
+                    w = round(float(child.get("width", 0)), 2)
+                    h = round(float(child.get("height", 0)), 2)
+                    stroke_color, stroke_width = _extract_stroke(child)
+                    # Find associated text elements (inside the rect bbox)
+                    name_parts = []
+                    desc_parts = []
+                    # Find the divider line (first <line> inside the bbox)
+                    div_y = y + 9999
+                    for sib in root_g:
+                        stag = sib.tag.split("}")[-1] if "}" in sib.tag else sib.tag
+                        if stag == "line":
+                            lx1 = float(sib.get("x1", 0))
+                            ly1 = float(sib.get("y1", 0))
+                            lx2 = float(sib.get("x2", 0))
+                            if (abs(lx1 - x) < 2 and abs(lx2 - (x + w)) < 2
+                                    and y < ly1 < y + h):
+                                div_y = ly1
+                                break
+                    for sib in root_g:
+                        stag = sib.tag.split("}")[-1] if "}" in sib.tag else sib.tag
+                        if stag == "text":
+                            tx = float(sib.get("x", 0))
+                            ty = float(sib.get("y", 0))
+                            txt = (sib.text or "").strip()
+                            if txt and x <= tx <= x + w and y <= ty <= y + h:
+                                if ty < div_y:
+                                    name_parts.append(txt)
+                                else:
+                                    desc_parts.append(txt)
+                    label = name_parts[0] if name_parts else ""
+                    tech = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+                    note_text = "\n".join(desc_parts)
+                    label, tech, note_text = _dedup_label_tech_note(label, tech, note_text)
+                    # Extract text formatting from sibling <text> elements
+                    sib_texts = [
+                        s for s in root_g
+                        if (s.tag.split("}")[-1] if "}" in s.tag else s.tag) == "text"
+                        and x <= float(s.get("x", 0)) <= x + w
+                        and y <= float(s.get("y", 0)) <= y + h
+                    ]
+                    text_fmt = _extract_text_format(sib_texts)
+                    synth_cid = f"__composite_{len(cluster_info)}"
+                    cluster_info[synth_cid] = {
+                        "kind": "roundedrect",
+                        "geom": {"x": x, "y": y, "w": w, "h": h},
+                        "fill": "#00000000",
+                        "label": label,
+                        "tech": tech,
+                        "note": note_text,
+                        "stroke_color": stroke_color,
+                        "stroke_width": stroke_width,
+                        "adjust1": rx_val,
+                        **text_fmt,
+                    }
+                    all_geom[synth_cid] = {"x": x, "y": y, "w": w, "h": h}
+
         elif tag_local == "ellipse":
-            # Bare ellipse — initial [*] marker
+            # Bare ellipse — [*] pseudo-state or entry/exit point
+            # Skip if a start_entity at same position was already found
             rx = float(child.get("rx", 0))
             ry = float(child.get("ry", 0))
             if rx <= 12 and ry <= 12:
                 cx = float(child.get("cx", 0))
                 cy = float(child.get("cy", 0))
-                initial_ellipses.append({
-                    "kind": "ellipse",
-                    "geom": {
-                        "x": round(cx - rx, 2),
-                        "y": round(cy - ry, 2),
-                        "w": round(rx * 2, 2),
-                        "h": round(ry * 2, 2),
-                    },
-                    "fill": child.get("fill", "#222222"),
-                })
+                dup = any(
+                    abs(e["geom"]["x"] - (cx - rx)) < 1
+                    and abs(e["geom"]["y"] - (cy - ry)) < 1
+                    for e in initial_ellipses
+                )
+                if dup:
+                    continue
+                fill = child.get("fill", "#222222")
+                is_dark = fill.lower() in ("#222222", "#000000", "#181818")
+                geom = {
+                    "x": round(cx - rx, 2),
+                    "y": round(cy - ry, 2),
+                    "w": round(rx * 2, 2),
+                    "h": round(ry * 2, 2),
+                }
+
+                if is_dark and rx >= 8:
+                    # Dark, large: [*] start pseudo-state
+                    initial_ellipses.append({
+                        "kind": "ellipse",
+                        "geom": geom,
+                        "fill": fill,
+                    })
+                elif not is_dark and rx <= 8:
+                    # Light, small: <<entryPoint>> or <<exitPoint>>
+                    unnamed_states.append({
+                        "kind": "ellipse",
+                        "geom": geom,
+                        "fill": fill,
+                        "label": "[point]",
+                        "tech": "",
+                        "note": "",
+                        "stroke_color": "#222222",
+                        "stroke_width": 1,
+                        "name_parts": ["[point]"],
+                    })
+                else:
+                    # Other: treat as [*]
+                    initial_ellipses.append({
+                        "kind": "ellipse",
+                        "geom": geom,
+                        "fill": fill,
+                    })
 
     if not unnamed_states and not cluster_info and not note_info:
         return empty
@@ -2706,11 +5574,22 @@ def _parse_state_diagram_svg(
     # Match aliases to unnamed states by label
     state_to_ent_id: Dict[int, str] = {}
     matched_ent_ids: set = set()
+
+    # Pre-populate for entity-based states that already have an ent_id
+    for idx, state in enumerate(unnamed_states):
+        eid = state.get("ent_id", "")
+        if eid:
+            state_to_ent_id[idx] = eid
+            matched_ent_ids.add(eid)
+
     unmatched_ent_ids = (
         set(ent_id_to_alias.keys()) - set(cluster_info.keys())
+        - matched_ent_ids
     )
 
     for idx, state in enumerate(unnamed_states):
+        if idx in state_to_ent_id:
+            continue  # Already mapped by ent_id
         parts = state.get("name_parts", [])
         full_name = " ".join(parts)
 
@@ -2798,38 +5677,64 @@ def _parse_state_diagram_svg(
             },
         }
 
-    # Initial [*] ellipses
+    # Initial [*] and final [*] ellipses (start_entity / end_entity)
     ellipse_anns: List[Dict[str, Any]] = []
+    # Map from SVG ent_id → synthetic id for start/end entities
+    start_id_remap: Dict[str, str] = {}
     for ell in initial_ellipses:
         ann_id = f"p{counter:06d}"
         counter += 1
-        ellipse_anns.append({
+        is_end = ell.get("is_end", False)
+        ann = {
             "id": ann_id,
             "kind": "ellipse",
             "geom": dict(ell["geom"]),
-            "meta": {"label": "Start", "tech": "", "note": "Start"},
+            "meta": {
+                "label": "[*]",
+                "tech": "end" if is_end else "start",
+                "note": "",
+            },
             "style": {
-                "pen": {"color": "#222222", "width": 1, "dash": "solid"},
+                "pen": {
+                    "color": "#222222",
+                    "width": 8 if is_end else 1,
+                    "dash": "solid",
+                },
                 "fill": {"color": _safe_fill(ell["fill"])},
                 "text": {"color": "#FFFFFF", "size_pt": 8.0},
             },
-        })
+        }
+        ellipse_anns.append(ann)
+        synth_id = ell.get("ent_id", "")
+        svg_ent_id = ell.get("svg_ent_id", "")
+        if synth_id:
+            id_to_ann[synth_id] = ann
+        # Remap links that reference the SVG ent_id to the synthetic id
+        if svg_ent_id and synth_id != svg_ent_id:
+            start_id_remap[svg_ent_id] = synth_id
 
     # Unnamed states
+    orphan_anns: List[Dict[str, Any]] = []  # states without ent_id (pins, etc.)
     for idx, state in enumerate(unnamed_states):
         ann_id = f"p{counter:06d}"
         counter += 1
         ent_id = state_to_ent_id.get(idx)
 
+        meta_dict: Dict[str, Any] = {
+            "label": state["label"],
+            "tech": state["tech"],
+            "note": state["note"] or state["label"],
+        }
+        # Carry text formatting from SVG
+        for fk in ("text_color", "text_size", "text_family"):
+            if fk in state:
+                meta_dict[fk] = state[fk]
+
         ann: Dict[str, Any] = {
             "id": ann_id,
             "kind": state["kind"],
             "geom": dict(state["geom"]),
-            "meta": {
-                "label": state["label"],
-                "tech": state["tech"],
-                "note": state["note"] or state["label"],
-            },
+            "meta": meta_dict,
             "style": {
                 "pen": {
                     "color": state["stroke_color"],
@@ -2837,26 +5742,31 @@ def _parse_state_diagram_svg(
                     "dash": "solid",
                 },
                 "fill": {"color": _safe_fill(state["fill"])},
-                "text": {"color": "#000000", "size_pt": 11.0},
             },
         }
         if ent_id:
             id_to_ann[ent_id] = ann
+        else:
+            orphan_anns.append(ann)
 
     # Notes (separate from id_to_ann to avoid ent_id collisions)
     note_anns: List[Dict[str, Any]] = []
     for ent_id, data in note_info.items():
         ann_id = f"p{counter:06d}"
         counter += 1
+        note_meta: Dict[str, Any] = {
+            "label": data["label"],
+            "tech": data["tech"],
+            "note": data["note"] or data["label"],
+        }
+        for fk in ("text_color", "text_size", "text_family"):
+            if fk in data:
+                note_meta[fk] = data[fk]
         note_anns.append({
             "id": ann_id,
             "kind": data["kind"],
             "geom": dict(data["geom"]),
-            "meta": {
-                "label": data["label"],
-                "tech": data["tech"],
-                "note": data["note"] or data["label"],
-            },
+            "meta": note_meta,
             "style": {
                 "pen": {
                     "color": data["stroke_color"],
@@ -2864,23 +5774,29 @@ def _parse_state_diagram_svg(
                     "dash": "solid",
                 },
                 "fill": {"color": _safe_fill(data["fill"])},
-                "text": {"color": "#000000", "size_pt": 11.0},
             },
         })
 
-    # Clusters
+    # Clusters (including composite state containers)
     for ent_id, data in cluster_info.items():
         ann_id = f"p{counter:06d}"
         counter += 1
+        geom_copy = dict(data["geom"])
+        if "adjust1" in data:
+            geom_copy["adjust1"] = data["adjust1"]
+        cluster_meta: Dict[str, Any] = {
+            "label": data["label"],
+            "tech": data["tech"],
+            "note": data["note"] or data["label"],
+        }
+        for fk in ("text_color", "text_size", "text_family"):
+            if fk in data:
+                cluster_meta[fk] = data[fk]
         ann = {
             "id": ann_id,
             "kind": data["kind"],
-            "geom": dict(data["geom"]),
-            "meta": {
-                "label": data["label"],
-                "tech": data["tech"],
-                "note": data["note"] or data["label"],
-            },
+            "geom": geom_copy,
+            "meta": cluster_meta,
             "style": {
                 "pen": {
                     "color": data["stroke_color"],
@@ -2888,7 +5804,6 @@ def _parse_state_diagram_svg(
                     "dash": "solid",
                 },
                 "fill": {"color": _safe_fill(data["fill"])},
-                "text": {"color": "#000000", "size_pt": 11.0},
             },
         }
         id_to_ann[ent_id] = ann
@@ -2941,6 +5856,13 @@ def _parse_state_diagram_svg(
         grouped_ids.update(child_ids)
 
     # ── Connector annotations ────────────────────────
+    # Remap start entity IDs in links to synthetic IDs
+    for link in link_list:
+        if link["src_id"] in start_id_remap:
+            link["src_id"] = start_id_remap[link["src_id"]]
+        if link["dst_id"] in start_id_remap:
+            link["dst_id"] = start_id_remap[link["dst_id"]]
+
     line_anns: List[Dict[str, Any]] = []
     for link in link_list:
         pen_color = "#808080"
@@ -2956,12 +5878,18 @@ def _parse_state_diagram_svg(
         )
         pen_width = int(float(width_m.group(1))) if width_m else 2
 
-        # Association links → dashed, no arrowhead
+        # Use detected arrow mode (handles reverse, bidirectional, association)
+        arrow_mode = link.get("arrow_mode", "end" if link.get("has_arrowhead") else "none")
         if link.get("link_type") == "association":
             dashed = True
             arrow_mode = "none"
-        else:
-            arrow_mode = "end" if link.get("has_arrowhead") else "none"
+
+        # Build meta with text formatting from link's <text> elements
+        link_meta: Dict[str, Any] = {
+            "label": link["label"],
+            "tech": "", "note": link["label"],
+        }
+        link_meta.update(link.get("text_fmt", {}))
 
         # Try emitting a curve from the SVG path geometry
         d_attr = link.get("path_d", "")
@@ -2983,10 +5911,7 @@ def _parse_state_diagram_svg(
                         "x": bx, "y": by, "w": bw, "h": bh,
                         "nodes": curve_nodes,
                     },
-                    "meta": {
-                        "label": link["label"],
-                        "tech": "", "note": link["label"],
-                    },
+                    "meta": link_meta,
                     "style": _make_line_style(
                         pen_color, pen_width,
                         dashed=dashed, arrow=arrow_mode,
@@ -2994,7 +5919,35 @@ def _parse_state_diagram_svg(
                 })
                 continue
 
-        # Fallback: center-to-center line
+        # Degenerate curve (vertical/horizontal line) or straight path:
+        # extract endpoints directly from path d attribute
+        if d_attr:
+            coords = re.findall(
+                r'[-+]?\d*\.?\d+', d_attr,
+            )
+            if len(coords) >= 4:
+                all_x = [float(coords[i]) for i in range(0, len(coords), 2)]
+                all_y = [float(coords[i]) for i in range(1, len(coords), 2)]
+                x1 = round(all_x[0], 2)
+                y1 = round(all_y[0], 2)
+                x2 = round(all_x[-1], 2)
+                y2 = round(all_y[-1], 2)
+
+                ann_id = f"p{counter:06d}"
+                counter += 1
+                line_anns.append({
+                    "id": ann_id,
+                    "kind": "line",
+                    "geom": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
+                    "meta": dict(link_meta),
+                    "style": _make_line_style(
+                        pen_color, pen_width,
+                        dashed=dashed, arrow=arrow_mode,
+                    ),
+                })
+                continue
+
+        # Fallback: center-to-center line from geom lookup
         src_geom = all_geom.get(link["src_id"])
         dst_geom = all_geom.get(link["dst_id"])
         if not src_geom or not dst_geom:
@@ -3011,10 +5964,7 @@ def _parse_state_diagram_svg(
             "id": ann_id,
             "kind": "line",
             "geom": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
-            "meta": {
-                "label": link["label"],
-                "tech": "", "note": link["label"],
-            },
+            "meta": dict(link_meta),
             "style": _make_line_style(
                 pen_color, pen_width,
                 dashed=dashed, arrow=arrow_mode,
@@ -3028,13 +5978,17 @@ def _parse_state_diagram_svg(
     top_level.extend(ellipse_anns)
 
     # States and clusters not consumed as group children
+    # (ellipses already added via ellipse_anns — skip their synthetic IDs)
+    ellipse_ids = {e.get("ent_id", "") for e in initial_ellipses}
     seen_ids: set = set()
     for ent_id in id_to_ann:
-        if ent_id in grouped_ids or ent_id in seen_ids:
+        if ent_id in grouped_ids or ent_id in seen_ids or ent_id in ellipse_ids:
             continue
         seen_ids.add(ent_id)
         top_level.append(id_to_ann[ent_id])
 
+    # Orphan states (no ent_id — pins, expansions, etc.)
+    top_level.extend(orphan_anns)
     # Notes (always top-level)
     top_level.extend(note_anns)
     top_level.extend(line_anns)
@@ -3048,6 +6002,13 @@ def _parse_state_diagram_svg(
         top_level.sort(key=_child_y)
 
     _normalize_annotations(top_level)
+
+    # ── Enrich with ANTLR state source semantics ──
+    if puml_text:
+        src_info = _parse_state_source(puml_text)
+        if src_info:
+            _merge_state_source_info(top_level, src_info)
+
     return {
         "version": "draft-1",
         "image": {"width": canvas_w, "height": canvas_h},
@@ -3206,7 +6167,8 @@ def _build_element_annotation(
     ann: Dict[str, Any] = {
         "id": ann_id,
         "kind": kind,
-        "meta": {"label": label, "tech": tech, "note": note or text},
+        "meta": dict(zip(("label", "tech", "note"),
+                         _dedup_label_tech_note(label, tech, note or text))),
         "style": style,
     }
 
@@ -3349,7 +6311,7 @@ def _build_annotations(
         if has_curves:
             curve_nodes, (bx, by, bw, bh) = _parse_path_to_curve_nodes(d_attr)
             if curve_nodes and bw > 0 and bh > 0:
-                arrow = "end" if conn.get("has_arrowhead") else "none"
+                arrow = conn.get("arrow_mode", "end" if conn.get("has_arrowhead") else "none")
                 ann_id = f"p{counter:06d}"
                 counter += 1
                 annotations.append({
@@ -3430,13 +6392,13 @@ def parse_puml_to_annotations(
     if svg_path:
         tree = ET.parse(svg_path)
         if tree.getroot().get("data-diagram-type") == "ACTIVITY":
-            return _parse_activity_diagram_svg(tree)
+            return _parse_activity_diagram_svg(tree, puml_text)
         if tree.getroot().get("data-diagram-type") == "SEQUENCE":
             return _parse_sequence_diagram_svg(tree)
-        if tree.getroot().get("data-diagram-type") == "DESCRIPTION":
-            return _parse_description_diagram_svg(tree)
+        if tree.getroot().get("data-diagram-type") in ("DESCRIPTION", "CLASS"):
+            return _parse_description_diagram_svg(tree, puml_text)
         if tree.getroot().get("data-diagram-type") == "STATE":
-            return _parse_state_diagram_svg(tree)
+            return _parse_state_diagram_svg(tree, puml_text)
 
     elements = _extract_elements(puml_text)
     known_aliases = {e["alias"] for e in elements}
@@ -3475,6 +6437,7 @@ def parse_puml_to_annotations(
                 _apply_svg_link_style(conn, svg_link["style"])
                 conn["path_d"] = svg_link.get("path_d", "")
                 conn["has_arrowhead"] = svg_link.get("has_arrowhead", False)
+                conn["arrow_mode"] = svg_link.get("arrow_mode", "end" if conn["has_arrowhead"] else "none")
 
         # Add SVG-only links not found by the text regex
         for key, svg_link in svg_link_map.items():
@@ -3487,6 +6450,7 @@ def parse_puml_to_annotations(
                     "color": None,
                     "path_d": svg_link.get("path_d", ""),
                     "has_arrowhead": svg_link.get("has_arrowhead", False),
+                    "arrow_mode": svg_link.get("arrow_mode", "end"),
                 }
                 _apply_svg_link_style(conn, svg_link["style"])
                 connections.append(conn)

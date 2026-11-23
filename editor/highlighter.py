@@ -52,7 +52,7 @@ class JsonHighlighter(QSyntaxHighlighter):
         ro_fmt.setFontItalic(True)
         self._readonly_fmt = ro_fmt
         # Set of JSON key names that are computed / read-only
-        self._readonly_keys = frozenset({"ports"})
+        self._readonly_keys = frozenset({"ports", "label", "tech", "note"})
 
         # String values (not keys) - Default: #27AE60 (green)
         str_fmt = fmt(syntax.string_color)

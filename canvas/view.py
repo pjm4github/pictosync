@@ -196,8 +196,8 @@ class AnnotatorView(QGraphicsView):
         Uses handle points for shapes with handles, endpoints for lines,
         and bounding rect for text and group items.
         """
-        # Items with _handle_points_scene (shapes with corner/side handles)
-        if hasattr(item, "_handle_points_scene"):
+        # Items with handle points (shapes with corner/side handles)
+        if hasattr(item, "_handle_points_local"):
             for pt in item._handle_points_scene().values():
                 if not rect.contains(pt):
                     return False

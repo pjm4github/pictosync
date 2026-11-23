@@ -1,0 +1,243 @@
+@startuml t_activity_02_conditionals
+title Activity Diagram — Conditionals\n(if/then/else/elseif/endif, switch/case/endswitch, all label forms)
+
+skinparam activity {
+    BackgroundColor #F8F9FA
+    BorderColor #495057
+    DiamondBackgroundColor #FFF3E0
+    DiamondBorderColor #E65100
+    FontSize 11
+}
+
+start
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. BASIC IF / THEN / ELSE / ENDIF
+' ══════════════════════════════════════════════════════════════════════════
+
+:Evaluate condition A;
+
+if (condition A?) then (yes)
+    :Action when A is true;
+else (no)
+    :Action when A is false;
+endif
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. IF WITHOUT ELSE LABEL  (else with no text)
+' ══════════════════════════════════════════════════════════════════════════
+
+if (condition B?) then (true)
+    :Action when B true;
+else
+    :Default else action;
+endif
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. IF WITHOUT ANY ELSE
+' ══════════════════════════════════════════════════════════════════════════
+
+if (optional step needed?) then (yes)
+    :Optional action;
+endif
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. IF WITH IS / EQUALS FORM
+'    if (x) is (y) then
+'    if (x) equals (y) then
+' ══════════════════════════════════════════════════════════════════════════
+
+:Check status value;
+
+if (status) is (active) then
+    :Handle active status;
+else (inactive)
+    :Handle inactive status;
+endif
+
+if (result) equals (success) then
+    :Process success path;
+else (failure)
+    :Handle failure path;
+endif
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. ELSEIF  (chained conditions)
+' ══════════════════════════════════════════════════════════════════════════
+
+:Evaluate priority level;
+
+if (priority?) then (critical)
+    :Handle critical priority;
+    :Send immediate alert;
+elseif (priority?) then (high)
+    :Handle high priority;
+    :Escalate to supervisor;
+elseif (priority?) then (medium)
+    :Handle medium priority;
+    :Add to standard queue;
+else (low)
+    :Handle low priority;
+    :Add to backlog;
+endif
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. ELSEIF — three branches
+' ══════════════════════════════════════════════════════════════════════════
+
+:Check HTTP status code;
+
+if (status code?) then (200)
+    :Parse success response;
+elseif (status code?) then (404)
+    :Resource not found;
+elseif (status code?) then (500)
+    :Server error;
+elseif (status code?) then (401)
+    :Unauthorized — refresh token;
+else (other)
+    :Unknown status — log and retry;
+endif
+
+' ══════════════════════════════════════════════════════════════════════════
+' 7. NESTED IF INSIDE IF
+' ══════════════════════════════════════════════════════════════════════════
+
+:Begin nested evaluation;
+
+if (outer condition?) then (yes)
+    :Outer true action;
+    if (inner condition?) then (yes)
+        :Both outer and inner true;
+        if (deepest condition?) then (yes)
+            :All three true;
+        else (no)
+            :Outer + inner, not deepest;
+        endif
+    else (no)
+        :Outer true, inner false;
+    endif
+else (no)
+    :Outer false;
+    if (alternate?) then (yes)
+        :Outer false but alternate true;
+    else (no)
+        :Both outer and alternate false;
+    endif
+endif
+
+' ══════════════════════════════════════════════════════════════════════════
+' 8. IF WITH MULTILINE CONDITION / LABEL TEXT
+' ══════════════════════════════════════════════════════════════════════════
+
+if (user is authenticated\nAND session is valid\nAND role == admin?) then (all conditions met)
+    :Admin dashboard access granted;
+else (conditions not met)
+    :Access denied\nRedirect to login;
+endif
+
+' ══════════════════════════════════════════════════════════════════════════
+' 9. IF WITH COLORED BRANCHES
+' ══════════════════════════════════════════════════════════════════════════
+
+if (risk level?) then (high)
+    #Red:High risk action;
+    :Notify security team;
+elseif (risk level?) then (medium)
+    #Yellow:Medium risk action;
+    :Add to review queue;
+else (low)
+    #Green:Low risk action;
+    :Auto-approve;
+endif
+
+' ══════════════════════════════════════════════════════════════════════════
+' 10. SWITCH / CASE / ENDSWITCH
+' ══════════════════════════════════════════════════════════════════════════
+
+:Determine protocol type;
+
+switch (protocol?)
+case (HTTP)
+    :Send plain HTTP request;
+    :Parse HTTP response;
+case (HTTPS)
+    :Initialize TLS context;
+    :Send HTTPS request;
+    :Validate certificate;
+    :Parse HTTPS response;
+case (MQTT)
+    :Connect to MQTT broker;
+    :Publish message;
+    :Await acknowledgment;
+case (DNP3)
+    :Initialize DNP3 session;
+    :Send DNP3 request;
+    :Parse DNP3 response;
+case (Modbus)
+    :Open Modbus/TCP connection;
+    :Execute function code;
+    :Parse register values;
+endswitch
+
+' ══════════════════════════════════════════════════════════════════════════
+' 11. SWITCH INSIDE IF
+' ══════════════════════════════════════════════════════════════════════════
+
+if (connection available?) then (yes)
+    switch (connection type?)
+    case (WiFi)
+        :Use WiFi channel;
+    case (Cellular)
+        :Use cellular data;
+    case (Ethernet)
+        :Use wired connection;
+    endswitch
+else (no)
+    :Queue for retry;
+endif
+
+' ══════════════════════════════════════════════════════════════════════════
+' 12. IF INSIDE SWITCH CASE
+' ══════════════════════════════════════════════════════════════════════════
+
+switch (operation mode?)
+case (normal)
+    :Run standard operations;
+    if (threshold exceeded?) then (yes)
+        :Trigger alarm;
+    endif
+case (maintenance)
+    :Suspend automation;
+    if (technician logged in?) then (yes)
+        :Enable manual controls;
+    else (no)
+        :Lock controls\nAwaiting technician;
+    endif
+case (emergency)
+    #Red:Emergency shutdown;
+    :Notify all operators;
+endswitch
+
+stop
+
+note right
+    **Grammar targets (conditionals):**
+    if (cond) then (label)
+    else (label)
+    else   [no label]
+    elseif (cond) then (label)
+    endif
+    if (x) is (y) then
+    if (x) equals (y) then
+    switch (cond)
+    case (label)
+    endswitch
+    Nested if inside if (3 levels)
+    if inside switch case
+    switch inside if
+    Multiline condition text
+    Colored actions inside branches
+end note
+
+@enduml

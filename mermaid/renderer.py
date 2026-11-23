@@ -22,7 +22,7 @@ import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QImage, QPainter
@@ -402,39 +402,123 @@ def _inline_css_classes(root: ET.Element, ns: str) -> None:
 
     css_text = "\n".join(style_text_parts)
 
-    # Parse class rules — handles selectors like ".edge" or "#mermaid-svg .edge"
-    # Captures the last class token and the declaration block
-    class_map: Dict[str, Dict[str, str]] = {}
-    for m in re.finditer(r'\.([a-zA-Z0-9_-]+)\s*\{([^}]+)\}', css_text):
-        cls_name = m.group(1)
+    # Parse every rule body and decompose each selector into a descendant chain.
+    # A chain ends in either a class (``.foo``) or a tag (``rect``) — the
+    # remaining ``.class`` tokens before it are required ancestor classes.
+    # Mermaid uses compound selectors like ``#my-svg .cluster rect`` to fill
+    # subgraph rects, which a simple ``\.class{...}`` regex cannot reach — so
+    # they would otherwise rasterise with Qt's default black fill.
+    #
+    # Each entry: (required_tag_or_None, required_self_class_or_None,
+    #              list_of_required_ancestor_classes, props_dict).
+    rules: List[Tuple[Optional[str], Optional[str], List[str], Dict[str, str]]] = []
+    for m in re.finditer(r"([^{}]+)\{([^}]+)\}", css_text):
+        selectors_str = m.group(1)
         decl_block = m.group(2)
         props: Dict[str, str] = {}
-        for prop_m in re.finditer(r'([\w-]+)\s*:\s*([^;]+)', decl_block):
+        for prop_m in re.finditer(r"([\w-]+)\s*:\s*([^;]+)", decl_block):
             prop_name = prop_m.group(1).strip()
             prop_val = prop_m.group(2).strip()
+            # Strip CSS !important so Qt accepts the value cleanly.
+            if prop_val.lower().endswith("!important"):
+                prop_val = prop_val[: -len("!important")].rstrip().rstrip("!").rstrip()
             if prop_name in _SVG_ATTRS:
                 props[prop_name] = prop_val
-        if props:
-            if cls_name not in class_map:
-                class_map[cls_name] = {}
-            class_map[cls_name].update(props)
+        if not props:
+            continue
+        for sel in selectors_str.split(","):
+            sel = re.sub(r"^\s*#[\w-]+\s*", "", sel.strip())
+            tokens = sel.split()
+            if not tokens:
+                continue
+            last = tokens[-1]
+            ancestor_classes = [t[1:] for t in tokens[:-1] if t.startswith(".")]
+            if last.startswith("."):
+                rules.append((None, last[1:], ancestor_classes, props))
+            else:
+                rules.append((last, None, ancestor_classes, props))
 
-    if not class_map:
+    if not rules:
         return
 
-    # Apply to elements
+    # Element tag stripped of any XML namespace (Qt cares about the local name).
+    def _local(el: ET.Element) -> str:
+        return el.tag.split("}", 1)[-1] if "}" in el.tag else el.tag
+
+    # Lazily collect every ancestor class token for a given element.
+    def _ancestor_classes(el: ET.Element) -> set:
+        s: set = set()
+        cur = parent_map.get(el)
+        while cur is not None:
+            for tok in cur.get("class", "").split():
+                s.add(tok)
+            cur = parent_map.get(cur)
+        return s
+
+    # Apply matching rules to every element.
     for el in root.iter():
-        cls_attr = el.get("class", "")
-        if not cls_attr:
-            continue
-        for token in cls_attr.split():
-            css_props = class_map.get(token)
-            if not css_props:
+        self_classes = el.get("class", "").split()
+        tag = _local(el)
+        anc_cache: Optional[set] = None
+        for need_tag, need_class, anc_req, props in rules:
+            if need_tag is not None and need_tag != tag:
                 continue
-            for prop, val in css_props.items():
-                # Only set if the element doesn't already have an explicit attribute
+            if need_class is not None and need_class not in self_classes:
+                continue
+            if anc_req:
+                if anc_cache is None:
+                    anc_cache = _ancestor_classes(el)
+                if any(c not in anc_cache for c in anc_req):
+                    continue
+            for prop, val in props.items():
                 if el.get(prop) is None:
                     el.set(prop, val)
+
+
+# Presentation attributes Qt's renderer honours on individual elements —
+# kept in sync with the class-inlining helper above.
+_PRESENTATION_ATTRS = {
+    "stroke", "fill", "stroke-width", "stroke-dasharray",
+    "stroke-linecap", "stroke-linejoin", "stroke-opacity",
+    "fill-opacity", "opacity", "font-size", "font-family",
+    "font-weight", "font-style", "text-anchor",
+    "dominant-baseline", "visibility",
+}
+
+
+def _inline_style_attrs(root: ET.Element) -> None:
+    """Copy each element's inline ``style`` declarations to presentation
+    attributes Qt's renderer reliably honours.
+
+    Mermaid emits ``style="fill:#xxx !important;stroke:#yyy !important"`` on
+    nodes/clusters; Qt fails to parse the ``!important`` flag and falls back to
+    a black default fill.  Promoting the values to explicit attributes
+    (``fill="#xxx"``) sidesteps the parser entirely.  An existing explicit
+    attribute on the element wins (don't overwrite intentional overrides).
+    """
+    for el in root.iter():
+        style = el.get("style", "")
+        if not style or ":" not in style:
+            continue
+        cleaned: List[str] = []
+        for decl in style.split(";"):
+            if ":" not in decl:
+                if decl.strip():
+                    cleaned.append(decl)
+                continue
+            key, val = decl.split(":", 1)
+            key = key.strip().lower()
+            val = val.strip()
+            # Strip CSS !important (and stray trailing "!") so any consumer
+            # that does parse this style gets a plain value.
+            if val.lower().endswith("!important"):
+                val = val[: -len("!important")].rstrip().rstrip("!").rstrip()
+            cleaned.append(f"{key}:{val}")
+            if key in _PRESENTATION_ATTRS and el.get(key) is None and val:
+                el.set(key, val)
+        # Rewrite style without !important so any downstream CSS-aware code
+        # still sees the declarations cleanly.
+        el.set("style", ";".join(cleaned))
 
 
 def _preprocess_svg_for_qt(svg_path: str) -> str:
@@ -475,6 +559,13 @@ def _preprocess_svg_for_qt(svg_path: str) -> str:
     # Qt's QSvgRenderer ignores <style> blocks, so elements styled
     # only via CSS classes (e.g. .edge, .node-bkg) are invisible.
     _inline_css_classes(root, _SVG_NS)
+
+    # ── Inline element ``style`` attributes as presentation attributes ──
+    # Qt's renderer does not parse CSS ``!important`` in the inline ``style``
+    # attribute; Mermaid emits ``style="fill:#xxx !important; ..."`` on every
+    # node/cluster, so without this step those elements rasterise with the
+    # default black fill.
+    _inline_style_attrs(root)
 
     # Build parent map (child → parent) for tree surgery
     parent_map = {c: p for p in root.iter() for c in p}

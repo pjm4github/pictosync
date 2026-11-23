@@ -1,0 +1,66 @@
+---
+title: Bootstrap Window — End-to-End Sequence
+---
+sequenceDiagram
+    autonumber
+    actor OpA as Operator A
+    actor OpB as Operator B
+    participant Seal as Seal Authority
+    participant Gate as Power Gate
+    participant AI as GPU Platform
+    participant Orch as llm_orchestrator
+    participant MCP as mcp_edge
+    participant Store as capsule_store
+    participant Voice as voice_tag
+    actor Cur as Curator (SME)
+
+    Note over OpA,Cur: System is SEALED. Voice tags and novel events have been queueing.
+
+    OpA->>Seal: request_mode_transition(BOOTSTRAP, reason="quarterly recal")
+    OpB->>Seal: co-sign authorization
+    Seal->>Seal: verify two-key, cooldown, integrity
+    Seal-->>OpA: TransitionReceipt(success=true)
+    Seal->>Gate: enable GPU Platform power rail
+    Gate->>AI: power on (boot ~30s)
+    AI-->>Gate: ready
+
+    Seal-->>Orch: mode change event (SEALED → BOOTSTRAP)
+    Orch->>Store: get_disconnection_summary()
+    Store-->>Orch: 47 pending voice tags, 12 novel events
+
+    Note over Orch: Catch-up phase
+
+    loop For each pending voice tag
+        Orch->>Store: get_voice_tag(tag_id)
+        Orch->>AI: propose canonical label
+        AI-->>Orch: candidate + confidence
+        alt confidence > 0.9
+            Orch->>MCP: propose_canonical_label(...)
+            MCP->>Store: write proposal
+        else
+            Orch->>MCP: request_human_review(...)
+        end
+    end
+
+    loop For each novel event
+        Orch->>AI: cluster against known ontology
+        AI-->>Orch: ontology proposal or "no good fit"
+        Orch->>MCP: propose_ontology_update(...)
+    end
+
+    Note over Cur: Curator reviews proposals
+
+    Cur->>MCP: activate_proposal(...) or reject
+    MCP->>Store: write canonical labels / ontology entries
+
+    Note over OpA,Cur: Recalibration complete
+
+    OpA->>Seal: request_mode_transition(SEALED, reason="recal complete")
+    OpB->>Seal: co-sign
+    Seal->>Seal: validate, cooldown, integrity
+    Seal->>Gate: disable GPU Platform power rail
+    Gate->>AI: power off
+    Seal-->>Orch: mode change event (BOOTSTRAP → SEALED)
+    Orch->>Orch: shut down all gated operations
+
+    Note over OpA,Cur: System is SEALED again. Bootstrap window report archived.

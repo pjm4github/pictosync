@@ -4,32 +4,122 @@
 
 # PictoSync
 
-**v1.11** | PNG Image Canvas Tool for Object Synchronization
+**v2.9** | Diagram Normalization & Agentic Specification IDE
 
-Diagram annotation tool with AI-powered extraction and bidirectional sync.
+---
 
-## Abstract
+## Why PictoSync Exists
 
-PictoSync is a PyQt6 desktop application for creating and managing diagram annotations. It combines manual drawing tools with Google Gemini AI (see note below) to automatically extract structural elements from architecture diagrams (such as C4 models). The application maintains bidirectional synchronization between a visual canvas and JSON representation, enabling a human-in-the-loop workflow where AI extracts, humans refine, and changes sync back seamlessly.
+Enterprise architecture artifacts live in dozens of formats: PlantUML component diagrams, Mermaid flowcharts, C4 models, state machines, hand-drawn whiteboard photos exported as PNGs, Visio exports, and ad-hoc PowerPoint slides. These diagrams encode critical knowledge — component boundaries, data flows, interface contracts, deployment topology — but that knowledge is locked inside tool-specific rendering formats that no downstream system can reason about programmatically.
 
-**Note**: If you don't have a Google Gemini API key, or dont want to send your picture to Google for scanning, you can still place a graphic on the picture and then use the local optimizer to match the grahpics to the PNG.
+**The original goal of PictoSync was to bring legacy architecture components forward into an agentic-readable format by normalizing various diagram-as-code artifacts.** A PlantUML deployment diagram, a Mermaid C4 container view, and a hand-annotated PNG screenshot of a whiteboard all describe the same kind of thing — interconnected components with contracts and constraints — but they do it in mutually incompatible syntaxes. PictoSync unifies them into a single structured JSON annotation format that preserves spatial layout, semantic metadata, and inter-element relationships, making the architecture machine-readable regardless of its original source.
 
-## Features
-**For a comparison to other tools and their features see this file:  [Round Tripping PNG Tools](png_json_comparison.md)**
+This normalization layer is what makes everything else possible: bidirectional sync, AI-assisted extraction, PowerPoint export, and — in the V2 vision — agentic specification authoring.
+
+---
+
+## PictoSync V2 Vision
+
+<p align="center">
+  <img src="pictosync_v2_architecture_map.svg" alt="Pictosync v2 Architecture Map" width="800"/>
+</p>
+
+### From annotation tool to agentic specification IDE
+
+PictoSync v1 built a robust parsing and rendering foundation: ANTLR4 grammars for Flowchart, State, Sequence, and C4 diagram types; an `SVGNodeRegistry` creating a bidirectional index between AST nodes and rendered SVG elements; a PyQt6 `QGraphicsScene`-based canvas for interactive display; and the `mmdc` non-headless pipeline for Mermaid-to-SVG conversion. This infrastructure is not legacy — it becomes the rendering and inspection engine for v2.
+
+PictoSync v2 is a **goal-oriented agentic specification IDE** — a workbench for directing software agents that use architecture diagramming as their primary design language for producing top-level interconnection specifications. The output is not code. It is a human-reviewed, versioned architectural specification that defines how components connect, what contracts they hold, and what constraints they operate under.
+
+The core insight is that architecture diagrams — particularly the C4, sequence, and flowchart types already supported in v1 — are a precise enough language to serve as machine-readable specifications, not just documentation. An agent can read a Mermaid diagram, reason about it against a goal hierarchy, propose a modification or extension, and emit a new diagram. The human's role is editorial: to monitor, redirect, approve, or reject each agent-generated revision. The IDE structures that loop.
+
+### Long-Term Goals
+
+**G1 — Goal-directed agent orchestration.** A structured goal editor where engineers define an objective hierarchy: top-level system intent, sub-goals, acceptance criteria, and architectural constraints. Agents receive this hierarchy as context and use it to drive spec generation, ensuring every diagram revision is traceable to a stated goal rather than unconstrained exploration.
+
+**G2 — Diagram-as-specification semantics.** Every diagram produced in v2 carries formal semantic weight beyond visual rendering. Component names, relationship labels, and boundary annotations are treated as specification statements that can be validated, diffed, and exported to downstream tooling. The v1 `SVGNodeRegistry` and AST infrastructure provide the structural index needed to make individual diagram elements addressable as specification artifacts.
+
+**G3 — Human-in-the-loop as a first-class design constraint.** Agent proposals are never silently accepted. The review gate is a primary UI surface, not a confirmation dialog. Engineers see what the agent proposed, why it proposed it (traceable to the goal hierarchy), what changed from the prior version, and what downstream implications the change carries. Review actions — approve, reject, annotate, redirect — are logged and become part of the decision lineage.
+
+**G4 — Versioned specification lineage.** The spec artifact store maintains a full history of diagram revisions with diffs, authorship (human vs agent), and the goal context that motivated each change. This supports audit, rollback, and collaborative review workflows appropriate to high-consequence systems (OT, power grid, IEC 61850 environments where specification traceability is a compliance concern).
+
+**G5 — Exportable interconnection specifications.** Approved specs must be consumable by downstream systems without manual transcription. Export targets include Mermaid source (for further tooling), structured JSON schema (for programmatic integration), and domain-specific formats relevant to the target environment — IEC 61850 SCD topology, SCADA integration descriptors, or API contract stubs.
+
+### V2 IDE layout (target)
+
+```mermaid
+C4Component
+    title PictoSync v2 IDE Layout
+
+    
+        Container_Boundary(top, "Upper Panels") {
+            Component(canvas, "Diagram Canvas", "Live spec render via v1 SVGNodeRegistry + PyQt6 QGraphicsScene")
+            Component(review, "Human Review Gate", "Approve / Reject / Annotate / Redirect, Decision log")
+            Component(goal, "Goal Editor", "Objective hierarchy, acceptance criteria, constraints")
+        }
+ 
+    Container_Boundary(bottom, "Lower Panels") {
+        Component(agent, "Agent Workspace", "Goal decomposition, spec generation loop")
+        Component(store, "Spec Artifact Store", "Versioned diagrams, diff, lineage view")
+        Component(export, "Export / Handoff", "IEC 61850, SCADA, JSON schema, Mermaid source")
+    }
+
+    Rel_D(canvas, review, "Surfaces changes")
+    Rel_D(agent, store, "Persists versions")
+    Rel_D(store, export, "Exports specs")
+    Rel_U(goal, canvas, "Informs design")
+    Rel_U(goal, store, "Track Goals")
+    Rel_D(review, agent, "Approve / Redirect")
+    Rel_L(agent, review, "Proposes revisions")
+    Rel_R(review, goal, "Review criteria")
+```
+
+### Relationship to v1
+
+V2 is an application layer built on top of the v1 rendering and parsing foundation, not a replacement.
+
+| v1 component | Role in v2 |
+|---|---|
+| ANTLR4 grammars | Parsing engine for all agent-emitted and human-edited diagrams |
+| `SVGNodeRegistry` | Element-level diff, annotation, and review highlight bridge |
+| PyQt6 canvas | Diagram canvas panel embedded in the v2 `QSplitter` IDE layout |
+| `mmdc` pipeline | Rendering of agent-generated and revised diagrams |
+
+### Primary user
+
+The primary user is a senior engineer or architect working on systems where interconnection specifications have formal significance — not casual documentation. They are directing agents, not hand-drawing diagrams. Their value-add is judgment: knowing when an agent-proposed topology is architecturally sound, whether it respects unstated constraints the goal hierarchy doesn't yet capture, and when to redirect versus approve. The IDE is built to support that judgment, not to automate it away.
+
+---
+
+## Current Features (v2.9)
+
+**For a comparison to other tools and their features see: [Round Tripping PNG Tools](png_json_comparison.md)**
+
+### Diagram Import & Normalization
+
+PictoSync's core capability is ingesting diagrams from multiple source formats and normalizing them into a unified JSON annotation model.
+
+| Source Format | Import Method | What Gets Extracted |
+|---|---|---|
+| **PNG images** | Drag-and-drop, File > Open | Background canvas; AI extraction of shapes, lines, text |
+| **PlantUML** (`.puml`) | Drag-and-drop, File > Open | Component, deployment, use-case, architecture, activity, sequence, state, class diagrams |
+| **Mermaid SVG** | Drag-and-drop, File > Open | Flowcharts, state diagrams with full `classDef` styling |
+| **Mermaid source** (`.mmd`) | Drag-and-drop, File > Open | Rendered via mmdc CLI; PNG background + SVG annotation parsing |
+| **Mermaid C4** | Source + SVG two-step pipeline | Context, Container, Component, Dynamic, Deployment with full C4 semantics |
+
+All sources converge to the same JSON annotation schema — shapes, lines, curves, text, ports, groups — with geometry, metadata, and style preserved.
 
 ### Drawing & Annotation
 - **Manual Drawing Tools**: Rectangle, rounded rectangle, ellipse, hexagon, cylinder, block arrow, isometric cube, polygon, curve, orthogonal curve, line, text, and port annotations
-- **Isometric Cube**: Container shape with configurable extrusion depth and angle (0–360°); drag control handles to adjust depth and direction interactively
+- **Isometric Cube**: Container shape with configurable extrusion depth and angle (0-360); drag control handles to adjust depth and direction interactively
 - **Curve Tool**: Click-click placement of SVG path-like curves with node editing; supports cubic bezier (`C`), quadratic bezier (`Q`), arc (`A`), and line (`L`) segments; right-click nodes to change type; arrowhead support (none, start, end, both)
-- **Orthogonal Curve**: Curve variant restricted to horizontal/vertical segments (M/H/V nodes) with optional corner bend radius; Ctrl+click to extend; arrowhead support; last endpoint is an L node (freely draggable in both axes, matching M start point behavior); dragging the last or second-to-last point keeps the final segment orthogonal; bend radius applies to the final corner
-- **Polygon Tool**: Multi-click vertex placement with right-click to close; double-click to enter vertex editing mode with draggable control knobs; right-click vertices to delete, right-click edges to add vertices
+- **Orthogonal Curve**: Curve variant restricted to horizontal/vertical segments (M/H/V nodes) with optional corner bend radius; Ctrl+click to extend; arrowhead support; last endpoint is an L node (freely draggable in both axes); bend radius applies to the final corner
+- **Polygon Tool**: Multi-click vertex placement with right-click to close; double-click to enter vertex editing mode with draggable vertex knobs; right-click a vertex to open a context menu to change vertex type (Straight/Quadratic/Cubic), add a node after, or delete the node; right-click an edge to insert a vertex at that position; quadratic and cubic bezier vertices show draggable blue control point handles with dashed guide lines
 - **Text Labels**: All shapes support label, tech, and note text with customizable formatting
 - **Text Alignment**: Vertical alignment (top/middle/bottom) and line spacing controls
-- **Rotation**: All shapes support rotation via drag handle (green knob) or property panel angle spinner (0–359°); rotation-aware resize handles follow the rotated axis; cursor shapes rotate with the item
-- **Port Connections**: Attach port connectors to any shape's perimeter; ports track a parametric position (t) and move with their parent; drag ports along the perimeter to reposition; support In/Out/InOut direction indicators with protocol labels; unparent ports via JSON editor to free-place them on the canvas; connected lines/curves follow port positions automatically; snap-to-port with visual feedback (cyan glow) when dragging line/curve endpoints near a port; disconnect by dragging an endpoint away from a port; Alt+click/drag to select and move ports underneath overlapping lines; external direction badge shows port type even when lines obscure the port
-- **Pen Styles**: Solid or dashed lines with configurable dash pattern (length, solid percent)
+- **Rotation**: All shapes support rotation via drag handle (green knob) or property panel angle spinner (0-359); rotation-aware resize handles follow the rotated axis
+- **Port Connections**: Attach port connectors to any shape's perimeter; ports track a parametric position (t) and move with their parent; snap-to-port with cyan glow visual feedback; Alt+click/drag to select ports underneath overlapping lines
+- **Pen Styles**: Solid or dashed lines with configurable dash pattern
 - **Z-Order Control**: Right-click context menu to "Bring to Front" or "Send to Back"
-- **Auto-Stacking**: New shapes automatically appear on top of existing items
 
 ### Groups
 - **Group/Ungroup**: Select multiple items and group them; ungroup to restore individual items
@@ -50,96 +140,54 @@ PictoSync is a PyQt6 desktop application for creating and managing diagram annot
 - **Text Matching**: Uses label/note text to locate lines in the image
 - **Color Matching**: HSV-based color detection matches pen colors in the PNG
 
-### PlantUML Import
-- **PlantUML Rendering**: Import `.puml` files directly via drag-and-drop or File > Open
-- **SVG Position Extraction**: Parses PlantUML-rendered SVG for pixel-accurate element positioning
-- **Curve Connector Parsing**: SVG `<path>` elements with cubic bezier curves are parsed into curve annotations preserving actual connector geometry (instead of simple center-to-center lines)
-- **Dedicated Description Diagram Parser**: Component, deployment, use-case, and architecture diagrams parsed directly from SVG structure (entities, clusters, links) for reliable extraction
-- **Bracket Notation Support**: Captures `[Component Name] as alias` syntax that text-regex extraction would miss
-- **Cluster/Package Support**: PlantUML packages render as polygon shapes with SVG path vertices; rect-vs-path detection correctly handles decorative tab overlays
-- **Activity Diagram Support**: Parses activity diagram SVGs with partitions, activities, flow lines, and start/end nodes
-- **Link Style Extraction**: Stroke colors and dash patterns from SVG applied to connectors
-- **Diagram Name Validation**: Warns about Windows-illegal characters in `@startuml` names that would cause silent rendering failures
-
-### Mermaid Import
-- **Pre-Rendered SVG**: Import Mermaid SVG files (from Mermaid Live Editor, VS Code, or mermaid.ink) via drag-and-drop or File > Open
-- **SVG-to-PNG Rendering**: mmdc renders PNG at user-selected scale; viewport is set to match SVG viewBox with CSS margin reset for pixel-perfect coordinate alignment
-- **Flowchart Parser**: Parses nodes (rect, roundedrect, polygon/diamond), edge paths (curves and lines), edge labels, and cluster subgraphs from Mermaid flowchart SVGs
-- **State Diagram Parser**: Full state diagram support — composite/concurrent states, `classDef` styling (fill, stroke, text color, stroke-width), `:::` class shorthand, notes, fork/join bars, dashed dividers, and correct SVG z-order
-- **Mermaid Detection**: Automatic identification via `aria-roledescription` attribute on the root `<svg>` element
-- **Mermaid Source Import**: Import `.mmd`/`.mermaid` files via drag-and-drop or File > Open; renders via mmdc CLI to PNG background + SVG for annotation parsing
-- **C4 Two-Step Pipeline**: C4 diagrams (Context, Container, Component, Dynamic, Deployment) use a source parser for semantic data (aliases, types, tech, boundaries, relationships) merged with SVG geometry for enriched annotations
-- **C4 Structured Metadata**: Annotations carry `meta.dsl` with `tool` (mermaid/plantuml/d2) and `c4` sub-object preserving C4 semantics — type, alias, parent, boundary_type, rel_type, from, to
-- **C4 Layout Settings**: Configurable shapes-per-row and boundaries-per-row via Settings panel; PictoSync overrides source `UpdateLayoutConfig` directives
-
-> **C4 diagram layout note**: The Mermaid CLI (`mmdc`) has a [known bug](https://github.com/mermaid-js/mermaid-cli/issues/440) where `UpdateLayoutConfig` / `c4ShapeInRow` is ignored in headless Puppeteer mode, causing C4 diagrams to render in a single column. PictoSync works around this by running mmdc in headed (non-headless) mode for C4 diagrams, which briefly opens a browser window during rendering. This is a Mermaid CLI issue, not a PictoSync bug.
-
-### Domain-Specific Language (DSL)
-- **Domain Plugin System**: Extensible `domains/` folder; each domain provides a `tools.json` defining drawing tools that map to base annotation kinds with custom defaults
-- **DSL Toolbar**: Second toolbar row appears when a domain is activated (Domain menu); domain tools are placed in this dedicated row and hidden when the domain is deactivated
-- **Schema-Documented DSL Metadata**: `meta.dsl` structure defined in `annotation_schema.json`; domain-first hierarchy (`dsl.tool` + `dsl.c4.*`) extensible to PlantUML, D2, SysML, ArchiMate
-- **NS3 Example Domain**: Reference implementation under `domains/ns3/` with network node tool
-
-### PowerPoint Export
-- **Slide Export**: Export annotations as native PowerPoint shapes via File > Export PPTX
-- **Shape Support**: Rectangles, rounded rectangles, ellipses, hexagons, cylinders, block arrows, isometric cubes, polygons, curves, orthogonal curves, lines, text, ports, and sequence blocks
-- **Sequence Block Export**: Seqblocks exported as grouped compound shapes (outer rectangle, pentagon type-tab, dashed divider lines, section text labels)
-- **Rotation Export**: All rotatable shapes export with their rotation angle preserved
-- **Native Bezier Curves**: Curves export as OOXML `a:cubicBezTo` and `a:quadBezTo` elements preserving control points
-- **Isometric Cube**: Exported as PowerPoint CUBE auto-shape with depth adjustment and flipH/flipV for angle mapping
-- **Orthogonal Curve**: Exported as freeform polyline from M/H/V nodes with arrowhead support
-- **Curve Labels**: Label/tech/note text placed at the parametric midpoint (t=0.5) of the actual curve path
-- **Arrowheads**: Line, curve, and orthogonal curve arrowheads exported via `headEnd`/`tailEnd` attributes; correct OOXML element ordering for dual-arrow (both) mode
-- **Semi-Transparent Fills**: Fill colors with alpha transparency export with PPTX transparency (not discarded)
-- **Fill & Text Colors**: Fill colors, border colors, text colors, font sizes, and alignment
-- **Polygon Freeforms**: Polygon shapes exported as PowerPoint freeform shapes
-- **Group Flattening**: Groups recursively flattened for export
-- **Export Directory Setting**: Option to default PPTX export to the source file's directory
-
 ### AI Integration
 - **AI Extraction**: Automatic diagram element detection using Google Gemini models
-- **Model Selection**: Configurable model list and default model in settings; dropdown menu in toolbar to switch models
+- **Model Selection**: Configurable model list and default model in settings; dropdown menu in toolbar
 - **Focus Align**: Refine a selected element via Gemini AI on a cropped region around it
 - **Token Counter**: Live Gemini token usage counter displayed on the toolbar
-- **Smart Defaults**: Extracted elements automatically get formatting defaults
-- **Markdown Handling**: Automatically strips markdown fences from AI responses
+- **Note**: If you don't have a Google Gemini API key, or don't want to send your picture to Google for scanning, you can still place graphics on the picture and use the local optimizer to match them to the PNG
 
 ### Synchronization
 - **Bidirectional Sync**: Real-time synchronization between canvas elements and JSON editor
 - **Live Drag Updates**: Geometry values update in the JSON editor in real-time during drag without scroll jumping
 - **Scroll Lock During Interaction**: Editor scroll position is frozen from mouse-down to mouse-up, then scrolls to the final position on release
-- **Human-in-the-Loop**: AI extracts → Human edits → Syncs back (round-trip workflow)
+- **Human-in-the-Loop**: AI extracts, human edits, changes sync back (round-trip workflow)
 - **Project Save/Load**: Save and load projects (annotations + PNG) to a configurable workspace directory
 
 ### JSON Editor
-- **Syntax Highlighting**: Full JSON syntax highlighting
-- **Line Numbers**: Theme-aware line number gutter with selection highlighting
+- **Syntax Highlighting**: Full JSON syntax highlighting with line numbers
 - **Code Folding**: Collapse/expand JSON objects and arrays
 - **Focus Mode**: Toggle to show only the selected annotation (lamp icon)
-- **Schema Check**: Toggle checkbox compares the focused annotation against `annotation_schema.json` — missing fields appear as gray ghost text, extra fields are highlighted in red; value-only validation (pattern, range, enum, type) blocks rebuilds while structural differences (extra/missing fields) are allowed; overlays refresh automatically after scene rebuilds
-- **Accept Ghost Fields**: Right-click a gray ghost field to "Accept" it — the field becomes permanent and survives toggling schema check off
-- **Schema-Driven Defaults**: All default annotation values (meta, style, per-kind overrides) are derived from the JSON schema — no hardcoded Python dicts
-- **Smart Scrolling**: Clicking canvas items scrolls editor to the annotation's opening brace on mouse release
-- **Gutter Highlight Bar**: Colored bar in gutter marks the full scope of the selected annotation
-- **Consistent Precision**: Geometry values use 2 decimal places, style values use 1 decimal place
+- **Schema Check**: Toggle checkbox compares the focused annotation against `annotation_schema.json` — missing fields appear as gray ghost text, extra fields are highlighted in red
+- **Accept Ghost Fields**: Right-click a gray ghost field to make it permanent
+- **Smart Scrolling**: Clicking canvas items scrolls editor to the annotation's opening brace; clicking inside a text annotation's JSON selects the corresponding canvas item
+- **Read-Only Fields**: Computed fields (`ports`, `label`, `tech`, `note`) are shown in grey italic and block character input; schema-marked `readOnly: true`
+- **Gutter Highlight Bar**: Colored bar marks the full scope of the selected annotation
 
 ### Property Panel
 - **Context-Sensitive**: Shows relevant controls based on selected item type
-- **Schema-Driven Adjust Controls**: Adjust spinboxes (radius, indent, cap, shaft, head) derive labels, suffixes, and ranges from `annotation_schema.json`
-- **Qt Designer UI**: Built with Qt Designer for consistent layout
-- **Auto-Compile**: UI files are automatically compiled on startup if modified
-- **Text Formatting**: Font size, alignment, vertical position, and spacing controls
+- **Schema-Driven Adjust Controls**: Labels, suffixes, and ranges derived from `annotation_schema.json`
+- **Contents Tab**: Rich-text editor with run-level font family, font size, bold/italic/underline, text color, subscript/superscript, and alignment controls
+- **Text Selection Persistence**: Selection stays highlighted when focus moves to panel controls
+
+### PowerPoint Export
+- **Slide Export**: Export annotations as native PowerPoint shapes via File > Export PPTX
+- **Shape Support**: All 13 annotation kinds including native bezier curves, arrowheads, rotation, and transparency
+- **Group Flattening**: Groups recursively flattened for export
 
 ### User Interface
-- **Dynamic Title Bar**: Window title shows the currently loaded file (e.g. "PictoSync — diagram.puml"); reverts to default when no file is loaded
-- **Wait Cursor During Imports**: Busy cursor provides visual feedback while PlantUML/Mermaid CLI tools render
-- **Wider JSON Editor**: JSON editor dock starts at 500px width for less text wrapping
-- **Compact Settings Dialog**: Tighter tab labels, reduced margins, and smaller dialog footprint
-- **Hide/Show PNG**: Toggle background image visibility for cleaner annotation view
-- **Handle-Enclosed Selection**: Rubber band selection respects individual item handles with live preview
 - **Multiple Themes**: 7 built-in themes (Foundation Dark, Bulma Light, Bauhaus, Neumorphism, Materialize, Tailwind, Bootstrap)
-- **Styled Splitters**: High-contrast, theme-aware resize handles
 - **Custom Icons**: Theme-matched SVG icons for all tools and actions
+- **Dynamic Title Bar**: Window title shows the currently loaded file
+- **Wheel Guard**: Mouse wheel does not change spinner/combo values unless the widget has keyboard focus
+
+### Domain-Specific Language (DSL)
+- **Domain Plugin System**: Extensible `domains/` folder; each domain provides a `tools.json` defining drawing tools
+- **DSL Toolbar**: Second toolbar row appears when a domain is activated
+- **Schema-Documented DSL Metadata**: `meta.dsl` structure defined in `annotation_schema.json`; extensible to PlantUML, D2, SysML, ArchiMate
+- **NS3 Example Domain**: Reference implementation under `domains/ns3/`
+
+---
 
 ## Installation
 
@@ -173,34 +221,12 @@ export GOOGLE_API_KEY=your_api_key_here
 python main.py
 ```
 
-## Testing
-
-PictoSync includes an automated test suite under `tests/` using pytest. Tests require a GUI environment (not headless).
-
-```bash
-# Run all tests
-python -m pytest tests/ -v
-
-# Run a specific test file
-python -m pytest tests/test_scroll_preservation.py -v
-```
-
-### Test Coverage
-
-| Test Module | What It Covers |
-|-------------|---------------|
-| `test_item_kinds.py` | All 13 item kinds end-to-end: creation/JSON field correctness, property panel meta editing (label, tech, note), pen color changes, and no duplicate IDs |
-| `test_adjust_roundtrip.py` | Schema-driven adjust control labels, suffixes, ranges; adjust value round-trips through panel/JSON/canvas; no duplicate IDs after adjust changes |
-| `test_scroll_preservation.py` | Editor scroll stays frozen during canvas drag; JSON geometry values update live during drag; PUML import produces correct annotations with full meta fields; re-import works after drag |
-| `test_ungroup_drag.py` | Ungroup preserves index integrity; no duplicate IDs after ungroup; children retain `on_change` callbacks; geometry updates during drag after ungroup; move-then-ungroup-then-drag scenario |
-| `test_flow_ungroup.py` | Move-then-ungroup-then-drag on flow/activity diagrams; index integrity and duplicate ID checks; child callback and geometry verification |
-
 ### Basic Workflow
-1. **Load an image**: Drag and drop a PNG/PUML file or use File > Open
+1. **Load a diagram**: Drag and drop a PNG, PUML, SVG, or MMD file, or use File > Open
 2. **Draw annotations**: Select a tool (R=Rect, U=RoundedRect, E=Ellipse, L=Line, V=Curve, T=Text, H=Hexagon, Y=Cylinder, A=Block Arrow, I=Iso Cube, P=Polygon, O=Port, S=Select)
 3. **AI extraction**: Click "Auto-Extract (Gemini)" to detect diagram elements
 4. **Edit JSON**: Modify annotations in the Draft JSON panel
-5. **Link**: Click "Import & Link" to enable bidirectional JSON ↔ Canvas sync
+5. **Link**: Click "Import & Link" to enable bidirectional JSON-Canvas sync
 6. **Save**: Save your project via File > Save Project (Ctrl+S)
 7. **Export**: Export to PowerPoint via File > Export PPTX
 
@@ -227,19 +253,33 @@ python -m pytest tests/test_scroll_preservation.py -v
 | Alt+Click | Select port underneath overlapping lines |
 | Delete | Delete selected item |
 
-### Tips
-- **Z-Order**: Right-click a selected shape for "Bring to Front" / "Send to Back"
-- **Iso Cube**: Drag the depth handle to change extrusion depth; drag the angle handle to rotate the extrusion direction
-- **Curve Editing**: Double-click a curve to enter node editing mode; right-click a node to change its type (Line, Cubic, Quadratic, Arc)
-- **Port Connections**: Drag a line/curve endpoint near a port to snap-connect; drag it away to disconnect; Alt+click/drag to move a port underneath an attached line
-- **Orthogonal Curve**: Select "Ortho" from the curve dropdown; Ctrl+click to extend with new H/V segments; double-click to edit start/end points (yellow handles)
-- **Focus Mode**: Click the lamp icon to collapse all annotations except the selected one
-- **Schema Check**: Enable the Schema checkbox to see missing/extra fields; right-click gray ghost fields to accept them
-- **Hide PNG**: Toggle background visibility when annotations obscure the image
-- **Themes**: Access Settings to switch between 7 visual themes
-- **Text Formatting**: Use the property panel to adjust vertical alignment and spacing
-- **Element Alignment**: Select a shape or line and use "Align to PNG" to snap it to the visual
-- **Group Resize**: Select a group and drag corner/side handles to proportionally resize all children
+## Testing
+
+PictoSync includes a comprehensive test suite of **1576 tests** across **36 test files** using pytest. See [`tests/README.md`](tests/README.md) for the full test directory structure, shared fixtures, design patterns, and coverage/reporting instructions.
+
+```bash
+# Run all tests
+.venv/Scripts/python -m pytest tests/ -v
+
+# Run a specific test file
+.venv/Scripts/python -m pytest tests/test_scroll_preservation.py -v
+
+# Run by keyword
+.venv/Scripts/python -m pytest tests/ -k "roundtrip" -v
+```
+
+### Test Coverage
+
+| Category | Test Files | What They Cover |
+|----------|-----------|----------------|
+| **Canvas Items** | `test_item_kinds`, `test_port_item`, `test_group_item`, `test_seqblock_item` | All 13 item kinds: creation, JSON fields, meta editing, pen color, parent attachment |
+| **Round-Trips** | `test_to_record_roundtrip`, `test_polygon_curve_vertices`, `test_rotation_roundtrip`, `test_blocks_runs_roundtrip`, `test_style_fill_roundtrip`, `test_adjust_roundtrip` | Serialize/reconstruct/serialize for all kinds, formatting, vertices, rotation, fill |
+| **Data Models** | `test_text_dedup`, `test_kind_alias` | Block deduplication, kind alias resolution |
+| **UI Framework** | `test_undo_redo`, `test_drawing_modes`, `test_context_menu_zorder`, `test_json_editor`, `test_properties_panel`, `test_keyboard_shortcuts`, `test_canvas_view`, `test_drag_drop`, `test_settings_dialog`, `test_menu_system` | Undo/redo commands, mode switching, z-order, editor features, property panel, shortcuts, zoom, drag-drop, settings, menus |
+| **Integration** | `test_scroll_preservation`, `test_ungroup_drag`, `test_flow_ungroup` | Editor scroll during drag, ungroup integrity, flow diagram sequences |
+| **Parsers** | `test_mermaid_parser`, `test_c4_source_parser`, `test_c4_merger`, `test_sequence_source_parser`, `test_sequence_merger` | Mermaid SVG/source parsing, C4 and sequence diagram pipelines |
+| **PlantUML ANTLR** | `test_activity_source_parser`, `test_state_source_parser`, `test_deployment_source_parser`, `test_component_source_parser`, `test_puml_sequence_source_parser` | ANTLR4 grammar validation, source extraction, annotation merge, JSON round-trip for all 5 diagram types |
+| **Export** | `test_pptx_export` | PowerPoint export with blocks/runs text and per-run formatting |
 
 ## Project Structure
 
@@ -253,50 +293,42 @@ pictosync/
 ├── settings_dialog.py   # Settings dialog UI (general, themes, Gemini model list)
 ├── undo_commands.py     # Undo/redo commands for all canvas operations
 ├── canvas/              # Graphics layer
-│   ├── items.py         # Annotation items (Rect, Ellipse, Hexagon, Cylinder, BlockArrow, IsoCube, Polygon, Curve, OrthoCurve, Line, Text, Port, Group)
-│   ├── perimeter.py     # Perimeter geometry for port attachment (point-on-perimeter, t↔position)
+│   ├── items.py         # Annotation items (all 13 kinds + Group)
+│   ├── perimeter.py     # Perimeter geometry for port attachment
 │   ├── mixins.py        # LinkedMixin, MetaMixin for shared behavior
 │   ├── scene.py         # AnnotatorScene (drawing, context menu, z-order)
-│   └── view.py          # AnnotatorView (zoom, pan, drag-drop, rubber band selection)
+│   └── view.py          # AnnotatorView (zoom, pan, drag-drop, rubber band)
 ├── editor/              # JSON editor
-│   ├── code_editor.py   # JsonCodeEditor with folding, focus mode, and ghost field context menu
-│   ├── draft_dock.py    # DraftDock widget with scroll-to-id, scroll lock, and schema check overlays
-│   ├── schema_checker.py # Schema diff engine: expected template, field diff, char-range finder
+│   ├── code_editor.py   # JsonCodeEditor with folding, focus mode, ghost fields
+│   ├── draft_dock.py    # DraftDock widget with scroll-to-id, scroll lock
+│   ├── schema_checker.py # Schema diff engine
 │   └── highlighter.py   # JSON syntax highlighting
 ├── properties/          # Property panel
-│   ├── dock.py          # PropertyPanel controller (schema-driven adjust controls)
+│   ├── dock.py          # PropertyPanel controller (schema-driven)
 │   ├── properties_panel.ui   # Qt Designer UI file
 │   └── properties_ui.py      # Auto-generated from .ui file
 ├── schemas/             # JSON schemas and schema utilities
-│   ├── __init__.py      # Schema-driven defaults, value-only validation, template builder
-│   └── annotation_schema.json  # Annotation format specification (including curve, group)
+│   ├── __init__.py      # Schema-driven defaults, validation, template builder
+│   └── annotation_schema.json  # Annotation format specification
 ├── plantuml/            # PlantUML import
 │   ├── renderer.py      # PlantUML to PNG/SVG rendering
-│   └── parser.py        # PUML text parsing, SVG position/path extraction, description diagram parser
+│   └── parser.py        # PUML text parsing, SVG position extraction
 ├── mermaid/             # Mermaid import (SVG + source)
-│   ├── parser.py        # Mermaid SVG detection and flowchart parsing
-│   ├── renderer.py      # SVG-to-PNG rendering with foreignObject preprocessing
-│   ├── c4_source_parser.py  # C4 source text parsing (aliases, boundaries, relationships)
+│   ├── parser.py        # Mermaid SVG detection and parsing
+│   ├── renderer.py      # SVG-to-PNG rendering
+│   ├── c4_source_parser.py  # C4 source text parsing
 │   └── c4_merger.py     # Merges C4 source semantics with SVG geometry
 ├── gemini/              # AI integration
 │   └── worker.py        # Threaded Gemini API worker
-├── pptx_export.py       # PowerPoint slide export (all 13 kinds, native bezier curves, arrowheads, labels)
+├── pptx_export.py       # PowerPoint slide export
 ├── alignment/           # OpenCV alignment
 │   ├── optimizer.py     # Shape and line alignment algorithms
 │   └── worker.py        # Threaded alignment workers
 ├── domains/             # Domain-specific DSL plugins (e.g. ns3/)
 ├── icons/               # Theme-aware SVG icons
-│   ├── generate_icons.py    # Icon generation script
-│   └── [Theme folders]      # Icons for each theme
-├── tests/               # Automated test suite (pytest)
-│   ├── test_item_kinds.py           # All 12 item kinds end-to-end
-│   ├── test_adjust_roundtrip.py     # Adjust control schema validation
-│   ├── test_scroll_preservation.py  # Scroll lock & live update tests
-│   ├── test_ungroup_drag.py         # Ungroup + drag correctness
-│   └── test_flow_ungroup.py         # Flow diagram ungroup + drag
-├── test_data/           # Test fixture data
-│   ├── PUML/            # Anonymized PlantUML test diagrams
-│   └── MERMAID/         # Mermaid SVG test files (all 18 diagram types)
+├── tests/               # Automated test suite — 1576 tests, 36 files (see [tests/README.md](tests/README.md))
+├── scripts/             # Diagnostic scripts (see [scripts/README.md](scripts/README.md))
+├── test_data/           # Test fixture data (PUML, Mermaid SVG)
 └── requirements.txt
 ```
 
@@ -304,11 +336,10 @@ pictosync/
 
 Annotations follow a JSON schema with support for:
 - **Geometry**: rect, roundedrect, ellipse, hexagon, cylinder, blockarrow, isocube, polygon, curve, orthocurve, line, text, port, group
-- **Curve Geometry**: Bounding box (`x, y, w, h`) plus `nodes` array with SVG path commands (`M`, `L`, `C`, `Q`, `A`, `Z`) and normalized 0–1 control point coordinates
+- **Curve Geometry**: Bounding box plus `nodes` array with SVG path commands (`M`, `L`, `C`, `Q`, `A`, `Z`) and normalized 0-1 control point coordinates
 - **Group**: Recursive `children` array containing nested annotations
-- **Meta**: label, tech, note with alignment and sizing; `ui_label` and `ui_suffix` for schema-driven property controls; all text content lives in `meta.note` (no legacy top-level `text` field)
-- **Style**: pen (color, width, dash, dash_pattern_length, dash_solid_percent), fill (color with alpha), text (color, size), arrow (none, start, end, both)
-- **Text Layout**: vertical alignment, spacing, bounding box dimensions
+- **Meta**: label, tech, note with alignment and sizing; `meta.dsl` for tool-specific semantics (Mermaid, PlantUML, D2)
+- **Style**: pen (color, width, dash), fill (color with alpha), text (color, size), arrow (none, start, end, both)
 
 See `schemas/annotation_schema.json` for the full specification.
 
@@ -316,180 +347,190 @@ See `schemas/annotation_schema.json` for the full specification.
 
 ### PlantUML
 
-| Diagram Type | Parse | Render | Test Data | Notes |
-|-------------|:-----:|:------:|:---------:|-------|
-| Component | Y | Y | `test_component.puml` | Description diagram parser (entities, clusters, links) |
-| Deployment | Y | Y | `test_descript.puml` | Description diagram parser |
-| Use Case | Y | Y | `test_use_case.puml` | Description diagram parser |
-| Architecture | Y | Y | `test_arch1.puml` | Description diagram parser |
-| Activity | Y | Y | `test_flow.puml` | Dedicated parser (partitions, flow lines, start/end nodes) |
-| Sequence | Y | Y | `test_seq1.puml` | Dedicated parser (participants, messages, lifelines) |
-| State | Y | Y | `Recloser_State_Machine.puml` | Dedicated parser (states, transitions, start/end) |
-| Class | Y | Y | — | Falls through to generic SVG position extraction |
+| Diagram Type | Parse | Render | Notes |
+|-------------|:-----:|:------:|-------|
+| Component | Y | Y | Description diagram parser (entities, clusters, links) |
+| Deployment | Y | Y | Description diagram parser |
+| Use Case | Y | Y | Description diagram parser |
+| Architecture | Y | Y | Description diagram parser |
+| Activity | Y | Y | Dedicated parser (partitions, flow lines, start/end nodes) |
+| Sequence | Y | Y | Dedicated parser (participants, messages, lifelines) |
+| State | Y | Y | Dedicated parser (states, transitions, start/end) |
+| Class | Y | Y | Falls through to generic SVG position extraction |
 
-### Mermaid SVG
+### Mermaid
 
-| Diagram Type | `aria-roledescription` | Parse | Render | Test Data | SVG Structure |
-|-------------|----------------------|:-----:|:------:|:---------:|---------------|
-| **Flow & Logic** | | | | | |
-| Flowchart | `flowchart-v2` | Y | Y | `flowchart1.svg` | `nodes`/`edgePaths`/`edgeLabels` groups |
-| State Diagram | `stateDiagram` | Y | Y | `stateDiagram.svg` | Composite/concurrent states, `classDef` styles, notes, fork/join |
-| Block Diagram | `block` | — | — | `block1.svg` | Flat `<g class="block">` — nodes + edges as siblings |
-| Packet Diagram | `packet` | — | — | `packet1.svg` | Grid of `<rect class="packetBlock">` + `<text>` labels |
-| Kanban | `kanban` | — | — | `kanban1.svg` | `sections` clusters + `items` cards; no edges |
-| Architecture | `architecture` | — | — | `architecture1.svg` | `architecture-services`/`-edges`/`-groups`; native `<text>` |
-| **Sequence & Interaction** | | | | | |
-| Sequence | `sequence` | — | — | `sequence1.svg` | Actor boxes, lifelines, message arrows, notes, loops |
-| ZenUML | `zenuml` | — | — | `zenuml1.svg` | HTML/CSS-styled elements; no viewBox |
-| User Journey | `journey` | — | — | `journey1.svg` | Sections, tasks, face icons, legends |
-| **Data & Visualization** | | | | | |
-| Pie Chart | `pie` | — | — | `pie1.svg` | `pieCircle` slices + legend |
-| XY Chart | `xychart` | — | — | `xychart1.svg` | Axes, bar plots, line plots |
-| Gantt | `gantt` | — | — | `gantt1.svg` | Section bands, task bars, tick marks |
-| Timeline | `timeline` | — | — | `timeline1.svg` | Event/line/task wrappers, section nodes |
-| Sankey | `sankey` | — | — | `sankey1.svg` | `nodes`/`links` groups |
-| Quadrant Chart | `quadrantChart` | — | — | `quadrant1.svg` | 4 quadrant rects, data points, labels |
-| **Relationships** | | | | | |
-| Class Diagram | `class` | — | — | `class1.svg` | `nodes`/`edgePaths`/`edgeLabels`; member/method groups |
-| ER Diagram | `er` | — | — | `er1.svg` | `nodes`/`edgePaths`; cardinality markers; attribute rows |
-| Requirement | `requirement` | — | — | `requirement1.svg` | `nodes`/`edgePaths`; dashed relationship lines |
-| **Other** | | | | | |
-| C4 Context | `c4` | Y | Y | `c4context.png` | Two-step C4 pipeline (source + SVG geometry) |
-| C4 Container | `c4` | Y | Y | `c4container.png` | Two-step C4 pipeline (source + SVG geometry) |
-| C4 Component | `c4` | Y | Y | `c4component.png` | Two-step C4 pipeline (source + SVG geometry) |
-| C4 Dynamic | `c4` | Y | Y | — | Two-step C4 pipeline (source + SVG geometry) |
-| C4 Deployment | `c4` | Y | Y | `c4deployment.png` | Two-step C4 pipeline (source + SVG geometry) |
-| Git Graph | `gitGraph` | — | — | `gitgraph1.svg` | Commit bullets, branch arrows, labels |
-| Mindmap | `mindmap` | — | — | `mindmap1.svg` | `nodes`/`edgePaths`; section-indexed branches |
+| Diagram Type | Parse | Render | Notes |
+|-------------|:-----:|:------:|-------|
+| Flowchart | Y | Y | `nodes`/`edgePaths`/`edgeLabels` groups |
+| State Diagram | Y | Y | Composite/concurrent states, `classDef` styles, notes, fork/join |
+| C4 (all 5 types) | Y | Y | Two-step pipeline: source semantics + SVG geometry |
 
-**Y** = implemented, **—** = test data collected, parser not yet implemented
+Additional Mermaid diagram types (Sequence, Class, ER, Gantt, Mindmap, etc.) have test data collected; parsers not yet implemented.
 
 ## Version History
 
+### v2.9 (2026-04-01)
+- **ANTLR4 activity grammar**: Complete `PlantUMLActivity.g4` with zero parse errors on all 8 test files; 10 major fixes including composite `NOTE_BLOCK_TOKEN`/`NOTE_INLINE_TOKEN`/`HEADER_BLOCK`/`FOOTER_BLOCK` tokens, `CONNECTOR` removed from lexer (parser rule instead), `SWIMLANE` ANTLR4 syntax fix (`[^\r\n]` → `~[\r\n]`), 8 new punctuation tokens (QMARK, COMMA, SLASH, LT, GT, PLUS, TILDE, EQ), single-char `FREE_TEXT` with Unicode support, `end note` required on own line
+- **Activity source parser**: `_parse_activity_source()` ANTLR visitor extracts all semantic elements (actions with color/stereotype/bullet/swimlane, conditions with if/switch/elseif, loops with repeat/while/backward, forks with join specs, containers with all 5 types, swimlanes, notes, arrows, connectors, labels, controls); `_merge_activity_source_info()` enriches SVG annotations with `contents.dsl` data
+- **Component source parser**: `_parse_component_source()` extracts components (bracket + keyword forms), interfaces, groups, relations, notes, sprites from ANTLR4 component grammar
+- **Sequence source parser**: `_parse_sequence_source()` extracts participants (8 keyword types), messages, groups (alt/opt/loop/par/break/critical), notes, activations, boxes, dividers, refs from ANTLR4 sequence grammar
+- **ANTLR4 test suites**: 284 new tests across 5 files covering all PlantUML diagram types; grammar validation (zero-error assertion on clean files, no-exception on all files), source element extraction, annotation merge enrichment, overlay-2.0 normalize, and JSON round-trip serialization
+- **Test files**: `test_activity_source_parser.py` (105 tests, 8 files), `test_state_source_parser.py` (96 tests, 11 files), `test_deployment_source_parser.py` (20 tests, 5 files), `test_component_source_parser.py` (36 tests, 11 files), `test_puml_sequence_source_parser.py` (27 tests, 9 files)
+- **Sequence test data**: 8 new `t_sequence_*.puml` test files covering declarations, arrow forms, lifeline control, grouping frames, notes, autonumber/dividers/box/ref, skinparam, and parser stress test
+- **Generated grammar files**: Updated `PlantUMLActivity{Lexer,Parser,Visitor}.py` in `plantuml/grammar/generated/`
+
+### v2.8 (2026-03-31)
+- **ANTLR4 component grammar**: Complete `PlantUMLComponent.g4` with zero parse errors on all 7 test files; restricted `FREE_TEXT`, `restOfLine` pattern, combined `componentFullDecl` rule avoiding LL(*) ambiguity
+- **Grammar features**: Bracket `[Name]` and keyword `component Name` forms; `componentBodyDesc` for `[...]` description blocks; `componentBlockDecl` for `{ port ... }` blocks; `groupBlock` with optional block body for standalone `database`/`node`/`actor` etc.
+- **Arrow/link support**: `ARROW_SPEC` covers solid (`-->`, `->`, `-left->`), dotted (`..>`, `.>`), mixed direction-dotted (`-left.>`), inline color/style (`-[#red,bold]->`), bidirectional (`<-->`); `LOLLIPOP` token for `--(` required interface
+- **Sprite declarations**: `sprite $name [WxH/depth] { hex }` with `SPRITE_ROW` (min 8 hex chars to avoid matching short IDs); `spriteDimension` accepts `INT ID` for `16x16` pattern
+- **Skinparam blocks**: `skinparamBlock` with stereotype (`skinparam component<<stereo>> { }`), `skinparamName` accepts keywords (`component`, `interface`, `note`, `database`, etc.); `skinparamEntry` uses `restOfLine` for flexible values including `1.5`
+- **Note support**: Positional (`note left of X`), floating (`note as N`), on-link (`note on link : text`), multi-line (`end note`); optional `COLOR` on all note forms; body accepts `{ }` tokens
+- **Stereotype body**: Accepts keywords as stereotype names (`<<database>>`, `<<actor>>`, `<<usecase>>`, `<<service>>`)
+- **Element naming**: `elementName` and `relationRef` accept keyword tokens as aliases (`left`, `right`, `note`, etc.)
+- **Quoted strings**: Handle `""` PlantUML monospace delimiter inside quoted names
+- **Component test file fixes**: Removed `allowmixing` where not needed; converted bracket to keyword form where required; fixed attribute ordering, body blocks, chained arrows, note targets
+- **Generated Python files**: `PlantUMLComponentLexer.py`, `PlantUMLComponentParser.py`, `PlantUMLComponentVisitor.py` in `plantuml/grammar/generated/`
+
+### v2.7 (2026-03-30)
+- **State pseudo-state shapes**: `<<choice>>` extracted as diamond polygon; `<<fork>>`/`<<join>>` as dark gray bars; `<<entryPoint>>`/`<<exitPoint>>` as small white ellipses; `<<inputPin>>`/`<<outputPin>>` as 12x12 squares; `<<expansionInput>>`/`<<expansionOutput>>` as 48x12 rectangles
+- **End state styling**: `->[*]` final states render with white fill and pen width 8 (thick black border bullseye); start states unchanged (solid dark fill, pen width 1)
+- **Deferred pseudo-state matching**: Pins, expansions, and points matched in a second pass — SVG annotations sorted by position, paired with ANTLR entries in declaration order (fixes label swapping)
+- **Composite state geometry from SVG**: Bare `<rect fill="none">` at root level detected as composite containers with exact SVG geometry, corner radius, and text formatting; replaces ANTLR-synthesized approximations
+- **Degenerate curve fallback**: Vertical/horizontal bezier paths (zero width or height) extracted as straight lines from SVG path endpoints — fixes missing transitions to/from `[*]`, choice, fork, join pseudo-states
+- **SVG text formatting extraction**: `_extract_text_format()` reads `fill`, `font-size`, `font-family` from SVG `<text>` elements; flows into `contents.default_format` and per-run `CharFormat`; removed redundant `style.text` dict
+- **Per-kind text color defaults**: `_meta_to_contents` uses `get_item_defaults(kind)` cascade (SVG → per-kind settings → global settings) for text color, font family, and font size
+- **Scene rect management**: New PNG load resets scene rect to PNG extent; `_update_scene_rect()` called after rebuild to expand for annotations; not called during PNG load to avoid inheriting old scene bounds
+- **Rubber band selection fix**: Guard checks `_handle_points_local` (not `_handle_points_scene`) to avoid crash on `MetaTextItem` which lacks resize handles
+- **PlantUML PNG size limit**: `-DPLANTUML_LIMIT_SIZE=16384` added to Java command — raises default 4096px truncation limit for large diagrams
+
+### v2.6 (2026-03-30)
+- **ANTLR4 state diagram grammar**: Generated PlantUML state grammar (Lexer/Parser/Visitor); `FREE_TEXT` restricted to non-structural start chars; `restOfLine` pattern for labels/descriptions; `skinparamName` accepts keywords; `stateDecl` supports inline descriptions
+- **State grammar integration**: `_parse_state_source()` extracts states, stereotypes, descriptions, composite/concurrent flags, and parent-child nesting from source text; `_merge_state_source_info()` enriches SVG annotations with ANTLR semantics
+- **Missing composite state synthesis**: Composites absent from SVG (PlantUML renders them flat) are reconstructed from ANTLR nesting — bounding box computed from children, dashed border, semi-transparent fill, z-order stacked (outer behind inner)
+- **State SVG parser: entity-based states**: `class="entity"` with `<rect>` now detected as regular states (was only handling path-based notes); entity `ent_id` preserved for link resolution
+- **Start/end pseudo-states**: `class="start_entity"` and `class="end_entity"` (`[*]` nodes) extracted with synthetic IDs to avoid collision with reused PlantUML entity IDs; links remapped; duplicate bare ellipses deduplicated
+- **ANTLR duplicate declaration merging**: `state "Name" as alias` followed by `state alias { }` merges name/alias/stereotype from the richer declaration
+- **State multiline name matching**: SVG label + tech combined and matched against ANTLR `\n`-separated names; ambiguous first-line matches only used when unambiguous
+- **ANTLR error suppression**: `removeErrorListeners()` on both lexer and parser for deployment and state grammars — no stderr noise on import
+- **Deployment grammar fixes**: `ACTOR_COLON` excludes `"` for quoted labels with colons; `skinparamPath` accepts element keywords; `restOfLine` includes `USECASE_PAREN`/`BRACKET_COMP`/`ARROW_SPEC`; preprocessor `!define`/`!include` support
+- **Line/curve text box fill**: `style.fill.color` sets text box background; fill opacity slider triggers immediate repaint via `item.update()`; text box border only drawn when item is selected
+- **Grammar diagnostic tools**: `scripts/diagnose_state_grammar.py` and `scripts/diagnose_deployment_grammar.py` — compare ANTLR vs regex extraction with coverage percentages
+
+### v2.5 (2026-03-29)
+- **Polygon vertex editing UX**: Select-then-act interaction model — hover shows outline change, click selects (fill change), right-click on selected vertex opens context menu; double-click on vertex/edge stays in edit mode
+- **Polygon curve rendering**: Closing edge renders with vertex 0's Q/C curve data instead of straight `closeSubpath()`; bbox auto-recalculates from path extent when curves exceed anchor bounds
+- **Polygon edge hit detection**: Curve-aware edge hit testing samples actual bezier curves (20 points); edge hits rejected near vertex endpoints so vertex knobs take priority; `shape()` uses `hit_distance` radius for all knob/edge areas
+- **Port placement on curved polygons**: Perimeter system samples Q/C bezier edges (16 segments) for port placement and sliding; ports follow actual curve path, not straight-line approximation
+- **Rotation knob fix**: Label `QGraphicsTextItem` children set `setAcceptHoverEvents(False)` on all shapes so they don't intercept hover events meant for rotation knob and resize handles
+- **Rotation cursor**: Custom circular-arrow cursor shown when hovering the rotation knob on all rotatable shapes; directional resize cursors already rotation-aware
+- **Crosshair+plus cursor**: Custom cursor shown when hovering polygon edges in vertex edit mode (indicates "Insert Vertex Here" on right-click)
+- **Scene right-click fix**: Parent walk-up traverses to nearest selectable item (not just `MetaGroupItem`), fixing right-click on child labels deselecting the parent shape
+- **ANTLR4 deployment grammar integration**: Source text parsed for element keywords and stereotypes; merged into SVG annotations as `contents.dsl.puml_type` and `contents.dsl.stereotype`
+- **Grammar fixes**: `ACTOR_COLON` excludes `"` (colons in quoted labels), `skinparamPath` accepts element keywords, `restOfLine` includes `USECASE_PAREN`/`BRACKET_COMP`/`ARROW_SPEC`, `!define`/`!include` preprocessor support
+- **Overlay-2.0 parser output**: `_normalize_annotations` converts flat `meta: {label, tech, note}` to `contents: {blocks, frame, default_format}` — JSON editor shows modern format from import
+- **Line/curve text box fill**: `style.fill.color` sets text box background on lines and curves; fill opacity slider triggers immediate repaint via `item.update()`
+- **Text box border**: Border only drawn when item is selected; hidden when unselected (was always showing gray `#C8C8C8` border)
+- **Grammar diagnostic tool**: `scripts/diagnose_deployment_grammar.py` compares ANTLR vs regex extraction to find unparsed elements/connections
+
+### v2.4 (2026-03-28)
+- **Comprehensive test suite**: 1375 tests across 31 files; 20 new test files covering canvas items, round-trips, data models, UI framework, parsers, and export
+- **Shared test fixtures**: Centralized `conftest.py` with session-scoped `qapp`, function-scoped `main_window` and `scene` fixtures; offscreen Qt platform
+- **UI framework tests**: Undo/redo commands, drawing mode switching, context menu z-order, JSON editor features, property panel per-kind controls, keyboard shortcuts, canvas zoom, drag-drop acceptance, settings dialog, and menu system
+- **Test documentation**: `tests/README.md` with directory structure, design patterns, fixture usage, coverage/reporting instructions, and new-test template
+- **Diagnostic scripts**: `scripts/` directory with `diagnose_drag_kinds.py` and `scripts/README.md`
+- **PlantUML deployment diagrams**: ANTLR4 grammar, isocube detection (3D-box polygons), cloud shape as polygon with cubic bezier curves
+- **Text deduplication**: `_dedup_blocks` and `_dedup_label_tech_note` remove duplicate text across label/tech/note fields
+- **PPTX blocks/runs export**: PowerPoint text export reads from `contents.blocks.runs` with per-run formatting (bold, italic, underline, color, font)
+
+### v2.3 (2026-03-19)
+- **JSON→QTextEdit round-trip**: Editing text in `blocks[].runs[].text` in the JSON editor now correctly updates the Contents tab and canvas label; fixed overlay-2.0 format detection order in `from_dict`
+- **Line spacing controls**: Per-block spacing type (Single/Proportional/Fixed/Minimum/LineDistance) and value; spacing applied to selected blocks as delta from `default_format`; round-trips through JSON
+- **Paragraph spacing**: Space Before / Space After controls (per-block top/bottom margins); applied to QTextEdit and canvas label
+- **Canvas label spacing**: `_render_label_from_meta` applies `setLineHeight` and `setTopMargin`/`setBottomMargin` per-block on the `QGraphicsTextItem` document
+- **Vertical alignment fix**: Changing valign (Top/Middle/Bottom) now correctly positions text within shape bounding boxes; writes to both flat field and `frame.valign`
+- **Alignment persistence**: `_apply_align_to_textedit` sets cursor block format so typed text inherits center alignment; `_qtextdoc_to_blocks` suppresses redundant block halign
+- **Yellow color fix**: Removed legacy `style.text.color: #FFFF00` default injection; text color now comes from `contents.default_format.color`
+- **HTML margin fix**: `margin:0` on `<p>` tags in both HTML generators so canvas label and QTextEdit spacing match
+- **Schema**: `spacing_type`/`spacing_value` added to `charFormat`, `textBlock`; `space_before`/`space_after` on `textBlock`
+
+### v2.2 (2026-03-18)
+- **Polygon vertex types**: Right-click a polygon vertex in edit mode to change its segment type (Straight, Quadratic, Cubic Bezier); auto-generated control points with draggable blue handles and dashed guide lines; vertex context menu also supports Add Node After and Delete Node; edge right-click inserts a vertex at the click position
+- **Select-after-draw**: Newly created canvas items stay selected after the mouse is released; property panel reflects the fully initialized item state immediately
+- **Text item format init**: When a text item is first dropped on canvas, the QTextEdit's resolved font/color defaults are written back to the item's `default_format` in a one-time initialization pass
+- **Read-only fields in JSON editor**: `label`, `tech`, `note`, and `ports` are displayed in grey italic and block character input; marked `readOnly: true` in the annotation schema
+- **Text annotation cursor sync**: Clicking anywhere inside a text annotation's JSON block in the editor selects the corresponding canvas item
+
+### v2.1 (2026-03-17)
+- **Blocks/runs content model**: Overlay-2.0 `blocks` and `runs` structure for text items; `label` maps to block 0, `tech` to block 1, `note` to block 2
+- **Unified label rendering**: All shape kinds render labels from the blocks/runs model via a shared `_render_label_from_meta()` path
+- **Anchor dot on lines/curves**: Configurable anchor position (0–100%) along the path shown as a grey dot when selected; text box follows the anchor point
+- **Text box controls for lines/curves**: Orange resize handles on the floating text box; `text_box_width`/`text_box_height` stored in the annotation; 3×3 anchor grid in the property panel
+- **Theme arrow fixes**: Arrow styling consistent across all 7 built-in themes
+
+### v2.0 (2026-03-14)
+- **Contents tab**: Rich-text editor in the property panel with run-level font family, font size, bold/italic/underline, text color, subscript/superscript, alignment, wrap toggle, and text flow type
+- **Text selection persistence**: Selected text stays highlighted when focus moves to panel controls
+- **Theme radio button indicators**: All themes display correctly styled radio/checkbox indicators; Fusion style bypass for Windows native rendering
+- **Gutter bar continuous sync**: JSON editor gutter highlight bar stays synchronized during typing, folding/unfolding
+- **Wheel guard**: Prevents accidental value changes from scrolling past spinners and combo boxes
+
 ### v1.11 (2026-03-10)
-- **Snap-to-port**: Line, curve, and orthocurve endpoints snap to ports with cyan glow visual feedback; bidirectional connection model tracks which end (start/end) is connected to which port
-- **Port disconnect**: Drag a connected endpoint away from a port to cleanly disconnect; all data structures (port connections, line port_ids, endpoint mapping) are cleaned up automatically
-- **Alt+click/drag ports**: Hold Alt and click/drag to select and move ports underneath overlapping lines; scene forwards mouse events to the port for perimeter dragging
-- **Port direction badge**: Connected ports display an external direction indicator (triangle for In/Out, diamond for InOut) on the inward side, visible even when lines obscure the port center
-- **Connected lines follow movement**: Moving a shape with ports that have connections automatically updates all connected line/curve endpoints
-- **Rotation-aware port connections**: Rotating a curve recalculates connected endpoints using `mapFromScene` so they stay attached to their ports; `_snap_endpoint` also uses rotation-aware coordinate conversion
-- **Orthocurve L endpoint**: Last point of orthocurves is now an L node (freely draggable in both axes); editable only in node-editing mode (double-click) like the M start point; final edge stays orthogonal — dragging last or second-to-last point propagates coordinates to maintain perpendicularity
-- **Orthocurve bend radius on final corner**: The H/V → L transition at the end of an orthocurve now receives the adjust1 bend radius, matching all other H/V corners
-- **Orthocurve node insertion**: Right-clicking the final edge to insert a node updates the L endpoint to maintain orthogonality with its new predecessor
-- **PPTX dual arrow fix**: Corrected OOXML element ordering (`headEnd` before `tailEnd`) for lines with arrows on both ends
+- Snap-to-port, port disconnect, Alt+click/drag ports, port direction badge
+- Connected lines follow movement; rotation-aware port connections
+- Orthocurve L endpoint and bend radius on final corner
+- PPTX dual arrow fix
 
 ### v1.10 (2026-03-08)
-- **Port connector tool**: New drawing tool (O) for attaching connector ports to any shape's perimeter; ports track a parametric position (t=0–1) on the parent's edge and move automatically when the parent is resized or repositioned
-- **Port direction indicators**: In/Out/InOut directional arrows rendered inside the port circle, rotated to match the outward normal of the parent edge
-- **Port protocol & connections**: Optional protocol label and connections list for linking ports to lines/curves; connected endpoints follow port position automatically
-- **Perimeter geometry engine**: New `canvas/perimeter.py` module computes point-on-perimeter for all shape kinds (rect, roundedrect, ellipse, hexagon, cylinder, blockarrow, isocube, polygon, seqblock) using parametric path traversal
-- **Port unparenting**: Clear `parent_id` in the JSON editor to detach a port from its parent; the port preserves its scene position and becomes freely movable; geom x/y/w/h are filled in automatically
-- **Port reparenting**: Set `parent_id` to a shape's ID to re-attach a free port; it snaps to the nearest perimeter point
-- **Port property panel**: Context-sensitive controls for port type (In/Out/InOut), protocol, t-position, and parent ID
-- **Read-only computed fields**: JSON editor highlights computed fields (e.g. `ports` list) in gray italic to distinguish them from user-editable fields
-- **Port icon generation**: Theme-aware SVG port icons for all 7 themes
+- Port connector tool with perimeter attachment and parametric tracking
+- Port direction indicators, protocol labels, connections list
+- Perimeter geometry engine for all shape kinds
+- Port unparenting/reparenting via JSON editor
 
 ### v1.9 (2026-03-07)
-- **Shape rotation**: All canvas items support rotation via interactive drag handle (green knob inside item boundary) or property panel angle spinner (0–359°)
-- **Rotation-aware resize**: Resize handles move along the rotated axis; anchor-based tracking prevents corner drift; cursor shapes rotate with the item orientation
-- **Rotation-aware editing**: Polygon vertex and curve node hit-testing and dragging work correctly when items are rotated
-- **PPTX rotation export**: All rotatable shapes export with their rotation angle to PowerPoint
-- **Seqblock PPTX export**: Sequence blocks exported as grouped compound shapes (outer rectangle, pentagon type-tab, dashed dividers, section labels)
-- **DSL toolbar row**: Second toolbar row for domain-specific tools; appears when a domain is activated from the Domain menu; hidden when deactivated
+- Shape rotation via drag handle or property panel
+- Rotation-aware resize and editing
+- PPTX rotation export; seqblock compound export
+- DSL toolbar row
 
 ### v1.8 (2026-03-07)
-- **State diagram import**: Full Mermaid state diagram parsing — composite states, concurrent regions, fork/join bars, notes, choice pseudostates
-- **classDef style extraction**: `classDef` fill, stroke, stroke-width, and text color parsed from SVG and source; `:::className` shorthand patched from source when mmdc omits it
-- **Pixel-perfect PNG alignment**: mmdc viewport width/height set to SVG viewBox dimensions with CSS body margin reset, eliminating coordinate drift between PNG background and SVG annotations
-- **SVG z-order**: Annotations assigned z-values matching SVG painting order (clusters → edges → nodes) for correct visual stacking
-- **CSS color support**: `hex_to_qcolor` now handles named CSS colors (yellow, white, red), short hex (#f00), and `transparent` alongside existing #RRGGBB/#RRGGBBAA formats
-- **Edge styling**: Dashed/dotted detection from CSS classes (`edge-pattern-dashed`, `edge-pattern-dotted`, `note-edge`), stroke color and width extracted from SVG
-- **Two-path fill extraction**: Mermaid's split fill-path/stroke-path pattern correctly parsed for notes and styled states
+- Mermaid state diagram import with composite states, classDef styling
+- Pixel-perfect PNG alignment via viewBox matching
+- SVG z-order; CSS color support; edge styling; two-path fill extraction
 
 ### v1.7 (2026-02-27)
-- Dynamic title bar shows currently loaded file name after import (PlantUML, Mermaid SVG, Mermaid source, or standalone PNG)
-- Wait cursor during all import operations (PlantUML rendering, Mermaid CLI, SVG parsing) for visual feedback
-- Wider JSON editor dock (500px initial width) reduces text wrapping
-- Compact settings dialog: smaller footprint, tighter tab labels, reduced group box margins
+- Dynamic title bar; wait cursor during imports; wider JSON editor; compact settings
 
 ### v1.6 (2026-02-22)
-- Gemini model selection: configurable model list and default in settings, dropdown menu in toolbar
-- Focus Align tool: refine a selected element via Gemini AI on a cropped region
-- Gemini token counter displayed on the toolbar
-- Schema-driven defaults: all annotation defaults derived from `annotation_schema.json` (no hardcoded Python dicts)
-- Removed legacy top-level `text` field — all text content canonicalized to `meta.note`
-- Value-only schema validation: pattern/range/enum/type checks block rebuilds; structural differences are allowed
-- Accept Ghost Fields: right-click gray ghost fields to make them permanent
-- Schema overlays refresh automatically after scene rebuilds
-- Pen dash properties (`dash`, `dash_pattern_length`, `dash_solid_percent`) always serialized in records and Gemini prompts
-- Standardized `style.fill` across schema, prompts, canvas, and export
-- Compact toolbar padding/spacing with disabled button styles across all themes
-- Fix shutdown crash when scene C++ object is deleted before selection signal
-- Fix fill color picker to show opaque initial color when current fill is fully transparent
-- Isometric Cube drawing tool: configurable depth and extrusion angle with interactive control handles
-- Orthogonal Curve tool: H/V-only curve variant with corner bend radius and Ctrl+click extend
-- PowerPoint export for isometric cube (CUBE auto-shape with flip mapping) and orthogonal curve (freeform polyline)
-- Semi-transparent fill colors now export with PPTX transparency instead of being discarded
-- Comprehensive item-kind test suite (`test_item_kinds.py`): 207 tests covering all 12 kinds end-to-end
+- Gemini model selection and Focus Align tool
+- Schema-driven defaults; value-only validation; accept ghost fields
+- Isometric Cube and Orthogonal Curve tools
+- PPTX transparency export
 
 ### v1.5 (2026-02-18)
-- Curve drawing tool with SVG path-like node editing (cubic bezier, quadratic bezier, arc, line segments)
-- PlantUML SVG path parsing preserves actual connector geometry as curve annotations
-- Dedicated description diagram parser for component, deployment, use-case, and architecture diagrams
-- Native OOXML bezier export to PowerPoint (`a:cubicBezTo`, `a:quadBezTo`) with arrowheads and midpoint labels
-- PPTX export-to-source-dir setting
-- Cluster rect-vs-path parsing fix for decorative tab overlays
-- Diagram name validation warns about illegal characters in `@startuml` names
-- Comprehensive undo/redo for move, resize, text editing, and property changes
-- Group resize with proportional child scaling via 8 handles
-- Group kind support in schema, validation, export, and utilities
-- Handle-enclosed rubber band selection with live preview
-- Schema-driven adjust controls (labels, suffixes, ranges from `annotation_schema.json`)
-- Fixed duplicate annotations when ungrouping a moved group
-- Expanded test suite: `test_adjust_roundtrip.py`, `test_ungroup_drag.py`, `test_flow_ungroup.py`
-- Renamed test data directory to `test_data/` with anonymized PUML fixtures
+- Curve drawing tool with bezier/arc/line node editing
+- PlantUML SVG path parsing; description diagram parser
+- Native OOXML bezier export; undo/redo; group resize
+- Schema-driven adjust controls
 
 ### v1.4 (2026-02-16)
-- Standardized numeric precision: geometry values at 2 decimal places, style values at 1 decimal place
-- Editor scroll position frozen during canvas drag/resize (mouse-down to mouse-up)
-- Live JSON geometry updates during drag without scroll jumping
-- Selection scroll deferred to mouse release for smooth click-and-drag
-- Added automated test suite (`tests/`) with pytest
-- Added pytest to requirements
+- Standardized numeric precision; scroll lock during drag; live JSON updates
+- Automated test suite
 
 ### v1.3 (2026-02-15)
-- Activity diagram SVG parser with partition groups, flow lines, ellipses, and polygons
-- Nested group hierarchy from PlantUML cluster/entity parent-child relationships
-- PowerPoint export: fill colors, border colors, text colors, font sizes, and alignment
-- PowerPoint export: polygon freeform shapes, line labels, vertical text alignment
-- Fixed PPTX color format handling (`#RRGGBBAA` instead of `#AARRGGBB`)
-- Fixed PPTX text styling to reliably override PowerPoint theme defaults
-- Fixed PPTX vertical alignment using `vertical_anchor` (python-pptx 1.0.2 API)
-- Fixed crash when clearing grouped items from canvas
+- Activity diagram parser; nested group hierarchy
+- PPTX fill/text colors, polygon freeforms
 
 ### v1.2 (2026-02-12)
-- Polygon shape tool with multi-click vertex drawing and vertex editing mode
-- SVG-based position extraction for PlantUML import (pixel-accurate placement)
-- PlantUML packages/clusters render as polygons with SVG path vertices
-- Link style extraction (stroke colors, dash patterns) from PlantUML SVG
-- Fixed editor scroll-to-selection for documents with wrapped lines
-- Gutter highlight bar shows full annotation scope on selection
+- Polygon tool; SVG-based PlantUML position extraction
+- Gutter highlight bar
 
 ### v1.1 (2026-01-29)
-- OpenCV-based element alignment for snapping shapes to PNG visuals
-- Line detection with endpoint, angle, and arrowhead detection
-- Dashed line support via collinear segment merging
-- Text matching to locate lines using label/note metadata
+- OpenCV element alignment; line/arrowhead detection
 
 ### v1.0 (2026-01-28)
 - Initial stable release
-- Text vertical alignment and spacing controls
-- Ellipse text label support
-- Dash pattern controls for pen styles
-- Qt Designer property panel with auto-compile
-- Focus mode scroll improvements
-- AI extraction with formatting defaults
-- 7 built-in themes
 
 ## License
 

@@ -20,6 +20,38 @@ from PIL import Image
 from utils import extract_first_json_object
 
 
+# Mode-specific "what to look for" guidance swapped into the extraction prompt.
+_C4_DETECTION = """DETECTION GUIDELINES:
+1. Detect ALL visible shapes: boxes, containers, components, actors, databases, processes
+2. Distinguish sharp corners (rect) from rounded corners (roundedrect)
+3. Estimate corner radius in pixels for rounded rectangles
+4. Identify hexagonal shapes (six-sided polygons) as "hexagon"
+5. Identify cylinder/drum shapes (databases, storage) as "cylinder" - these have curved/elliptical top and bottom caps
+6. Identify thick block arrow shapes as "blockarrow" - these are filled arrow-shaped polygons, NOT line arrows
+7. Detect connection lines and their arrow directions
+8. Extract text labels inside shapes into that shape's meta.label field
+9. For text, estimate the font size in points"""
+
+_PLAIN_DETECTION = """DETECTION GUIDELINES:
+1. This is a GENERIC drawing (floor plan, sketch, flowchart, technical
+   drawing). Trace the shapes that are literally drawn. Do NOT assume software
+   roles - there are no "actors", "services", "databases" or "protocols" unless
+   they are plainly drawn and labelled as such.
+2. Detect the main rectangular regions (rooms, panels, boxes). Many may be
+   drawn at an angle - report the rotation using the "angle" key (see ROTATION).
+3. Distinguish sharp corners (rect) from rounded corners (roundedrect); use
+   ellipse, hexagon, cylinder or blockarrow only when the shape clearly is one.
+4. Detect straight lines / walls / connectors as "line". Report arrowheads only
+   when they are actually drawn.
+5. Capture EVERY text label as the enclosing shape's meta.label, or as a
+   standalone "text" item when it belongs to no shape. Include dimension strings
+   and annotations (e.g. "16 x 8' DOOR", "12'-6\\""). Do NOT skip text.
+6. For text, estimate the font size in points.
+7. Prefer FEWER, well-placed shapes over many overlapping guesses. Ignore
+   furniture, hatching, dimension arrows, shadows and background texture unless
+   the user's instructions ask for them."""
+
+
 def _load_geom_schema_info() -> Dict[str, Dict[str, Any]]:
     """Load adjust parameter descriptions from annotation_schema.json.
 
@@ -337,52 +369,120 @@ class ExtractWorker(QObject):
     failed = pyqtSignal(str)
     raw_text = pyqtSignal(str)
     tokens_used = pyqtSignal(int)
+    prompt_built = pyqtSignal(str)  # full assembled prompt actually sent
 
-    def __init__(self, png_path: str, model: str):
+    def __init__(self, png_path: str, model: str,
+                 provider_id: str = "gemini", env_key: str | None = None,
+                 extra_context: str = "", extraction_mode: str = "c4",
+                 snap_angles_to: float = 0.0):
+        """
+        Args:
+            png_path: Path to the image to extract from.
+            model: Model id to invoke on the selected provider.
+            provider_id: Registered vision provider id (default ``gemini``).
+            env_key: Name of the environment variable holding the API key.
+                When ``None``, the provider's default key name is used.
+            extra_context: Optional free-text instructions from the user that
+                are appended to the extraction prompt (e.g. "ignore colors,
+                treat rotated rectangles as rect").
+            extraction_mode: ``"c4"`` (default) uses the software-architecture
+                framing (technology tags, C4 label format). ``"plain"`` uses a
+                neutral shape-tracing framing for floor plans, sketches,
+                flowcharts and other non-architecture drawings.
+            snap_angles_to: When > 0, every extracted rotation ``angle`` is
+                snapped to the nearest multiple of this many degrees (e.g. 15)
+                after validation. 0 disables snapping.
+        """
         super().__init__()
         self.png_path = png_path
         self.model = model
+        self.provider_id = provider_id
+        self.env_key = env_key
+        self.extra_context = extra_context or ""
+        self.extraction_mode = extraction_mode or "c4"
+        self.snap_angles_to = float(snap_angles_to or 0.0)
 
     def run(self):
         """Execute the extraction request."""
         try:
-            if genai is None:
-                raise RuntimeError("google-genai not installed. pip install google-genai")
-            api_key = os.environ.get("GOOGLE_API_KEY", "").strip()
+            from providers import get_provider, resolve_api_key
+
+            provider = get_provider(self.provider_id)
+            env_key = self.env_key or provider.spec.default_env_key
+            api_key = resolve_api_key(env_key)
             if not api_key:
-                raise RuntimeError("GOOGLE_API_KEY is not set.")
+                raise RuntimeError(
+                    f"{env_key} is not set. Set it to your "
+                    f"{provider.spec.label} API key."
+                )
 
-            client = genai.Client(api_key=api_key)
-
+            # Image size is needed to build the (provider-neutral) prompt.
             img = Image.open(self.png_path)
             w, h = img.size
 
-            prompt = self._build_extraction_prompt(w, h)
+            prompt = self._build_extraction_prompt(w, h, self.extraction_mode)
+            if self.extra_context.strip():
+                prompt += (
+                    "\n\n=== ADDITIONAL INSTRUCTIONS FROM THE USER ===\n"
+                    "Follow these instructions carefully. Where they conflict "
+                    "with the general guidance above, THESE take priority:\n"
+                    f"{self.extra_context.strip()}\n"
+                )
 
-            response = client.models.generate_content(
-                model=self.model,
-                contents=[prompt, img],
-            )
+            self.prompt_built.emit(prompt)
 
-            text = getattr(response, "text", None) or ""
+            result = provider.extract(self.model, self.png_path, prompt, api_key)
+
+            text = result.text or ""
             self.raw_text.emit(text)
 
-            usage = getattr(response, "usage_metadata", None)
-            if usage:
-                total = getattr(usage, "total_token_count", 0) or 0
-                if total > 0:
-                    self.tokens_used.emit(total)
+            if result.tokens and result.tokens > 0:
+                self.tokens_used.emit(result.tokens)
 
             parsed = extract_first_json_object(text)
             if parsed is None:
-                raise ValueError("Model response did not contain parseable JSON.")
+                if not text.strip():
+                    raise ValueError(
+                        "The model returned an empty response (no text). "
+                        f"stop_reason={result.stop_reason or 'unknown'}.")
+                if result.truncated:
+                    raise ValueError(
+                        "The model response was cut off at the output token "
+                        "limit (stop_reason=max_tokens), so the JSON is "
+                        "incomplete. Try a simpler/cropped image, fewer "
+                        "elements, or a model with a larger output budget.")
+                raise ValueError(
+                    "Model response did not contain parseable JSON. The model "
+                    "replied with prose, markdown, or a refusal instead of "
+                    "JSON. See the raw response above.")
+
+            # Map model geometry/rotation variants onto the canonical schema
+            # (e.g. "rot"->"angle", left/top/right/bottom->x/y/w/h, centre+size)
+            # BEFORE validation, so correct shapes aren't dropped for missing
+            # w/h and rotation survives the round-trip.
+            try:
+                from schema_shim import coerce_annotations
+                parsed, shim_notes = coerce_annotations(parsed)
+            except Exception as _shim_err:
+                shim_notes = [f"geometry shim skipped: {_shim_err}"]
 
             # Validate and fix annotations
             parsed, warnings = validate_and_fix_annotations(parsed)
 
+            # Optionally snap rotations to a fixed angular grid (e.g. 15°),
+            # which is far more reliable than asking the model to be exact.
+            snap_notes: list = []
+            if self.snap_angles_to and self.snap_angles_to > 0:
+                try:
+                    from schema_shim import snap_angles
+                    parsed, snap_notes = snap_angles(parsed, self.snap_angles_to)
+                except Exception as _snap_err:
+                    snap_notes = [f"angle snap skipped: {_snap_err}"]
+
             # Add warnings to the data for user visibility
-            if warnings:
-                parsed["_extraction_warnings"] = warnings
+            all_warnings = (shim_notes or []) + (snap_notes or []) + (warnings or [])
+            if all_warnings:
+                parsed["_extraction_warnings"] = all_warnings
 
             self.finished.emit(parsed)
 
@@ -390,9 +490,40 @@ class ExtractWorker(QObject):
             msg = f"{e}\n\n{traceback.format_exc()}"
             self.failed.emit(msg)
 
-    def _build_extraction_prompt(self, width: int, height: int) -> str:
-        """Build the extraction prompt with schema-based structure."""
-        return f"""You are a diagram element extractor. Analyze this image and extract all visual elements.
+    def _build_extraction_prompt(self, width: int, height: int,
+                                 mode: str = "c4") -> str:
+        """Build the extraction prompt with schema-based structure.
+
+        Args:
+            width: Image width in pixels.
+            height: Image height in pixels.
+            mode: ``"c4"`` for software-architecture diagrams (technology tags,
+                C4 label format), or ``"plain"`` for a neutral shape-tracing
+                framing (floor plans, sketches, flowcharts, technical drawings).
+
+        Returns:
+            The full extraction prompt string.
+        """
+        if mode == "plain":
+            intro = (
+                "You are a precise shape and geometry extractor. The image may "
+                "be a FLOOR PLAN, sketch, flowchart, or technical drawing — it "
+                "is NOT necessarily a software architecture diagram. Trace the "
+                "shapes that are actually drawn; do NOT invent software or "
+                "technology semantics (no made-up components, protocols or "
+                "tech tags). Capture EVERY text label you see, including room "
+                "names and dimension strings (for example \"16 x 8' DOOR\"). "
+                "Ignore furniture, hatching, shadows and background texture "
+                "unless the user's instructions say otherwise."
+            )
+            text_hint = "any text that appears inside or on the shape"
+            detection = _PLAIN_DETECTION
+        else:
+            intro = ("You are a diagram element extractor. Analyze this image "
+                     "and extract all visual elements.")
+            text_hint = "C4 format: Label [Tech] Description"
+            detection = _C4_DETECTION
+        return f"""{intro}
 
 IMPORTANT: This image is EXACTLY {width} pixels wide and {height} pixels tall.
 All coordinates in your response MUST be in ABSOLUTE PIXEL values within this {width}x{height} pixel space.
@@ -415,7 +546,7 @@ FOR RECTANGLES (sharp corners):
   "kind": "rect",
   "geom": {{ "x": <number>, "y": <number>, "w": <number>, "h": <number> }},
   "meta": {{ "label": "<text inside>", "tech": "<technology if shown>", "note": "<description>" }},
-  "text": "<C4 format: Label [Tech] Description>",
+  "text": "<{text_hint}>",
   "style": {{
     "pen": {{"color":"#RRGGBB","width":2,"dash":"solid|dashed","dash_pattern_length":30,"dash_solid_percent":50}},
     "fill": {{"color":"#RRGGBBAA"}},
@@ -428,7 +559,7 @@ FOR ROUNDED RECTANGLES (rounded corners):
   "kind": "roundedrect",
   "geom": {{ "x": <number>, "y": <number>, "w": <number>, "h": <number>, "adjust1": <corner radius in pixels> }},
   "meta": {{ "label": "<text inside>", "tech": "<technology if shown>", "note": "<description>" }},
-  "text": "<C4 format: Label [Tech] Description>",
+  "text": "<{text_hint}>",
   "style": {{
     "pen": {{"color":"#RRGGBB","width":2,"dash":"solid|dashed","dash_pattern_length":30,"dash_solid_percent":50}},
     "fill": {{"color":"#RRGGBBAA"}},
@@ -453,7 +584,7 @@ FOR HEXAGONS (six-sided shapes, often used for processes, services, or decision 
   "kind": "hexagon",
   "geom": {{ "x": <number>, "y": <number>, "w": <number>, "h": <number>, "adjust1": <indent ratio 0.0-0.5, default 0.25> }},
   "meta": {{ "label": "<text inside>", "tech": "<technology if shown>", "note": "<description>" }},
-  "text": "<C4 format: Label [Tech] Description>",
+  "text": "<{text_hint}>",
   "style": {{
     "pen": {{"color":"#RRGGBB","width":2,"dash":"solid|dashed","dash_pattern_length":30,"dash_solid_percent":50}},
     "fill": {{"color":"#RRGGBBAA"}},
@@ -466,7 +597,7 @@ FOR CYLINDERS (database/storage shapes with curved top and bottom):
   "kind": "cylinder",
   "geom": {{ "x": <number>, "y": <number>, "w": <number>, "h": <number>, "adjust1": <cap ratio 0.1-0.5, default 0.15> }},
   "meta": {{ "label": "<text inside>", "tech": "<technology if shown>", "note": "<description>" }},
-  "text": "<C4 format: Label [Tech] Description>",
+  "text": "<{text_hint}>",
   "style": {{
     "pen": {{"color":"#RRGGBB","width":2,"dash":"solid|dashed","dash_pattern_length":30,"dash_solid_percent":50}},
     "fill": {{"color":"#RRGGBBAA"}},
@@ -479,7 +610,7 @@ FOR BLOCK ARROWS (thick arrow shapes pointing right, used for flow direction or 
   "kind": "blockarrow",
   "geom": {{ "x": <number>, "y": <number>, "w": <number>, "h": <number>, "adjust1": <shaft width ratio 0.2-0.9, default 0.5>, "adjust2": <arrowhead length in pixels, default 15> }},
   "meta": {{ "label": "<text inside>", "tech": "<technology if shown>", "note": "<description>" }},
-  "text": "<C4 format: Label [Tech] Description>",
+  "text": "<{text_hint}>",
   "style": {{
     "pen": {{"color":"#RRGGBB","width":2,"dash":"solid|dashed","dash_pattern_length":30,"dash_solid_percent":50}},
     "fill": {{"color":"#RRGGBBAA"}},
@@ -541,16 +672,18 @@ COMMON MISTAKES TO AVOID:
 - For BLOCK ARROWS: x must be the left flat edge of the shaft, NOT the center of the arrow
 - Shapes are often wider and taller than they first appear due to borders and vertices
 
-DETECTION GUIDELINES:
-1. Detect ALL visible shapes: boxes, containers, components, actors, databases, processes
-2. Distinguish sharp corners (rect) from rounded corners (roundedrect)
-3. Estimate corner radius in pixels for rounded rectangles
-4. Identify hexagonal shapes (six-sided polygons) as "hexagon"
-5. Identify cylinder/drum shapes (databases, storage) as "cylinder" - these have curved/elliptical top and bottom caps
-6. Identify thick block arrow shapes as "blockarrow" - these are filled arrow-shaped polygons, NOT line arrows
-7. Detect connection lines and their arrow directions
-8. Extract text labels inside shapes into that shape's meta.label field
-9. For text, estimate the font size in points
+ROTATION (IMPORTANT - use the key name "angle"):
+- If a shape is rotated (tilted / at an angle), set geom.angle to its rotation
+  in DEGREES, CLOCKWISE, measured from upright. Range 0-360. Use the key
+  "angle" exactly (NOT "rot", "rotation", or "theta").
+- For a rotated shape, geom.w and geom.h are the shape's OWN side lengths
+  (its width and height as if it were upright), and geom.x, geom.y are the
+  top-left of that UPRIGHT box placed at the shape's CENTRE. The rotation is
+  then applied about the centre. Do NOT report the enlarged axis-aligned
+  bounding box of the tilted shape as w/h.
+- Upright shapes: omit angle or set it to 0.
+
+{detection}
 
 LINE LABEL ASSOCIATION (IMPORTANT):
 - Text that overlays, crosses, or is positioned near a line/arrow belongs TO that line
@@ -611,15 +744,19 @@ class FocusedAlignWorker(QObject):
     tokens_used = pyqtSignal(int)
 
     def __init__(self, png_path: str, model: str, record: dict,
-                 padding: int = 0, max_iterations: int = 1):
+                 padding: int = 0, max_iterations: int = 1,
+                 provider_id: str = "gemini", env_key: str | None = None):
         """Create a focused alignment worker.
 
         Args:
             png_path: Path to the background PNG image.
-            model: Gemini model name to use.
+            model: Model name to use on the selected provider.
             record: Annotation record dict from item.to_record().
             padding: Extra padding in pixels (0 = auto-compute).
             max_iterations: Number of refinement passes (1 = single shot).
+            provider_id: Registered vision provider id (default ``gemini``).
+            env_key: Name of the environment variable holding the API key.
+                When ``None``, the provider's default key name is used.
         """
         super().__init__()
         self.png_path = png_path
@@ -627,17 +764,27 @@ class FocusedAlignWorker(QObject):
         self.record = record
         self.padding = padding
         self.max_iterations = max_iterations
+        self.provider_id = provider_id or "gemini"
+        self.env_key = env_key
+        # Set by run() so a batch orchestrator can call run() synchronously
+        # (in its own thread) and read the outcome without the signal round-trip.
+        self.result: dict | None = None
+        self.error: str | None = None
 
     def run(self):
         """Execute the iterative focused alignment request."""
-        try:
-            if genai is None:
-                raise RuntimeError("google-genai not installed. pip install google-genai")
-            api_key = os.environ.get("GOOGLE_API_KEY", "").strip()
-            if not api_key:
-                raise RuntimeError("GOOGLE_API_KEY is not set.")
+        import tempfile
 
-            client = genai.Client(api_key=api_key)
+        try:
+            from providers import get_provider, resolve_api_key
+
+            provider = get_provider(self.provider_id)
+            env_key = self.env_key or provider.spec.default_env_key
+            api_key = resolve_api_key(env_key)
+            if not api_key:
+                raise RuntimeError(
+                    f"{env_key} is not set. Set it to your "
+                    f"{provider.spec.label} API key.")
 
             img = Image.open(self.png_path)
             img_w, img_h = img.size
@@ -679,18 +826,25 @@ class FocusedAlignWorker(QObject):
                 print(prompt)
                 print(f"{'='*60}\n")
 
-                response = client.models.generate_content(
-                    model=self.model,
-                    contents=[prompt, crop_img],
-                )
+                # Save the crop to a temp PNG and send it through the provider
+                # seam, so focused alignment works on any provider (not just
+                # Gemini) exactly like the main extraction path.
+                tmp_fd, tmp_png = tempfile.mkstemp(
+                    prefix="pictosync_focus_", suffix=".png")
+                os.close(tmp_fd)
+                try:
+                    crop_img.save(tmp_png)
+                    response = provider.extract(
+                        self.model, tmp_png, prompt, api_key)
+                finally:
+                    try:
+                        os.remove(tmp_png)
+                    except OSError:
+                        pass
 
-                text = getattr(response, "text", None) or ""
-
-                usage = getattr(response, "usage_metadata", None)
-                if usage:
-                    total = getattr(usage, "total_token_count", 0) or 0
-                    if total > 0:
-                        self.tokens_used.emit(total)
+                text = response.text or ""
+                if response.tokens and response.tokens > 0:
+                    self.tokens_used.emit(response.tokens)
 
                 print(f"--- Gemini response (pass {iteration}) ---")
                 print(text[:1000])
@@ -730,10 +884,12 @@ class FocusedAlignWorker(QObject):
                 "iterations": self.max_iterations,
             }
 
+            self.result = result
             self.finished.emit(result)
 
         except Exception as e:
             msg = f"{e}\n\n{traceback.format_exc()}"
+            self.error = msg
             self.failed.emit(msg)
 
     def _compute_roi_from_geom(self, geom: dict, kind: str,

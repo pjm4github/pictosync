@@ -13,6 +13,14 @@ import tempfile
 from pathlib import Path
 
 
+# PLANTUML_JAR = os.environ.get("PLANTUML_JAR", r"C:\tools\plantuml\plantuml.jar")
+#
+# def render_puml(input_path: str, output_dir: str, fmt: str = "svg") -> None:
+#     subprocess.run(
+#         ["java", "-jar", PLANTUML_JAR, f"-t{fmt}", "-o", output_dir, input_path],
+#         check=True
+#     )
+
 def find_plantuml_jar() -> str | None:
     """Find the PlantUML JAR file.
 
@@ -106,7 +114,9 @@ def _render_puml(puml_path: str, fmt: str, output_path: str | None = None) -> st
     tmp_dir = tempfile.mkdtemp(prefix="pictosync_puml_")
 
     cmd = [
-        java, "-jar", jar,
+        java,
+        "-DPLANTUML_LIMIT_SIZE=16384",  # raise default 4096 px limit
+        "-jar", jar,
         f"-t{fmt}",
         "-o", tmp_dir,
         str(puml),

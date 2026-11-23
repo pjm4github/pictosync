@@ -81,6 +81,68 @@ def get_alpha(hex_color: str) -> int:
     return 255
 
 
+def _get_contents(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract the contents/meta dict from an annotation record.
+
+    Handles both overlay-2.0 (``contents`` key with ``blocks``) and
+    legacy (``meta`` key with flat ``label``/``tech``/``note`` fields).
+    """
+    return record.get("contents") or record.get("meta") or {}
+
+
+def _get_blocks(record: Dict[str, Any]) -> list:
+    """Extract blocks list from an annotation record.
+
+    Returns the ``blocks`` array from overlay-2.0 ``contents`` dict,
+    or builds a synthetic 3-block list from legacy ``meta`` fields.
+
+    Each returned block is a dict: ``{"runs": [...], "halign": "..."}``
+    """
+    contents = _get_contents(record)
+    if "blocks" in contents and contents["blocks"]:
+        return contents["blocks"]
+    # Build synthetic blocks from legacy fields
+    blocks = []
+    label = contents.get("label", "")
+    tech = contents.get("tech", "")
+    note = contents.get("note", "")
+    if label:
+        blocks.append({"runs": [{"type": "text", "text": label,
+                                  "format": {"bold": True}}]})
+    if tech:
+        blocks.append({"runs": [{"type": "text", "text": f"[{tech}]",
+                                  "format": {"italic": True}}]})
+    if note:
+        blocks.append({"runs": [{"type": "text", "text": note}]})
+    return blocks
+
+
+def _get_default_format(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Get the default_format from contents, or build from legacy/style."""
+    contents = _get_contents(record)
+    df = contents.get("default_format", {})
+    if df:
+        return df
+    style = record.get("style", {})
+    text_style = style.get("text", {})
+    return {
+        "font_family": contents.get("font_family", ""),
+        "font_size": contents.get("font_size", 12),
+        "color": contents.get("color", text_style.get("color", "#000000")),
+    }
+
+
+def _get_frame(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Get the frame from contents, or build from legacy fields."""
+    contents = _get_contents(record)
+    if "frame" in contents and contents["frame"]:
+        return contents["frame"]
+    return {
+        "halign": contents.get("halign", contents.get("label_align", "center")),
+        "valign": contents.get("valign", contents.get("text_valign", "top")),
+    }
+
+
 def has_alpha_transparency(hex_color: str) -> bool:
     """
     Check if a hex color has alpha transparency (not fully opaque).
@@ -187,23 +249,35 @@ def _apply_rotation(shape, geom: Dict[str, Any]):
         shape.rotation = float(angle)
 
 
-def _add_text_to_shape(shape, meta: Dict[str, Any], text_style: Dict[str, Any]):
-    """
-    Add text content (label, tech, note) to a shape's text frame.
+def _add_text_to_shape(shape, record: Dict[str, Any], text_style: Dict[str, Any]):
+    """Add text content from blocks/runs to a shape's text frame.
+
+    Reads the overlay-2.0 ``contents.blocks`` structure or falls back
+    to legacy ``meta.label``/``tech``/``note`` fields.  Each block maps
+    to a PowerPoint paragraph; each run within a block maps to a
+    PowerPoint text run with per-run formatting (bold, italic, color,
+    font family, font size).
 
     Args:
-        shape: The PowerPoint shape
-        meta: Metadata dict containing label, tech, note
-        text_style: Text style with color and size
+        shape: The PowerPoint shape (must have text_frame).
+        record: The full annotation record dict.
+        text_style: Fallback text style from ``style.text``.
     """
     if not shape.has_text_frame:
         return
 
+    blocks = _get_blocks(record)
+    if not blocks:
+        return
+
+    df = _get_default_format(record)
+    frame = _get_frame(record)
+
     tf = shape.text_frame
     tf.word_wrap = True
 
-    # Set vertical alignment (python-pptx 1.0.2 uses vertical_anchor, not anchor)
-    valign = meta.get("text_valign", "top")
+    # Vertical alignment
+    valign = frame.get("valign", "top")
     if valign == "middle":
         tf.vertical_anchor = MSO_ANCHOR.MIDDLE
     elif valign == "bottom":
@@ -211,55 +285,94 @@ def _add_text_to_shape(shape, meta: Dict[str, Any], text_style: Dict[str, Any]):
     else:
         tf.vertical_anchor = MSO_ANCHOR.TOP
 
-    # Get text color
-    text_color = text_style.get("color", "#000000")
-    rgb = hex_to_rgb(text_color)
+    # Default text properties
+    def_color = df.get("color", text_style.get("color", "#000000"))
+    def_rgb = hex_to_rgb(def_color)
+    def_size = df.get("font_size", 12)
+    def_family = df.get("font_family", "")
+    def_halign = frame.get("halign", "center")
 
-    # Paragraph spacing from meta (in lines: 0, 0.5, 1, 1.5, 2)
-    text_spacing = meta.get("text_spacing", 0.0)
-    spacing_pt = Pt(int(text_spacing * 12)) if text_spacing else None
+    _align_map = {"left": PP_ALIGN.LEFT, "right": PP_ALIGN.RIGHT,
+                  "center": PP_ALIGN.CENTER, "justified": PP_ALIGN.JUSTIFY}
 
-    # Collect text lines
-    lines = []
-    if meta.get("label"):
-        lines.append(("label", meta["label"], meta.get("label_align", "center"), meta.get("label_size", 12), True))
-    if meta.get("tech"):
-        lines.append(("tech", f"[{meta['tech']}]", meta.get("tech_align", "center"), meta.get("tech_size", 10), False))
-    if meta.get("note"):
-        lines.append(("note", meta["note"], meta.get("note_align", "center"), meta.get("note_size", 10), False))
+    first_para = True
+    for blk in blocks:
+        runs_data = blk.get("runs", []) if isinstance(blk, dict) else getattr(blk, "runs", [])
+        # Skip empty blocks
+        if not runs_data:
+            continue
+        has_text = any(
+            (r.get("text", "") if isinstance(r, dict) else getattr(r, "text", ""))
+            for r in runs_data
+            if (r.get("type", "text") if isinstance(r, dict) else getattr(r, "type", "text")) == "text"
+        )
+        if not has_text:
+            continue
 
-    if not lines:
-        return
-
-    # Add first line to existing paragraph
-    first = True
-    for line_type, text, align, size, bold in lines:
-        if first:
+        if first_para:
             p = tf.paragraphs[0]
-            first = False
+            first_para = False
         else:
             p = tf.add_paragraph()
-
-        # Use explicit run creation to reliably override theme defaults
         p.clear()
-        run = p.add_run()
-        run.text = text
-        run.font.size = Pt(size)
-        run.font.bold = bold
-        if rgb:
-            run.font.color.rgb = RGBColor(*rgb)
 
-        # Set alignment
-        if align == "left":
-            p.alignment = PP_ALIGN.LEFT
-        elif align == "right":
-            p.alignment = PP_ALIGN.RIGHT
-        else:
-            p.alignment = PP_ALIGN.CENTER
+        # Block-level alignment
+        blk_halign = (blk.get("halign", "") if isinstance(blk, dict)
+                      else getattr(blk, "halign", "")) or def_halign
+        p.alignment = _align_map.get(blk_halign, PP_ALIGN.CENTER)
 
-        # Apply inter-paragraph spacing
-        if spacing_pt:
-            p.space_before = spacing_pt
+        # Block-level spacing
+        sb = (blk.get("space_before", 0) if isinstance(blk, dict)
+              else getattr(blk, "space_before", 0))
+        sa = (blk.get("space_after", 0) if isinstance(blk, dict)
+              else getattr(blk, "space_after", 0))
+        if sb:
+            p.space_before = Pt(int(sb))
+        if sa:
+            p.space_after = Pt(int(sa))
+
+        # Add runs
+        for run_data in runs_data:
+            if isinstance(run_data, dict):
+                rtype = run_data.get("type", "text")
+                rtext = run_data.get("text", "")
+                rfmt = run_data.get("format", {}) or {}
+            else:
+                rtype = getattr(run_data, "type", "text")
+                rtext = getattr(run_data, "text", "")
+                rf = getattr(run_data, "format", None)
+                rfmt = rf.to_dict() if rf and hasattr(rf, "to_dict") else {}
+
+            if rtype != "text" or not rtext:
+                continue
+
+            run = p.add_run()
+            run.text = rtext
+
+            # Per-run formatting (sparse overrides of default_format)
+            run_size = rfmt.get("font_size", def_size)
+            run.font.size = Pt(int(run_size))
+
+            run_bold = rfmt.get("bold", False)
+            if run_bold:
+                run.font.bold = True
+
+            run_italic = rfmt.get("italic", False)
+            if run_italic:
+                run.font.italic = True
+
+            run_underline = rfmt.get("underline", False)
+            if run_underline:
+                run.font.underline = True
+
+            run_color = rfmt.get("color", "")
+            run_rgb = hex_to_rgb(run_color) if run_color else def_rgb
+            if run_rgb:
+                run.font.color.rgb = RGBColor(*run_rgb)
+
+            run_family = rfmt.get("font_family", def_family)
+            if run_family:
+                run.font.name = run_family
 
 
 def _add_rectangle(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -276,9 +389,9 @@ def _add_rectangle(slide, record: Dict[str, Any], scale_x: float, scale_y: float
     _apply_line_style(shape.line, style)
     _apply_fill_style(shape.fill, style)
 
-    meta = record.get("meta", {})
-    _add_text_to_shape(shape, meta, style.get("text", {}))
+    _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
+    return shape
 
 
 def _add_rounded_rectangle(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -309,9 +422,146 @@ def _add_rounded_rectangle(slide, record: Dict[str, Any], scale_x: float, scale_
     _apply_line_style(shape.line, style)
     _apply_fill_style(shape.fill, style)
 
-    meta = record.get("meta", {})
-    _add_text_to_shape(shape, meta, style.get("text", {}))
+    _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
+    return shape
+
+
+def _add_port(target_shapes, record: Dict[str, Any], scale_x: float, scale_y: float):
+    """Add a port as a transparent ellipse to ``target_shapes``.
+
+    The port's position is the centre of the ellipse (the caller has already
+    written ``geom["x"]/y`` as the absolute scene-space centre via
+    ``port_positions``); ``geom["radius"]`` controls the size, defaulting to
+    6 px to match the canvas port radius.  The pen colour is preserved so
+    the port stays visible; the fill is transparent so the shape behind it
+    is not obscured.  Returns the created ``pptx`` shape so callers can use
+    it as a connection target for smart connectors.
+    """
+    geom = record.get("geom", {})
+    cx = geom.get("x", 0) * scale_x
+    cy = geom.get("y", 0) * scale_y
+    r = float(geom.get("radius", 6.0))
+    diameter_px = r * 2
+    x = px_to_emu(cx - r * scale_x)
+    y = px_to_emu(cy - r * scale_y)
+    w = px_to_emu(diameter_px * scale_x)
+    h = px_to_emu(diameter_px * scale_y)
+
+    shape = target_shapes.add_shape(MSO_SHAPE.OVAL, x, y, w, h)
+    # Transparent fill — see-through so the shape behind shows through.
+    shape.fill.background()
+    # Keep the pen so the port stays visible.
+    style = record.get("style", {})
+    _apply_line_style(shape.line, style)
+    return shape
+
+
+def _add_smart_connector(
+    slide,
+    record: Dict[str, Any],
+    ann_id_to_pptx_shape: Dict[str, Any],
+    port_positions: Dict[str, tuple],
+    scale_x: float,
+    scale_y: float,
+    scene_x: float,
+    scene_y: float,
+):
+    """Emit a line/curve/orthocurve that is attached to one or more ports as
+    a PowerPoint smart connector with ``begin_connect``/``end_connect`` to
+    the corresponding port shapes, so the connector auto-routes when the
+    user moves the connected shapes in PowerPoint.
+
+    Endpoint-to-port matching is by Euclidean proximity (the canvas-side
+    ``_port_endpoints`` dict isn't serialised, so we infer which port sits
+    at which end from the line's recorded endpoints and each port's known
+    scene position).
+    """
+    geom = record.get("geom", {})
+    kind = record.get("kind", "line")
+
+    # Resolve endpoints in shifted (slide-aligned) scene coords.
+    if "x1" in geom:
+        e1 = (geom.get("x1", 0), geom.get("y1", 0))
+        e2 = (geom.get("x2", 0), geom.get("y2", 0))
+    else:
+        # Curve / orthocurve: bbox + normalized nodes (first = start,
+        # last = end).  Compute the endpoint scene positions from the
+        # bbox and the 0-1 relative node positions.
+        gx = geom.get("x", 0)
+        gy = geom.get("y", 0)
+        gw = geom.get("w", 0) or 1
+        gh = geom.get("h", 0) or 1
+        nodes = geom.get("nodes", [])
+        if len(nodes) >= 2:
+            n0, nN = nodes[0], nodes[-1]
+            e1 = (gx + n0.get("x", 0) * gw, gy + n0.get("y", 0) * gh)
+            e2 = (gx + nN.get("x", 0) * gw, gy + nN.get("y", 0) * gh)
+        else:
+            e1 = (gx, gy)
+            e2 = (gx + gw, gy + gh)
+
+    # Match each end to a port by proximity.  Port positions are stored
+    # in scene coords (un-shifted); shift them here to align with the
+    # already-shifted endpoint values.
+    port_ids = [p for p in record.get("ports", []) if p in port_positions]
+    begin_port: Optional[str] = None
+    end_port: Optional[str] = None
+    if port_ids:
+        def _shifted(pid: str) -> tuple:
+            px, py = port_positions[pid]
+            return (px - scene_x, py - scene_y)
+        # Greedy nearest match — each port claims the closer endpoint.
+        remaining = list(port_ids)
+        # Sort by which endpoint each port is closer to so the closer
+        # pairing is decided first.
+        remaining.sort(key=lambda pid: abs(
+            (_shifted(pid)[0] - e1[0]) ** 2 + (_shifted(pid)[1] - e1[1]) ** 2
+            - ((_shifted(pid)[0] - e2[0]) ** 2 + (_shifted(pid)[1] - e2[1]) ** 2)
+        ))
+        for pid in remaining:
+            px, py = _shifted(pid)
+            d1 = (px - e1[0]) ** 2 + (py - e1[1]) ** 2
+            d2 = (px - e2[0]) ** 2 + (py - e2[1]) ** 2
+            if d1 <= d2 and begin_port is None:
+                begin_port = pid
+            elif end_port is None:
+                end_port = pid
+
+    # Pick the connector style that matches the canvas item kind.
+    if kind == "curve":
+        conn_type = MSO_CONNECTOR.CURVE
+    elif kind == "orthocurve":
+        conn_type = MSO_CONNECTOR.ELBOW
+    else:
+        conn_type = MSO_CONNECTOR.STRAIGHT
+
+    x1 = px_to_emu(e1[0] * scale_x)
+    y1 = px_to_emu(e1[1] * scale_y)
+    x2 = px_to_emu(e2[0] * scale_x)
+    y2 = px_to_emu(e2[1] * scale_y)
+    connector = slide.shapes.add_connector(conn_type, x1, y1, x2, y2)
+
+    # Reuse the line styling (colour, width, dash) from the source record.
+    try:
+        _apply_line_style(connector.line, record.get("style", {}))
+    except Exception:
+        pass
+
+    # Wire the smart connections — silently fall back to a free connector
+    # if begin_connect/end_connect isn't supported for this connector type
+    # or shape combination.
+    if begin_port and begin_port in ann_id_to_pptx_shape:
+        try:
+            connector.begin_connect(ann_id_to_pptx_shape[begin_port], 0)
+        except Exception:
+            pass
+    if end_port and end_port in ann_id_to_pptx_shape:
+        try:
+            connector.end_connect(ann_id_to_pptx_shape[end_port], 0)
+        except Exception:
+            pass
+    return connector
 
 
 def _add_ellipse(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -328,9 +578,9 @@ def _add_ellipse(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
     _apply_line_style(shape.line, style)
     _apply_fill_style(shape.fill, style)
 
-    meta = record.get("meta", {})
-    _add_text_to_shape(shape, meta, style.get("text", {}))
+    _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
+    return shape
 
 
 def _add_line(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -383,48 +633,72 @@ def _add_line(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
             tail_end.set("type", "triangle")
 
     # Add text label as a text box at the midpoint of the line
-    meta = record.get("meta", {})
-    label = meta.get("label", "")
-    if label:
-        text_style = style.get("text", {})
-        font_size = text_style.get("size_pt", 10)
-        text_color = text_style.get("color", "#000000")
-        rgb = hex_to_rgb(text_color)
+    _add_line_curve_textbox(slide, record, geom, scale_x, scale_y)
 
+
+def _add_line_curve_textbox(slide, record: Dict[str, Any],
+                            geom: Dict[str, Any],
+                            scale_x: float, scale_y: float,
+                            mid_x: float | None = None,
+                            mid_y: float | None = None):
+    """Add a floating text box for a line or curve annotation.
+
+    Creates a textbox at the midpoint of the line/curve and populates it
+    from ``contents.blocks.runs`` (or legacy ``meta.label``/``tech``/``note``).
+
+    Args:
+        slide: The PowerPoint slide.
+        record: Full annotation record.
+        geom: Geometry dict (for line: x1/y1/x2/y2; for curve: x/y/w/h).
+        scale_x, scale_y: Pixel-to-slide scale factors.
+        mid_x, mid_y: Pre-computed midpoint in pixels (for curves).
+                       If None, computed from line endpoints.
+    """
+    blocks = _get_blocks(record)
+    if not blocks:
+        return
+
+    df = _get_default_format(record)
+    def_size = df.get("font_size", 12)
+    def_color = df.get("color", "#000000")
+    def_rgb = hex_to_rgb(def_color)
+
+    # Compute midpoint if not provided
+    if mid_x is None or mid_y is None:
         mid_x = (geom.get("x1", 0) + geom.get("x2", 0)) / 2
         mid_y = (geom.get("y1", 0) + geom.get("y2", 0)) / 2
 
-        # Size from meta text_box dimensions or estimate from text
-        box_w = meta.get("text_box_width", 0)
+    # Estimate text box dimensions
+    contents = _get_contents(record)
+    box_w = contents.get("text_box_width", 0)
+    box_h = contents.get("text_box_height", 0)
+    if not box_w or not box_h:
+        # Estimate from block text
+        all_text = ""
+        n_lines = 0
+        for blk in blocks:
+            runs = blk.get("runs", []) if isinstance(blk, dict) else getattr(blk, "runs", [])
+            line_text = ""
+            for r in runs:
+                t = r.get("text", "") if isinstance(r, dict) else getattr(r, "text", "")
+                line_text += t
+            if line_text:
+                n_lines += 1
+                if len(line_text) > len(all_text):
+                    all_text = line_text
         if not box_w:
-            box_w = max(50, len(label) * font_size * 0.6 + 20)
-        box_h = meta.get("text_box_height", 0)
+            box_w = max(50, len(all_text) * def_size * 0.6 + 20)
         if not box_h:
-            box_h = font_size * 1.5 + 10
+            box_h = n_lines * def_size * 1.5 + 10
 
-        tx = px_to_emu((mid_x - box_w / 2) * scale_x)
-        ty = px_to_emu((mid_y - box_h / 2) * scale_y)
-        tw = px_to_emu(box_w * scale_x)
-        th = px_to_emu(box_h * scale_y)
+    tx = px_to_emu((mid_x - box_w / 2) * scale_x)
+    ty = px_to_emu((mid_y - box_h / 2) * scale_y)
+    tw = px_to_emu(box_w * scale_x)
+    th = px_to_emu(box_h * scale_y)
 
-        tbox = slide.shapes.add_textbox(tx, ty, tw, th)
-        tf = tbox.text_frame
-        tf.word_wrap = True
-        p = tf.paragraphs[0]
-        p.clear()
-        run = p.add_run()
-        run.text = label
-        run.font.size = Pt(font_size)
-        if rgb:
-            run.font.color.rgb = RGBColor(*rgb)
-
-        align = meta.get("label_align", "center")
-        if align == "left":
-            p.alignment = PP_ALIGN.LEFT
-        elif align == "right":
-            p.alignment = PP_ALIGN.RIGHT
-        else:
-            p.alignment = PP_ALIGN.CENTER
+    tbox = slide.shapes.add_textbox(tx, ty, tw, th)
+    # Reuse the shape text renderer
+    _add_text_to_shape(tbox, record, record.get("style", {}).get("text", {}))
 
 
 def _add_text(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -514,9 +788,9 @@ def _add_hexagon(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
     _apply_line_style(shape.line, style)
     _apply_fill_style(shape.fill, style)
 
-    meta = record.get("meta", {})
-    _add_text_to_shape(shape, meta, style.get("text", {}))
+    _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
+    return shape
 
 
 def _add_cylinder(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -540,9 +814,9 @@ def _add_cylinder(slide, record: Dict[str, Any], scale_x: float, scale_y: float)
     _apply_line_style(shape.line, style)
     _apply_fill_style(shape.fill, style)
 
-    meta = record.get("meta", {})
-    _add_text_to_shape(shape, meta, style.get("text", {}))
+    _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
+    return shape
 
 
 def _add_blockarrow(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -571,9 +845,9 @@ def _add_blockarrow(slide, record: Dict[str, Any], scale_x: float, scale_y: floa
     _apply_line_style(shape.line, style)
     _apply_fill_style(shape.fill, style)
 
-    meta = record.get("meta", {})
-    _add_text_to_shape(shape, meta, style.get("text", {}))
+    _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
+    return shape
 
 
 def _add_polygon(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -609,9 +883,9 @@ def _add_polygon(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
     _apply_line_style(shape.line, style)
     _apply_fill_style(shape.fill, style)
 
-    meta = record.get("meta", {})
-    _add_text_to_shape(shape, meta, style.get("text", {}))
+    _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
+    return shape
 
 
 def _add_curve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -720,7 +994,9 @@ def _add_curve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
 
     style = record.get("style", {})
     _apply_line_style(shape.line, style)
-    # No fill for curves
+    # Curves render as an open path — no fill, otherwise PowerPoint paints
+    # the implied region between the start and end of the path with its
+    # default theme fill.
     shape.fill.background()
 
     # Arrowheads — same XML approach used by _add_line
@@ -743,99 +1019,53 @@ def _add_curve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
             tail_end.set("type", "triangle")
 
     # ── Text label at curve midpoint ──
-    meta = record.get("meta", {})
-    text_style = style.get("text", {})
-    text_color = text_style.get("color", "#000000")
-    rgb = hex_to_rgb(text_color)
+    # Evaluate the actual curve midpoint (halfway along the path)
+    geom = record.get("geom", {})
+    gx = geom.get("x", 0)
+    gy = geom.get("y", 0)
+    gw = geom.get("w", 0)
+    gh = geom.get("h", 0)
 
-    # Collect label / tech / note lines
-    text_lines: List[Tuple[str, float, bool]] = []  # (text, size_pt, bold)
-    if meta.get("label"):
-        text_lines.append((meta["label"], meta.get("label_size", 12), True))
-    if meta.get("tech"):
-        text_lines.append((f"[{meta['tech']}]", meta.get("tech_size", 10), False))
-    if meta.get("note"):
-        text_lines.append((meta["note"], meta.get("note_size", 10), False))
+    segments: List[Tuple[Tuple[float, float], Dict[str, Any]]] = []
+    cur_x, cur_y = nodes[0].get("x", 0), nodes[0].get("y", 0)
+    for nd in nodes[1:]:
+        cmd = nd.get("cmd", "L")
+        if cmd == "Z":
+            continue
+        segments.append(((cur_x, cur_y), nd))
+        cur_x, cur_y = nd.get("x", cur_x), nd.get("y", cur_y)
 
-    if text_lines:
-        # Estimate text box size from the longest line
-        max_size = max(sz for _, sz, _ in text_lines)
-        longest = max(text_lines, key=lambda t: len(t[0]))[0]
-        box_w = max(50, len(longest) * max_size * 0.6 + 20)
-        box_h = sum(sz * 1.5 for _, sz, _ in text_lines) + 10
-
-        # Evaluate the actual curve midpoint (halfway along the path)
-        geom = record.get("geom", {})
-        gx = geom.get("x", 0)
-        gy = geom.get("y", 0)
-        gw = geom.get("w", 0)
-        gh = geom.get("h", 0)
-
-        segments: List[Tuple[Tuple[float, float], Dict[str, Any]]] = []
-        cur_x, cur_y = nodes[0].get("x", 0), nodes[0].get("y", 0)
-        for nd in nodes[1:]:
-            cmd = nd.get("cmd", "L")
-            if cmd == "Z":
-                continue
-            segments.append(((cur_x, cur_y), nd))
-            cur_x, cur_y = nd.get("x", cur_x), nd.get("y", cur_y)
-
-        if segments:
-            # Pick the middle segment and evaluate at t=0.5
-            seg_start, seg_node = segments[len(segments) // 2]
-            cmd = seg_node.get("cmd", "L")
-            t = 0.5
-            if cmd == "C":
-                # Cubic bezier: B(t) = (1-t)^3*P0 + 3(1-t)^2*t*P1
-                #                     + 3(1-t)*t^2*P2 + t^3*P3
-                p0x, p0y = seg_start
-                p1x, p1y = seg_node["c1x"], seg_node["c1y"]
-                p2x, p2y = seg_node["c2x"], seg_node["c2y"]
-                p3x, p3y = seg_node["x"], seg_node["y"]
-                u = 1 - t
-                rx = u**3*p0x + 3*u**2*t*p1x + 3*u*t**2*p2x + t**3*p3x
-                ry = u**3*p0y + 3*u**2*t*p1y + 3*u*t**2*p2y + t**3*p3y
-            elif cmd == "Q":
-                # Quadratic bezier: B(t) = (1-t)^2*P0 + 2(1-t)*t*P1 + t^2*P2
-                p0x, p0y = seg_start
-                p1x, p1y = seg_node["cx"], seg_node["cy"]
-                p2x, p2y = seg_node["x"], seg_node["y"]
-                u = 1 - t
-                rx = u**2*p0x + 2*u*t*p1x + t**2*p2x
-                ry = u**2*p0y + 2*u*t*p1y + t**2*p2y
-            else:
-                # Line: midpoint
-                rx = (seg_start[0] + seg_node.get("x", 0)) / 2
-                ry = (seg_start[1] + seg_node.get("y", 0)) / 2
-            mid_x = (gx + rx * gw) * scale_x
-            mid_y = (gy + ry * gh) * scale_y
+    if segments:
+        seg_start, seg_node = segments[len(segments) // 2]
+        cmd = seg_node.get("cmd", "L")
+        t = 0.5
+        if cmd == "C":
+            p0x, p0y = seg_start
+            p1x, p1y = seg_node["c1x"], seg_node["c1y"]
+            p2x, p2y = seg_node["c2x"], seg_node["c2y"]
+            p3x, p3y = seg_node["x"], seg_node["y"]
+            u = 1 - t
+            rx = u**3*p0x + 3*u**2*t*p1x + 3*u*t**2*p2x + t**3*p3x
+            ry = u**3*p0y + 3*u**2*t*p1y + 3*u*t**2*p2y + t**3*p3y
+        elif cmd == "Q":
+            p0x, p0y = seg_start
+            p1x, p1y = seg_node["cx"], seg_node["cy"]
+            p2x, p2y = seg_node["x"], seg_node["y"]
+            u = 1 - t
+            rx = u**2*p0x + 2*u*t*p1x + t**2*p2x
+            ry = u**2*p0y + 2*u*t*p1y + t**2*p2y
         else:
-            mid_x = (gx + gw / 2) * scale_x
-            mid_y = (gy + gh / 2) * scale_y
+            rx = (seg_start[0] + seg_node.get("x", 0)) / 2
+            ry = (seg_start[1] + seg_node.get("y", 0)) / 2
+        mid_x = gx + rx * gw
+        mid_y = gy + ry * gh
+    else:
+        mid_x = gx + gw / 2
+        mid_y = gy + gh / 2
 
-        tx = px_to_emu(mid_x - box_w * scale_x / 2)
-        ty = px_to_emu(mid_y - box_h * scale_y / 2)
-        tw = px_to_emu(box_w * scale_x)
-        th = px_to_emu(box_h * scale_y)
-
-        tbox = slide.shapes.add_textbox(tx, ty, tw, th)
-        tf = tbox.text_frame
-        tf.word_wrap = True
-        first = True
-        for text, size, bold in text_lines:
-            if first:
-                p = tf.paragraphs[0]
-                first = False
-            else:
-                p = tf.add_paragraph()
-            p.clear()
-            run = p.add_run()
-            run.text = text
-            run.font.size = Pt(size)
-            run.font.bold = bold
-            if rgb:
-                run.font.color.rgb = RGBColor(*rgb)
-            p.alignment = PP_ALIGN.CENTER
+    _add_line_curve_textbox(slide, record, geom, scale_x, scale_y,
+                            mid_x=mid_x, mid_y=mid_y)
+    return shape
 
 
 def _add_seqblock(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -1088,9 +1318,9 @@ def _add_isocube(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
     _apply_line_style(shape.line, style)
     _apply_fill_style(shape.fill, style)
 
-    meta = record.get("meta", {})
-    _add_text_to_shape(shape, meta, style.get("text", {}))
+    _add_text_to_shape(shape, record, style.get("text", {}))
     _apply_rotation(shape, geom)
+    return shape
 
 
 def _add_orthocurve(slide, record: Dict[str, Any], scale_x: float, scale_y: float):
@@ -1154,7 +1384,8 @@ def _add_orthocurve(slide, record: Dict[str, Any], scale_x: float, scale_y: floa
     # ── Styles ──
     style = record.get("style", {})
     _apply_line_style(shape.line, style)
-    # No fill for open polylines
+    # Open polyline — no fill, otherwise PowerPoint paints the implied
+    # region between start and end of the path with its default theme fill.
     shape.fill.background()
 
     # ── Arrowheads (same XML approach as _add_curve) ──
@@ -1178,56 +1409,15 @@ def _add_orthocurve(slide, record: Dict[str, Any], scale_x: float, scale_y: floa
             tail_end.set("type", "triangle")
 
     # ── Text label at polyline midpoint ──
-    meta = record.get("meta", {})
-    text_style = style.get("text", {})
-    text_color = text_style.get("color", "#000000")
-    rgb = hex_to_rgb(text_color)
-
-    text_lines: List[Tuple[str, float, bool]] = []  # (text, size_pt, bold)
-    if meta.get("label"):
-        text_lines.append((meta["label"], meta.get("label_size", 12), True))
-    if meta.get("tech"):
-        text_lines.append((f"[{meta['tech']}]", meta.get("tech_size", 10), False))
-    if meta.get("note"):
-        text_lines.append((meta["note"], meta.get("note_size", 10), False))
-
-    if text_lines:
-        max_size = max(sz for _, sz, _ in text_lines)
-        longest = max(text_lines, key=lambda t: len(t[0]))[0]
-        box_w = max(50, len(longest) * max_size * 0.6 + 20)
-        box_h = sum(sz * 1.5 for _, sz, _ in text_lines) + 10
-
-        # Midpoint of polyline (middle segment midpoint)
-        mid_idx = len(points) // 2
-        prev_idx = max(0, mid_idx - 1)
-        mid_rx = (points[prev_idx][0] + points[mid_idx][0]) / 2
-        mid_ry = (points[prev_idx][1] + points[mid_idx][1]) / 2
-        mid_x = (geom.get("x", 0) + mid_rx * geom.get("w", 0)) * scale_x
-        mid_y = (geom.get("y", 0) + mid_ry * geom.get("h", 0)) * scale_y
-
-        tx = px_to_emu(mid_x - box_w * scale_x / 2)
-        ty = px_to_emu(mid_y - box_h * scale_y / 2)
-        tw = px_to_emu(box_w * scale_x)
-        th = px_to_emu(box_h * scale_y)
-
-        tbox = slide.shapes.add_textbox(tx, ty, tw, th)
-        tf = tbox.text_frame
-        tf.word_wrap = True
-        first = True
-        for text, size, bold in text_lines:
-            if first:
-                p = tf.paragraphs[0]
-                first = False
-            else:
-                p = tf.add_paragraph()
-            p.clear()
-            run = p.add_run()
-            run.text = text
-            run.font.size = Pt(size)
-            run.font.bold = bold
-            if rgb:
-                run.font.color.rgb = RGBColor(*rgb)
-            p.alignment = PP_ALIGN.CENTER
+    mid_idx = len(points) // 2
+    prev_idx = max(0, mid_idx - 1)
+    mid_rx = (points[prev_idx][0] + points[mid_idx][0]) / 2
+    mid_ry = (points[prev_idx][1] + points[mid_idx][1]) / 2
+    mid_x = geom.get("x", 0) + mid_rx * geom.get("w", 0)
+    mid_y = geom.get("y", 0) + mid_ry * geom.get("h", 0)
+    _add_line_curve_textbox(slide, record, geom, scale_x, scale_y,
+                            mid_x=mid_x, mid_y=mid_y)
+    return shape
 
 
 def export_to_pptx(
@@ -1235,6 +1425,7 @@ def export_to_pptx(
     output_path: str,
     scene_rect: Optional[Dict[str, float]] = None,
     background_png: Optional[str] = None,
+    port_positions: Optional[Dict[str, tuple]] = None,
 ) -> None:
     """
     Export annotations to a PowerPoint file.
@@ -1244,18 +1435,29 @@ def export_to_pptx(
         output_path: Path to save the .pptx file
         scene_rect: Scene rectangle with x, y, w, h (for scaling)
         background_png: Optional path to background image
+        port_positions: Optional ``{port_ann_id: (scene_x, scene_y)}`` mapping
+            for ports — the port record stores its position as a perimeter
+            ``t`` on its parent, not an absolute x/y, so the caller (canvas
+            side) supplies the resolved scene position so the export can
+            place the port and route smart connectors through it.
     """
+    if port_positions is None:
+        port_positions = {}
     prs = Presentation()
 
     # Set slide dimensions based on scene rect
     if scene_rect:
         scene_w = scene_rect.get("w", 800)
         scene_h = scene_rect.get("h", 600)
+        scene_x = scene_rect.get("x", 0)
+        scene_y = scene_rect.get("y", 0)
         prs.slide_width = px_to_emu(scene_w)
         prs.slide_height = px_to_emu(scene_h)
     else:
         scene_w = 800
         scene_h = 600
+        scene_x = 0
+        scene_y = 0
 
     # Use blank layout
     blank_layout = prs.slide_layouts[6]  # Blank layout
@@ -1265,17 +1467,27 @@ def export_to_pptx(
     scale_x = 1.0
     scale_y = 1.0
 
-    # Add background image if provided
+    # Add background image if provided.  The scene rect typically extends
+    # beyond the PNG by the canvas margin (_update_scene_rect adds 50px on
+    # each side); stretching the PNG to fill the whole slide would scale
+    # PNG content up by that margin amount, so PNG features then look ~2 %
+    # bigger than the annotation overlay positioned at raw scene coords.
+    # Instead, place the PNG at its native pixel size at scene origin
+    # (0, 0), translated so that scene_rect's origin maps to slide (0, 0).
     if background_png:
         try:
-            from pptx.util import Inches
             import os
             if os.path.exists(background_png):
+                from PIL import Image
+                Image.MAX_IMAGE_PIXELS = None
+                with Image.open(background_png) as _im:
+                    png_w_px, png_h_px = _im.size
+                png_left = px_to_emu(0 - scene_x)
+                png_top = px_to_emu(0 - scene_y)
                 slide.shapes.add_picture(
                     background_png,
-                    0, 0,
-                    prs.slide_width,
-                    prs.slide_height
+                    png_left, png_top,
+                    px_to_emu(png_w_px), px_to_emu(png_h_px),
                 )
         except Exception:
             pass  # Skip if image can't be added
@@ -1298,35 +1510,123 @@ def export_to_pptx(
         key=lambda a: a.get("z", 0)
     )
 
+    # One pass to (a) inject the port's absolute scene position into the
+    # record (ports store t along the parent's perimeter, not an absolute
+    # x/y) and (b) shift every coord by -scene_rect.origin so scene (0, 0)
+    # maps to slide (0, 0).  Otherwise items would land at their raw scene
+    # coords while the PNG was already translated by the same amount above,
+    # and the two would offset by the canvas margin.
+    _shifted: List[Dict[str, Any]] = []
+    for _rec in sorted_annotations:
+        _rc = dict(_rec)
+        _g = dict(_rc.get("geom", {}))
+        if _rc.get("kind") == "port":
+            _pid = _rc.get("id", "")
+            if _pid in port_positions:
+                _px, _py = port_positions[_pid]
+                _g["x"] = _px
+                _g["y"] = _py
+        if "x" in _g:
+            _g["x"] = _g["x"] - scene_x
+        if "y" in _g:
+            _g["y"] = _g["y"] - scene_y
+        if "x1" in _g:
+            _g["x1"] = _g["x1"] - scene_x
+            _g["y1"] = _g["y1"] - scene_y
+        if "x2" in _g:
+            _g["x2"] = _g["x2"] - scene_x
+            _g["y2"] = _g["y2"] - scene_y
+        _rc["geom"] = _g
+        _shifted.append(_rc)
+    sorted_annotations = _shifted
+
+    # Pre-pass: map each parent shape (by ann_id) to the list of its child
+    # port records, so we know which shapes need to be wrapped in a group
+    # containing the parent + its ports.
+    parent_id_to_ports: Dict[str, List[Dict[str, Any]]] = {}
+    for _rec in sorted_annotations:
+        if _rec.get("kind") == "port":
+            _ppid = _rec.get("parent_id")
+            if _ppid:
+                parent_id_to_ports.setdefault(_ppid, []).append(_rec)
+
+    # Track pptx shapes by ann_id so deferred smart connectors can attach
+    # to them via begin_connect/end_connect.  Track ports already placed
+    # inside a group so the main loop doesn't add them again on the slide.
+    ann_id_to_pptx_shape: Dict[str, Any] = {}
+    processed_ports: set = set()
+    deferred_connectors: List[Dict[str, Any]] = []
+
+    _PORTEABLE_DISPATCH = {
+        "rect":         _add_rectangle,
+        "roundedrect":  _add_rounded_rectangle,
+        "ellipse":      _add_ellipse,
+        "hexagon":      _add_hexagon,
+        "cylinder":     _add_cylinder,
+        "blockarrow":   _add_blockarrow,
+        "polygon":      _add_polygon,
+        "isocube":      _add_isocube,
+    }
+
     # Add each shape to the slide
     for record in sorted_annotations:
         kind = record.get("kind", "")
+        ann_id = record.get("id", "")
 
-        if kind == "rect":
-            _add_rectangle(slide, record, scale_x, scale_y)
-        elif kind == "roundedrect":
-            _add_rounded_rectangle(slide, record, scale_x, scale_y)
-        elif kind == "ellipse":
-            _add_ellipse(slide, record, scale_x, scale_y)
+        if kind == "port":
+            if ann_id in processed_ports:
+                continue
+            shape = _add_port(slide.shapes, record, scale_x, scale_y)
+            if ann_id:
+                ann_id_to_pptx_shape[ann_id] = shape
+            continue
+
+        # Lines / curves connected to ports are deferred so they can be
+        # emitted as PowerPoint smart connectors with begin/end_connect.
+        if kind in ("line", "curve", "orthocurve") and record.get("ports"):
+            deferred_connectors.append(record)
+            continue
+
+        # If this is a porteable shape that owns child ports, build a group
+        # so the shape and its ports move together in PowerPoint.
+        child_ports = parent_id_to_ports.get(ann_id) or []
+        handler = _PORTEABLE_DISPATCH.get(kind)
+        if handler is not None and child_ports:
+            grp = slide.shapes.add_group_shape()
+            shape = handler(grp, record, scale_x, scale_y)
+            if ann_id and shape is not None:
+                ann_id_to_pptx_shape[ann_id] = shape
+            for port_rec in child_ports:
+                port_shape = _add_port(grp.shapes, port_rec, scale_x, scale_y)
+                pid = port_rec.get("id")
+                if pid:
+                    ann_id_to_pptx_shape[pid] = port_shape
+                    processed_ports.add(pid)
+            continue
+
+        # Default dispatch — no grouping needed.
+        if handler is not None:
+            shape = handler(slide, record, scale_x, scale_y)
+            if ann_id and shape is not None:
+                ann_id_to_pptx_shape[ann_id] = shape
         elif kind == "line":
             _add_line(slide, record, scale_x, scale_y)
         elif kind == "text":
             _add_text(slide, record, scale_x, scale_y)
-        elif kind == "hexagon":
-            _add_hexagon(slide, record, scale_x, scale_y)
-        elif kind == "cylinder":
-            _add_cylinder(slide, record, scale_x, scale_y)
-        elif kind == "blockarrow":
-            _add_blockarrow(slide, record, scale_x, scale_y)
-        elif kind == "polygon":
-            _add_polygon(slide, record, scale_x, scale_y)
         elif kind == "curve":
             _add_curve(slide, record, scale_x, scale_y)
-        elif kind == "isocube":
-            _add_isocube(slide, record, scale_x, scale_y)
         elif kind == "orthocurve":
             _add_orthocurve(slide, record, scale_x, scale_y)
         elif kind == "seqblock":
             _add_seqblock(slide, record, scale_x, scale_y)
+
+    # Second pass — deferred port-attached lines/curves become smart
+    # connectors with begin_connect/end_connect so they auto-route as the
+    # connected shapes move in PowerPoint.
+    for record in deferred_connectors:
+        _add_smart_connector(
+            slide, record, ann_id_to_pptx_shape, port_positions,
+            scale_x, scale_y, scene_x, scene_y,
+        )
 
     prs.save(output_path)

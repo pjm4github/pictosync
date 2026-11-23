@@ -1,0 +1,224 @@
+@startuml t_state_tcp_connection_protocol
+title TCP Connection State Machine\n(RFC 793 + Modern Extensions: TFO, QUIC-handoff)
+
+skinparam state {
+    BackgroundColor #F3E5F5
+    BorderColor #6A1B9A
+    FontSize 10
+    ArrowColor #444444
+}
+skinparam state<<ESTABLISHED>> {
+    BackgroundColor #E8F5E9
+    BorderColor #2E7D32
+}
+skinparam state<<CLOSING>> {
+    BackgroundColor #FFF8E1
+    BorderColor #F57F17
+}
+skinparam state<<ERROR>> {
+    BackgroundColor #FFEBEE
+    BorderColor #B71C1C
+}
+skinparam state<<TIMEWAIT>> {
+    BackgroundColor #E3F2FD
+    BorderColor #0D47A1
+}
+
+[*] --> CLOSED
+
+state "CLOSED" as CLOSED {
+    CLOSED : entry / release all resources\n          close socket fd\n          free TCB
+    CLOSED : do / listen for passive open\n         or await active open cmd
+}
+
+' ─── Active open path ────────────────────────────────────────────────────────
+state "SYN_SENT" as SYN_SENT {
+    SYN_SENT : entry / allocate TCB\n            select ISN (random 32-bit)\n            send SYN(seq=ISN)\n            start retransmit timer(3s, max 6 retries)
+    SYN_SENT : do / await SYN-ACK\n          exponential backoff on retry
+    SYN_SENT : exit / cancel retransmit timer
+}
+
+' ─── Passive open path ───────────────────────────────────────────────────────
+state "LISTEN" as LISTEN {
+    LISTEN : entry / bind socket to port\n           set SO_REUSEADDR\n           backlog queue = 128
+    LISTEN : do / accept incoming SYN segments\n        maintain SYN queue (incomplete)\n        maintain accept queue (complete)
+    LISTEN : exit / flush SYN queue
+}
+
+state "SYN_RECEIVED" as SYN_RECEIVED {
+    SYN_RECEIVED : entry / allocate child TCB\n               record client ISN\n               select server ISN\n               send SYN-ACK(seq=ISN, ack=cISN+1)\n               start SYN-ACK retransmit timer
+    SYN_RECEIVED : do / await ACK (3WHS completion)\n             or TFO cookie validation
+}
+
+' ─── Established ─────────────────────────────────────────────────────────────
+state "ESTABLISHED" as ESTABLISHED <<ESTABLISHED>> {
+    state "DATA_TRANSFER" as DT {
+        state "IDLE" as EST_IDLE
+        state "SENDING" as EST_SEND
+        state "RECEIVING" as EST_RECV
+        state "CONGESTION_CONTROL" as EST_CC
+
+        [*] --> EST_IDLE
+        EST_IDLE --> EST_SEND : app_write(data)\n/ segment and enqueue
+        EST_IDLE --> EST_RECV : segment_arrived\n/ deliver to app buffer
+        EST_SEND --> EST_CC : cwnd_exceeded\nor loss_detected\n/ enter congestion avoidance
+        EST_CC --> EST_SEND : cwnd_recovered\n(AIMD or CUBIC)
+        EST_SEND --> EST_IDLE : send_buffer_empty\n/ all ACKed
+        EST_RECV --> EST_IDLE : recv_buffer_drained\n/ app read complete
+        EST_RECV --> EST_RECV : segment_arrived\n[out_of_order]\n/ SACK reorder buffer
+    }
+
+    state "KEEPALIVE" as KA {
+        KA : do / send keepalive probe every 75s\n       after 2hr idle\n       max 9 probes before reset
+    }
+
+    DT --> KA : idle_timeout(7200s)
+    KA --> DT : data_activity\nor keepalive_ack
+
+    ESTABLISHED : entry / notify app: connection ready\n               initialize: cwnd=1MSS\n               ssthresh=65535\n               rtt_estimate=0
+    ESTABLISHED : do / Nagle algorithm\n            delayed ACK (200ms)\n            SACK option processing
+}
+
+' ─── Active close path ───────────────────────────────────────────────────────
+state "FIN_WAIT_1" as FW1 <<CLOSING>> {
+    FW1 : entry / send FIN(seq=snd_nxt)\n        increment snd_nxt\n        start FIN retransmit timer
+    FW1 : do / still receive data from peer\n      deliver to app
+}
+
+state "FIN_WAIT_2" as FW2 <<CLOSING>> {
+    FW2 : entry / our FIN acknowledged\n        start FIN_WAIT_2 timer(60s)
+    FW2 : do / continue receiving data\n      deliver to app buffer
+    FW2 : exit / cancel FIN_WAIT_2 timer
+}
+
+state "CLOSING" as CLOSING_STATE <<CLOSING>> {
+    CLOSING_STATE : entry / simultaneous close detected\n                 both sides sent FIN concurrently
+    CLOSING_STATE : do / await ACK of our FIN
+}
+
+state "TIME_WAIT" as TIME_WAIT <<TIMEWAIT>> {
+    TIME_WAIT : entry / start 2MSL timer (2 × 60s = 120s)\n               log connection quad: src_ip:port dst_ip:port
+    TIME_WAIT : do / absorb any delayed duplicate segments\n          respond to retransmitted FIN with ACK
+    TIME_WAIT : exit / release port binding\n              quad available for reuse
+}
+
+' ─── Passive close path ──────────────────────────────────────────────────────
+state "CLOSE_WAIT" as CLOSE_WAIT <<CLOSING>> {
+    CLOSE_WAIT : entry / received FIN from peer\n               send ACK(ack=rcv_nxt)\n               notify app: EOF received
+    CLOSE_WAIT : do / app may continue sending data\n           app must call close() to proceed
+    CLOSE_WAIT : exit / app called close()
+}
+
+state "LAST_ACK" as LAST_ACK <<CLOSING>> {
+    LAST_ACK : entry / send FIN(seq=snd_nxt)\n             start LAST_ACK retransmit timer(30s)
+    LAST_ACK : do / await ACK of our FIN\n          if timeout: retransmit FIN
+}
+
+' ─── Error states ────────────────────────────────────────────────────────────
+state "RESET" as RESET <<ERROR>> {
+    RESET : entry / send RST if not already received\n          log: reason, seq, ack numbers
+    RESET : do / notify app: connection reset\n       release all buffers
+    RESET : exit / discard all queued segments
+}
+
+state "SYN_FLOOD_DEFENSE" as SYN_FLOOD <<ERROR>> {
+    state "COOKIE_GENERATION" as COOKIE_GEN
+    state "COOKIE_VALIDATION" as COOKIE_VAL
+    state "FALLBACK_LISTEN" as FB_LISTEN
+
+    [*] --> COOKIE_GEN
+    COOKIE_GEN : do / generate SYN cookie:\n               HMAC(secret, src_ip, src_port,\n               dst_ip, dst_port, timestamp)
+    COOKIE_GEN --> COOKIE_VAL : syn_ack_sent_with_cookie
+    COOKIE_VAL --> [*] : valid_cookie_in_ack\n/ restore TCB from cookie
+    COOKIE_VAL --> FB_LISTEN : invalid_cookie\n/ drop silently
+    FB_LISTEN --> COOKIE_GEN : new_syn_arrives
+}
+
+' ─── TFO (TCP Fast Open) extension ──────────────────────────────────────────
+state "TFO_COOKIE_REQUEST" as TFO_REQ {
+    TFO_REQ : entry / send SYN with TFO option\n            request cookie from server
+    TFO_REQ : do / await SYN-ACK with cookie
+}
+
+state "TFO_DATA_PENDING" as TFO_DATA {
+    TFO_DATA : entry / send SYN + TFO_cookie + data\n             (up to 1460 bytes in SYN)
+    TFO_DATA : do / await SYN-ACK\n          server may process data before 3WHS
+}
+
+' ─── Main transitions ────────────────────────────────────────────────────────
+
+' Passive open
+CLOSED --> LISTEN : passive_open\n/ bind(port)\n/ listen(backlog)
+LISTEN --> SYN_RECEIVED : SYN_received\n[!syn_flood_threshold]\n/ alloc_child_TCB()
+LISTEN --> SYN_FLOOD : SYN_received\n[syn_queue_full\nor rate > threshold]
+SYN_FLOOD --> LISTEN : flood_subsided\n[rate < threshold / 2]
+
+' Active open
+CLOSED --> SYN_SENT : active_open\n/ connect(dst_ip, dst_port)\n/ send SYN
+CLOSED --> TFO_REQ : tfo_cookie_request\n/ send SYN+TFO_REQ
+CLOSED --> TFO_DATA : tfo_data_send\n[cookie_cached]\n/ send SYN+cookie+data
+TFO_REQ --> SYN_SENT : SYN-ACK_received_with_cookie\n/ cache cookie\n/ send ACK
+TFO_DATA --> ESTABLISHED : SYN-ACK_received\n[data_accepted]\n/ send ACK
+
+' 3-way handshake completions
+SYN_SENT --> ESTABLISHED : SYN-ACK_received\n/ send ACK(ack=server_ISN+1)\n/ notify app: connected
+SYN_RECEIVED --> ESTABLISHED : ACK_received\n[ack==ISN+1]\n/ move to accept queue\n/ notify accept()
+
+' Simultaneous open
+SYN_SENT --> SYN_RECEIVED : SYN_received\n(simultaneous open)\n/ send SYN-ACK
+
+' Active close (initiator)
+ESTABLISHED --> FW1 : app_close()\n/ send FIN\n/ half-close
+FW1 --> FW2 : ACK_received\n[ack of our FIN]\n/ our FIN acknowledged
+FW1 --> CLOSING_STATE : FIN_received\n(simultaneous close)\n/ send ACK
+FW2 --> TIME_WAIT : FIN_received\n/ send ACK(ack=peer_FIN+1)
+CLOSING_STATE --> TIME_WAIT : ACK_received\n[ack of our FIN]
+TIME_WAIT --> CLOSED : 2MSL_expired\n/ release TCB
+
+' Passive close (receiver)
+ESTABLISHED --> CLOSE_WAIT : FIN_received\n/ send ACK\n/ notify app: EOF
+CLOSE_WAIT --> LAST_ACK : app_close()\n/ send FIN
+LAST_ACK --> CLOSED : ACK_received\n[ack of our FIN]\n/ release TCB
+
+' RST transitions (from any active state)
+SYN_SENT --> CLOSED : RST_received\nor retransmit_limit_exceeded\n/ connection refused
+SYN_RECEIVED --> LISTEN : RST_received\n/ discard child TCB
+ESTABLISHED --> RESET : RST_received\nor RST_sent [error]\n/ notify app: ECONNRESET
+RESET --> CLOSED : reset_complete
+FW1 --> RESET : RST_received
+FW2 --> RESET : RST_received
+CLOSE_WAIT --> RESET : RST_received
+
+' Timeout transitions
+SYN_SENT --> CLOSED : connect_timeout\n[retries==6]\n/ ETIMEDOUT
+LAST_ACK --> CLOSED : last_ack_timeout\n[retries==5]\n/ force close
+
+note right of TIME_WAIT
+    **2MSL = 120 seconds**
+    Prevents delayed duplicates from
+    previous connection instance from
+    corrupting new connection on same
+    4-tuple (src_ip:port, dst_ip:port).
+    SO_REUSEADDR bypasses for servers.
+    TCP timestamps (RFC 7323) allow
+    safe reuse with PAWS check.
+end note
+
+note left of ESTABLISHED
+    **Congestion control states (RFC 5681):**
+    - Slow Start: cwnd < ssthresh
+    - Congestion Avoidance: cwnd >= ssthresh
+    - Fast Retransmit: 3 dup-ACKs
+    - Fast Recovery: after retransmit
+    CUBIC (RFC 8312) replaces on Linux 2.6.19+
+end note
+
+note bottom of SYN_FLOOD
+    **SYN Cookie (RFC 4987):**
+    Encodes TCB into ISN — no memory
+    allocated until 3WHS completes.
+    Tradeoff: loses TCP options (SACK,
+    window scale) if not in cookie.
+end note
+
+@enduml

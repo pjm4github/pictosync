@@ -1,0 +1,69 @@
+---
+title: Synchronous and Asynchronous Token Streams
+---
+flowchart TB
+    classDef sync fill:#dbeafe,stroke:#1e40af
+    classDef async fill:#fee2e2,stroke:#991b1b
+    classDef shared fill:#fef3c7,stroke:#92400e
+
+    adc[ADC samples<br/>continuous]:::shared
+    pll[PLL: 60 Hz lock<br/>provides phase + cycle index]:::shared
+
+    subgraph SyncDetectors["Synchronous detectors (cycle-aligned)"]
+        direction LR
+        rms[per-cycle RMS]:::sync
+        harm[Harmonic extractor]:::sync
+        thd[THD window]:::sync
+        unbalance[Unbalance / seq components]:::sync
+        phase[Phase comparator]:::sync
+        rms ~~~ harm ~~~ thd ~~~ unbalance ~~~ phase
+    end
+
+    subgraph AsyncDetectors["Asynchronous detectors (sample-domain)"]
+        direction LR
+        edge[Edge / impulse]:::async
+        wavelet[Wavelet / matched filter]:::async
+        env[HF envelope]:::async
+        cusum[CUSUM]:::async
+        crest[Crest factor]:::async
+        edge ~~~ wavelet ~~~ env ~~~ cusum ~~~ crest
+    end
+
+    fusion[Fusion / scoring<br/>confidence-based promotion]:::shared
+
+    subgraph SyncStream["SYNC token stream"]
+        direction LR
+        s1["HARMONIC_3<br/>cycle=60, θ=0–360°"]:::sync
+        s2["SAG<br/>cycle=61–63, depth=0.7"]:::sync
+        s3["UNBALANCE<br/>cycle=62, neg_seq=0.42"]:::sync
+        s4["INTERRUPTION<br/>cycle=65+"]:::sync
+        s1 ~~~ s2 ~~~ s3 ~~~ s4
+    end
+
+    subgraph AsyncStream["ASYNC token stream"]
+        direction LR
+        a1["IMPULSE<br/>t=1.004s"]:::async
+        a2["ARC_EVENT<br/>t=1.004s, conf=0.71"]:::async
+        a3["BURST<br/>t=1.018s"]:::async
+        a4["SWITCHING_TRANSIENT<br/>t=1.067s"]:::async
+        a1 ~~~ a2 ~~~ a3 ~~~ a4
+    end
+
+    interleave[Time-sorted unified stream<br/>SYNC + ASYNC interleaved by t_start]:::shared
+
+    parser[grammar_parser]:::shared
+
+    adc --> pll
+    adc --> SyncDetectors
+    adc --> AsyncDetectors
+    pll --> SyncDetectors
+
+    SyncDetectors --> fusion
+    AsyncDetectors --> fusion
+
+    fusion --> SyncStream
+    fusion --> AsyncStream
+
+    SyncStream --> interleave
+    AsyncStream --> interleave
+    interleave --> parser

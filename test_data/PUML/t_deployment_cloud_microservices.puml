@@ -1,0 +1,134 @@
+@startuml 01_cloud_microservices
+!define CLOUD_PROVIDER AWS
+title Cloud Microservices Deployment — Multi-Region
+
+skinparam node {
+    BackgroundColor #E8F4FD
+    BorderColor #2C7BB6
+    FontSize 12
+}
+skinparam artifact {
+    BackgroundColor #FFF9C4
+    BorderColor #F9A825
+}
+skinparam database {
+    BackgroundColor #E8F5E9
+    BorderColor #388E3C
+}
+skinparam component {
+    BackgroundColor #FCE4EC
+    BorderColor #C62828
+}
+
+node "AWS Region: us-east-1" as USE1 <<cloud>> {
+
+    node "VPC: 10.0.0.0/16" as VPC_E1 <<vpc>> {
+
+        node "Public Subnet 10.0.1.0/24" as PUB_E1 <<subnet>> {
+            component "Internet Gateway" as IGW_E1
+            component "NAT Gateway" as NAT_E1
+            component "Application Load Balancer" as ALB_E1 <<load_balancer>>
+        }
+
+        node "Private Subnet 10.0.2.0/24" as PRIV_E1 <<subnet>> {
+            node "ECS Cluster: prod-east" as ECS_E1 <<container_cluster>> {
+                component "api-gateway-svc\n:3000/tcp" as API_GW <<microservice>>
+                component "user-svc\n:8080/tcp" as USER_SVC <<microservice>>
+                component "order-svc\n:8081/tcp" as ORDER_SVC <<microservice>>
+                component "inventory-svc\n:8082/tcp" as INV_SVC <<microservice>>
+                component "notification-svc\n:8083/tcp" as NOTIF_SVC <<microservice>>
+            }
+        }
+
+        node "Data Subnet 10.0.3.0/24" as DATA_E1 <<subnet>> {
+            database "RDS Aurora\nPostgreSQL 15\nMulti-AZ" as RDS_E1 <<rds_cluster>> {
+                database "users_db" as DB_USERS
+                database "orders_db" as DB_ORDERS
+                database "inventory_db" as DB_INV
+            }
+            database "ElastiCache Redis 7\nCluster Mode" as REDIS_E1 <<cache_cluster>>
+        }
+    }
+
+    node "MSK Cluster: prod-kafka" as MSK_E1 <<managed_kafka>> {
+        component "Broker-1\nport 9092" as BROKER1
+        component "Broker-2\nport 9092" as BROKER2
+        component "Broker-3\nport 9092" as BROKER3
+    }
+
+    artifact "S3 Bucket\nprod-assets-e1" as S3_E1 <<object_storage>>
+    artifact "CloudWatch\nLogs + Metrics" as CW_E1 <<observability>>
+}
+
+node "AWS Region: eu-west-1" as EUW1 <<cloud>> {
+    node "VPC: 10.1.0.0/16" as VPC_EW <<vpc>> {
+        node "ECS Cluster: prod-eu" as ECS_EW <<container_cluster>> {
+            component "api-gateway-svc\n:3000/tcp" as API_GW_EU <<microservice>>
+            component "user-svc\n:8080/tcp" as USER_SVC_EU <<microservice>>
+        }
+        database "RDS Aurora\nRead Replica" as RDS_EW <<rds_replica>>
+    }
+    artifact "S3 Bucket\nprod-assets-eu" as S3_EW <<object_storage>>
+}
+
+node "On-Premises DC" as ONPREM <<datacenter>> {
+    node "Legacy ERP Host\n192.168.1.50" as ERP_HOST <<server>> {
+        component "SAP ERP\n:3300/tcp (RFC)" as SAP <<legacy>>
+        component "SFTP Server\n:22/tcp" as SFTP <<file_server>>
+    }
+    artifact "NFS Mount\n/data/exports" as NFS <<network_storage>>
+}
+
+node "CDN Edge: Global" as CDN <<cdn>> {
+    component "CloudFront\nDistribution" as CF <<edge>>
+}
+
+node "External Clients" as CLIENTS <<external>> {
+    component "Web Browser\nHTTPS/443" as BROWSER
+    component "Mobile App\nHTTPS/443" as MOBILE
+    component "Partner API\nHTTPS/443 + mTLS" as PARTNER
+}
+
+' ─── External → CDN → ALB ────────────────────────────────────────────────────
+BROWSER --> CF : "HTTPS"
+MOBILE --> CF : "HTTPS"
+PARTNER --> ALB_E1 : "HTTPS + mTLS"
+CF --> ALB_E1 : "HTTPS origin pull"
+ALB_E1 --> API_GW : "HTTP/2 :3000"
+
+' ─── Inter-service ────────────────────────────────────────────────────────────
+API_GW --> USER_SVC : "gRPC :8080"
+API_GW --> ORDER_SVC : "gRPC :8081"
+API_GW --> INV_SVC : "gRPC :8082"
+ORDER_SVC --> NOTIF_SVC : "async event"
+
+' ─── Service → Data ───────────────────────────────────────────────────────────
+USER_SVC --> DB_USERS : "JDBC/PG :5432"
+ORDER_SVC --> DB_ORDERS : "JDBC/PG :5432"
+INV_SVC --> DB_INV : "JDBC/PG :5432"
+USER_SVC --> REDIS_E1 : "RESP2 :6379"
+ORDER_SVC --> REDIS_E1 : "RESP2 :6379"
+
+' ─── Kafka ───────────────────────────────────────────────────────────────────
+ORDER_SVC --> BROKER1 : "produce: order.placed"
+INV_SVC ..> BROKER1 : "consume: order.placed"
+NOTIF_SVC ..> BROKER2 : "consume: order.placed"
+BROKER1 -- BROKER2
+BROKER2 -- BROKER3
+
+' ─── Cross-region ─────────────────────────────────────────────────────────────
+RDS_E1 --> RDS_EW : "async replication"
+S3_E1 --> S3_EW : "CRR (Cross-Region Replication)"
+ALB_E1 ..> API_GW_EU : "Route 53 latency routing"
+
+' ─── On-prem integration ──────────────────────────────────────────────────────
+INV_SVC --> SAP : "RFC over Direct Connect"
+SFTP --> NFS : "NFS mount :2049"
+ORDER_SVC ..> SFTP : "SFTP batch upload"
+
+' ─── Observability ────────────────────────────────────────────────────────────
+API_GW .r.> CW_E1 : "structured logs"
+USER_SVC .r.> CW_E1 : "metrics"
+ORDER_SVC .r.> CW_E1 : "metrics"
+
+@enduml

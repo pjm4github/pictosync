@@ -1,0 +1,176 @@
+---
+title: Signal-Tier DSP Pipeline — kernel internals + Stage 7c graph substrate + dsp_loader + notebook + kernel_scope
+config:
+  flowchart:
+    curve: linear
+---
+%%{init: {'flowchart': {'curve': 'linear'}}}%%
+flowchart TB
+    classDef runtime fill:#dbeafe,stroke:#1e40af,stroke-width:2px
+    classDef kernel fill:#fef3c7,stroke:#92400e,stroke-width:2px
+    classDef blob fill:#dcfce7,stroke:#166534,stroke-width:2px
+    classDef tool fill:#f3e8ff,stroke:#6b21a8,stroke-width:2px
+    classDef gate fill:#fee2e2,stroke:#991b1b,stroke-width:1px
+    classDef ui fill:#fdf2f8,stroke:#9d174d,stroke-width:2px
+    classDef artifact fill:#e0e7ff,stroke:#3730a3,stroke-width:2px
+    classDef proxy fill:#fef9c3,stroke:#854d0e,stroke-width:2px
+    classDef store fill:#cffafe,stroke:#155e75,stroke-width:1px
+    classDef future fill:#f1f5f9,stroke:#475569,stroke-dasharray:5 5
+    classDef note fill:#f1f5f9,stroke:#475569,stroke-dasharray:3 3
+
+    %% =====================================================================
+    %% LEFT — the runtime DSP pipeline (what runs in production)
+    %% =====================================================================
+    subgraph Runtime["dsp_frontend  (signal plane — hard real-time)"]
+        direction TB
+
+        adc["ADC samples<br/>(SV / 256 ksps × N channels)"]:::runtime
+        ingest["Ingestion<br/>origin_ns SEALED here<br/>(PTP + SV smpCnt)"]:::runtime
+        clock["clock.py · ClockEngine<br/>derives rs_block_meta:<br/>origin_ns / sample_index /<br/>cycle_index / sync_state<br/>PTP / Recovered / FreeRunning<br/>(hitless transition)"]:::runtime
+        ring["ring.py<br/>bounded SPSC / SPMC / MPSC<br/>(overflow = fault)"]:::runtime
+        arena["arena.py<br/>hard-capped allocator<br/>check_footprint_fits(VTCM)"]:::runtime
+
+        subgraph KernelBox["Kernel instance  (rms_window_v1 · lms_filter_v1 · …)"]
+            direction TB
+            vt["vtable<br/>init() · process() ·<br/>migrate() · teardown()"]:::kernel
+            subgraph BlobBox["State blob (runtime-owned · see 12)"]
+                direction LR
+                params["PARAMS<br/>read-only at process()<br/>window_len, threshold, mu,<br/>leakage, n_taps"]:::blob
+                working["WORKING<br/>opaque to CP<br/>delay line · accumulators ·<br/>cursors · LMS weights ·<br/>last_error_q15"]:::blob
+            end
+        end
+
+        bbsp["pingpong.py · BBSP discipline<br/>SafePointSequencer (3 states)<br/>PingPongBuffer (active + shadow)<br/>· see 14 for the mechanism"]:::runtime
+        interleave["interleave.py<br/>bounded reorder<br/>(target.REORDER_DEPTH)"]:::runtime
+        bridge["bridge.py · RelocatableCut<br/>byte → Arrow seam<br/>(samples_batch_to_blocks)"]:::runtime
+
+        subgraph HotSwap["Hot-swap surface (see 15 for full state machine)"]
+            direction TB
+            swap["swap.py · SwapEngine<br/>LOADED → VERIFIED → QUIESCING →<br/>SWAPPED → CANARYING →<br/>COMMITTED / ROLLEDBACK<br/>(+ Scorer, ReplayStream, DefaultScorer)"]:::runtime
+            snap["snapshot.py · KernelSnapshot envelope<br/>snapshot (both modes) /<br/>restore (BOOTSTRAP · signal_restore)"]:::runtime
+            parambank["swap.py · ParamBankWriter<br/>PARAMS fast path<br/>(no full-kernel swap)"]:::runtime
+            controlapi["control_api.py · ControlApi<br/>6 verbs + 6 *_slot variants<br/>+ register_graph / swap_in_graph<br/>(signal_restart_to_init &<br/>signal_admit_candidate · BOOTSTRAP)"]:::runtime
+        end
+
+        tokens[/"Token v1 stream<br/>(forward to fusion / bridge)"/]:::runtime
+
+        adc --> ingest --> clock
+        clock -->|"rs_block_meta<br/>passed INTO process()"| vt
+        ingest -->|"samples →"| ring
+        ring -->|"in_buf"| vt
+        arena -.->|"allocates"| BlobBox
+        vt -->|"reads PARAMS"| params
+        vt <-->|"mutates WORKING<br/>(state-in → state-out)"| working
+        vt -->|"out_buf →<br/>Token.from_meta(carry rule)"| interleave
+        interleave --> bridge --> tokens
+        bbsp -.->|"the ONLY moment<br/>CP touches the blob"| BlobBox
+        swap -.-> bbsp
+        snap -.-> bbsp
+        parambank -.-> bbsp
+        controlapi -.-> bbsp
+    end
+
+    %% =====================================================================
+    %% CENTER — Stage 7c graph substrate (multi-kernel admission + audit)
+    %% =====================================================================
+    subgraph GraphSubstrate["Stage 7c · multi-kernel graph substrate"]
+        direction TB
+        graph_ir["graph.py<br/>KernelNode · Edge · Graph<br/>· RunnableGraph<br/>(two-regime DAG: cycle_aligned /<br/>any_phase share one ClockEngine)"]:::runtime
+        admission["admission.py · admit()<br/>four-axis budget:<br/>VTCM · HVX · scalar · deadline<br/>(refuses graph with AdmissionError)"]:::runtime
+        executor["executor.py · GraphExecutor<br/>single-threaded topo per block ·<br/>two-regime BBSP cadence ·<br/>per-edge SPSC rings"]:::runtime
+        loader["loader.py · attest()<br/>four content checks:<br/>artifact_sha256 · timing_quality ·<br/>migrate_paths · abi_version<br/>+ presence-only signature"]:::runtime
+        audit_log[("audit.py · JsonlAuditBackend<br/>append-only JSONL<br/>(DuckDB backend stub for Stage 8)")]:::store
+
+        graph_ir --> admission --> executor
+        admission -.->|"writes record"| audit_log
+        loader -.->|"writes record"| audit_log
+    end
+    executor -.->|"drives one or more"| KernelBox
+    loader -.->|"admit-then-swap"| swap
+
+    %% =====================================================================
+    %% RIGHT — the wrapper around a kernel (dev / discovery side)
+    %% =====================================================================
+    subgraph Wrapper["dsp_loader  (toolchain — NOT a service, NOT on the bus)"]
+        direction TB
+
+        src["Kernel source<br/>(hand-written seed kernel<br/>or LLM-emitted candidate)"]:::tool
+        manifest["Declared manifest<br/>LAYOUT (footprint) · PARAMS schema ·<br/>golden vector · timing_quality_supported ·<br/>migrate_paths"]:::tool
+
+        subgraph CLI["dsp-loader CLI · 11 subcommands"]
+            direction TB
+            cmd_list["list · check · build<br/>(Stage 7a — gate stack)"]:::tool
+            cmd_probe["probe (Sidebar S2 — Token v1 Feather)"]:::tool
+            cmd_swap["snapshot · restore · swap · canary<br/>(Stage 7b Phase 8 — full-kernel)"]:::tool
+            cmd_graph["graph · attest · audit<br/>(Stage 7c Phase 7 — graph layer)"]:::tool
+        end
+
+        subgraph Gates["Gate stack  (Stage 7a check/build · Stage 7c attest)"]
+            direction TB
+            g1["abi_drift<br/>header ↔ ctypes mirror"]:::gate
+            g2["synthesizability<br/>AST: no dynamic alloc,<br/>no while-True, no wall-clock,<br/>no unsafe imports"]:::gate
+            g3["footprint<br/>declared total_len ≤<br/>VTCM_BUDGET_BYTES"]:::gate
+            g4["numeric_conformance<br/>float64 ref vs Q-format<br/>vs golden vector"]:::gate
+            g5["attested-load (Stage 7c §4)<br/>artifact_sha256 · timing_quality ·<br/>migrate_paths · abi_version ·<br/>signature presence"]:::gate
+            g1 --> g2 --> g3 --> g4 --> g5
+        end
+
+        art["&lt;kernel&gt;.artifact.json<br/>attestable kernel identity<br/>(content-hashed; Stage 9<br/>adds real signatures)"]:::artifact
+        prov["&lt;kernel&gt;.manifest.json<br/>provenance: gate results,<br/>max_numeric_error, built_at_utc,<br/>timing_quality, migrate_paths"]:::artifact
+        feather["probe-output Feather file<br/>(canonical Token v1)"]:::artifact
+
+        src --> CLI
+        manifest --> CLI
+        cmd_list --> Gates
+        cmd_swap -.->|"drives the hot-swap state machine<br/>against a kernel + artifact"| swap
+        cmd_graph -.->|"loads TOML graph spec → admit → audit"| GraphSubstrate
+        Gates -->|"ALL PASS →"| art
+        Gates -->|"ALL PASS →"| prov
+        Gates -.->|"any FAIL →<br/>no files written"| cmd_list
+        cmd_probe -->|"run kernel against<br/>on-disk samples"| feather
+    end
+
+    %% =====================================================================
+    %% BOTTOM — the kernel-author surfaces (notebook + Live kernel tab)
+    %% =====================================================================
+    subgraph Notebook["Notebook UI (S3 / S5) — Jupyter helpers"]
+        direction LR
+        nb_sine["make_sine · make_white_noise<br/>· write_samples_feather"]:::ui
+        nb_load["load_probe → ProbeView"]:::ui
+        nb_plots["plot_io · plot_drift ·<br/>plot_drift_comparison ·<br/>plot_vocabulary_drift ·<br/>plot_timing_quality_drift ·<br/>drift_dashboard (S5)"]:::ui
+        nb_sine -->|"--input"| cmd_probe
+        cmd_probe -->|"--output"| nb_load
+        nb_load --> nb_plots
+    end
+
+    subgraph KernelScope["kernel_scope · Live kernel tab (Sidebar S6)"]
+        direction LR
+        ks_runtime["KernelRuntime<br/>(in-process worker)<br/>· instantiates kernel ·<br/>private ControlApi · QTimer ticks"]:::ui
+        ks_source["SampleSource:<br/>SineSource · WhiteNoiseSource ·<br/>FeatherSource"]:::ui
+        ks_view["IdentityPanel · ScalarStripChart ·<br/>WeightViewer · ControlPanel ·<br/>seal-mode banner (gates Restore /<br/>Restart-to-init in non-BOOTSTRAP)"]:::ui
+        ks_source --> ks_runtime
+        ks_runtime -.->|"calls"| controlapi
+        ks_runtime -->|"live_metrics(blob)<br/>→ block_complete signal"| ks_view
+    end
+
+    %% =====================================================================
+    %% Framework signal proxy (Stage 7c Phase 8 — Decision 2C)
+    %% =====================================================================
+    proxy["framework · ag_cli + ag_supervisor<br/>agrid debug &lt;svc&gt; signal &lt;verb&gt; [k=v …]<br/>(local-IPC; signal plane owns dispatch)"]:::proxy
+    proxy -.->|"routes any signal verb to"| controlapi
+
+    %% =====================================================================
+    %% FUTURE — Stage 9 discovery loop (drives every entry point above)
+    %% =====================================================================
+    discovery["Stage 9 — remote discovery loop<br/>· drives dsp-loader build/probe/graph/<br/>  attest/swap/canary<br/>· drives framework signal proxy<br/>· A/B-scores artifacts via the canary window"]:::future
+
+    %% Kernel registration: the runtime loads what the toolchain built
+    art -.->|"registered, attested,<br/>loaded by SwapEngine"| swap
+
+    %% The discovery loop uses both the toolchain AND replays probe data
+    discovery -.->|"build / probe / graph"| CLI
+    discovery -.->|"signal …"| proxy
+    discovery -.->|"replays Token v1<br/>across candidates"| feather
+
+    %% Forward references
+    refs["See 12 for the data contract;<br/>14 for the BBSP mechanism;<br/>15 for the hot-swap state machine."]:::note

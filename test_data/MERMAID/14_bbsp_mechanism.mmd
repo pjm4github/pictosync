@@ -1,0 +1,109 @@
+---
+title: BBSP Mechanism — SafePointSequencer + PingPongBuffer + the six sanctioned CP-write paths
+config:
+  flowchart:
+    curve: linear
+---
+%%{init: {'flowchart': {'curve': 'linear'}}}%%
+flowchart TB
+    classDef state fill:#dbeafe,stroke:#1e40af,stroke-width:2px
+    classDef cur fill:#fef3c7,stroke:#92400e,stroke-width:2px
+    classDef sha fill:#dcfce7,stroke:#166534,stroke-width:2px
+    classDef verb fill:#f3e8ff,stroke:#6b21a8,stroke-width:2px
+    classDef seal fill:#fee2e2,stroke:#991b1b,stroke-width:2px
+    classDef guard fill:#e0e7ff,stroke:#3730a3,stroke-width:1px
+    classDef rule stroke-dasharray:4 3,stroke:#b91c1c
+    classDef note fill:#f1f5f9,stroke:#475569,stroke-dasharray:3 3
+
+    %% =====================================================================
+    %% 1. SafePointSequencer — the three-state machine that authorises every
+    %%    kernel block and every CP-write window
+    %% =====================================================================
+    subgraph SeqStates["SafePointSequencer · the BBSP state machine"]
+        direction LR
+        s_closed["BBSP_CLOSED<br/>(between blocks)"]:::state
+        s_running["KERNEL_RUNNING<br/>(process() in flight —<br/>NO CP access)"]:::state
+        s_open["BBSP_OPEN<br/>(safe-point window —<br/>CP may touch the blob)"]:::state
+
+        s_closed -->|"begin_block()"| s_running
+        s_running -->|"end_block()"| s_closed
+        s_closed -->|"bbsp().__enter__()"| s_open
+        s_open -->|"bbsp().__exit__()"| s_closed
+    end
+
+    %% Two violations the sequencer raises (BbspViolation):
+    viol_open["Opening BBSP while KERNEL_RUNNING<br/>→ BbspViolation"]:::rule
+    viol_block["Opening a block while BBSP_OPEN<br/>→ BbspViolation"]:::rule
+    s_running -.-> viol_open
+    s_open -.-> viol_block
+
+    %% =====================================================================
+    %% 2. PingPongBuffer — the two-slot blob double-buffer
+    %% =====================================================================
+    subgraph PingPong["PingPongBuffer · the double-buffer beneath the state machine"]
+        direction TB
+        cur["Current slot<br/>(kernel-owned)<br/>WORKING evolves here:<br/>weights · delay · cursors ·<br/>last_error · sum_sq"]:::cur
+        sha["Shadow slot<br/>(CP-accessible)<br/>CP stages writes here:<br/>snapshot copy, restore content,<br/>swap-candidate state"]:::sha
+        idx["slot_index ∈ {0, 1}<br/>names the current slot"]:::note
+
+        cur ---|"publish_to_shadow()<br/>copy current → shadow<br/>(canonical snapshot read<br/>at BBSP_OPEN)"| sha
+        sha ---|"commit_from_shadow()<br/>copy shadow → current<br/>(canonical restore /<br/>param-bank write at<br/>BBSP_CLOSED entry)"| cur
+        cur ---|"swap_at_bbsp()<br/>pointer-flip slot_index<br/>(no data move; used by<br/>swap_engine canary commit)"| sha
+    end
+
+    %% Sequencer gates the PingPong operations: every safe-point op runs
+    %% inside a BBSP_OPEN window opened from BBSP_CLOSED.
+    s_open -.->|"the ONLY state in which<br/>CP touches the blob"| PingPong
+
+    %% =====================================================================
+    %% 3. The SIX sanctioned CP-write paths into WORKING
+    %%
+    %% Every write path enters through one of these verbs. Anything else
+    %% is caught at CI time by the Phase-9 guard (no_kernel_state_writes).
+    %% =====================================================================
+    subgraph SanctionedWrites["The six sanctioned CP→WORKING paths · all BBSP-gated"]
+        direction TB
+        v_snap["snapshot.snapshot()<br/>BBSP-open read<br/>(both modes — even SEALED;<br/>forensics)"]:::verb
+        v_restore["snapshot.restore()<br/>whole-blob write<br/>@requires_bootstrap_mode<br/>('signal_restore')<br/>· BOOTSTRAP-only"]:::seal
+        v_restart["ControlApi.restart_to_init<br/>kernel.init(blob)<br/>@requires_bootstrap_mode<br/>('signal_restart_to_init')<br/>· BOOTSTRAP-only"]:::seal
+        v_migrate["swap.SwapEngine.quiesce_and_swap<br/>→ candidate.migrate(<br/>incumbent_blob, candidate_blob)<br/>(kernel writes WORKING;<br/>CP only routes)"]:::verb
+        v_admit["ControlApi.swap_in_graph<br/>graph-slot variant of restore<br/>@requires_bootstrap_mode<br/>('signal_admit_candidate')<br/>· BOOTSTRAP-only"]:::seal
+        v_param["ParamBankWriter.write<br/>· PARAMS region only<br/>(fast path · both modes;<br/>kernel reads next block)"]:::verb
+    end
+
+    v_snap -.->|"reads via shadow<br/>(publish_to_shadow)"| sha
+    v_restore -.->|"writes via shadow<br/>(commit_from_shadow)"| sha
+    v_restart -.->|"kernel.init writes<br/>current directly at BBSP"| cur
+    v_migrate -.->|"kernel.migrate writes<br/>candidate's WORKING<br/>from incumbent's bytes"| cur
+    v_admit -.->|"delegates to restore +<br/>preserves sequencer"| v_restore
+    v_param -.->|"PARAMS bytes only —<br/>WORKING untouched"| cur
+
+    %% =====================================================================
+    %% 4. The Phase-9 guard — every other write path is a CI failure
+    %% =====================================================================
+    subgraph Guard["Phase-9 always-on guard · no_kernel_state_writes"]
+        direction TB
+        scan["AST-scans dsp_frontend/src/dsp_frontend/<br/>for assignments to blob[…] or<br/>working_view[…] outside the<br/>sanctioned file allowlist."]:::guard
+        allow["Sanctioned files allowlist:<br/>snapshot.py · swap.py · pingpong.py<br/>+ kernels/&lt;name&gt;.py (kernel-owned WORKING)"]:::guard
+    end
+    Guard -.->|"fails CI on any<br/>unsanctioned CP-write<br/>to WORKING"| SanctionedWrites
+
+    %% =====================================================================
+    %% 5. Concrete WORKING example — Stage 7d LMS adaptive kernel
+    %% =====================================================================
+    subgraph LmsExample["Concrete WORKING example · Stage 7d LMS adaptive filter"]
+        direction TB
+        lms_w["weights[MAX_N_TAPS]<br/>Q1.31 int32 vector ·<br/>EVOLVES PER SAMPLE in process()<br/>(w[k] += μ·e·x[n-1-k])"]:::cur
+        lms_d["delay_line[MAX_N_TAPS]<br/>Q1.15 int16 vector ·<br/>shifts per sample"]:::cur
+        lms_e["last_error_q15 · int16<br/>surfaced to GUI by live_metrics()"]:::cur
+        lms_note["Snapshot captures (w, delay, cursors, error)<br/>at BBSP_OPEN. Restore writes them back to the<br/>same kernel at BBSP_OPEN under BOOTSTRAP. The<br/>resumed kernel continues adapting from the<br/>preserved trajectory — §5c assertion #2."]:::note
+        lms_w --> lms_e
+        lms_d --> lms_e
+        lms_e --> lms_note
+    end
+    LmsExample -.->|"the canonical proof of<br/>real evolving WORKING"| cur
+
+    %% =====================================================================
+    %% 6. Forward references
+    %% =====================================================================
+    refs["See diagram 12 for the data contract;<br/>diagram 15 for the hot-swap state machine<br/>that composes these BBSP primitives."]:::note

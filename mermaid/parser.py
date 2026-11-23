@@ -108,11 +108,18 @@ def detect_mermaid_svg(svg_path: str) -> Optional[str]:
     return None
 
 
-def parse_mermaid_svg_to_annotations(svg_path: str) -> Dict[str, Any]:
+def parse_mermaid_svg_to_annotations(
+    svg_path: str, normalize: bool = True,
+) -> Dict[str, Any]:
     """Parse a Mermaid-rendered SVG file into PictoSync annotation JSON.
 
     Args:
         svg_path: Path to the ``.svg`` file.
+        normalize: When ``True`` (default) the flat ``meta`` dicts are
+            converted to overlay-2.0 ``contents``.  Two-step mergers pass
+            ``False`` so they can match/enrich on the raw ``meta`` (which
+            carries ``src_id``, ``seq_role``, etc. that normalization drops)
+            and call ``_normalize_annotations`` themselves at the end.
 
     Returns:
         Annotation dict with ``version``, ``image``, and ``annotations`` keys.
@@ -150,7 +157,8 @@ def parse_mermaid_svg_to_annotations(svg_path: str) -> Dict[str, Any]:
         _apply_viewbox_offset(annotations, vb_x, vb_y)
 
     # ── Normalize and return ──
-    _normalize_annotations(annotations)
+    if normalize:
+        _normalize_annotations(annotations)
     return {
         "version": "draft-1",
         "image": {"width": canvas_w, "height": canvas_h},
@@ -364,21 +372,41 @@ def _extract_text(g_el: ET.Element, ns: str) -> str:
     """Extract text from a Mermaid SVG group (foreignObject or <text>).
 
     Handles both HTML-label mode (foreignObject with XHTML spans)
-    and plain SVG text mode.
+    and plain SVG text mode.  State-diagram nodes carry one
+    foreignObject per description line (title row + each ``STATE: text``
+    line) — accumulate text across every foreignObject and join with
+    newlines so multi-line state descriptions come through intact;
+    single-foreignObject nodes (flowchart, etc.) are unaffected since
+    the join over a single element is a no-op.
     """
-    # Try foreignObject first (default Mermaid output)
+    # Try foreignObject first (default Mermaid output).  Build text as a
+    # list of lines so an XHTML ``<br>`` inside a label (the way Mermaid
+    # state-diagram body descriptions stack visually) starts a new line in
+    # the extracted string.
+    fo_texts: List[str] = []
     for fo in g_el.iter(f"{{{ns}}}foreignObject"):
-        texts: List[str] = []
+        lines: List[List[str]] = [[]]
         for el in fo.iter():
+            tag = el.tag.rsplit("}", 1)[-1] if "}" in el.tag else el.tag
+            if tag.lower() == "br":
+                # The text that visually appears after this <br> is in its
+                # tail; start a fresh line and seed it with that tail.
+                lines.append([])
+                if el.tail and el.tail.strip():
+                    lines[-1].append(el.tail.strip())
+                continue
             if el.text and el.text.strip():
                 cls = el.get("class", "")
                 if cls and "fa-" in cls and not el.text.strip():
                     continue
-                texts.append(el.text.strip())
+                lines[-1].append(el.text.strip())
             if el.tail and el.tail.strip():
-                texts.append(el.tail.strip())
-        if texts:
-            return " ".join(texts)
+                lines[-1].append(el.tail.strip())
+        joined = "\n".join(" ".join(line) for line in lines if line)
+        if joined:
+            fo_texts.append(joined)
+    if fo_texts:
+        return "\n".join(fo_texts)
 
     # Also try XHTML namespace foreignObject content
     for fo in g_el.iter(f"{{{ns}}}foreignObject"):
@@ -525,6 +553,61 @@ def _get_text_color(node_g: ET.Element, ns: str) -> Optional[str]:
     return None
 
 
+def _expand_hex(color: str) -> str:
+    """Expand 3-digit hex (``#abc``) to 6-digit (``#aabbcc``); pass others through."""
+    if re.fullmatch(r"#[0-9a-fA-F]{3}", color):
+        return "#" + "".join(c * 2 for c in color[1:])
+    return color
+
+
+def _svg_label_text_colors(
+    root: ET.Element, ns: str,
+) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """Extract default node-, cluster-, and edge-label text colours from the
+    SVG ``<style>`` block.
+
+    Mermaid themes set label colour via CSS classes (``.label``,
+    ``.nodeLabel``, ``.cluster-label``, ``.edgeLabel``) rather than inline
+    attributes, so this resolves the diagram-wide default that
+    ``_get_text_color`` (inline-only) cannot see.  A per-element inline colour
+    still takes priority over this.  Edge labels usually inherit ``.label``, so
+    the edge colour falls back to the node colour when ``.edgeLabel`` sets none.
+
+    Returns:
+        ``(node_color, cluster_color, edge_color)`` — any may be ``None``.
+    """
+    css = "".join((st.text or "") for st in root.iter(f"{{{ns}}}style"))
+    if not css:
+        return None, None, None
+
+    def _color_from_body(body: str) -> Optional[str]:
+        m = re.search(
+            r"(?:^|;)\s*(?:color|fill)\s*:\s*"
+            r"(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)|[a-zA-Z]+)",
+            body,
+        )
+        if m and m.group(1).lower() not in (
+            "inherit", "currentcolor", "none", "revert",
+        ):
+            return _expand_hex(m.group(1))
+        return None
+
+    def _find(sel_patterns: List[str]) -> Optional[str]:
+        for selectors, body in re.findall(r"([^{}]+)\{([^}]*)\}", css):
+            if any(re.search(p, selectors) for p in sel_patterns):
+                c = _color_from_body(body)
+                if c:
+                    return c
+        return None
+
+    node_color = _find([r"\.nodeLabel(?![\w-])", r"\.label(?![\w-])"])
+    cluster_color = _find([r"\.cluster-label(?![\w-])"])
+    # Edge-label text inherits ``.label`` in Mermaid; the ``.edgeLabel`` rules
+    # set the background rect fill, not the text colour, so use the node colour.
+    edge_color = node_color
+    return node_color, cluster_color, edge_color
+
+
 def _text_from_el(t_el: ET.Element) -> str:
     """Get joined text from a single ``<text>`` element."""
     parts = list(t_el.itertext())
@@ -646,10 +729,55 @@ def _path_bbox(d: str) -> Optional[Tuple[float, float, float, float]]:
 # ─────────────────────────────────────────────────────────
 
 
+def _is_cylinder_path(d: str) -> bool:
+    """Heuristic: does an SVG path ``d`` describe a Mermaid cylinder (database)?
+
+    Mermaid draws a cylinder as flat elliptical arcs (``rx`` > ``ry``, with
+    consistent radii) for the top and bottom, joined by vertical line segments
+    and with **no** horizontal line segments.  That last point distinguishes it
+    from a rounded rectangle, whose path has horizontal top/bottom edges.
+    """
+    if not d:
+        return False
+    arcs: List[Tuple[float, float]] = []
+    has_vertical = False
+    has_horizontal = False
+    for m in re.finditer(r"([a-zA-Z])([^a-zA-Z]*)", d):
+        cmd = m.group(1).lower()
+        nums = [
+            float(n)
+            for n in re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", m.group(2))
+        ]
+        if cmd == "a" and len(nums) >= 2:
+            arcs.append((abs(nums[0]), abs(nums[1])))
+        elif cmd == "h":
+            has_horizontal = True
+        elif cmd == "v":
+            has_vertical = True
+        elif cmd == "l" and len(nums) >= 2:
+            dx, dy = nums[0], nums[1]
+            if abs(dx) < 0.5 and abs(dy) >= 0.5:
+                has_vertical = True
+            elif abs(dy) < 0.5 and abs(dx) >= 0.5:
+                has_horizontal = True
+    if len(arcs) < 2 or has_horizontal or not has_vertical:
+        return False
+    rx, ry = arcs[0]
+    consistent = all(abs(a[0] - rx) < 1.0 and abs(a[1] - ry) < 1.0 for a in arcs)
+    return consistent and rx > ry
+
+
 def _parse_node(
-    node_g: ET.Element, ns: str, ann_id: str
+    node_g: ET.Element, ns: str, ann_id: str,
+    default_text_color: str = "#333333",
 ) -> Optional[Dict[str, Any]]:
-    """Parse a single ``<g class="node ...">`` into an annotation dict."""
+    """Parse a single ``<g class="node ...">`` into an annotation dict.
+
+    Args:
+        default_text_color: Label colour to use when the node has no inline
+            colour (typically the diagram-wide colour from the SVG ``<style>``
+            block, resolved by :func:`_svg_label_text_colors`).
+    """
     tx, ty = _parse_translate(node_g.get("transform", ""))
     text = _extract_text(node_g, ns)
 
@@ -657,6 +785,36 @@ def _parse_node(
     rect_el = node_g.find(f"{{{ns}}}rect[@class]")
     if rect_el is None:
         rect_el = node_g.find(f"{{{ns}}}rect")
+    # State-diagram nodes nest the geometry rect inside an unnamed wrapper
+    # <g> (rect.class = "outer title-state") rather than directly under the
+    # node group, so the direct .find() above misses it.  Fall back to a
+    # recursive scan, preferring the obvious "outer" / "title" / "node-bkg"
+    # styling and otherwise the first rect with non-trivial width.  Skip
+    # any rect inside a <foreignObject> — those are HTML label backgrounds,
+    # not the node's silhouette.
+    if rect_el is None:
+        _fo_descendants = {
+            id(r) for fo in node_g.iter(f"{{{ns}}}foreignObject")
+            for r in fo.iter(f"{{{ns}}}rect")
+        }
+        _preferred = ("outer", "title-state", "node-bkg")
+        _fallback: Optional[ET.Element] = None
+        for r in node_g.iter(f"{{{ns}}}rect"):
+            if id(r) in _fo_descendants:
+                continue
+            _cls = r.get("class", "")
+            if any(tok in _cls for tok in _preferred):
+                rect_el = r
+                break
+            if _fallback is None:
+                try:
+                    _w = float(r.get("width", "0") or "0")
+                except ValueError:
+                    _w = 0.0
+                if _w > 5:
+                    _fallback = r
+        if rect_el is None:
+            rect_el = _fallback
     poly_el = node_g.find(f"{{{ns}}}polygon")
     circle_el = node_g.find(f"{{{ns}}}circle")
     ellipse_el = node_g.find(f"{{{ns}}}ellipse")
@@ -770,11 +928,15 @@ def _parse_node(
     elif path_el is not None:
         d = path_el.get("d", "")
         bx, by, bw, bh = _robust_path_bbox(d)
-        x = tx + bx
-        y = ty + by
+        # The shape <path> carries its own translate (Mermaid centres the node
+        # at the group transform and offsets the path by -half_w,-half_h), so
+        # add it — otherwise the path's local origin lands at the node centre.
+        ptx, pty = _parse_translate(path_el.get("transform", ""))
+        x = tx + ptx + bx
+        y = ty + pty + by
         w = bw
         h = bh
-        kind = "roundedrect"
+        kind = "cylinder" if _is_cylinder_path(d) else "roundedrect"
         # When Mermaid uses a two-path pattern (fill_path_el for background,
         # path_el for border), prefer fill from fill_path_el.
         if fill_path_el is not None:
@@ -792,11 +954,12 @@ def _parse_node(
             if d and pf and pf != "none":
                 bx, by, bw, bh = _robust_path_bbox(d)
                 if bw > 1 and bh > 1:
-                    x = tx + bx
-                    y = ty + by
+                    ptx, pty = _parse_translate(p.get("transform", ""))
+                    x = tx + ptx + bx
+                    y = ty + pty + by
                     w = bw
                     h = bh
-                    kind = "rect"
+                    kind = "cylinder" if _is_cylinder_path(d) else "rect"
                     fill_color = pf
                     stroke_color = _get_stroke(p) or stroke_color
                     break
@@ -812,14 +975,14 @@ def _parse_node(
     if kind == "polygon":
         geom["points"] = rel_points
 
-    text_color = _get_text_color(node_g, ns) or "#333333"
+    text_color = _get_text_color(node_g, ns) or default_text_color
     sw = stroke_width if stroke_width is not None else 1
 
     return {
         "id": ann_id,
         "kind": kind,
         "geom": geom,
-        "meta": {"label": text},
+        "meta": {"label": text, "text_color": text_color},
         "style": _make_shape_style(fill_color, stroke_color, text_color, sw),
     }
 
@@ -835,8 +998,15 @@ def _parse_edge_path(
     ann_id: str,
     edge_labels: List[Tuple[str, float, float]],
     edge_idx: int,
+    default_text_color: str = "#333333",
 ) -> Optional[Dict[str, Any]]:
-    """Parse a single edge ``<path>`` into a curve or line annotation."""
+    """Parse a single edge ``<path>`` into a curve or line annotation.
+
+    Args:
+        default_text_color: Edge-label colour from the SVG ``<style>`` block,
+            so a labelled edge's text matches the rendered diagram instead of
+            the line/curve kind-default colour.
+    """
     d = path_el.get("d", "")
     if not d:
         return None
@@ -899,7 +1069,7 @@ def _parse_edge_path(
                 "h": round(bh, 2),
                 "nodes": nodes,
             },
-            "meta": {"label": label},
+            "meta": {"label": label, "text_color": default_text_color},
             "style": style,
         }
 
@@ -917,7 +1087,7 @@ def _parse_edge_path(
             "x2": round(x2, 2),
             "y2": round(y2, 2),
         },
-        "meta": {"label": label},
+        "meta": {"label": label, "text_color": default_text_color},
         "style": style,
     }
 
@@ -927,8 +1097,15 @@ def _parse_cluster(
     ns: str,
     ann_id: str,
     all_annotations: List[Dict[str, Any]],
+    default_text_color: str = "#333333",
 ) -> Optional[Dict[str, Any]]:
-    """Parse a ``<g class="cluster">`` into a group annotation."""
+    """Parse a ``<g class="cluster">`` into a group annotation.
+
+    Args:
+        default_text_color: Title colour to use when the cluster has no inline
+            colour (the diagram-wide cluster-label colour from the SVG
+            ``<style>`` block).
+    """
     rect_el = cluster_g.find(f"{{{ns}}}rect")
     if rect_el is None:
         # Divider/alt clusters nest the rect inside an unnamed <g>
@@ -996,18 +1173,39 @@ def _parse_cluster(
     if sd and sd != "0":
         dash = "dashed"
 
+    text_color = _get_text_color(cluster_g, ns) or default_text_color
+
     return {
         "id": ann_id,
         "kind": "group",
         "geom": {"x": x, "y": y, "w": w, "h": h},
-        "meta": {"label": text},
-        "style": _make_shape_style(fill_color, stroke_color, stroke_width=sw, dash=dash),
+        "meta": {"label": text, "text_color": text_color},
+        "style": _make_shape_style(
+            fill_color, stroke_color, text_color, stroke_width=sw, dash=dash,
+        ),
     }
 
 
 # ─────────────────────────────────────────────────────────
 # Graph-based diagram parser (shared by Tier 1 types)
 # ─────────────────────────────────────────────────────────
+
+
+def _offset_annotation(ann: Dict[str, Any], ox: float, oy: float) -> None:
+    """Shift an annotation's geometry by ``(ox, oy)`` (no-op when both zero)."""
+    if not ox and not oy:
+        return
+    g = ann.get("geom", {})
+    if "x1" in g:  # line
+        g["x1"] = round(g["x1"] + ox, 2)
+        g["y1"] = round(g["y1"] + oy, 2)
+        g["x2"] = round(g["x2"] + ox, 2)
+        g["y2"] = round(g["y2"] + oy, 2)
+    else:  # rect / group / curve bbox (curve nodes are normalised 0-1)
+        if "x" in g:
+            g["x"] = round(g["x"] + ox, 2)
+        if "y" in g:
+            g["y"] = round(g["y"] + oy, 2)
 
 
 def _parse_graph_diagram(
@@ -1017,98 +1215,135 @@ def _parse_graph_diagram(
 ) -> List[Dict[str, Any]]:
     """Generic parser for diagrams that use nodes/edgePaths/edgeLabels/clusters groups.
 
-    Z-values mirror the SVG painting order (clusters → edges → nodes)
-    so that later-painted items appear on top on the PictoSync canvas.
+    Subgraphs that carry a ``direction`` directive make Mermaid emit a *nested*
+    layout: each subgraph becomes a ``<g class="root">`` inside the parent
+    ``nodes`` group, with its own ``clusters``/``nodes``/``edgePaths`` and a
+    translate offset.  This walks those contexts recursively, accumulating the
+    offset so nested clusters and nodes get absolute coordinates.  Flat diagrams
+    (no nesting) are unaffected since every accumulated offset is zero.
+
+    Z-values mirror the SVG painting order (clusters → edges → nodes) so that
+    later-painted items appear on top on the PictoSync canvas.
     """
-    nodes_g = _find_group_by_class(root, ns, "nodes")
-    edge_paths_g = _find_group_by_class(root, ns, "edgePaths")
-    edge_labels_g = _find_group_by_class(root, ns, "edgeLabels")
-    clusters_g = _find_group_by_class(root, ns, "clusters")
+    node_text_color, cluster_text_color, edge_text_color = (
+        _svg_label_text_colors(root, ns)
+    )
+    node_default = node_text_color or "#333333"
+    cluster_default = cluster_text_color or "#333333"
+    edge_default = edge_text_color or "#333333"
 
     annotations: List[Dict[str, Any]] = []
     next_id = _make_id_gen()
 
-    # Z-value tiers matching SVG painting order:
-    #   clusters (background)  → edges (middle)  → nodes (foreground)
-    # Within each tier, document order determines stacking.
-    z_cluster_base = 0
-    z_edge_base = 1000
-    z_node_base = 2000
+    # Shared z counters per tier (clusters behind, nodes in front) so the
+    # tiering holds across every nested context.
+    z = {"cluster": 0, "edge": 1000, "node": 2000}
 
-    # ── Clusters (lowest z — painted first in SVG) ──
-    if clusters_g is not None:
-        cluster_z = z_cluster_base
-        for cluster_g in clusters_g:
-            tag = _strip_ns(cluster_g.tag, ns)
-            if tag != "g":
-                continue
-            ann = _parse_cluster(cluster_g, ns, next_id(), annotations)
-            if ann is not None:
-                svg_id = cluster_g.get("id", "")
-                if svg_id:
-                    ann["meta"]["src_id"] = svg_id
-                ann["z"] = cluster_z
-                cluster_z += 1
-                annotations.append(ann)
+    def _direct_group(parent: ET.Element, name: str) -> Optional[ET.Element]:
+        for c in parent:
+            if _strip_ns(c.tag, ns) == "g" and name in c.get("class", "").split():
+                return c
+        return None
 
-    # ── Edge labels (collected for pairing with paths) ──
-    edge_labels: List[Tuple[str, float, float]] = []
-    if edge_labels_g is not None:
-        for label_g in edge_labels_g:
-            tag = _strip_ns(label_g.tag, ns)
-            if tag != "g":
-                continue
-            tx, ty = _parse_translate(label_g.get("transform", ""))
-            text = _extract_text(label_g, ns)
-            edge_labels.append((text, tx, ty))
+    def _process(container: ET.Element, ox: float, oy: float) -> None:
+        clusters_g = _direct_group(container, "clusters")
+        edge_paths_g = _direct_group(container, "edgePaths")
+        edge_labels_g = _direct_group(container, "edgeLabels")
+        nodes_g = _direct_group(container, "nodes")
 
-    # ── Edge paths (middle z) ──
-    if edge_paths_g is not None:
-        edge_idx = 0
-        edge_z = z_edge_base
-        for child in edge_paths_g:
-            tag = _strip_ns(child.tag, ns)
-            if tag == "path":
-                ann = _parse_edge_path(child, ns, next_id(), edge_labels, edge_idx)
+        # Groups not direct children (e.g. <svg> wraps a <g class="root">):
+        # descend into child <g> wrappers, accumulating their transform.
+        if nodes_g is None and clusters_g is None and edge_paths_g is None:
+            for c in container:
+                if _strip_ns(c.tag, ns) == "g":
+                    tx, ty = _parse_translate(c.get("transform", ""))
+                    _process(c, ox + tx, oy + ty)
+            return
+
+        # ── Clusters (lowest z) ──
+        if clusters_g is not None:
+            gtx, gty = _parse_translate(clusters_g.get("transform", ""))
+            for cluster_g in clusters_g:
+                if _strip_ns(cluster_g.tag, ns) != "g":
+                    continue
+                ann = _parse_cluster(
+                    cluster_g, ns, next_id(), annotations,
+                    default_text_color=cluster_default,
+                )
                 if ann is not None:
-                    ann["z"] = edge_z
-                    edge_z += 1
+                    ctx, cty = _parse_translate(cluster_g.get("transform", ""))
+                    _offset_annotation(ann, ox + gtx + ctx, oy + gty + cty)
+                    svg_id = cluster_g.get("id", "")
+                    if svg_id:
+                        ann["meta"]["src_id"] = svg_id
+                    ann["z"] = z["cluster"]
+                    z["cluster"] += 1
                     annotations.append(ann)
-                edge_idx += 1
-            elif tag == "g":
-                path_el = child.find(f"{{{ns}}}path")
-                if path_el is None:
-                    for p in child.iter(f"{{{ns}}}path"):
-                        if p.get("d"):
-                            path_el = p
-                            break
+
+        # ── Edge labels for this context ──
+        edge_labels: List[Tuple[str, float, float]] = []
+        if edge_labels_g is not None:
+            for label_g in edge_labels_g:
+                if _strip_ns(label_g.tag, ns) != "g":
+                    continue
+                tx, ty = _parse_translate(label_g.get("transform", ""))
+                edge_labels.append((_extract_text(label_g, ns), tx, ty))
+
+        # ── Edge paths (middle z) ──
+        if edge_paths_g is not None:
+            gtx, gty = _parse_translate(edge_paths_g.get("transform", ""))
+            edge_idx = 0
+            for child in edge_paths_g:
+                tag = _strip_ns(child.tag, ns)
+                path_el = None
+                if tag == "path":
+                    path_el = child
+                elif tag == "g":
+                    path_el = child.find(f"{{{ns}}}path")
+                    if path_el is None:
+                        for p in child.iter(f"{{{ns}}}path"):
+                            if p.get("d"):
+                                path_el = p
+                                break
+                else:
+                    continue
                 if path_el is not None:
-                    ann = _parse_edge_path(path_el, ns, next_id(), edge_labels, edge_idx)
+                    ann = _parse_edge_path(
+                        path_el, ns, next_id(), edge_labels, edge_idx,
+                        default_text_color=edge_default,
+                    )
                     if ann is not None:
-                        ann["z"] = edge_z
-                        edge_z += 1
+                        ptx, pty = _parse_translate(path_el.get("transform", ""))
+                        _offset_annotation(ann, ox + gtx + ptx, oy + gty + pty)
+                        ann["z"] = z["edge"]
+                        z["edge"] += 1
                         annotations.append(ann)
                 edge_idx += 1
 
-    # ── Nodes (highest z — painted last in SVG) ──
-    if nodes_g is not None:
-        node_z = z_node_base
-        for node_g in nodes_g:
-            tag = _strip_ns(node_g.tag, ns)
-            if tag != "g":
-                continue
-            cls = node_g.get("class", "")
-            if "node" not in cls:
-                continue
-            ann = _parse_node(node_g, ns, next_id())
-            if ann is not None:
-                src_id = _extract_node_id(node_g, node_id_re)
-                if src_id:
-                    ann["meta"]["src_id"] = src_id
-                ann["z"] = node_z
-                node_z += 1
-                annotations.append(ann)
+        # ── Nodes (highest z) and nested subgraph roots ──
+        if nodes_g is not None:
+            gtx, gty = _parse_translate(nodes_g.get("transform", ""))
+            for child in nodes_g:
+                if _strip_ns(child.tag, ns) != "g":
+                    continue
+                tokens = child.get("class", "").split()
+                if "node" in tokens:
+                    ann = _parse_node(
+                        child, ns, next_id(), default_text_color=node_default,
+                    )
+                    if ann is not None:
+                        _offset_annotation(ann, ox + gtx, oy + gty)
+                        src_id = _extract_node_id(child, node_id_re)
+                        if src_id:
+                            ann["meta"]["src_id"] = src_id
+                        ann["z"] = z["node"]
+                        z["node"] += 1
+                        annotations.append(ann)
+                elif "root" in tokens:
+                    ctx, cty = _parse_translate(child.get("transform", ""))
+                    _process(child, ox + gtx + ctx, oy + gty + cty)
 
+    _process(root, 0.0, 0.0)
     return annotations
 
 
@@ -1238,6 +1473,32 @@ def apply_classdef_styles(annotations: List[Dict[str, Any]], mmd_path: str) -> N
         style["fill"] = fill_d
         style["text"] = text
         ann["style"] = style
+
+
+_BR_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
+
+
+def convert_br_to_newlines(annotations: List[Dict[str, Any]]) -> None:
+    """Replace HTML line-break tags with real newlines in all text runs.
+
+    Mermaid source uses ``<br>`` / ``<br/>`` / ``<br />`` for line breaks
+    inside labels; the source parsers preserve the literal tag.  This converts
+    each to an embedded ``\\n`` so the serialized JSON (and downstream canvas
+    rendering) carries the actual newline rather than markup.  Recurses into
+    group children.  Modifies ``annotations`` in place.
+
+    Args:
+        annotations: Overlay-2.0 annotation list (with ``contents.blocks``).
+    """
+    for ann in annotations:
+        if not isinstance(ann, dict):
+            continue
+        for block in ann.get("contents", {}).get("blocks", []):
+            for run in block.get("runs", []):
+                txt = run.get("text")
+                if isinstance(txt, str) and "<br" in txt.lower():
+                    run["text"] = _BR_RE.sub("\n", txt)
+        convert_br_to_newlines(ann.get("children", []))
 
 
 def _parse_class(root: ET.Element, ns: str) -> List[Dict[str, Any]]:

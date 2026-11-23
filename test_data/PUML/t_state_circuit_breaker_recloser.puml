@@ -1,0 +1,162 @@
+@startuml t_state_circuit_breaker_recloser
+title Circuit Breaker / Recloser State Machine\n(DNP3/SCADA Integration — IEC 61850 XCBR)
+
+skinparam state {
+    BackgroundColor #E8F4FD
+    BorderColor #2C7BB6
+    FontSize 11
+    ArrowColor #555555
+}
+skinparam state<<FAULT>> {
+    BackgroundColor #FFCCCC
+    BorderColor #CC0000
+}
+skinparam state<<ENERGIZED>> {
+    BackgroundColor #CCFFCC
+    BorderColor #008800
+}
+skinparam state<<TRANSITIONAL>> {
+    BackgroundColor #FFF3CD
+    BorderColor #FF8F00
+}
+skinparam state<<LOCKOUT>> {
+    BackgroundColor #F8D7DA
+    BorderColor #721C24
+}
+
+[*] --> OPEN : power-on / hw reset\n[DNP3 BI:0=0, BI:1=1]
+
+state "OPEN" as OPEN <<ENERGIZED>> {
+    OPEN : entry / deenergize load bus\n         assert XSWI open contact\n         publish GOOSE: Pos=open
+    OPEN : do / monitor: Vline, Iline\n       DNP3 poll 1Hz
+    OPEN : exit / log state transition\n        timestamp COMTRADE
+}
+
+state "CLOSING" as CLOSING <<TRANSITIONAL>> {
+    CLOSING : entry / energize close coil (50ms)\n            start closeTimer(200ms)
+    CLOSING : do / monitor contact travel\n          check sync: ΔV<5%, Δθ<10°
+    CLOSING : exit / deenergize coil
+}
+
+state "CLOSED" as CLOSED <<ENERGIZED>> {
+    CLOSED : entry / assert XCBR closed\n           publish GOOSE: Pos=closed\n           DNP3 BI:0=1, BI:1=0
+    CLOSED : do / continuous: Iph-A,B,C\n         Vph-A,B,C @ 80 samp/cyc\n         demand calc 15min rolling
+    CLOSED : exit / snapshot COMTRADE record
+}
+
+state "TRIP_PENDING" as TRIP_PENDING <<FAULT>> {
+    TRIP_PENDING : entry / start tripTimer(50ms)\n                 assert trip signal to IED
+    TRIP_PENDING : do / monitor: arc flash\n             evaluate: 50P, 51P, 67P elements
+    TRIP_PENDING : exit / log fault: Ifault, timestamp
+}
+
+state "OPENING" as OPENING <<TRANSITIONAL>> {
+    OPENING : entry / energize trip coil (30ms)\n            start openTimer(100ms)
+    OPENING : do / monitor contact separation\n          arc quench detection
+    OPENING : exit / deenergize trip coil
+}
+
+state "RECLOSING" as RECLOSING <<TRANSITIONAL>> {
+    state "RECLOSE_SHOT_1" as RS1
+    state "RECLOSE_SHOT_2" as RS2
+    state "RECLOSE_SHOT_3" as RS3
+    state "DEAD_TIME_WAIT" as DTW
+
+    [*] --> DTW
+    DTW --> RS1 : deadTime1Expired\n(0.5s instantaneous)
+    RS1 --> DTW : faultCleared==false\nshot==1
+    DTW --> RS2 : deadTime2Expired\n(5s time-delayed)
+    RS2 --> DTW : faultCleared==false\nshot==2
+    DTW --> RS3 : deadTime3Expired\n(30s time-delayed)
+    RS3 --> [*] : faultCleared==true\nor shot==3
+}
+
+state "LOCKOUT" as LOCKOUT <<LOCKOUT>> {
+    LOCKOUT : entry / publish GOOSE: Pos=lockout\n            DNP3 BO: lockout=1\n            alert SCADA operator
+    LOCKOUT : do / inhibit all close commands\n          log: recloserCount, faultType\n          await manual reset
+    LOCKOUT : exit / clear recloser counter\n           operator must physically reset
+}
+
+state "TEST_MODE" as TEST_MODE {
+    state "PRIMARY_INJECT" as PI
+    state "SECONDARY_INJECT" as SI
+    state "CONTACT_TIMING" as CT
+
+    PI : do / inject Itest via CT\n       verify 50P pickup
+    SI : do / apply Vsec to VT\n       verify metering
+    CT : do / measure: open time\n         close time, travel
+
+    [*] --> PI
+    PI --> SI : inject_complete
+    SI --> CT : secondary_done
+    CT --> [*] : timing_logged
+}
+
+state "MAINTENANCE" as MAINTENANCE {
+    MAINTENANCE : entry / issue LOTO (lock-out/tag-out)\n                inhibit SCADA commands
+    MAINTENANCE : do / allow local manual operation only\n          log all mechanical operations
+    MAINTENANCE : exit / LOTO clearance verified\n              restore SCADA authority
+}
+
+' ─── Primary transitions ─────────────────────────────────────────────────────
+OPEN --> CLOSING : close_cmd [syncCheck==OK]\n/ arm close sequence\n[DNP3 BO:1 received]
+
+CLOSING --> CLOSED : contactsMade [closeTimer<200ms]\n/ confirm via aux contact
+
+CLOSING --> OPEN : closeTimer_expired\nor syncFail\n/ abort close\n[GOOSE: FailedClose]
+
+CLOSED --> TRIP_PENDING : fault_detected [50P | 51P | 67P]\nor SCADA_trip_cmd\nor GOOSE_trip_received
+
+TRIP_PENDING --> OPENING : tripTimer_expired\nor instantaneous [50P]
+
+OPENING --> OPEN : contactsSeparated [openTimer<100ms]\n/ confirm aux contact open
+
+OPENING --> LOCKOUT : openTimer_expired [mechanism_fail]\n/ mechanical failure alarm
+
+' ─── Reclose sequence ────────────────────────────────────────────────────────
+OPEN --> RECLOSING : autoReclose_enabled\n[recloserCount < 3]\n/ increment shot counter
+
+RECLOSING --> CLOSED : faultCleared\n/ reclose successful\n[reset recloserCount]
+
+RECLOSING --> LOCKOUT : allShotsExpended\nor permanentFault\n/ recloserCount == 3
+
+' ─── Lockout exits ───────────────────────────────────────────────────────────
+LOCKOUT --> OPEN : manual_reset [LOTO_cleared]\n[operator_authenticated]\n/ reset all counters
+
+' ─── Test / Maintenance ──────────────────────────────────────────────────────
+OPEN --> TEST_MODE : test_mode_enable\n[localControl==true]\n/ inhibit SCADA
+TEST_MODE --> OPEN : test_complete\n/ restore SCADA authority
+
+OPEN --> MAINTENANCE : LOTO_applied\n[localControl==true]
+MAINTENANCE --> OPEN : LOTO_cleared\n[safetyCheck==passed]
+
+CLOSED --> MAINTENANCE : emergency_LOTO\n[override_cmd]\n/ force trip first
+
+' ─── SCADA / DNP3 annotations ────────────────────────────────────────────────
+note right of CLOSED
+    **DNP3 Status Points:**
+    BI:0 — 52a (closed=1)
+    BI:1 — 52b (open=1)
+    BI:2 — lockout
+    BI:3 — reclose_in_progress
+    AI:0 — Iph-A (mA, scale 0.1)
+    AI:1 — Iph-B
+    AI:2 — Iph-C
+    AI:3 — Vph-A (V, scale 0.01)
+end note
+
+note left of RECLOSING
+    **IEC 61850 RREC LN:**
+    RRec.ReclnSt — reclose in progress
+    RRec.OpCnt — shot counter
+    RRec.DlTmms — dead time (ms)
+    GOOSE: RRec.Op → trip IEDs
+end note
+
+note bottom of LOCKOUT
+    Requires physical presence + LOTO clearance.
+    NERC CIP-007 event logged to SIEM.
+    Auto-escalate to operator after 15min.
+end note
+
+@enduml

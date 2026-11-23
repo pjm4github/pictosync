@@ -1,0 +1,350 @@
+@startuml t_state_parser_stress_test
+title State Diagram Parser Stress Test\n(All Syntactic Features)
+
+' Tests:
+' - State with entry/do/exit
+' - Composite (nested) states
+' - Concurrent regions (--)
+' - History state [H]
+' - Deep history state [H*]
+' - Choice pseudostate <<choice>>
+' - Fork / Join
+' - Internal transitions
+' - [*] initial and final
+' - Stereotypes on states
+' - skinparam per stereotype
+' - note on / note left of / note right of
+' - Long / multiline labels with \n
+' - Guard conditions in []
+' - Actions after /
+' - Colored arrows
+' - hide empty description
+' - state direction (left to right direction)
+' - <<entryPoint>> <<exitPoint>>
+' - <<fork>> <<join>> pseudostates
+' - Self-transitions
+' - State aliases with long names
+' - Multiple transitions between same states
+
+skinparam state {
+    BackgroundColor #FAFAFA
+    BorderColor #333333
+    FontSize 11
+    ArrowFontSize 10
+}
+skinparam state<<alpha>> {
+    BackgroundColor #E8F4FD
+    BorderColor #0056B3
+}
+skinparam state<<beta>> {
+    BackgroundColor #E8F5E9
+    BorderColor #1B5E20
+}
+skinparam state<<gamma>> {
+    BackgroundColor #FFF3E0
+    BorderColor #E65100
+}
+skinparam state<<delta>> {
+    BackgroundColor #F3E5F5
+    BorderColor #6A1B9A
+}
+skinparam state<<error>> {
+    BackgroundColor #FFEBEE
+    BorderColor #B71C1C
+}
+skinparam state<<terminal>> {
+    BackgroundColor #ECEFF1
+    BorderColor #546E7A
+}
+
+' ─── Top-level initial ───────────────────────────────────────────────────────
+[*] --> INIT_PSEUDOSTATE
+
+' ─── Choice pseudostate ──────────────────────────────────────────────────────
+state "InitialChoice" as INIT_PSEUDOSTATE <<choice>>
+
+INIT_PSEUDOSTATE --> STATE_ALPHA : [mode==NORMAL]
+INIT_PSEUDOSTATE --> STATE_BETA : [mode==SAFE]
+INIT_PSEUDOSTATE --> STATE_ERROR : [else]
+
+' ─── STATE ALPHA: entry/do/exit + self-transition + internal ─────────────────
+state "State Alpha\n(Standard Composite)" as STATE_ALPHA <<alpha>> {
+
+    STATE_ALPHA : entry / initialize_alpha()\n               log("entering alpha")\n               set timer(5000)
+    STATE_ALPHA : do / process_alpha_events()\n              poll_sensors(rate=100Hz)
+    STATE_ALPHA : exit / cleanup_alpha()\n               cancel_timer()\n               flush_buffer()
+
+    state "Alpha Sub-A" as ALPHA_A {
+        ALPHA_A : entry / start_sub_a()
+        ALPHA_A : do / run_sub_a_loop()
+
+        state "Alpha Sub-A Inner 1" as AA_INNER1
+        state "Alpha Sub-A Inner 2" as AA_INNER2
+        state "Alpha Sub-A Inner 3" as AA_INNER3 <<beta>>
+
+        [*] --> AA_INNER1
+        AA_INNER1 --> AA_INNER2 : event_x [cond_a]\n/ action_1()
+        AA_INNER2 --> AA_INNER3 : event_y\n/ action_2()\n  action_3()
+        AA_INNER3 --> AA_INNER1 : reset_inner\n/ reinit()
+        AA_INNER2 --> AA_INNER2 : self_loop\n[guard_self]\n/ self_action()
+        AA_INNER3 --> [*] : inner_done
+    }
+
+    state "Alpha Sub-B" as ALPHA_B {
+        ALPHA_B : entry / start_sub_b()
+
+        state "Sub-B Region 1" as ALPHA_B_R1 {
+            state "B1_IDLE" as B1_IDLE
+            state "B1_ACTIVE" as B1_ACTIVE
+            state "B1_SUSPENDED" as B1_SUSP
+
+            [*] --> B1_IDLE
+            B1_IDLE --> B1_ACTIVE : activate_b1
+            B1_ACTIVE --> B1_SUSP : suspend_b1 [priority < 3]
+            B1_SUSP --> B1_ACTIVE : resume_b1
+            B1_ACTIVE --> [*] : b1_complete
+        }
+
+        --
+
+        state "Sub-B Region 2" as ALPHA_B_R2 {
+            state "B2_WAITING" as B2_WAIT
+            state "B2_PROCESSING" as B2_PROC
+            state "B2_DONE" as B2_DONE <<terminal>>
+
+            [*] --> B2_WAIT
+            B2_WAIT --> B2_PROC : data_available\n[buffer.size > 0]
+            B2_PROC --> B2_WAIT : batch_complete\n[more_data]
+            B2_PROC --> B2_DONE : all_data_processed\n[buffer.size == 0]
+            B2_DONE --> [*]
+        }
+    }
+
+    ' History states
+    state "Alpha History" as ALPHA_H_STATE
+    ALPHA_A --> ALPHA_H_STATE : pause_alpha
+    ALPHA_H_STATE --> ALPHA_A : resume_alpha
+
+    [*] --> ALPHA_A
+    ALPHA_A --> ALPHA_B : sub_a_complete\n/ transfer_context()
+    ALPHA_B --> [*] : sub_b_complete
+}
+
+' ─── STATE BETA: Deep history (via [H*] transition target) + entry/exit points ─
+state "State Beta\n(Deep History + Entry/Exit Points)" as STATE_BETA <<beta>> {
+
+    state "Beta Entry Point" as BETA_ENTRY <<entryPoint>>
+    state "Beta Exit Normal" as BETA_EXIT_N <<exitPoint>>
+    state "Beta Exit Error" as BETA_EXIT_E <<exitPoint>>
+
+    state "BETA_PHASE_1" as BP1 {
+        BP1 : entry / init_phase1()
+        state "BP1_STEP_A" as BP1_A
+        state "BP1_STEP_B" as BP1_B
+        state "BP1_STEP_C" as BP1_C
+
+        [*] --> BP1_A
+        BP1_A --> BP1_B : step_a_done\n/ record_result_a()
+        BP1_B --> BP1_C : step_b_done\n/ record_result_b()
+        BP1_C --> [*] : step_c_done
+    }
+
+    state "BETA_PHASE_2" as BP2 {
+        state "BP2_MAIN" as BP2_MAIN
+        state "BP2_VALIDATE" as BP2_VAL
+        state "BP2_COMMIT" as BP2_COMMIT
+
+        [*] --> BP2_MAIN
+        BP2_MAIN --> BP2_VAL : data_ready\n[validation_required]
+        BP2_MAIN --> BP2_COMMIT : data_ready\n[!validation_required]
+        BP2_VAL --> BP2_COMMIT : valid [schema_ok\nand range_ok]
+        BP2_VAL --> [*] : invalid\n/ emit ValidationFailed
+        BP2_COMMIT --> [*] : committed
+    }
+
+    state "BETA_PHASE_3" as BP3 <<gamma>> {
+        state "BP3_FINALIZE" as BP3_F
+        state "BP3_REPORT" as BP3_R
+        state "BP3_CLEANUP" as BP3_C
+
+        [*] --> BP3_F
+        BP3_F --> BP3_R : finalized
+        BP3_R --> BP3_C : reported
+        BP3_C --> [*]
+    }
+
+    BETA_ENTRY --> BP1
+    BP1 --> BP2 : phase1_complete
+    BP2 --> BP3 : phase2_complete
+    BP3 --> BETA_EXIT_N : phase3_complete\n/ all_phases_done()
+    BP2 --> BETA_EXIT_E : phase2_error\n/ record_error()
+
+    ' Deep history: referenced via STATE_BETA[H*] at top level
+    ' [H*] is only valid as a transition target, not a state declaration
+    STATE_BETA[H*] --> BP1 : [no_history]
+}
+
+' ─── STATE GAMMA: Fork / Join pseudostates ───────────────────────────────────
+state "State Gamma\n(Fork + Join Parallel Flows)" as STATE_GAMMA <<gamma>> {
+
+    state "GammaFork" as G_FORK <<fork>>
+    state "GammaJoin" as G_JOIN <<join>>
+
+    state "Gamma Flow A" as GFA {
+        state "GFA_1" as GFA1
+        state "GFA_2" as GFA2
+        state "GFA_3" as GFA3
+
+        [*] --> GFA1
+        GFA1 --> GFA2 : fa_step1\n/ process_a1()
+        GFA2 --> GFA3 : fa_step2 [a_condition]\n/ process_a2()
+        GFA3 --> [*] : fa_done
+    }
+
+    state "Gamma Flow B" as GFB {
+        state "GFB_1" as GFB1
+        state "GFB_2" as GFB2
+
+        [*] --> GFB1
+        GFB1 --> GFB2 : fb_step1\n/ process_b1()
+        GFB2 --> [*] : fb_done\n/ process_b2()
+    }
+
+    state "Gamma Flow C" as GFC {
+        state "GFC_1" as GFC1
+        state "GFC_2" as GFC2
+        state "GFC_3" as GFC3
+        state "GFC_4" as GFC4
+
+        [*] --> GFC1
+        GFC1 --> GFC2 : fc_step1
+        GFC2 --> GFC3 : fc_step2
+        GFC3 --> GFC4 : fc_step3 [c_ready]
+        GFC4 --> [*] : fc_done
+    }
+
+    [*] --> G_FORK
+    G_FORK --> GFA
+    G_FORK --> GFB
+    G_FORK --> GFC
+    GFA --> G_JOIN
+    GFB --> G_JOIN
+    GFC --> G_JOIN
+    G_JOIN --> [*]
+}
+
+' ─── STATE DELTA: Mixed stereotypes, colored arrows, notes ───────────────────
+state "State Delta\n(Arrow Styles + Notes)" as STATE_DELTA <<delta>> {
+
+    state "DELTA_A" as DA <<alpha>>
+    state "DELTA_B" as DB <<beta>>
+    state "DELTA_C" as DC <<gamma>>
+    state "DELTA_D" as DD <<delta>>
+
+    DA : entry / da_entry()
+    DA : do / da_do()
+    DA : exit / da_exit()
+    DB : entry / db_entry(param1, param2)
+    DC : do / dc_process()\n       dc_monitor()
+
+    [*] --> DA
+    DA -[#0000FF,bold]-> DB : blue_bold_arrow\n/ action_blue()
+    DB -[#008800,dashed]-> DC : green_dashed\n[optional_condition]
+    DC -[#CC0000]-> DD : red_arrow\n/ critical_action()
+    DD -[#FF8800,dotted]-> DA : orange_dotted_back\n/ loop_action()
+    DA -[#6600CC,bold,dashed]-> DC : purple_skip\n[skip_condition]
+    DD --> [*] : delta_complete\n[all_done]
+
+    note on link
+        This arrow was specifically\nchosen for its color property.\nParser must handle color+style combos.
+    end note
+}
+
+' ─── ERROR state ─────────────────────────────────────────────────────────────
+state "State Error\n(Error Handling)" as STATE_ERROR <<error>> {
+
+    state "ERROR_CLASSIFY" as ERR_CLASS
+    state "ERROR_RECOVER" as ERR_RECOV
+    state "ERROR_ESCALATE" as ERR_ESC
+    state "ERROR_FATAL" as ERR_FATAL <<terminal>>
+
+    ERR_CLASS : do / analyze_error(code, context)\n          classify: TRANSIENT | PERMANENT | FATAL
+
+    state "RecoveryChoice" as ERR_CHOICE <<choice>>
+
+    [*] --> ERR_CLASS
+    ERR_CLASS --> ERR_CHOICE : classified
+    ERR_CHOICE --> ERR_RECOV : [error_type==TRANSIENT\nand retry_count < 3]
+    ERR_CHOICE --> ERR_ESC : [error_type==PERMANENT\nor retry_count >= 3]
+    ERR_CHOICE --> ERR_FATAL : [error_type==FATAL]
+    ERR_RECOV --> ERR_CLASS : retry\n/ increment retry_count()
+    ERR_ESC --> [*] : escalated\n/ notify_ops()
+    ERR_FATAL --> [*]
+}
+
+' ─── Top-level transitions ───────────────────────────────────────────────────
+STATE_ALPHA --> STATE_GAMMA : alpha_to_gamma\n[all_alpha_done]\n/ transition_hook()
+STATE_BETA --> STATE_GAMMA : beta_to_gamma\n[phases_complete]
+STATE_ALPHA --> STATE_ERROR : alpha_error\n[unhandled_exception]\n/ capture_stack_trace()
+STATE_BETA --> STATE_ERROR : beta_error\n[phase_failed]
+STATE_GAMMA --> STATE_DELTA : gamma_to_delta\n[fork_join_complete]
+STATE_DELTA --> [*] : delta_to_final
+
+' History reconnect
+STATE_ALPHA --> STATE_ALPHA[H] : checkpoint_restore\n[checkpoint_valid]
+STATE_BETA --> STATE_BETA[H*] : deep_restore\n[deep_checkpoint_valid]
+
+STATE_ERROR --> STATE_ALPHA : recovered [retry_ok]\n/ reset_state()
+STATE_ERROR --> [*] : unrecoverable\n/ shutdown()
+
+' Beta entry/exit point connections
+STATE_ALPHA --> BETA_ENTRY : enter_beta_via_entrypoint
+BETA_EXIT_N --> STATE_GAMMA : normal_exit_to_gamma
+BETA_EXIT_E --> STATE_ERROR : error_exit_to_error
+
+' ─── Top-level notes ─────────────────────────────────────────────────────────
+note right of STATE_ALPHA
+    **Features tested:**
+    - Composite state with substates
+    - entry / do / exit actions
+    - Self-transition with guard
+    - History pseudostate [H]
+    - Concurrent regions (--)
+    - Deep nesting (3 levels)
+end note
+
+note right of STATE_BETA
+    **Features tested:**
+    - Deep history [H*]
+    - <<entryPoint>> pseudostate
+    - <<exitPoint>> pseudostate (×2)
+    - Entry/exit point transitions
+    - Stereotype on substate
+end note
+
+note right of STATE_GAMMA
+    **Features tested:**
+    - <<fork>> pseudostate
+    - <<join>> pseudostate
+    - 3-way parallel split + sync
+    - Variable-depth parallel flows
+end note
+
+note right of STATE_DELTA
+    **Features tested:**
+    - Colored arrows [#RRGGBB]
+    - Arrow style modifiers (bold, dashed, dotted)
+    - Combined color+style [#color,bold]
+    - note on link (inline note)
+    - Mixed stereotypes on substates
+end note
+
+note bottom of STATE_ERROR
+    **Features tested:**
+    - <<choice>> pseudostate inside composite
+    - [else] guard via explicit conditions
+    - Retry loop with counter guard
+    - <<terminal>> stereotype on substate
+end note
+
+@enduml

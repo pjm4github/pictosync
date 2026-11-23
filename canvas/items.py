@@ -25,6 +25,13 @@ from PyQt6.QtWidgets import (
 
 from models import AnnotationMeta, ANN_ID_KEY, KIND_ALIAS_MAP
 from canvas.mixins import LinkedMixin, MetaMixin
+from canvas.text_edit import (
+    InPlaceTextEditMixin,
+    EditableLabelItem,
+    EditableSectionItem,
+    LabelEditableMixin,
+    label_hit_at,
+)
 from settings import get_settings
 from debug_trace import trace
 
@@ -113,6 +120,67 @@ def _get_selection_color() -> QColor:
     return _CachedCanvasSettings.get().selection_color
 
 
+_crosshair_plus_cursor = None
+
+def _get_crosshair_plus_cursor():
+    """Return a cached crosshair cursor with a small '+' at lower-right."""
+    global _crosshair_plus_cursor
+    if _crosshair_plus_cursor is not None:
+        return _crosshair_plus_cursor
+    from PyQt6.QtGui import QPixmap, QCursor
+    size = 24
+    hot = 8  # hotspot at the crosshair center
+    pix = QPixmap(size, size)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+    pen = QPen(QColor(0, 0, 0), 1)
+    p.setPen(pen)
+    # Crosshair lines (centered at hotspot)
+    p.drawLine(hot, 0, hot, hot - 3)       # top
+    p.drawLine(hot, hot + 3, hot, hot + 7)  # bottom
+    p.drawLine(0, hot, hot - 3, hot)        # left
+    p.drawLine(hot + 3, hot, hot + 7, hot)  # right
+    # '+' symbol at lower-right (offset from crosshair)
+    px, py = hot + 9, hot + 9
+    p.drawLine(px - 3, py, px + 3, py)     # horizontal
+    p.drawLine(px, py - 3, px, py + 3)     # vertical
+    p.end()
+    _crosshair_plus_cursor = QCursor(pix, hot, hot)
+    return _crosshair_plus_cursor
+
+
+_rotate_cursor = None
+
+def _get_rotate_cursor():
+    """Return a cached rotation cursor (circular arrow)."""
+    global _rotate_cursor
+    if _rotate_cursor is not None:
+        return _rotate_cursor
+    from PyQt6.QtGui import QPixmap, QCursor
+    size = 24
+    hot = 12
+    pix = QPixmap(size, size)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    pen = QPen(QColor(0, 0, 0), 1.5)
+    p.setPen(pen)
+    # Draw a 270° arc (open circle)
+    from PyQt6.QtCore import QRectF as _QRectF
+    arc_rect = _QRectF(3, 3, 18, 18)
+    # Qt angles: 16ths of a degree, 0=3 o'clock, positive=counter-clockwise
+    p.drawArc(arc_rect, 45 * 16, 270 * 16)
+    # Arrowhead at the end of the arc (pointing clockwise at ~315°/bottom-right)
+    import math
+    ax, ay = hot + 6.4, hot + 6.4  # end of arc at 315°
+    p.drawLine(int(ax), int(ay), int(ax - 4), int(ay))
+    p.drawLine(int(ax), int(ay), int(ax), int(ay - 4))
+    p.end()
+    _rotate_cursor = QCursor(pix, hot, hot)
+    return _rotate_cursor
+
+
 def _find_nearby_port(scene, scene_pt: QPointF,
                       threshold: float = 0) -> Optional['MetaPortItem']:
     """Return the nearest MetaPortItem within *threshold* pixels of *scene_pt*.
@@ -197,19 +265,22 @@ def draw_handles(painter: QPainter, handle_positions: Dict[str, QPointF], handle
         painter.drawRect(QRectF(pos.x() - half, pos.y() - half, handle_size, handle_size))
 
 
-def shape_with_handles(base_shape: QPainterPath, handle_positions: Dict[str, QPointF], handle_size: Optional[float] = None) -> QPainterPath:
-    """Create a shape path that includes handle hit areas."""
-    # Hit distance from settings. Default: 10.0 pixels
+def shape_with_handles(base_shape: QPainterPath, handle_positions: Dict[str, QPointF],
+                       handle_size: Optional[float] = None,
+                       rotation_knob_local: Optional[QPointF] = None) -> QPainterPath:
+    """Create a shape path that includes handle and rotation knob hit areas."""
     if handle_size is None:
         handle_size = _get_hit_distance()
     result = QPainterPath(base_shape)
     half = handle_size / 2
     for pos in handle_positions.values():
         result.addRect(QRectF(pos.x() - half, pos.y() - half, handle_size, handle_size))
+    if rotation_knob_local is not None:
+        result.addEllipse(rotation_knob_local, half, half)
     return result
 
 
-class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
+class MetaRectItem(LabelEditableMixin, QGraphicsRectItem, MetaMixin, LinkedMixin):
     """Rectangle item with resizable corners and embedded C4 text label."""
 
     KIND = "rect"
@@ -254,7 +325,8 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
 
         # Embedded text for C4 properties
         trace("  Creating label item", "ITEM_INIT")
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         trace("  Updating label position", "ITEM_INIT")
@@ -269,62 +341,10 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
 
     def _update_label_position(self):
         r = self.rect()
-        # Text padding - using hardcoded default. Default: 4 pixels
-        padding = 4
-        self._label_item.setTextWidth(max(10, r.width() - 2 * padding))
-
-        # Calculate text height after setting width (so wrapping is applied)
-        text_height = self._label_item.boundingRect().height()
-        available_height = r.height() - 2 * padding
-
-        # Get vertical alignment from meta
-        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
-
-        if valign == "middle":
-            y_pos = padding + (available_height - text_height) / 2
-        elif valign == "bottom":
-            y_pos = r.height() - padding - text_height
-        else:  # top (default)
-            y_pos = padding
-
-        self._label_item.setPos(padding, max(padding, y_pos))
+        self._position_label_in_rect(0, 0, r.width(), r.height())
 
     def _update_label_text(self):
-        lines = []
-        align_map = {"left": "left", "center": "center", "right": "right"}
-
-        # New contents model: use pre-built HTML if available
-        html_text = getattr(self.meta, "text", "")
-        if html_text:
-            self._label_item.setHtml(html_text)
-        else:
-            # Legacy path: build HTML from label/tech/note fields
-            spacing = getattr(self.meta, "text_spacing", getattr(self.meta, "spacing", 0.0))
-            margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
-
-            label = getattr(self.meta, "label", "")
-            tech = getattr(self.meta, "tech", "")
-            note = getattr(self.meta, "note", "")
-            if label:
-                la = getattr(self.meta, "label_align", "center")
-                align = align_map.get(la, "center")
-                size = getattr(self.meta, "label_size", 12)
-                lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{label}</b></p>')
-            if tech:
-                ta = getattr(self.meta, "tech_align", "center")
-                align = align_map.get(ta, "center")
-                size = getattr(self.meta, "tech_size", 10)
-                lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{tech}]</i></p>')
-            if note:
-                na = getattr(self.meta, "note_align", "center")
-                align = align_map.get(na, "center")
-                size = getattr(self.meta, "note_size", 10)
-                lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{note}</p>')
-
-            self._label_item.setHtml("".join(lines) if lines else "")
-        self._label_item.setDefaultTextColor(self.text_color)
-        # Update position after text changes (valign may need recalculation)
-        self._update_label_position()
+        self._render_label_from_meta()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         self.meta = meta
@@ -355,7 +375,7 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
         if h == "rotate":
-            self.setCursor(Qt.CursorShape.CrossCursor)
+            self.setCursor(_get_rotate_cursor())
         elif h:
             self.setCursor(self._cursor_for_handle(h))
         else:
@@ -409,7 +429,8 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
         """Return shape including handle areas when selected."""
         base = super().shape()
         if self._should_paint_handles():
-            return shape_with_handles(base, self._handle_points_local())
+            return shape_with_handles(base, self._handle_points_local(),
+                                      rotation_knob_local=self._rotation_knob_local() if self._is_rotatable() else None)
         return base
 
     def boundingRect(self) -> QRectF:
@@ -488,7 +509,7 @@ class MetaRectItem(QGraphicsRectItem, MetaMixin, LinkedMixin):
         return rec
 
 
-class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
+class MetaRoundedRectItem(LabelEditableMixin, QGraphicsPathItem, MetaMixin, LinkedMixin):
     """Rounded rectangle item with configurable corner radius (adjust1)."""
 
     KIND = "roundedrect"
@@ -537,7 +558,8 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._apply_pen_brush()
 
         # Embedded text for C4 properties
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self._update_label_position()
@@ -554,95 +576,15 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.setBrush(QBrush(self.brush_color))
 
     def _update_label_position(self):
-        padding = 4 + self._adjust1 * 0.3  # Extra padding for rounded corners
-        self._label_item.setTextWidth(max(10, self._width - 2 * padding))
-
-        # Calculate text height after setting width (so wrapping is applied)
-        text_height = self._label_item.boundingRect().height()
-        available_height = self._height - 2 * padding
-
-        # Get vertical alignment from meta (new field: valign; legacy: text_valign)
-        valign = getattr(self.meta, "valign", getattr(self.meta, "text_valign", "top")) if hasattr(self, "meta") else "top"
-
-        if valign == "middle":
-            y_pos = padding + (available_height - text_height) / 2
-        elif valign == "bottom":
-            y_pos = self._height - padding - text_height
-        else:  # top (default)
-            y_pos = padding
-
-        self._label_item.setPos(padding, max(padding, y_pos))
+        # Rounded corners push the content area inward slightly
+        corner_inset = self._adjust1 * 0.3
+        self._position_label_in_rect(
+            corner_inset, corner_inset,
+            self._width - 2 * corner_inset,
+            self._height - 2 * corner_inset)
 
     def _update_label_text(self):
-        from PyQt6.QtGui import QFont as _QFont, QTextOption as _QTextOption
-        from PyQt6.QtCore import Qt as _Qt
-
-        # Resolve effective frame and default_format (overlay-2.0 or flat fallback)
-        _eff_frame = self.meta.effective_frame()
-        _eff_fmt = self.meta.effective_default_format()
-
-        font_family = _eff_fmt.font_family
-        font_size = max(6, int(_eff_fmt.font_size or 12))
-        halign = _eff_frame.halign
-        color_str = _eff_fmt.color or getattr(self.meta, "color", "")
-
-        # Sync text_color from resolved color
-        if color_str:
-            from utils import hex_to_qcolor as _htq
-            self.text_color = _htq(color_str, self.text_color)
-
-        fnt = _QFont(font_family) if font_family else _QFont()
-        fnt.setPointSize(font_size)
-        self._label_item.setFont(fnt)
-        self._label_item.setDefaultTextColor(self.text_color)
-
-        # Apply halign as document default alignment
-        _halign_flag = {
-            "left":      _Qt.AlignmentFlag.AlignLeft,
-            "center":    _Qt.AlignmentFlag.AlignHCenter,
-            "right":     _Qt.AlignmentFlag.AlignRight,
-            "justified": _Qt.AlignmentFlag.AlignJustify,
-        }.get(halign, _Qt.AlignmentFlag.AlignHCenter)
-        _opt = self._label_item.document().defaultTextOption()
-        _opt.setAlignment(_halign_flag)
-        self._label_item.document().setDefaultTextOption(_opt)
-
-        # Render: prefer overlay-2.0 blocks, fall back to legacy HTML / label fields
-        if self.meta.blocks is not None:
-            from models import _blocks_to_legacy_text
-            html_text = _blocks_to_legacy_text(self.meta.blocks)
-            self._label_item.setHtml(html_text if html_text else "")
-        elif getattr(self.meta, "text", ""):
-            self._label_item.setHtml(self.meta.text)
-        else:
-            # Legacy path: build HTML from label/tech/note fields
-            lines = []
-            align_map = {"left": "left", "center": "center", "right": "right"}
-            spacing = getattr(self.meta, "text_spacing", getattr(self.meta, "spacing", 0.0))
-            margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
-
-            label = getattr(self.meta, "label", "")
-            tech = getattr(self.meta, "tech", "")
-            note = getattr(self.meta, "note", "")
-            if label:
-                la = getattr(self.meta, "label_align", "center")
-                align = align_map.get(la, "center")
-                size = getattr(self.meta, "label_size", 12)
-                lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{label}</b></p>')
-            if tech:
-                ta = getattr(self.meta, "tech_align", "center")
-                align = align_map.get(ta, "center")
-                size = getattr(self.meta, "tech_size", 10)
-                lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{tech}]</i></p>')
-            if note:
-                na = getattr(self.meta, "note_align", "center")
-                align = align_map.get(na, "center")
-                size = getattr(self.meta, "note_size", 10)
-                lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{note}</p>')
-
-            self._label_item.setHtml("".join(lines) if lines else "")
-
-        self._update_label_position()
+        self._render_label_from_meta()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         self.meta = meta
@@ -686,7 +628,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
         if h == "rotate":
-            self.setCursor(Qt.CursorShape.CrossCursor)
+            self.setCursor(_get_rotate_cursor())
         elif h == "adjust1":
             self.setCursor(Qt.CursorShape.SizeHorCursor)
         elif h:
@@ -762,7 +704,8 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         """Return shape including handle areas when selected."""
         base = super().shape()
         if self._should_paint_handles():
-            return shape_with_handles(base, self._handle_points_local())
+            return shape_with_handles(base, self._handle_points_local(),
+                                      rotation_knob_local=self._rotation_knob_local() if self._is_rotatable() else None)
         return base
 
     def boundingRect(self) -> QRectF:
@@ -853,7 +796,7 @@ class MetaRoundedRectItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         return rec
 
 
-class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
+class MetaEllipseItem(LabelEditableMixin, QGraphicsEllipseItem, MetaMixin, LinkedMixin):
     """Ellipse item with resizable corners."""
 
     KIND = "ellipse"
@@ -893,7 +836,8 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         self._apply_pen_brush()
 
         # Embedded label
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._update_label_position()
 
@@ -905,62 +849,16 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
 
     def _update_label_position(self):
         r = self.rect()
-        # Ellipse needs more padding to keep text inside the curved shape
-        padding = max(8, r.width() * 0.1, r.height() * 0.1)
-        self._label_item.setTextWidth(max(10, r.width() - 2 * padding))
-
-        # Calculate text height after setting width (so wrapping is applied)
-        text_height = self._label_item.boundingRect().height()
-        available_height = r.height() - 2 * padding
-
-        # Get vertical alignment from meta
-        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
-
-        if valign == "middle":
-            y_pos = padding + (available_height - text_height) / 2
-        elif valign == "bottom":
-            y_pos = r.height() - padding - text_height
-        else:  # top (default)
-            y_pos = padding
-
-        self._label_item.setPos(padding, max(padding, y_pos))
+        # Ellipse inscribes the text area — inset ~10% to stay inside the curve
+        inset_x = max(4, r.width() * 0.1)
+        inset_y = max(4, r.height() * 0.1)
+        self._position_label_in_rect(
+            inset_x, inset_y,
+            r.width() - 2 * inset_x,
+            r.height() - 2 * inset_y)
 
     def _update_label_text(self):
-        lines = []
-        align_map = {"left": "left", "center": "center", "right": "right"}
-
-        # New contents model: use pre-built HTML if available
-        html_text = getattr(self.meta, "text", "")
-        if html_text:
-            self._label_item.setHtml(html_text)
-        else:
-            # Legacy path: build HTML from label/tech/note fields
-            spacing = getattr(self.meta, "text_spacing", getattr(self.meta, "spacing", 0.0))
-            margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
-
-            label = getattr(self.meta, "label", "")
-            tech = getattr(self.meta, "tech", "")
-            note = getattr(self.meta, "note", "")
-            if label:
-                la = getattr(self.meta, "label_align", "center")
-                align = align_map.get(la, "center")
-                size = getattr(self.meta, "label_size", 12)
-                lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{label}</b></p>')
-            if tech:
-                ta = getattr(self.meta, "tech_align", "center")
-                align = align_map.get(ta, "center")
-                size = getattr(self.meta, "tech_size", 10)
-                lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{tech}]</i></p>')
-            if note:
-                na = getattr(self.meta, "note_align", "center")
-                align = align_map.get(na, "center")
-                size = getattr(self.meta, "note_size", 10)
-                lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{note}</p>')
-
-            self._label_item.setHtml("".join(lines) if lines else "")
-        self._label_item.setDefaultTextColor(self.text_color)
-        # Update position after text changes (valign may need recalculation)
-        self._update_label_position()
+        self._render_label_from_meta()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         self.meta = meta
@@ -991,7 +889,7 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
         if h == "rotate":
-            self.setCursor(Qt.CursorShape.CrossCursor)
+            self.setCursor(_get_rotate_cursor())
         elif h:
             self.setCursor(self._cursor_for_handle(h))
         else:
@@ -1045,7 +943,8 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         """Return shape including handle areas when selected."""
         base = super().shape()
         if self._should_paint_handles():
-            return shape_with_handles(base, self._handle_points_local())
+            return shape_with_handles(base, self._handle_points_local(),
+                                      rotation_knob_local=self._rotation_knob_local() if self._is_rotatable() else None)
         return base
 
     def boundingRect(self) -> QRectF:
@@ -1123,7 +1022,7 @@ class MetaEllipseItem(QGraphicsEllipseItem, MetaMixin, LinkedMixin):
         return rec
 
 
-class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
+class MetaLineItem(LabelEditableMixin, QGraphicsLineItem, MetaMixin, LinkedMixin):
     """Line item with draggable endpoints and optional arrowheads."""
 
     KIND = "line"
@@ -1155,6 +1054,7 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
 
         self.pen_color = QColor(Qt.GlobalColor.blue)
         self.pen_width = 2
+        self.brush_color = QColor(255, 255, 255)  # Text box background fill
         self.text_color = QColor(self.pen_color)  # Default text color matches border
         self.arrow_mode = self.ARROW_NONE
         self._apply_pen()
@@ -1169,15 +1069,18 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
         self._text_box_rect: Optional[QRectF] = None  # Will be computed from meta
 
         # Embedded text labels for label, tech, and note (stacked vertically)
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
 
         self._tech_item = QGraphicsTextItem(self)
+        self._tech_item.setAcceptHoverEvents(False)
         self._tech_item.setDefaultTextColor(self.text_color)
         self._tech_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
 
         self._note_item = QGraphicsTextItem(self)
+        self._note_item.setAcceptHoverEvents(False)
         self._note_item.setDefaultTextColor(self.text_color)
         self._note_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
 
@@ -1188,182 +1091,104 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
         _apply_dash_style(pen, self.line_dash, self.dash_pattern_length, self.dash_solid_percent)
         self.setPen(pen)
 
-    def _update_label_position(self):
+    def _point_at_t(self, t: float) -> QPointF:
+        """Return the point at parameter *t* (0-1) along the line."""
         ln = self.line()
-        mid_x = (ln.x1() + ln.x2()) / 2
-        mid_y = (ln.y1() + ln.y2()) / 2
+        return QPointF(ln.x1() + t * (ln.x2() - ln.x1()),
+                       ln.y1() + t * (ln.y2() - ln.y1()))
 
-        # Check if we have a text bounding box width (height is optional)
+    def _anchor_box_position(self, ax: float, ay: float, bw: float, bh: float) -> tuple:
+        """Compute text box (x, y) from anchor point and text_anchor / text_anchor_v.
+
+        The UI grid is mirrored: clicking the top-right button places the
+        box so its *bottom-left* corner sits at the anchor point (the box
+        extends up and to the right of the anchor).
+        """
+        h = getattr(self.meta, "text_anchor", "center")
+        v = getattr(self.meta, "text_anchor_v", "middle")
+        if h == "left":
+            bx = ax
+        elif h == "right":
+            bx = ax - bw
+        else:
+            bx = ax - bw / 2
+        if v == "top":
+            by = ay
+        elif v == "bottom":
+            by = ay - bh
+        else:
+            by = ay - bh / 2
+        return bx, by
+
+    def _update_label_position(self):
+        """Position _label_item relative to the anchor point on the line.
+
+        When ``text_box_width`` is set, a virtual text rectangle is placed
+        relative to the anchor point using ``text_anchor`` (left/center/right).
+        When text content exists but no explicit text_box_width, auto-sizes
+        a text box from the rendered label dimensions.
+        Inner text layout (margins, halign, valign, wrap) is handled by the
+        shared ``_position_label_in_rect()`` — identical to shapes.
+        """
+        t = getattr(self.meta, "anchor_value", 50.0) / 100.0
+        anchor_pt = self._point_at_t(t)
+        mid_x = anchor_pt.x()
+        mid_y = anchor_pt.y()
+
         has_text_box = (hasattr(self, "meta") and self.meta.text_box_width > 0)
+        has_text = bool(self._label_item.toPlainText().strip())
 
         if has_text_box:
-            # Use the text box width for wrapping
             box_w = self.meta.text_box_width
-            padding = 4
 
-            # Set text width for wrapping - this is the key for text wrapping
-            text_width = box_w - 2 * padding
-            self._label_item.setTextWidth(text_width)
-            self._tech_item.setTextWidth(text_width)
-            self._note_item.setTextWidth(text_width)
+            # Estimate box height: use explicit value or auto-size from text
+            ml, mr, mt, mb = self._get_text_margins()
+            wrap = getattr(self.meta, "wrap", True)
+            if wrap:
+                self._label_item.setTextWidth(max(10, box_w - ml - mr))
+            else:
+                self._label_item.setTextWidth(-1)
+            text_height = self._label_item.boundingRect().height()
 
-            # Calculate total height of visible text items
-            total_height = 0
-            if hasattr(self, "meta"):
-                if self.meta.label and self._label_item.isVisible():
-                    total_height += self._label_item.boundingRect().height()
-                if self.meta.tech and self._tech_item.isVisible():
-                    total_height += self._tech_item.boundingRect().height()
-                if self.meta.note and self._note_item.isVisible():
-                    total_height += self._note_item.boundingRect().height()
-
-            # Use text_box_height if set, otherwise use actual content height
             if self.meta.text_box_height > 0:
                 box_h = self.meta.text_box_height
             else:
-                box_h = total_height + 2 * padding
+                box_h = text_height + mt + mb
 
-            # Determine text block alignment relative to line midpoint
-            # Get the dominant alignment (use label_align as primary)
-            block_align = "center"
-            if hasattr(self, "meta"):
-                block_align = self.meta.label_align
-
-            # Position the text box based on block alignment
-            # All alignments are vertically centered on the line midpoint (middle-left, middle-center, middle-right)
-            box_y = mid_y - box_h / 2  # Vertically centered on midpoint
-
-            if block_align == "left":
-                # Text block is to the LEFT of the line center (right edge at midpoint)
-                box_x = mid_x - box_w
-            elif block_align == "right":
-                # Text block is to the RIGHT of the line center (left edge at midpoint)
-                box_x = mid_x
-            else:  # center
-                # Text block is centered on line horizontally
-                box_x = mid_x - box_w / 2
-
+            box_x, box_y = self._anchor_box_position(mid_x, mid_y, box_w, box_h)
             self._text_box_rect = QRectF(box_x, box_y, box_w, box_h)
-
-            # Position text items inside the box
-            current_y = box_y + padding
-
-            if hasattr(self, "meta"):
-                if self.meta.label and self._label_item.isVisible():
-                    self._label_item.setPos(box_x + padding, current_y)
-                    current_y += self._label_item.boundingRect().height()
-
-                if self.meta.tech and self._tech_item.isVisible():
-                    self._tech_item.setPos(box_x + padding, current_y)
-                    current_y += self._tech_item.boundingRect().height()
-
-                if self.meta.note and self._note_item.isVisible():
-                    self._note_item.setPos(box_x + padding, current_y)
-        else:
-            # No text box - use original positioning logic
-            self._text_box_rect = None
-
-            # Remove text width constraint
+            self._position_label_in_rect(box_x, box_y, box_w, box_h)
+        elif has_text:
+            # Auto-size text box from label content
             self._label_item.setTextWidth(-1)
-            self._tech_item.setTextWidth(-1)
-            self._note_item.setTextWidth(-1)
+            ml, mr, mt, mb = self._get_text_margins()
+            text_rect = self._label_item.boundingRect()
+            box_w = text_rect.width() + ml + mr
+            box_h = text_rect.height() + mt + mb
 
-            # Gather visible items (those with text) and calculate total height
-            visible_items = []
-            if hasattr(self, "meta"):
-                if self.meta.label:
-                    visible_items.append((self._label_item, self.meta.label_align))
-                if self.meta.tech:
-                    visible_items.append((self._tech_item, self.meta.tech_align))
-                if self.meta.note:
-                    visible_items.append((self._note_item, self.meta.note_align))
+            box_x, box_y = self._anchor_box_position(mid_x, mid_y, box_w, box_h)
+            self._text_box_rect = QRectF(box_x, box_y, box_w, box_h)
+            self._position_label_in_rect(box_x, box_y, box_w, box_h)
+        else:
+            self._text_box_rect = None
+            self._label_item.setTextWidth(-1)
 
-            if not visible_items:
-                return
-
-            # Calculate total height of all visible text items
-            total_height = sum(item.boundingRect().height() for item, _ in visible_items)
-
-            # Vertically center on the line midpoint
-            current_y = mid_y - total_height / 2
-
-            for item, align in visible_items:
-                item_width = item.boundingRect().width()
-                item_height = item.boundingRect().height()
-
-                # Position based on alignment relative to line center (middle-left, middle-center, middle-right)
-                if align == "left":
-                    # Text ends at center point
-                    pos_x = mid_x - item_width
-                elif align == "right":
-                    # Text starts at center point
-                    pos_x = mid_x
-                else:  # center
-                    # Text centered on center point
-                    pos_x = mid_x - item_width / 2
-
-                item.setPos(pos_x, current_y)
-                current_y += item_height
+            text_w = self._label_item.boundingRect().width()
+            text_h = self._label_item.boundingRect().height()
+            self._label_item.setPos(mid_x - text_w / 2, mid_y - text_h / 2)
 
     def _update_label_text(self):
-        # Check if we have a text box - this affects text justification
-        has_text_box = self.meta.text_box_width > 0
+        """Render text via shared helper; hide legacy tech/note items."""
+        self._render_label_from_meta()
 
-        # Determine text justification within the box based on block alignment
-        # - "left" block alignment = text right-justified within box
-        # - "right" block alignment = text left-justified within box
-        # - "center" block alignment = text centered within box
-        def get_text_align(block_align: str) -> str:
-            if has_text_box:
-                if block_align == "left":
-                    return "right"  # Text right-justified when box is left of line
-                elif block_align == "right":
-                    return "left"   # Text left-justified when box is right of line
-                else:
-                    return "center"
-            else:
-                return "center"  # Default for no text box
+        has_content = bool(self._label_item.toPlainText().strip())
+        self._label_item.setVisible(has_content)
 
-        # Get hex color for HTML
-        text_hex = "#{:02X}{:02X}{:02X}".format(
-            self.text_color.red(), self.text_color.green(), self.text_color.blue()
-        )
-
-        # Update label text item
-        if self.meta.label:
-            text_align = get_text_align(self.meta.label_align)
-            size = self.meta.label_size
-            html = f'<p style="text-align:{text_align}; font-size:{size}pt; color:{text_hex}; margin:0;"><b>{self.meta.label}</b></p>'
-            self._label_item.setHtml(html)
-            self._label_item.setVisible(True)
-        else:
-            self._label_item.setPlainText("")
-            self._label_item.setVisible(False)
-
-        # Update tech text item
-        if self.meta.tech:
-            text_align = get_text_align(self.meta.tech_align)
-            size = self.meta.tech_size
-            html = f'<p style="text-align:{text_align}; font-size:{size}pt; color:{text_hex}; margin:0;"><i>[{self.meta.tech}]</i></p>'
-            self._tech_item.setHtml(html)
-            self._tech_item.setVisible(True)
-        else:
-            self._tech_item.setPlainText("")
-            self._tech_item.setVisible(False)
-
-        # Update note text item
-        if self.meta.note:
-            text_align = get_text_align(self.meta.note_align)
-            size = self.meta.note_size
-            html = f'<p style="text-align:{text_align}; font-size:{size}pt; color:{text_hex}; margin:0;">{self.meta.note}</p>'
-            self._note_item.setHtml(html)
-            self._note_item.setVisible(True)
-        else:
-            self._note_item.setPlainText("")
-            self._note_item.setVisible(False)
-
-        # Update position after text changes (alignment may have changed)
-        self._update_label_position()
+        # Hide legacy separate items — all text goes through _label_item
+        self._tech_item.setPlainText("")
+        self._tech_item.setVisible(False)
+        self._note_item.setPlainText("")
+        self._note_item.setVisible(False)
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         self.meta = meta
@@ -1465,17 +1290,37 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
             if self.arrow_mode in (self.ARROW_START, self.ARROW_BOTH):
                 self._draw_arrowhead(painter, QPointF(ln.x2(), ln.y2()), QPointF(ln.x1(), ln.y1()), effective_arrow_size)
 
-        # Draw text bounding box if present - with opaque fill to obscure the line
+        # Draw text bounding box if present
         if self._text_box_rect is not None:
-            # Draw opaque white background to cover the line underneath
+            bg_hex = getattr(self.meta, "text_box_background_color", "")
+            if bg_hex:
+                from utils import hex_to_qcolor
+                bg_c = hex_to_qcolor(bg_hex, self.brush_color)
+            else:
+                bg_c = QColor(self.brush_color)
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QBrush(QColor(255, 255, 255)))  # Opaque white fill
+            painter.setBrush(QBrush(bg_c))
             painter.drawRect(self._text_box_rect)
-            # Draw subtle border
-            box_pen = QPen(QColor(200, 200, 200), 1, Qt.PenStyle.SolidLine)
-            painter.setPen(box_pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(self._text_box_rect)
+
+            if self._should_paint_handles():
+                border_hex = getattr(self.meta, "text_box_border_color", "")
+                if border_hex:
+                    from utils import hex_to_qcolor as _h2q
+                    border_c = _h2q(border_hex, QColor(200, 200, 200))
+                else:
+                    border_c = QColor(200, 200, 200)
+                box_pen = QPen(border_c, 1, Qt.PenStyle.SolidLine)
+                painter.setPen(box_pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(self._text_box_rect)
+
+        # Draw anchor dot when selected
+        if self._should_paint_handles():
+            t = getattr(self.meta, "anchor_value", 50.0) / 100.0
+            pt = self._point_at_t(t)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor(160, 160, 160)))
+            painter.drawEllipse(pt, 5, 5)
 
         # Draw resize handles when selected
         if self._should_paint_handles():
@@ -1764,8 +1609,23 @@ class MetaLineItem(QGraphicsLineItem, MetaMixin, LinkedMixin):
         return rec
 
 
-class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
-    """Text item with inline editing and configurable font."""
+class MetaTextItem(InPlaceTextEditMixin, QGraphicsTextItem, MetaMixin, LinkedMixin):
+    """Editable text item backed by the overlay-2.0 content model.
+
+    Double-clicking the item enters PowerPoint-style in-place editing: the
+    item's own ``QTextDocument`` accepts a caret and selection
+    (``TextEditorInteraction``).  Character formatting applied to a selection
+    (bold/italic/colour/size, …) uses Qt's native ``QTextCursor`` machinery.
+
+    The shared :class:`~canvas.text_edit.InPlaceTextEditMixin` drives the edit
+    lifecycle (enter / commit / focus guard / mini-toolbar / ``blocks``
+    round-trip); this class supplies the model hooks below.  On focus-out the
+    edited document is converted back to ``meta.blocks`` via
+    :func:`text_convert.qtextdoc_to_blocks` — the same converter the property
+    panel and shape labels use — so the canvas, the property panel, and the
+    JSON editor stay in sync through one shared blocks/runs model.  Outside
+    edit mode the item is a render target driven by ``_render_from_meta()``.
+    """
 
     KIND = "text"
 
@@ -1773,10 +1633,8 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
         return False
     KIND_ALIASES = frozenset(k for k, v in KIND_ALIAS_MAP.items() if v == "text")
 
-    # Class-level callbacks for focus events (set by MainWindow)
-    on_editing_started = None  # Called when text editing begins
-    on_editing_finished = None  # Called when text editing ends
-    on_text_changed = None  # Called when text content changes during editing
+    # Class-level callback: called on double-click to focus the Contents tab
+    on_request_edit = None   # Called with (item) — MainWindow focuses Contents tab
     on_text_edit_finished = None  # Called with (item, old_text, new_text) for undo
 
     # Class-level default text color (set by MainWindow based on theme)
@@ -1787,14 +1645,15 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
         MetaMixin.__init__(self)
         LinkedMixin.__init__(self, ann_id, on_change)
 
-        self.kind ="text"
-        # Store initial text in meta.note
-        self.meta.note = text
+        self.kind = "text"
+        # Build overlay-2.0 structure: one block, one plain run with default text.
+        # label = block 0 plain text; tech = block 1; note = block 2.
+        from models import TextBlock, TextRun
+        self.meta.blocks = [TextBlock(runs=[TextRun(type="text", text=text)])]
         self.setPos(QPointF(x, y))
         self.setData(ANN_ID_KEY, ann_id)
 
-        # Start with no text interaction - only select/move
-        # Double-click will enable editing
+        # Display-only — no inline text editing on the scene
         self.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self.setFlags(
             QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
@@ -1802,14 +1661,10 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
             | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
         )
 
-        # Use class-level default text color (contrasts with canvas background)
         self.text_color = QColor(MetaTextItem.default_text_color)
-        self.text_size_pt = 12  # default
-        self._editing = False
+        self.text_size_pt = 12
+        self._init_inplace()  # _editing / _edit_old_blocks / _mini_toolbar
         self._apply_text_style()
-
-        # Connect document changes to sync with properties
-        self.document().contentsChanged.connect(self._on_contents_changed)
 
     def _apply_text_style(self):
         self.setDefaultTextColor(self.text_color)
@@ -1817,21 +1672,53 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
         f.setPointSizeF(float(self.text_size_pt))
         self.setFont(f)
 
-    def _on_contents_changed(self):
-        """Called when text content changes during editing."""
-        if self._editing:
-            self.meta.note = self.toPlainText()
-            if MetaTextItem.on_text_changed:
-                MetaTextItem.on_text_changed(self.toPlainText())
+    def _render_from_meta(self):
+        """Rebuild the QTextDocument from meta blocks (or legacy text/note).
+
+        One-way render: reads font/colour from effective_default_format,
+        then sets the document HTML from blocks.  The Contents tab text
+        widget is the source of truth; this method is the display sink.
+        """
+        from PyQt6.QtGui import QFont as _QFont
+        from models import _blocks_to_legacy_text
+
+        meta = self.meta
+        _eff_fmt = meta.effective_default_format()
+        _eff_halign = meta.effective_frame().halign
+
+        font_family = _eff_fmt.font_family
+        font_size = max(6, int(_eff_fmt.font_size or 12))
+        color_str = _eff_fmt.color or ""
+
+        if color_str:
+            from utils import hex_to_qcolor as _htq
+            self.text_color = _htq(color_str, self.text_color)
+
+        self.text_size_pt = font_size
+        fnt = _QFont(font_family) if font_family else _QFont()
+        fnt.setPointSize(font_size)
+        self.setFont(fnt)
+        self.setDefaultTextColor(self.text_color)
+
+        # Block contentsChanged during external update
+        self.document().blockSignals(True)
+
+        if meta.blocks is not None:
+            html_text = _blocks_to_legacy_text(meta.blocks, _eff_halign)
+            self.setHtml(html_text if html_text else "")
+        elif getattr(meta, "text", ""):
+            self.setHtml(meta.text)
+        elif getattr(meta, "note", ""):
+            self.setPlainText(meta.note)
+        else:
+            self.setPlainText("")
+
+        self.document().blockSignals(False)
 
     def set_meta(self, meta: AnnotationMeta) -> None:
-        """Set metadata and update displayed text from meta.note."""
+        """Set metadata and render the document from blocks/text/note."""
         self.meta = meta
-        if meta.note and meta.note != self.toPlainText():
-            # Block contentsChanged signal during external update
-            self.document().blockSignals(True)
-            self.setPlainText(meta.note)
-            self.document().blockSignals(False)
+        self._render_from_meta()
 
     def itemChange(self, change, value):
         out = super().itemChange(change, value)
@@ -1840,70 +1727,38 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
         return out
 
     def mouseDoubleClickEvent(self, event):
-        """Double-click to enter edit mode."""
+        """Double-click → enter in-place editing with the caret at the click."""
         if event.button() == Qt.MouseButton.LeftButton:
-            self._start_editing()
-            # Position cursor at click location
+            self._enter_edit_mode()
+            # Forward to the base class so Qt places the caret / selects the
+            # word under the cursor now that the item is interactive.
             super().mouseDoubleClickEvent(event)
+            event.accept()
         else:
             super().mouseDoubleClickEvent(event)
 
-    def _start_editing(self):
-        """Enter text editing mode."""
-        if self._editing:
-            return
-        self._editing = True
-        self._text_before_edit = self.toPlainText()
-        self.setTextInteractionFlags(Qt.TextInteractionFlag.TextEditorInteraction)
-        self.setFocus(Qt.FocusReason.MouseFocusReason)
-        # Select all text for easy replacement
-        cursor = self.textCursor()
-        cursor.select(cursor.SelectionType.Document)
-        self.setTextCursor(cursor)
-        if MetaTextItem.on_editing_started:
-            MetaTextItem.on_editing_started()
+    # ── In-place editing hooks (InPlaceTextEditMixin) ──────────────────
 
-    def _stop_editing(self):
-        """Exit text editing mode."""
-        if not self._editing:
-            return
-        self._editing = False
-        self.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
-        # Clear selection
-        cursor = self.textCursor()
-        cursor.clearSelection()
-        self.setTextCursor(cursor)
-        # Sync the displayed text to meta.note
-        new_text = self.toPlainText()
-        self.meta.note = new_text
-        try:
-            self.text_size_pt = float(self.font().pointSizeF())
-        except Exception:
-            pass
+    def _inplace_meta(self):
+        return self.meta
+
+    def _inplace_notify(self) -> None:
         self._notify_changed()
-        # Fire text edit undo callback if text changed
-        old_text = getattr(self, '_text_before_edit', None)
-        if old_text is not None and old_text != new_text:
-            if MetaTextItem.on_text_edit_finished:
-                MetaTextItem.on_text_edit_finished(self, old_text, new_text)
-        self._text_before_edit = None
-        if MetaTextItem.on_editing_finished:
-            MetaTextItem.on_editing_finished()
 
-    def focusOutEvent(self, event):
-        """Handle focus out - exit edit mode."""
-        super().focusOutEvent(event)
-        self._stop_editing()
+    def _inplace_render(self) -> None:
+        self._render_from_meta()
+
+    def _inplace_request_edit(self) -> None:
+        # Surface the Contents tab so the panel format controls are at hand.
+        if MetaTextItem.on_request_edit:
+            MetaTextItem.on_request_edit(self)
+
+    def _inplace_finish(self, old_blocks, new_blocks) -> None:
+        if MetaTextItem.on_text_edit_finished:
+            MetaTextItem.on_text_edit_finished(self, old_blocks, new_blocks)
 
     def to_record(self) -> Dict[str, Any]:
-        try:
-            self.text_size_pt = float(self.font().pointSizeF())
-        except Exception:
-            pass
-
         p = self.pos()
-        # Sync displayed text content into meta.note before serializing
-        self.meta.note = self.toPlainText()
         rec = {
             "id": self.ann_id,
             "kind": "text",
@@ -1922,7 +1777,7 @@ class MetaTextItem(QGraphicsTextItem, MetaMixin, LinkedMixin):
         return rec
 
 
-class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
+class MetaHexagonItem(LabelEditableMixin, QGraphicsPathItem, MetaMixin, LinkedMixin):
     """Flat-top hexagon item with configurable horizontal indent.
 
     adjust1 controls how far the left/right vertices extend inward
@@ -1974,7 +1829,8 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._apply_pen_brush()
 
         # Embedded text for C4 properties
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self._update_label_position()
@@ -2009,46 +1865,13 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.setBrush(QBrush(self.brush_color))
 
     def _update_label_position(self):
-        padding = 4 + self._width * self._adjust1 * 0.5
-        self._label_item.setTextWidth(max(10, self._width - 2 * padding))
-
-        text_height = self._label_item.boundingRect().height()
-        available_height = self._height - 2 * padding
-
-        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
-
-        if valign == "middle":
-            y_pos = padding + (available_height - text_height) / 2
-        elif valign == "bottom":
-            y_pos = self._height - padding - text_height
-        else:
-            y_pos = padding
-
-        self._label_item.setPos(padding, max(padding, y_pos))
+        # Hexagon indent pushes the content area inward on left/right
+        indent = self._width * self._adjust1 * 0.5
+        self._position_label_in_rect(
+            indent, 0, self._width - 2 * indent, self._height)
 
     def _update_label_text(self):
-        lines = []
-        align_map = {"left": "left", "center": "center", "right": "right"}
-
-        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
-        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
-
-        if self.meta.label:
-            align = align_map.get(self.meta.label_align, "center")
-            size = self.meta.label_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
-        if self.meta.tech:
-            align = align_map.get(self.meta.tech_align, "center")
-            size = self.meta.tech_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
-        if self.meta.note:
-            align = align_map.get(self.meta.note_align, "center")
-            size = self.meta.note_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
-
-        self._label_item.setHtml("".join(lines) if lines else "")
-        self._label_item.setDefaultTextColor(self.text_color)
-        self._update_label_position()
+        self._render_label_from_meta()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         self.meta = meta
@@ -2091,7 +1914,7 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
         if h == "rotate":
-            self.setCursor(Qt.CursorShape.CrossCursor)
+            self.setCursor(_get_rotate_cursor())
         elif h == "adjust1":
             self.setCursor(Qt.CursorShape.SizeHorCursor)
         elif h:
@@ -2165,7 +1988,8 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def shape(self) -> QPainterPath:
         base = super().shape()
         if self._should_paint_handles():
-            return shape_with_handles(base, self._handle_points_local())
+            return shape_with_handles(base, self._handle_points_local(),
+                                      rotation_knob_local=self._rotation_knob_local() if self._is_rotatable() else None)
         return base
 
     def boundingRect(self) -> QRectF:
@@ -2248,7 +2072,7 @@ class MetaHexagonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         return rec
 
 
-class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
+class MetaCylinderItem(LabelEditableMixin, QGraphicsPathItem, MetaMixin, LinkedMixin):
     """3D cylinder (database icon) with configurable cap ellipse ratio.
 
     adjust1 controls the depth/height of the elliptical cap as a
@@ -2299,7 +2123,8 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.dash_solid_percent = cached.default_dash_solid_percent
         self._apply_pen_brush()
 
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self._update_label_position()
@@ -2337,48 +2162,13 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.setBrush(QBrush(self.brush_color))
 
     def _update_label_position(self):
+        # Text goes in the body area between the top and bottom caps
         cap_h = self._height * self._adjust1
-        padding = 4
-        self._label_item.setTextWidth(max(10, self._width - 2 * padding))
-
-        text_height = self._label_item.boundingRect().height()
-        # Text goes in body area, below top cap
-        available_height = self._height - cap_h * 2 - 2 * padding
-
-        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
-
-        if valign == "middle":
-            y_pos = cap_h + padding + (available_height - text_height) / 2
-        elif valign == "bottom":
-            y_pos = self._height - cap_h - padding - text_height
-        else:
-            y_pos = cap_h + padding
-
-        self._label_item.setPos(padding, max(cap_h + padding, y_pos))
+        self._position_label_in_rect(
+            0, cap_h, self._width, self._height - 2 * cap_h)
 
     def _update_label_text(self):
-        lines = []
-        align_map = {"left": "left", "center": "center", "right": "right"}
-
-        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
-        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
-
-        if self.meta.label:
-            align = align_map.get(self.meta.label_align, "center")
-            size = self.meta.label_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
-        if self.meta.tech:
-            align = align_map.get(self.meta.tech_align, "center")
-            size = self.meta.tech_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
-        if self.meta.note:
-            align = align_map.get(self.meta.note_align, "center")
-            size = self.meta.note_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
-
-        self._label_item.setHtml("".join(lines) if lines else "")
-        self._label_item.setDefaultTextColor(self.text_color)
-        self._update_label_position()
+        self._render_label_from_meta()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         self.meta = meta
@@ -2423,7 +2213,7 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
         if h == "rotate":
-            self.setCursor(Qt.CursorShape.CrossCursor)
+            self.setCursor(_get_rotate_cursor())
         elif h == "adjust1":
             self.setCursor(Qt.CursorShape.SizeVerCursor)
         elif h:
@@ -2496,7 +2286,8 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def shape(self) -> QPainterPath:
         base = super().shape()
         if self._should_paint_handles():
-            return shape_with_handles(base, self._handle_points_local())
+            return shape_with_handles(base, self._handle_points_local(),
+                                      rotation_knob_local=self._rotation_knob_local() if self._is_rotatable() else None)
         return base
 
     def boundingRect(self) -> QRectF:
@@ -2612,7 +2403,7 @@ class MetaCylinderItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         return rec
 
 
-class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
+class MetaBlockArrowItem(LabelEditableMixin, QGraphicsPathItem, MetaMixin, LinkedMixin):
     """Right-pointing block arrow with configurable head and shaft dimensions.
 
     adjust1: ratio of shaft height to total height (0.2 to 0.9)
@@ -2666,7 +2457,8 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.dash_solid_percent = cached.default_dash_solid_percent
         self._apply_pen_brush()
 
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self._update_label_position()
@@ -2707,49 +2499,14 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.setBrush(QBrush(self.brush_color))
 
     def _update_label_position(self):
-        shaft_margin = self._height * (1 - self._adjust1) / 2
-        head_x = self._width - self._adjust2
-        padding = 4
-        # Text goes in the shaft area
-        self._label_item.setTextWidth(max(10, head_x - 2 * padding))
-
-        text_height = self._label_item.boundingRect().height()
+        # Text goes in the shaft area (excluding the arrowhead)
+        shaft_top = self._height * (1 - self._adjust1) / 2
         shaft_height = self._height * self._adjust1
-
-        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
-
-        if valign == "middle":
-            y_pos = shaft_margin + (shaft_height - text_height) / 2
-        elif valign == "bottom":
-            y_pos = self._height - shaft_margin - padding - text_height
-        else:
-            y_pos = shaft_margin + padding
-
-        self._label_item.setPos(padding, max(shaft_margin + padding, y_pos))
+        shaft_width = self._width - self._adjust2  # exclude head
+        self._position_label_in_rect(0, shaft_top, shaft_width, shaft_height)
 
     def _update_label_text(self):
-        lines = []
-        align_map = {"left": "left", "center": "center", "right": "right"}
-
-        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
-        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
-
-        if self.meta.label:
-            align = align_map.get(self.meta.label_align, "center")
-            size = self.meta.label_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
-        if self.meta.tech:
-            align = align_map.get(self.meta.tech_align, "center")
-            size = self.meta.tech_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
-        if self.meta.note:
-            align = align_map.get(self.meta.note_align, "center")
-            size = self.meta.note_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
-
-        self._label_item.setHtml("".join(lines) if lines else "")
-        self._label_item.setDefaultTextColor(self.text_color)
-        self._update_label_position()
+        self._render_label_from_meta()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         self.meta = meta
@@ -2806,7 +2563,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
         if h == "rotate":
-            self.setCursor(Qt.CursorShape.CrossCursor)
+            self.setCursor(_get_rotate_cursor())
         elif h == "adjust1":
             self.setCursor(Qt.CursorShape.SizeVerCursor)
         elif h == "adjust2":
@@ -2899,7 +2656,8 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def shape(self) -> QPainterPath:
         base = super().shape()
         if self._should_paint_handles():
-            return shape_with_handles(base, self._handle_points_local())
+            return shape_with_handles(base, self._handle_points_local(),
+                                      rotation_knob_local=self._rotation_knob_local() if self._is_rotatable() else None)
         return base
 
     def boundingRect(self) -> QRectF:
@@ -2987,7 +2745,7 @@ class MetaBlockArrowItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         return rec
 
 
-class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
+class MetaPolygonItem(LabelEditableMixin, QGraphicsPathItem, MetaMixin, LinkedMixin):
     """Arbitrary polygon item with vertex editing.
 
     Vertices are stored as relative coordinates (0.0–1.0) within the
@@ -3009,12 +2767,15 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._width = max(w, 1.0)
         self._height = max(h, 1.0)
 
-        # Relative points (0-1 within bounding box)
+        # Relative points (0-1 within bounding box).
+        # Preserve the extended format: [rx, ry] for straight,
+        # [rx, ry, "Q", cx, cy] for quadratic, [rx, ry, "C", c1x, c1y, c2x, c2y] for cubic.
         if points and len(points) >= 3:
-            self._rel_points = [[float(p[0]), float(p[1])] for p in points]
+            self._rel_points = [list(p) for p in points]
         else:
             self._rel_points = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
 
+        self._in_bbox_recalc = False  # recursion guard (before first _update_path)
         self.setPos(QPointF(x, y))
         self.setData(ANN_ID_KEY, ann_id)
         self._update_path()
@@ -3038,6 +2799,11 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._vertex_editing = False
         self._active_vertex: Optional[int] = None
         self._vertex_dragging = False
+        self._active_ctrl_point: Optional[Tuple[int, str]] = None  # (vertex_idx, "cp"/"c1"/"c2")
+        self._ctrl_dragging = False
+        self._selected_vertex: Optional[int] = None   # left-click selected vertex
+        self._hover_vertex: Optional[int] = None       # hover-highlighted vertex
+        self._in_bbox_recalc = False                    # recursion guard
 
         self.pen_color = QColor(Qt.GlobalColor.darkCyan)
         self.pen_width = 2
@@ -3050,7 +2816,8 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._apply_pen_brush()
 
         # Embedded text for C4 properties
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self._update_label_position()
@@ -3066,34 +2833,79 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         w, h = self._width, self._height
         p0 = self._rel_points[0]
         path.moveTo(p0[0] * w, p0[1] * h)
-        for rx, ry in self._rel_points[1:]:
-            path.lineTo(rx * w, ry * h)
-        path.closeSubpath()
+        for pt in self._rel_points[1:]:
+            rx, ry = pt[0], pt[1]
+            if len(pt) >= 5 and pt[2] == "Q":
+                cx, cy = pt[3], pt[4]
+                path.quadTo(cx * w, cy * h, rx * w, ry * h)
+            elif len(pt) >= 7 and pt[2] == "C":
+                c1x, c1y, c2x, c2y = pt[3], pt[4], pt[5], pt[6]
+                path.cubicTo(c1x * w, c1y * h, c2x * w, c2y * h, rx * w, ry * h)
+            else:
+                path.lineTo(rx * w, ry * h)
+        # Close using vertex 0's curve data (closeSubpath is always straight)
+        if len(p0) >= 5 and p0[2] == "Q":
+            cx, cy = p0[3], p0[4]
+            path.quadTo(cx * w, cy * h, p0[0] * w, p0[1] * h)
+        elif len(p0) >= 7 and p0[2] == "C":
+            c1x, c1y, c2x, c2y = p0[3], p0[4], p0[5], p0[6]
+            path.cubicTo(c1x * w, c1y * h, c2x * w, c2y * h, p0[0] * w, p0[1] * h)
+        else:
+            path.closeSubpath()
         self.setPath(path)
 
-    def _recalculate_bbox(self):
-        """Recalculate bounding box to tightly enclose all vertices.
+        # Auto-recalculate bbox if the rendered curve extends beyond
+        # the current (0, 0, _width, _height) coordinate space.
+        if not self._in_bbox_recalc:
+            pr = path.boundingRect()
+            tol = 1.0  # pixel tolerance
+            if (pr.x() < -tol or pr.y() < -tol
+                    or pr.right() > self._width + tol
+                    or pr.bottom() > self._height + tol):
+                self._in_bbox_recalc = True
+                self._recalculate_bbox()
+                self._in_bbox_recalc = False
 
-        Converts relative points that may be outside 0-1 range back into
-        a new bounding box with all relative points normalized to 0-1.
+    def _recalculate_bbox(self):
+        """Recalculate bounding box to tightly enclose the rendered curve.
+
+        Uses the QPainterPath bounding rect (which accounts for bezier
+        curve extent) rather than just anchor points.  Converts relative
+        points back into a new bounding box with all values normalized.
+        Preserves curve type tags and control points.
         """
         if not self._rel_points:
             return
 
-        # Convert current relative points to absolute scene coordinates
         p = self.pos()
-        abs_pts = [
-            (p.x() + rx * self._width, p.y() + ry * self._height)
-            for rx, ry in self._rel_points
-        ]
+        w, h = self._width, self._height
 
-        # Compute new bounding box
-        xs = [pt[0] for pt in abs_pts]
-        ys = [pt[1] for pt in abs_pts]
-        new_x = min(xs)
-        new_y = min(ys)
-        new_w = max(xs) - new_x
-        new_h = max(ys) - new_y
+        # Build a temporary path to get the actual curve bounding rect
+        tmp = QPainterPath()
+        p0 = self._rel_points[0]
+        tmp.moveTo(p0[0] * w, p0[1] * h)
+        for pt in self._rel_points[1:]:
+            rx, ry = pt[0], pt[1]
+            if len(pt) >= 5 and pt[2] == "Q":
+                tmp.quadTo(pt[3] * w, pt[4] * h, rx * w, ry * h)
+            elif len(pt) >= 7 and pt[2] == "C":
+                tmp.cubicTo(pt[3] * w, pt[4] * h, pt[5] * w, pt[6] * h, rx * w, ry * h)
+            else:
+                tmp.lineTo(rx * w, ry * h)
+        # Close using vertex 0's curve data
+        if len(p0) >= 5 and p0[2] == "Q":
+            tmp.quadTo(p0[3] * w, p0[4] * h, p0[0] * w, p0[1] * h)
+        elif len(p0) >= 7 and p0[2] == "C":
+            tmp.cubicTo(p0[3] * w, p0[4] * h, p0[5] * w, p0[6] * h, p0[0] * w, p0[1] * h)
+        else:
+            tmp.closeSubpath()
+
+        # Use the path's bounding rect (includes curve extent)
+        pr = tmp.boundingRect()
+        new_x = p.x() + pr.x()
+        new_y = p.y() + pr.y()
+        new_w = pr.width()
+        new_h = pr.height()
 
         # Enforce minimum size
         if new_w < 1.0:
@@ -3101,11 +2913,24 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         if new_h < 1.0:
             new_h = 1.0
 
-        # Recompute relative points within new bounding box
-        self._rel_points = [
-            [(ax - new_x) / new_w, (ay - new_y) / new_h]
-            for ax, ay in abs_pts
-        ]
+        def _rescale(rx, ry):
+            ax = p.x() + rx * w
+            ay = p.y() + ry * h
+            return (ax - new_x) / new_w, (ay - new_y) / new_h
+
+        new_pts = []
+        for pt in self._rel_points:
+            new_rx, new_ry = _rescale(pt[0], pt[1])
+            if len(pt) >= 5 and pt[2] == "Q":
+                new_cx, new_cy = _rescale(pt[3], pt[4])
+                new_pts.append([new_rx, new_ry, "Q", new_cx, new_cy])
+            elif len(pt) >= 7 and pt[2] == "C":
+                new_c1x, new_c1y = _rescale(pt[3], pt[4])
+                new_c2x, new_c2y = _rescale(pt[5], pt[6])
+                new_pts.append([new_rx, new_ry, "C", new_c1x, new_c1y, new_c2x, new_c2y])
+            else:
+                new_pts.append([new_rx, new_ry])
+        self._rel_points = new_pts
 
         # Update position and dimensions
         self.prepareGeometryChange()
@@ -3123,46 +2948,10 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.setBrush(QBrush(self.brush_color))
 
     def _update_label_position(self):
-        padding = 8
-        self._label_item.setTextWidth(max(10, self._width - 2 * padding))
-
-        text_height = self._label_item.boundingRect().height()
-        available_height = self._height - 2 * padding
-
-        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
-
-        if valign == "middle":
-            y_pos = padding + (available_height - text_height) / 2
-        elif valign == "bottom":
-            y_pos = self._height - padding - text_height
-        else:
-            y_pos = padding
-
-        self._label_item.setPos(padding, max(padding, y_pos))
+        self._position_label_in_rect(0, 0, self._width, self._height)
 
     def _update_label_text(self):
-        lines = []
-        align_map = {"left": "left", "center": "center", "right": "right"}
-
-        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
-        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
-
-        if self.meta.label:
-            align = align_map.get(self.meta.label_align, "center")
-            size = self.meta.label_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
-        if self.meta.tech:
-            align = align_map.get(self.meta.tech_align, "center")
-            size = self.meta.tech_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
-        if self.meta.note:
-            align = align_map.get(self.meta.note_align, "center")
-            size = self.meta.note_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
-
-        self._label_item.setHtml("".join(lines) if lines else "")
-        self._label_item.setDefaultTextColor(self.text_color)
-        self._update_label_position()
+        self._render_label_from_meta()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         self.meta = meta
@@ -3200,65 +2989,285 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def _vertex_points_scene(self) -> list:
         """Return absolute scene positions of all vertices (rotation-aware)."""
         return [
-            self.mapToScene(QPointF(rx * self._width, ry * self._height))
-            for rx, ry in self._rel_points
+            self.mapToScene(QPointF(pt[0] * self._width, pt[1] * self._height))
+            for pt in self._rel_points
         ]
 
     def _vertex_points_local(self) -> list:
         """Return local positions of all vertices."""
         return [
-            QPointF(rx * self._width, ry * self._height)
-            for rx, ry in self._rel_points
+            QPointF(pt[0] * self._width, pt[1] * self._height)
+            for pt in self._rel_points
         ]
 
+    def _ctrl_point_info(self) -> list:
+        """Return list of (vertex_idx, label, local_QPointF) for all control points."""
+        result = []
+        w, h = self._width, self._height
+        for i, pt in enumerate(self._rel_points):
+            if len(pt) >= 5 and pt[2] == "Q":
+                result.append((i, "cp", QPointF(pt[3] * w, pt[4] * h)))
+            elif len(pt) >= 7 and pt[2] == "C":
+                result.append((i, "c1", QPointF(pt[3] * w, pt[4] * h)))
+                result.append((i, "c2", QPointF(pt[5] * w, pt[6] * h)))
+        return result
+
+    def _hit_test_ctrl_point(self, scene_pt: QPointF) -> Optional[Tuple[int, str]]:
+        """Return (vertex_idx, label) of control point near scene_pt, or None.
+
+        Uses QPainterPath circle containment for consistency with shape().
+        """
+        hit_r = _get_hit_distance()
+        local_pt = self.mapFromScene(scene_pt)
+        for vi, label, lp in self._ctrl_point_info():
+            circle = QPainterPath()
+            circle.addEllipse(lp, hit_r, hit_r)
+            if circle.contains(local_pt):
+                return (vi, label)
+        return None
+
     def _hit_test_vertex(self, scene_pt: QPointF) -> Optional[int]:
-        """Return index of vertex near scene_pt, or None."""
-        hit_dist = _get_hit_distance()
-        for i, vp in enumerate(self._vertex_points_scene()):
-            if QLineF(scene_pt, vp).length() <= hit_dist:
+        """Return index of vertex near scene_pt, or None.
+
+        Uses QPainterPath circle containment for consistency with shape().
+        Tests in reverse order so the last-drawn vertex wins when
+        vertices overlap (matching visual stacking).
+        """
+        hit_r = _get_hit_distance()
+        local_pt = self.mapFromScene(scene_pt)
+        verts = self._vertex_points_local()
+        # Reverse iteration: last vertex is drawn on top, so test it first
+        for i in range(len(verts) - 1, -1, -1):
+            circle = QPainterPath()
+            circle.addEllipse(verts[i], hit_r, hit_r)
+            if circle.contains(local_pt):
                 return i
         return None
 
     def _hit_test_edge(self, scene_pt: QPointF) -> Optional[int]:
         """Return index of edge near scene_pt, or None.
 
-        Edge i connects vertex i to vertex (i+1) % n.
-        Returns the edge index where a new vertex should be inserted after.
+        Edge i is the segment arriving at vertex (i+1) % n from vertex i.
+        For curved edges (Q/C), the actual curve path is sampled.
+        Hits near vertex endpoints (t < 0.15 or t > 0.85) are rejected
+        so that vertex knobs take priority over edge hits.
         """
         hit_dist = _get_hit_distance()
-        verts = self._vertex_points_scene()
-        n = len(verts)
+        n = len(self._rel_points)
+        if n < 2:
+            return None
+        w, h = self._width, self._height
+        # Pre-compute local test point once
+        local_pt = self.mapFromScene(scene_pt)
+
         for i in range(n):
-            a = verts[i]
-            b = verts[(i + 1) % n]
-            # Distance from point to line segment
-            line = QLineF(a, b)
-            length = line.length()
-            if length < 1e-6:
-                continue
-            # Project scene_pt onto line segment
-            dx = b.x() - a.x()
-            dy = b.y() - a.y()
-            t = ((scene_pt.x() - a.x()) * dx + (scene_pt.y() - a.y()) * dy) / (length * length)
-            t = max(0.0, min(1.0, t))
-            proj = QPointF(a.x() + t * dx, a.y() + t * dy)
-            if QLineF(scene_pt, proj).length() <= hit_dist:
+            j = (i + 1) % n
+            pt_j = self._rel_points[j]
+            # Build sample points along this edge in local coords
+            a = QPointF(self._rel_points[i][0] * w, self._rel_points[i][1] * h)
+            b = QPointF(pt_j[0] * w, pt_j[1] * h)
+
+            if len(pt_j) >= 7 and pt_j[2] == "C":
+                # Cubic bezier: sample the curve
+                c1 = QPointF(pt_j[3] * w, pt_j[4] * h)
+                c2 = QPointF(pt_j[5] * w, pt_j[6] * h)
+                samples = self._sample_cubic(a, c1, c2, b, 20)
+            elif len(pt_j) >= 5 and pt_j[2] == "Q":
+                # Quadratic bezier: sample the curve
+                cp = QPointF(pt_j[3] * w, pt_j[4] * h)
+                samples = self._sample_quadratic(a, cp, b, 20)
+            else:
+                # Straight line: just use endpoints
+                samples = [a, b]
+
+            # Find closest point on this edge's sample segments
+            best_dist = float("inf")
+            best_t_global = 0.0
+            total_segs = len(samples) - 1
+            for si in range(total_segs):
+                sa = samples[si]
+                sb = samples[si + 1]
+                seg_dx = sb.x() - sa.x()
+                seg_dy = sb.y() - sa.y()
+                seg_len_sq = seg_dx * seg_dx + seg_dy * seg_dy
+                if seg_len_sq < 1e-12:
+                    continue
+                t_seg = ((local_pt.x() - sa.x()) * seg_dx +
+                         (local_pt.y() - sa.y()) * seg_dy) / seg_len_sq
+                t_seg = max(0.0, min(1.0, t_seg))
+                proj = QPointF(sa.x() + t_seg * seg_dx, sa.y() + t_seg * seg_dy)
+                d = QLineF(local_pt, proj).length()
+                if d < best_dist:
+                    best_dist = d
+                    best_t_global = (si + t_seg) / total_segs
+
+            if best_dist <= hit_dist and 0.15 <= best_t_global <= 0.85:
                 return i
         return None
+
+    @staticmethod
+    def _sample_cubic(p0: QPointF, c1: QPointF, c2: QPointF, p3: QPointF,
+                      n: int) -> list:
+        """Return n+1 sample points along a cubic bezier."""
+        pts = []
+        for k in range(n + 1):
+            t = k / n
+            u = 1.0 - t
+            x = (u*u*u * p0.x() + 3*u*u*t * c1.x() +
+                 3*u*t*t * c2.x() + t*t*t * p3.x())
+            y = (u*u*u * p0.y() + 3*u*u*t * c1.y() +
+                 3*u*t*t * c2.y() + t*t*t * p3.y())
+            pts.append(QPointF(x, y))
+        return pts
+
+    @staticmethod
+    def _sample_quadratic(p0: QPointF, cp: QPointF, p2: QPointF,
+                          n: int) -> list:
+        """Return n+1 sample points along a quadratic bezier."""
+        pts = []
+        for k in range(n + 1):
+            t = k / n
+            u = 1.0 - t
+            x = u*u * p0.x() + 2*u*t * cp.x() + t*t * p2.x()
+            y = u*u * p0.y() + 2*u*t * cp.y() + t*t * p2.y()
+            pts.append(QPointF(x, y))
+        return pts
+
+    # ---- Mouse interaction ----
+
+    # ---- Vertex context menu / type change ----
+
+    def _serialize_points(self) -> list:
+        """Serialize _rel_points preserving curve type and control points."""
+        result = []
+        for pt in self._rel_points:
+            if len(pt) >= 5 and pt[2] == "Q":
+                result.append([round(pt[0], 4), round(pt[1], 4), "Q",
+                                round(pt[3], 4), round(pt[4], 4)])
+            elif len(pt) >= 7 and pt[2] == "C":
+                result.append([round(pt[0], 4), round(pt[1], 4), "C",
+                                round(pt[3], 4), round(pt[4], 4),
+                                round(pt[5], 4), round(pt[6], 4)])
+            else:
+                result.append([round(pt[0], 4), round(pt[1], 4)])
+        return result
+
+    def _show_vertex_context_menu(self, screen_pos, idx: int):
+        """Show context menu for a vertex: change type, add, delete."""
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu()
+        pt = self._rel_points[idx]
+        cur_type = pt[2] if len(pt) >= 3 and isinstance(pt[2], str) else "L"
+
+        type_menu = menu.addMenu("Vertex Type")
+        for label, vtype in [("Straight (L)", "L"), ("Quadratic (Q)", "Q"), ("Cubic (C)", "C")]:
+            act = type_menu.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(cur_type == vtype)
+            act.triggered.connect(lambda checked, t=vtype: self._change_vertex_type(idx, t))
+
+        menu.addSeparator()
+        ins_act = menu.addAction("Add Node After")
+        ins_act.triggered.connect(lambda: self._insert_vertex_after(idx))
+
+        if len(self._rel_points) > 3:
+            del_act = menu.addAction("Delete Node")
+            del_act.triggered.connect(lambda: self._delete_vertex(idx))
+
+        menu.exec(screen_pos)
+
+    def _show_edge_context_menu(self, screen_pos, edge_idx: int, scene_pt: QPointF):
+        """Show context menu for an edge: insert vertex here."""
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu()
+        ins_act = menu.addAction("Insert Vertex Here")
+        ins_act.triggered.connect(lambda: self._insert_vertex_at(edge_idx, scene_pt))
+        menu.exec(screen_pos)
+
+    def _change_vertex_type(self, idx: int, new_type: str):
+        """Change a vertex's segment type, auto-generating control points."""
+        pt = self._rel_points[idx]
+        rx, ry = pt[0], pt[1]
+        old_type = pt[2] if len(pt) >= 3 and isinstance(pt[2], str) else "L"
+        if old_type == new_type:
+            return
+        prev_pt = self._rel_points[idx - 1] if idx > 0 else self._rel_points[-1]
+        px, py = prev_pt[0], prev_pt[1]
+        if new_type == "L":
+            self._rel_points[idx] = [rx, ry]
+        elif new_type == "Q":
+            cx = (px + rx) / 2
+            cy = (py + ry) / 2
+            self._rel_points[idx] = [rx, ry, "Q", cx, cy]
+        elif new_type == "C":
+            c1x = px + (rx - px) / 3
+            c1y = py + (ry - py) / 3
+            c2x = px + 2 * (rx - px) / 3
+            c2y = py + 2 * (ry - py) / 3
+            self._rel_points[idx] = [rx, ry, "C", c1x, c1y, c2x, c2y]
+        self.prepareGeometryChange()
+        self._recalculate_bbox()
+        self._notify_changed()
+
+    def _insert_vertex_after(self, idx: int):
+        """Insert a new straight vertex midway between vertex idx and the next."""
+        next_idx = (idx + 1) % len(self._rel_points)
+        pt = self._rel_points[idx]
+        npt = self._rel_points[next_idx]
+        rx = (pt[0] + npt[0]) / 2
+        ry = (pt[1] + npt[1]) / 2
+        self.prepareGeometryChange()
+        self._rel_points.insert(idx + 1, [rx, ry])
+        self._update_path()
+        self._update_label_position()
+        self._update_transform_origin()
+        self._notify_changed()
+
+    def _insert_vertex_at(self, edge_idx: int, scene_pt: QPointF):
+        """Insert a vertex at the given scene position on edge edge_idx."""
+        local_pt = self.mapFromScene(scene_pt)
+        rx = local_pt.x() / self._width if self._width > 0 else 0.5
+        ry = local_pt.y() / self._height if self._height > 0 else 0.5
+        self.prepareGeometryChange()
+        self._rel_points.insert(edge_idx + 1, [rx, ry])
+        self._update_path()
+        self._update_label_position()
+        self._update_transform_origin()
+        self._notify_changed()
+
+    def _delete_vertex(self, idx: int):
+        """Delete a vertex (minimum 3 vertices)."""
+        if len(self._rel_points) <= 3:
+            return
+        self.prepareGeometryChange()
+        del self._rel_points[idx]
+        self._recalculate_bbox()
+        self._notify_changed()
 
     # ---- Mouse interaction ----
 
     def hoverMoveEvent(self, event):
         if self._vertex_editing:
-            idx = self._hit_test_vertex(event.scenePos())
+            scene_pt = event.scenePos()
+            idx = self._hit_test_vertex(scene_pt)
+            old_hover = self._hover_vertex
             if idx is not None:
+                self._hover_vertex = idx
                 self.setCursor(Qt.CursorShape.CrossCursor)
             else:
-                self.setCursor(Qt.CursorShape.ArrowCursor)
+                self._hover_vertex = None
+                if self._hit_test_ctrl_point(scene_pt) is not None:
+                    self.setCursor(Qt.CursorShape.CrossCursor)
+                elif self._hit_test_edge(scene_pt) is not None:
+                    self.setCursor(_get_crosshair_plus_cursor())
+                else:
+                    self.setCursor(Qt.CursorShape.ArrowCursor)
+            if old_hover != self._hover_vertex:
+                self.update()  # repaint to show/hide hover highlight
         else:
             h = self._hit_test_handle(event.scenePos())
             if h == "rotate":
-                self.setCursor(Qt.CursorShape.CrossCursor)
+                self.setCursor(_get_rotate_cursor())
             elif h:
                 self.setCursor(self._cursor_for_handle(h))
             else:
@@ -3267,7 +3276,25 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self._vertex_editing = not self._vertex_editing
+            # Double-click on the label edits it; elsewhere toggles vertex
+            # editing (the polygon's pre-existing behaviour).
+            if not self._vertex_editing and label_hit_at(self._label_item, event.pos()):
+                self._label_item._begin_edit_at(event.pos())
+                event.accept()
+                return
+            if self._vertex_editing:
+                # In edit mode: only exit if double-click is on empty space.
+                scene_pt = event.scenePos()
+                if (self._hit_test_vertex(scene_pt) is not None
+                        or self._hit_test_ctrl_point(scene_pt) is not None
+                        or self._hit_test_edge(scene_pt) is not None):
+                    event.accept()
+                    return
+                self._vertex_editing = False
+                self._selected_vertex = None
+                self._hover_vertex = None
+            else:
+                self._vertex_editing = True
             self.prepareGeometryChange()
             self.update()
             event.accept()
@@ -3277,44 +3304,52 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.RightButton and self._vertex_editing:
             scene_pt = event.scenePos()
-            # Right-click on vertex: delete it (min 3 vertices)
-            idx = self._hit_test_vertex(scene_pt)
-            if idx is not None:
-                if len(self._rel_points) > 3:
-                    self.prepareGeometryChange()
-                    del self._rel_points[idx]
-                    self._recalculate_bbox()
-                    self._notify_changed()
-                event.accept()
-                return
-            # Right-click on edge: insert a new vertex
-            edge_idx = self._hit_test_edge(scene_pt)
-            if edge_idx is not None:
-                local_pt = self.mapFromScene(scene_pt)
-                rx = local_pt.x() / self._width if self._width > 0 else 0.5
-                ry = local_pt.y() / self._height if self._height > 0 else 0.5
-                self.prepareGeometryChange()
-                self._rel_points.insert(edge_idx + 1, [rx, ry])
-                self._update_path()
-                self._update_label_position()
-                self._update_transform_origin()
-                self._notify_changed()
-                event.accept()
-                return
-
-        if event.button() == Qt.MouseButton.LeftButton:
-            # Vertex editing takes priority
-            if self._vertex_editing:
-                idx = self._hit_test_vertex(event.scenePos())
-                if idx is not None:
-                    self._begin_resize_tracking()
-                    self._active_vertex = idx
-                    self._vertex_dragging = True
-                    self._press_scene = event.scenePos()
+            if self._selected_vertex is not None:
+                idx = self._hit_test_vertex(scene_pt)
+                if idx is not None and idx == self._selected_vertex:
+                    self._show_vertex_context_menu(event.screenPos(), idx)
                     event.accept()
                     return
+            edge_idx = self._hit_test_edge(scene_pt)
+            if edge_idx is not None:
+                self._show_edge_context_menu(event.screenPos(), edge_idx, scene_pt)
+                event.accept()
+                return
+            event.accept()
+            return
 
-            # Bounding-box handle resize
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self._vertex_editing:
+                scene_pt = event.scenePos()
+                cp_hit = self._hit_test_ctrl_point(scene_pt)
+                if cp_hit is not None:
+                    self._selected_vertex = None
+                    self._active_ctrl_point = cp_hit
+                    self._ctrl_dragging = True
+                    self.update()
+                    event.accept()
+                    return
+                idx = self._hit_test_vertex(scene_pt)
+                if idx is not None:
+                    self._selected_vertex = idx
+                    self._begin_resize_tracking()
+                    self._active_vertex = idx
+                    self._press_scene = event.scenePos()
+                    self.update()
+                    event.accept()
+                    return
+                edge_idx = self._hit_test_edge(scene_pt)
+                if edge_idx is not None:
+                    self._selected_vertex = None
+                    self._insert_vertex_at(edge_idx, scene_pt)
+                    self.update()
+                    event.accept()
+                    return
+                self._selected_vertex = None
+                self.update()
+                event.accept()
+                return
+
             h = self._hit_test_handle(event.scenePos())
             if h == "rotate":
                 self._begin_rotation()
@@ -3336,6 +3371,30 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         if self._rotating:
             self._handle_rotation_move(event)
             return
+        # Control point dragging
+        if self._ctrl_dragging and self._active_ctrl_point is not None:
+            vi, label = self._active_ctrl_point
+            local_pt = self.mapFromScene(event.scenePos())
+            rx = local_pt.x() / self._width if self._width > 0 else 0.5
+            ry = local_pt.y() / self._height if self._height > 0 else 0.5
+            pt = self._rel_points[vi]
+            if label == "cp" and len(pt) >= 5 and pt[2] == "Q":
+                self._rel_points[vi] = [pt[0], pt[1], "Q", rx, ry]
+            elif label == "c1" and len(pt) >= 7 and pt[2] == "C":
+                self._rel_points[vi] = [pt[0], pt[1], "C", rx, ry, pt[5], pt[6]]
+            elif label == "c2" and len(pt) >= 7 and pt[2] == "C":
+                self._rel_points[vi] = [pt[0], pt[1], "C", pt[3], pt[4], rx, ry]
+            self.prepareGeometryChange()
+            self._update_path()
+            self._update_label_position()
+            self._update_transform_origin()
+            self._notify_changed()
+            event.accept()
+            return
+        # Promote click-to-select into drag once the mouse moves
+        if (not self._vertex_dragging and self._active_vertex is not None
+                and self._press_scene is not None):
+            self._vertex_dragging = True
         # Vertex dragging — allow dragging outside the current bounding box
         if self._vertex_dragging and self._active_vertex is not None:
             # Map scene position to local coordinates (rotation-aware)
@@ -3343,7 +3402,13 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             # Compute unclamped relative position (can exceed 0-1 range)
             rx = local_pt.x() / self._width if self._width > 0 else 0.5
             ry = local_pt.y() / self._height if self._height > 0 else 0.5
-            self._rel_points[self._active_vertex] = [rx, ry]
+            pt = self._rel_points[self._active_vertex]
+            if len(pt) >= 5 and pt[2] == "Q":
+                self._rel_points[self._active_vertex] = [rx, ry, "Q", pt[3], pt[4]]
+            elif len(pt) >= 7 and pt[2] == "C":
+                self._rel_points[self._active_vertex] = [rx, ry, "C", pt[3], pt[4], pt[5], pt[6]]
+            else:
+                self._rel_points[self._active_vertex] = [rx, ry]
             self.prepareGeometryChange()
             self._update_path()
             self._update_label_position()
@@ -3375,12 +3440,32 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if self._ctrl_dragging:
+            self._ctrl_dragging = False
+            self._active_ctrl_point = None
+            self._selected_vertex = None
+            self._recalculate_bbox()
+            self._notify_changed()
+            self.update()
+            event.accept()
+            return
         if self._vertex_dragging:
+            # Actual drag happened — deselect after release
             self._end_resize_tracking()
             self._vertex_dragging = False
             self._active_vertex = None
+            self._selected_vertex = None
             self._recalculate_bbox()
             self._notify_changed()
+            self.update()
+            event.accept()
+            return
+        if self._active_vertex is not None:
+            # Click-only (no drag) — keep vertex selected, clean up press state
+            self._active_vertex = None
+            self._press_scene = None
+            self._end_resize_tracking()
+            self.update()
             event.accept()
             return
         if self._rotating:
@@ -3404,17 +3489,28 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def shape(self) -> QPainterPath:
         base = super().shape()
         if self._should_paint_handles() and not self._vertex_editing:
-            return shape_with_handles(base, self._handle_points_local())
+            return shape_with_handles(base, self._handle_points_local(),
+                                      rotation_knob_local=self._rotation_knob_local() if self._is_rotatable() else None)
         if self._should_paint_handles() and self._vertex_editing:
-            # Add vertex hit areas
-            hit_r = _get_handle_size() / 2 + 1
-            for vp in self._vertex_points_local():
+            # Use hit_distance for knob areas so shape matches hit testing
+            hit_r = _get_hit_distance()
+            verts = self._vertex_points_local()
+            # Add vertex knob hit areas
+            for vp in verts:
                 base.addEllipse(vp, hit_r, hit_r)
+            # Add control point hit areas
+            for _vi, _label, cp in self._ctrl_point_info():
+                base.addEllipse(cp, hit_r, hit_r)
+            # Add edge stroke areas using the actual polygon path (curves included)
+            from PyQt6.QtGui import QPainterPathStroker
+            stroker = QPainterPathStroker()
+            stroker.setWidth(max(hit_r * 2, 12))
+            base = base.united(stroker.createStroke(self.path()))
         return base
 
     def boundingRect(self) -> QRectF:
         r = super().boundingRect()
-        margin = _get_handle_size() / 2 + 1
+        margin = max(_get_handle_size() / 2 + 1, _get_hit_distance() + 1)
         return r.adjusted(-margin, -margin, margin, margin)
 
     def paint(self, painter: QPainter, option, widget=None):
@@ -3426,16 +3522,51 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             return
 
         if self._vertex_editing:
-            # Draw vertex knobs
             handle_size = _get_handle_size()
             half = handle_size / 2
+            w, h = self._width, self._height
+            # Draw control point handles first (behind vertex knobs)
+            cp_pen = QPen(QColor(100, 100, 200), 1, Qt.PenStyle.DashLine)
+            cp_brush = QBrush(QColor(100, 100, 220))
+            cp_pen_solid = QPen(QColor(50, 50, 180), 1)
+            for i, pt in enumerate(self._rel_points):
+                if len(pt) >= 5 and pt[2] == "Q":
+                    anchor = QPointF(pt[0] * w, pt[1] * h)
+                    cp = QPointF(pt[3] * w, pt[4] * h)
+                    painter.setPen(cp_pen)
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.drawLine(anchor, cp)
+                    painter.setPen(cp_pen_solid)
+                    painter.setBrush(cp_brush)
+                    painter.drawEllipse(QRectF(cp.x() - half, cp.y() - half, handle_size, handle_size))
+                elif len(pt) >= 7 and pt[2] == "C":
+                    anchor = QPointF(pt[0] * w, pt[1] * h)
+                    c1 = QPointF(pt[3] * w, pt[4] * h)
+                    c2 = QPointF(pt[5] * w, pt[6] * h)
+                    prev_pt = self._rel_points[i - 1] if i > 0 else self._rel_points[-1]
+                    prev_anchor = QPointF(prev_pt[0] * w, prev_pt[1] * h)
+                    painter.setPen(cp_pen)
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.drawLine(prev_anchor, c1)
+                    painter.drawLine(anchor, c2)
+                    painter.setPen(cp_pen_solid)
+                    painter.setBrush(cp_brush)
+                    painter.drawEllipse(QRectF(c1.x() - half, c1.y() - half, handle_size, handle_size))
+                    painter.drawEllipse(QRectF(c2.x() - half, c2.y() - half, handle_size, handle_size))
+            # Draw vertex knobs
             for i, vp in enumerate(self._vertex_points_local()):
-                if i == self._active_vertex:
-                    painter.setPen(QPen(QColor(204, 102, 0), 1))
-                    painter.setBrush(QBrush(QColor(255, 165, 0)))  # Orange for active
+                if i == self._selected_vertex or i == self._active_vertex:
+                    # Selected / dragging: orange fill + orange outline
+                    painter.setPen(QPen(QColor(204, 102, 0), 2))
+                    painter.setBrush(QBrush(QColor(255, 165, 0)))
+                elif i == self._hover_vertex:
+                    # Hover: green fill + thick orange outline
+                    painter.setPen(QPen(QColor(204, 102, 0), 2))
+                    painter.setBrush(QBrush(QColor(0, 200, 0)))
                 else:
+                    # Normal: green fill + thin green outline
                     painter.setPen(QPen(QColor(0, 128, 0), 1))
-                    painter.setBrush(QBrush(QColor(0, 200, 0)))  # Green
+                    painter.setBrush(QBrush(QColor(0, 200, 0)))
                 painter.drawEllipse(QRectF(vp.x() - half, vp.y() - half,
                                            handle_size, handle_size))
         else:
@@ -3457,6 +3588,8 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             if not value:
                 self._vertex_editing = False
+                self._selected_vertex = None
+                self._hover_vertex = None
             self.prepareGeometryChange()
         return out
 
@@ -3471,7 +3604,7 @@ class MetaPolygonItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 "y": round1(p.y()),
                 "w": round1(self._width),
                 "h": round1(self._height),
-                "points": [[round(rx, 4), round(ry, 4)] for rx, ry in self._rel_points],
+                "points": self._serialize_points(),
             },
             **self._meta_dict(self.meta),
             **self._style_dict(),
@@ -3556,7 +3689,7 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         # Style
         self.pen_color = QColor(Qt.GlobalColor.darkMagenta)
         self.pen_width = 2
-        self.brush_color = QColor(0, 0, 0, 0)
+        self.brush_color = QColor(255, 255, 255)  # Text box background fill
         self.text_color = QColor(self.pen_color)
         self.line_dash = "solid"
         cached = _CachedCanvasSettings.get()
@@ -3564,8 +3697,13 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.dash_solid_percent = cached.default_dash_solid_percent
         self._apply_pen_brush()
 
+        # Text box properties (local coordinates, computed from anchor_value)
+        self._text_box_rect: Optional[QRectF] = None
+        self._drag_text_box: Optional[str] = None
+
         # Embedded text for C4 properties
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
 
@@ -3950,37 +4088,84 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.setPen(pen)
         self.setBrush(QBrush(QColor(0, 0, 0, 0)))  # Transparent fill
 
+    def _point_at_t(self, t: float) -> QPointF:
+        """Return the point at parameter *t* (0-1) along the curve path.
+
+        Uses ``QPainterPath.pointAtPercent()`` on the actual rendered path,
+        so the result follows cubic/quadratic beziers, arcs, and bend-radius
+        corners exactly as drawn.
+        """
+        path = self.path()
+        if path.isEmpty():
+            return QPointF(self._width / 2, self._height / 2)
+        return path.pointAtPercent(max(0.0, min(1.0, t)))
+
+    def _anchor_box_position(self, ax: float, ay: float, bw: float, bh: float) -> tuple:
+        """Compute text box (x, y) from anchor point and text_anchor / text_anchor_v.
+
+        The UI grid is mirrored: clicking the top-right button places the
+        box so its *bottom-left* corner sits at the anchor point (the box
+        extends up and to the right of the anchor).
+        """
+        h = getattr(self.meta, "text_anchor", "center")
+        v = getattr(self.meta, "text_anchor_v", "middle")
+        if h == "left":
+            bx = ax
+        elif h == "right":
+            bx = ax - bw
+        else:
+            bx = ax - bw / 2
+        if v == "top":
+            by = ay
+        elif v == "bottom":
+            by = ay - bh
+        else:
+            by = ay - bh / 2
+        return bx, by
+
     def _update_label_position(self):
-        """Position label at center of bounding box."""
-        padding = 8
-        self._label_item.setTextWidth(max(10, self._width - 2 * padding))
-        text_height = self._label_item.boundingRect().height()
-        y_pos = (self._height - text_height) / 2
-        self._label_item.setPos(padding, max(padding, y_pos))
+        """Position label at anchor point along the curve path."""
+        t = getattr(self.meta, "anchor_value", 50.0) / 100.0
+        anchor_pt = self._point_at_t(t)
+
+        has_text_box = (hasattr(self, "meta") and self.meta.text_box_width > 0)
+        has_text = bool(self._label_item.toPlainText().strip())
+
+        if has_text_box:
+            box_w = self.meta.text_box_width
+            ml, mr, mt, mb = self._get_text_margins()
+            wrap = getattr(self.meta, "wrap", True)
+            if wrap:
+                self._label_item.setTextWidth(max(10, box_w - ml - mr))
+            else:
+                self._label_item.setTextWidth(-1)
+            text_height = self._label_item.boundingRect().height()
+
+            if self.meta.text_box_height > 0:
+                box_h = self.meta.text_box_height
+            else:
+                box_h = text_height + mt + mb
+
+            box_x, box_y = self._anchor_box_position(anchor_pt.x(), anchor_pt.y(), box_w, box_h)
+            self._text_box_rect = QRectF(box_x, box_y, box_w, box_h)
+            self._position_label_in_rect(box_x, box_y, box_w, box_h)
+        elif has_text:
+            # Auto-size text box from label content
+            self._label_item.setTextWidth(-1)
+            ml, mr, mt, mb = self._get_text_margins()
+            text_rect = self._label_item.boundingRect()
+            box_w = text_rect.width() + ml + mr
+            box_h = text_rect.height() + mt + mb
+
+            box_x, box_y = self._anchor_box_position(anchor_pt.x(), anchor_pt.y(), box_w, box_h)
+            self._text_box_rect = QRectF(box_x, box_y, box_w, box_h)
+            self._position_label_in_rect(box_x, box_y, box_w, box_h)
+        else:
+            self._text_box_rect = None
+            self._position_label_in_rect(0, 0, self._width, self._height)
 
     def _update_label_text(self):
-        """Update embedded label HTML from meta fields."""
-        lines = []
-        align_map = {"left": "left", "center": "center", "right": "right"}
-        spacing = getattr(self.meta, "text_spacing", 0.0)
-        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
-
-        if self.meta.label:
-            align = align_map.get(self.meta.label_align, "center")
-            size = self.meta.label_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
-        if self.meta.tech:
-            align = align_map.get(self.meta.tech_align, "center")
-            size = self.meta.tech_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
-        if self.meta.note:
-            align = align_map.get(self.meta.note_align, "center")
-            size = self.meta.note_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
-
-        self._label_item.setHtml("".join(lines) if lines else "")
-        self._label_item.setDefaultTextColor(self.text_color)
-        self._update_label_position()
+        self._render_label_from_meta()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         """Set annotation metadata and update label."""
@@ -4168,6 +4353,15 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
             else:
                 self.setCursor(Qt.CursorShape.ArrowCursor)
         else:
+            # Check text box handles first
+            tb_h = self._hit_test_text_box_handle(event.scenePos())
+            if tb_h:
+                if tb_h in ("tb_tl", "tb_br"):
+                    self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+                else:
+                    self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+                super().hoverMoveEvent(event)
+                return
             h = self._hit_test_handle(event.scenePos())
             if h == "adjust1":
                 self.setCursor(Qt.CursorShape.CrossCursor)
@@ -4179,6 +4373,12 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            # Double-click on the edge label edits it; elsewhere toggles
+            # node editing (the curve's pre-existing behaviour).
+            if not self._node_editing and label_hit_at(self._label_item, event.pos()):
+                self._label_item._begin_edit_at(event.pos())
+                event.accept()
+                return
             self._node_editing = not self._node_editing
             self.prepareGeometryChange()
             self.update()
@@ -4229,6 +4429,14 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                 return
 
         if event.button() == Qt.MouseButton.LeftButton:
+            # Check text box handles first (before node editing)
+            tb_h = self._hit_test_text_box_handle(event.scenePos())
+            if tb_h:
+                self._begin_resize_tracking()
+                self._drag_text_box = tb_h
+                event.accept()
+                return
+
             if self._node_editing:
                 hit = self._hit_test_node(event.scenePos())
                 if hit is not None:
@@ -4262,6 +4470,14 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        # Text box handle drag
+        if self._drag_text_box:
+            local_pt = self.mapFromScene(event.scenePos())
+            self._resize_text_box(self._drag_text_box, local_pt)
+            self._notify_changed()
+            event.accept()
+            return
+
         # Adjust1 (bend radius) handle drag
         if self._rotating:
             self._handle_rotation_move(event)
@@ -4380,6 +4596,12 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if self._drag_text_box:
+            self._end_resize_tracking()
+            self._drag_text_box = None
+            self._notify_changed()
+            event.accept()
+            return
         if self._rotating:
             self._end_rotation()
             self._reattach_port_endpoints()
@@ -4607,6 +4829,82 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self._update_transform_origin()
         self._notify_changed()
 
+    # ---- Text box handles (same pattern as MetaLineItem) ----
+
+    def _text_box_handle_points(self) -> Dict[str, QPointF]:
+        """Return text box corner handle positions for resizing."""
+        if self._text_box_rect is None:
+            return {}
+        r = self._text_box_rect
+        return {
+            "tb_tl": QPointF(r.left(), r.top()),
+            "tb_tr": QPointF(r.right(), r.top()),
+            "tb_bl": QPointF(r.left(), r.bottom()),
+            "tb_br": QPointF(r.right(), r.bottom()),
+        }
+
+    def _draw_text_box_handles(self, painter: QPainter):
+        """Draw handles for resizing the text bounding box."""
+        handles = self._text_box_handle_points()
+        if not handles:
+            return
+        handle_pen = QPen(QColor(255, 140, 0), 1)
+        handle_brush = QBrush(QColor(255, 200, 100))
+        painter.setPen(handle_pen)
+        painter.setBrush(handle_brush)
+        handle_size = _get_handle_size()
+        half = handle_size / 2
+        for pos in handles.values():
+            painter.drawRect(QRectF(pos.x() - half, pos.y() - half, handle_size, handle_size))
+
+    def _hit_test_text_box_handle(self, scene_pt: QPointF) -> Optional[str]:
+        """Test if scene point hits a text box resize handle."""
+        if not self._should_paint_handles():
+            return None
+        if self._text_box_rect is None:
+            return None
+        handles = self._text_box_handle_points()
+        local_pt = self.mapFromScene(scene_pt)
+        hit_dist = _get_hit_distance()
+        for name, pos in handles.items():
+            if QLineF(local_pt, pos).length() <= hit_dist:
+                return name
+        return None
+
+    def _resize_text_box(self, handle: str, local_pt: QPointF):
+        """Resize the text box based on handle being dragged."""
+        if self._text_box_rect is None:
+            return
+        r = self._text_box_rect
+        min_size = 30.0
+        if handle == "tb_tl":
+            new_left = min(local_pt.x(), r.right() - min_size)
+            new_top = min(local_pt.y(), r.bottom() - min_size)
+            new_width = r.right() - new_left
+            new_height = r.bottom() - new_top
+        elif handle == "tb_tr":
+            new_left = r.left()
+            new_top = min(local_pt.y(), r.bottom() - min_size)
+            new_width = max(local_pt.x() - r.left(), min_size)
+            new_height = r.bottom() - new_top
+        elif handle == "tb_bl":
+            new_left = min(local_pt.x(), r.right() - min_size)
+            new_top = r.top()
+            new_width = r.right() - new_left
+            new_height = max(local_pt.y() - r.top(), min_size)
+        elif handle == "tb_br":
+            new_left = r.left()
+            new_top = r.top()
+            new_width = max(local_pt.x() - r.left(), min_size)
+            new_height = max(local_pt.y() - r.top(), min_size)
+        else:
+            return
+        self.meta.text_box_width = round1(new_width)
+        self.meta.text_box_height = round1(new_height)
+        self.prepareGeometryChange()
+        self._update_label_position()
+        self.update()
+
     # ---- Shape / bounds / paint ----
 
     def shape(self) -> QPainterPath:
@@ -4616,8 +4914,12 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         s = QPainterPathStroker()
         s.setWidth(max(20, self.pen_width + 10))
         stroker = s.createStroke(self.path())
+        if self._text_box_rect is not None:
+            stroker.addRect(self._text_box_rect)
         if self._should_paint_handles() and not self._node_editing:
-            return shape_with_handles(stroker, self._handle_points_local())
+            all_handles = self._handle_points_local()
+            all_handles.update(self._text_box_handle_points())
+            return shape_with_handles(stroker, all_handles)
         if self._should_paint_handles() and self._node_editing:
             hit_r = _get_handle_size() / 2 + 1
             for pt, _, _ in self._node_points_scene():
@@ -4628,7 +4930,10 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def boundingRect(self) -> QRectF:
         r = super().boundingRect()
         margin = _get_handle_size() / 2 + 1 + self.pen_width
-        return r.adjusted(-margin, -margin, margin, margin)
+        r = r.adjusted(-margin, -margin, margin, margin)
+        if self._text_box_rect is not None:
+            r = r.united(self._text_box_rect.adjusted(-margin, -margin, margin, margin))
+        return r
 
     def paint(self, painter: QPainter, option, widget=None):
         my_option = QStyleOptionGraphicsItem(option)
@@ -4656,8 +4961,43 @@ class MetaCurveItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
                     if from_pt is not None and to_pt is not None:
                         self._draw_arrowhead(painter, from_pt, to_pt, effective_arrow_size)
 
+        # Draw text box when present
+        if self._text_box_rect is not None:
+            bg_hex = getattr(self.meta, "text_box_background_color", "")
+            if bg_hex:
+                from utils import hex_to_qcolor
+                bg_c = hex_to_qcolor(bg_hex, self.brush_color)
+            else:
+                bg_c = QColor(self.brush_color)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(bg_c))
+            painter.drawRect(self._text_box_rect)
+
+            if self._should_paint_handles():
+                border_hex = getattr(self.meta, "text_box_border_color", "")
+                if border_hex:
+                    from utils import hex_to_qcolor as _h2q
+                    border_c = _h2q(border_hex, QColor(200, 200, 200))
+                else:
+                    border_c = QColor(200, 200, 200)
+                box_pen = QPen(border_c, 1, Qt.PenStyle.SolidLine)
+                painter.setPen(box_pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(self._text_box_rect)
+
         if not self._should_paint_handles():
             return
+
+        # Draw anchor dot
+        t = getattr(self.meta, "anchor_value", 50.0) / 100.0
+        pt = self._point_at_t(t)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor(160, 160, 160)))
+        painter.drawEllipse(pt, 5, 5)
+
+        # Draw text box handles
+        if self._text_box_rect is not None:
+            self._draw_text_box_handles(painter)
 
         if self._node_editing:
             self._paint_node_handles(painter)
@@ -5342,7 +5682,7 @@ class MetaOrthoCurveItem(MetaCurveItem):
         return rec
 
 
-class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
+class MetaIsoCubeItem(LabelEditableMixin, QGraphicsPathItem, MetaMixin, LinkedMixin):
     """Isometric cube with configurable depth and extrusion angle.
 
     adjust1: depth of isometric extrusion in pixels (0–max(w,h), default 30)
@@ -5396,7 +5736,8 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         self.dash_solid_percent = cached.default_dash_solid_percent
         self._apply_pen_brush()
 
-        self._label_item = QGraphicsTextItem(self)
+        self._label_item = EditableLabelItem(self)
+        self._label_item.setAcceptHoverEvents(False)
         self._label_item.setDefaultTextColor(self.text_color)
         self._label_item.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self._update_label_position()
@@ -5518,45 +5859,10 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def _update_label_position(self):
         """Position label text inside the front face."""
         fx, fy, fw, fh = self._front_rect()
-        padding = 4
-        self._label_item.setTextWidth(max(10, fw - 2 * padding))
-
-        text_height = self._label_item.boundingRect().height()
-        valign = getattr(self.meta, "text_valign", "top") if hasattr(self, "meta") else "top"
-
-        if valign == "middle":
-            y_pos = fy + (fh - text_height) / 2
-        elif valign == "bottom":
-            y_pos = fy + fh - padding - text_height
-        else:
-            y_pos = fy + padding
-
-        self._label_item.setPos(fx + padding, max(fy + padding, y_pos))
+        self._position_label_in_rect(fx, fy, fw, fh)
 
     def _update_label_text(self):
-        """Rebuild label HTML from meta fields."""
-        lines = []
-        align_map = {"left": "left", "center": "center", "right": "right"}
-
-        spacing = getattr(self.meta, "text_spacing", 0.0) if hasattr(self, "meta") else 0.0
-        margin_style = f"margin-bottom:{spacing}em;" if spacing > 0 else ""
-
-        if self.meta.label:
-            align = align_map.get(self.meta.label_align, "center")
-            size = self.meta.label_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><b>{self.meta.label}</b></p>')
-        if self.meta.tech:
-            align = align_map.get(self.meta.tech_align, "center")
-            size = self.meta.tech_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt; {margin_style}"><i>[{self.meta.tech}]</i></p>')
-        if self.meta.note:
-            align = align_map.get(self.meta.note_align, "center")
-            size = self.meta.note_size
-            lines.append(f'<p style="text-align:{align}; font-size:{size}pt;">{self.meta.note}</p>')
-
-        self._label_item.setHtml("".join(lines) if lines else "")
-        self._label_item.setDefaultTextColor(self.text_color)
-        self._update_label_position()
+        self._render_label_from_meta()
 
     def set_meta(self, meta: AnnotationMeta) -> None:
         """Set annotation metadata and update label display."""
@@ -5628,7 +5934,7 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         """Update cursor based on handle under mouse."""
         h = self._hit_test_handle(event.scenePos())
         if h == "rotate":
-            self.setCursor(Qt.CursorShape.CrossCursor)
+            self.setCursor(_get_rotate_cursor())
         elif h in ("adjust1", "adjust2"):
             self.setCursor(Qt.CursorShape.CrossCursor)
         elif h:
@@ -5730,7 +6036,8 @@ class MetaIsoCubeItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         """Return shape including handle hit areas when selected."""
         base = super().shape()
         if self._should_paint_handles():
-            return shape_with_handles(base, self._handle_points_local())
+            return shape_with_handles(base, self._handle_points_local(),
+                                      rotation_knob_local=self._rotation_knob_local() if self._is_rotatable() else None)
         return base
 
     def boundingRect(self) -> QRectF:
@@ -6282,6 +6589,8 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     on_adjust1_changed = None
     on_adjust2_changed = None
     on_adjust3_changed = None
+    # Called with (item, old_tech, new_tech) on a committed section edit.
+    on_section_edit_finished = None
 
     _TAB_HEIGHT = 20
     _TAB_PADDING = 4
@@ -6333,11 +6642,11 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         # Section text items: one per region (top + up to 3 divider regions).
         # tech meta is pipe-separated; each section "[text]" is placed just
         # below its corresponding divider (first section below the tab).
-        self._section_items: List[QGraphicsTextItem] = []
-        for _ in range(4):
-            ti = QGraphicsTextItem(self)
+        # Each is an EditableSectionItem so a region can be edited in place.
+        self._section_items: List[EditableSectionItem] = []
+        for _i in range(4):
+            ti = EditableSectionItem(self, _i)
             ti.setDefaultTextColor(self.text_color)
-            ti.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
             ti.setVisible(False)
             self._section_items.append(ti)
         # Legacy compat: _label_item points to first section for shared code
@@ -6393,9 +6702,11 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         ``[text]`` — the first just below the type tab, subsequent ones
         just below each divider line.
         """
+        _eff_frame = self.meta.effective_frame()
+        _eff_fmt = self.meta.effective_default_format()
         align_map = {"left": "left", "center": "center", "right": "right"}
-        align = align_map.get(self.meta.tech_align, "center")
-        size = self.meta.tech_size
+        align = align_map.get(_eff_frame.halign or "center", "center")
+        size = max(6, int(_eff_fmt.font_size or 10))
 
         sections: List[str] = []
         if self.meta.tech:
@@ -6418,6 +6729,57 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
         """Assign metadata and refresh label."""
         self.meta = meta
         self._update_label_text()
+
+    # ---- in-place section editing ----
+
+    def _sections(self) -> List[str]:
+        """Current region texts from the pipe-separated ``meta.tech``."""
+        if self.meta.tech:
+            return [s.strip() for s in self.meta.tech.split("|")]
+        return []
+
+    def _section_index_at(self, local_y: float) -> int:
+        """Region index for a click at *local_y* (item-local coordinates)."""
+        divider_ys: List[float] = []
+        if self._divider_count >= 1:
+            divider_ys.append(self._adjust1 * self._height)
+        if self._divider_count >= 2:
+            divider_ys.append(self._adjust2 * self._height)
+        if self._divider_count >= 3:
+            divider_ys.append(self._adjust3 * self._height)
+        idx = sum(1 for d in divider_ys if local_y >= d)
+        return min(idx, self._divider_count)
+
+    def mouseDoubleClickEvent(self, event):
+        """Double-click a region → edit that section's text in place."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            idx = self._section_index_at(event.pos().y())
+            sections = self._sections()
+            raw = sections[idx] if idx < len(sections) else ""
+            self._section_items[idx].begin_edit(raw)
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def _set_section_text(self, index: int, text: str) -> None:
+        """Write *text* into region *index* of the pipe-separated tech, render."""
+        active = self._divider_count + 1
+        sections = self._sections()
+        while len(sections) < active:
+            sections.append("")
+        old_tech = self.meta.tech
+        if index < len(sections):
+            sections[index] = text
+        new_tech = "|".join(sections)
+        changed = new_tech != old_tech
+        if changed:
+            self.meta.tech = new_tech
+        # Always re-render so the edited region returns to its "[text]" display.
+        self._update_label_text()
+        if changed:
+            self._notify_changed()
+            if MetaSeqBlockItem.on_section_edit_finished:
+                MetaSeqBlockItem.on_section_edit_finished(self, old_tech, new_tech)
 
     # ---- rect / adjust API ----
 
@@ -6567,7 +6929,7 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def hoverMoveEvent(self, event):
         h = self._hit_test_handle(event.scenePos())
         if h == "rotate":
-            self.setCursor(Qt.CursorShape.CrossCursor)
+            self.setCursor(_get_rotate_cursor())
         elif h in ("adjust1", "adjust2", "adjust3"):
             self.setCursor(Qt.CursorShape.SizeVerCursor)
         elif h:
@@ -6751,7 +7113,8 @@ class MetaSeqBlockItem(QGraphicsPathItem, MetaMixin, LinkedMixin):
     def shape(self) -> QPainterPath:
         base = super().shape()
         if self._should_paint_handles():
-            return shape_with_handles(base, self._handle_points_local())
+            return shape_with_handles(base, self._handle_points_local(),
+                                      rotation_knob_local=self._rotation_knob_local() if self._is_rotatable() else None)
         return base
 
     def boundingRect(self) -> QRectF:

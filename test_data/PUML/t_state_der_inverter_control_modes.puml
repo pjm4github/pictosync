@@ -1,0 +1,289 @@
+@startuml t_state_der_inverter_control_modes
+title DER Grid-Tied Inverter Control Mode State Machine\n(IEEE 2030.5 / IEEE 1547-2018 / IEC 61727)
+
+skinparam state {
+    BackgroundColor #E8F5E9
+    BorderColor #2E7D32
+    FontSize 10
+    ArrowColor #333333
+    ArrowFontSize 9
+}
+skinparam state<<GRID_FORMING>> {
+    BackgroundColor #E3F2FD
+    BorderColor #0D47A1
+}
+skinparam state<<GRID_FOLLOWING>> {
+    BackgroundColor #F3E5F5
+    BorderColor #6A1B9A
+}
+skinparam state<<FAULT>> {
+    BackgroundColor #FFEBEE
+    BorderColor #B71C1C
+}
+skinparam state<<STANDBY>> {
+    BackgroundColor #FFF8E1
+    BorderColor #F57F17
+}
+skinparam state<<RIDE_THROUGH>> {
+    BackgroundColor #E8EAF6
+    BorderColor #283593
+}
+skinparam state<<ISLANDED>> {
+    BackgroundColor #F1F8E9
+    BorderColor #33691E
+}
+
+[*] --> POWER_OFF
+
+' ─── Power-off ───────────────────────────────────────────────────────────────
+state "POWER_OFF" as POWER_OFF {
+    POWER_OFF : entry / disable all gate drives\n              discharge DC bus (bleed resistor)\n              assert safe-state outputs
+    POWER_OFF : do / monitor: Vdc_bus, temp_junction\n          await: utility_present AND\n                 enable_cmd from CSIP
+    POWER_OFF : exit / verify DC bus charged\n             verify gate driver supply OK
+}
+
+' ─── Pre-connection checks ───────────────────────────────────────────────────
+state "PRECONNECT_CHECK" as PRECONNECT <<STANDBY>> {
+    state "GRID_MONITOR" as GM
+    state "ANTI_ISLANDING_CHECK" as AIC
+    state "SYNC_ACQUIRE" as SYNC_ACQ
+    state "RECONNECT_DELAY" as RECONN_DLY
+
+    GM : do / measure: Vgrid_RMS, Fgrid\n       check: 0.88pu < V < 1.10pu\n              59.3Hz < F < 60.5Hz\n       duration: 60s continuous (IEEE 1547 §4.10.3)
+
+    AIC : do / Sandia Frequency Shift (SFS)\n       or Reactive Power Variation (RPV)\n       confirm grid stiff (non-islanded)
+
+    SYNC_ACQ : entry / start PLL: 3-phase SRF-PLL\n               target: Δθ < 20°, ΔV < 10%, ΔF < 0.3Hz
+    SYNC_ACQ : do / iterate PLL: Kp=0.5 Ki=20\n           monitor: theta_err, v_err, f_err
+    SYNC_ACQ : exit / lock confirmed: all params in window
+
+    RECONN_DLY : do / mandatory reconnect delay\n            300s (5min) after fault trip\n            20s after normal disconnect
+
+    [*] --> RECONN_DLY
+    RECONN_DLY --> GM : delay_expired
+    GM --> AIC : grid_in_range [60s_stable]
+    GM --> RECONN_DLY : grid_out_of_range\n/ restart delay
+    AIC --> SYNC_ACQ : grid_confirmed_stiff
+    AIC --> RECONN_DLY : island_detected\n/ log ISLAND_SUSPECTED
+    SYNC_ACQ --> [*] : sync_locked\n[pll_converged]
+    SYNC_ACQ --> GM : pll_timeout(10s)\n/ restart monitoring
+}
+
+' ─── Grid following mode (normal operation) ──────────────────────────────────
+state "GRID_FOLLOWING" as GRID_FOLLOWING <<GRID_FOLLOWING>> {
+
+    state "PQ_CONTROL" as PQ_CTRL {
+        PQ_CTRL : entry / set: Pref, Qref from DER schedule\n            initialize current controllers\n            Id_ref = Pref/Vgrid\n            Iq_ref = Qref/Vgrid
+        PQ_CTRL : do / inner loop: Id, Iq control @ 10kHz\n          outer loop: P, Q setpoint track @ 1kHz\n          anti-windup: integrator clamp
+        PQ_CTRL : exit / ramp P to 0 over 200ms
+
+        state "MPPT_TRACKING" as MPPT {
+            MPPT : do / Perturb & Observe: ΔVdc=1V/step\n             or Incremental Conductance\n             update Pref = Pmpp
+        }
+
+        state "DISPATCH_FOLLOW" as DISPATCH {
+            DISPATCH : do / follow IEEE 2030.5 DERControl:\n              Pmax, Pmin, setESDelay\n              reactive power setpoint
+        }
+
+        MPPT --> DISPATCH : der_control_active\n[IEEE2035.DERControl present]
+        DISPATCH --> MPPT : der_control_expired\nor no_der_control
+    }
+
+    state "VOLT_VAR_CONTROL" as VVC {
+        state "VV_MONITORING" as VVM
+        state "VV_RESPONDING" as VVR
+        state "VV_DEADBAND" as VVD
+
+        VVM : do / measure: Vgrid_RMS @ PCC\n           compute: ΔV = Vgrid - Vnom
+        VVD : do / no reactive response\n          |ΔV| < deadband_threshold (±0.02pu)
+        VVR : do / compute Qcmd from Volt-VAR curve\n          apply: Q = f(V) per IEEE 1547 cat B\n          ramp rate: 10% Qmax/s
+
+        [*] --> VVM
+        VVM --> VVD : |deltaV| < 0.02pu
+        VVM --> VVR : |deltaV| >= 0.02pu
+        VVD --> VVM : poll_interval(100ms)
+        VVR --> VVM : q_setpoint_applied
+    }
+
+    state "FREQ_WATT_CONTROL" as FWC {
+        FWC : do / monitor: Fgrid\n          if F > 60.036Hz (db=0.036Hz):\n            curtail P: droop = 5%\n            ΔP/ΔF = -Prated/0.5Hz\n          if F < 59.964Hz:\n            increase P if available
+    }
+
+    PQ_CTRL --> VVC : vvc_enabled [volt_var_mode]\n/ concurrent
+    PQ_CTRL --> FWC : freq_watt_enabled\n/ concurrent
+
+    GRID_FOLLOWING : entry / close grid contactor K1\n                   enable PWM gate drives\n                   ramp P: 0→Pref over 10s
+    GRID_FOLLOWING : do / supervise: P_actual, Q_actual\n               log IEEE 2030.5 MirrorUsagePoint\n               update DER status every 5s
+    GRID_FOLLOWING : exit / ramp P to 0 (200ms)\n               disable gate drives\n               open contactor K1 (after Ig=0)
+}
+
+' ─── Voltage / Frequency Ride-Through ────────────────────────────────────────
+state "RIDE_THROUGH" as RIDE_THROUGH <<RIDE_THROUGH>> {
+
+    state "HV_RIDE_THROUGH" as HVRT {
+        HVRT : do / continue operating: 1.10pu < V < 1.20pu\n           mandatory for up to 12 cycles\n           curtail Q if needed\n           monitor: duration counter
+    }
+
+    state "LV_RIDE_THROUGH" as LVRT {
+        LVRT : do / continue operating: 0.50pu < V < 0.88pu\n           inject reactive current: ΔIq = 2×ΔV\n           mandatory for up to 160 cycles\n           prioritize Q over P
+    }
+
+    state "HF_RIDE_THROUGH" as HFRT {
+        HFRT : do / continue: 60.5Hz < F < 61.8Hz\n           curtail P per freq-watt curve\n           mandatory for up to 299 cycles
+    }
+
+    state "LF_RIDE_THROUGH" as LFRT {
+        LFRT : do / continue: 58.8Hz < F < 59.3Hz\n           increase P if curtailed\n           mandatory for up to 299 cycles
+    }
+
+    state "RT_TIMEOUT_CHECK" as RT_CHK <<FAULT>>
+    state "RT_RECOVER_CHOICE" as RT_CHOICE <<choice>>
+
+    [*] --> RT_CHK
+    RT_CHK --> RT_CHOICE : check_rt_limits
+    RT_CHOICE --> HVRT : [hv_condition]
+    RT_CHOICE --> LVRT : [lv_condition]
+    RT_CHOICE --> HFRT : [hf_condition]
+    RT_CHOICE --> LFRT : [lf_condition]
+
+    HVRT --> [*] : grid_restored [V_in_range]\n/ return to grid_following
+    LVRT --> [*] : grid_restored [V_in_range]\n/ return to grid_following
+    HFRT --> [*] : grid_restored [F_in_range]
+    LFRT --> [*] : grid_restored [F_in_range]
+
+    HVRT --> [*] : rt_duration_exceeded\n[V > 1.20pu or t > 12cyc]\n/ mandatory trip
+    LVRT --> [*] : rt_duration_exceeded\n[V < 0.50pu or t > 160cyc]\n/ mandatory trip
+    HFRT --> [*] : rt_duration_exceeded\n[F > 61.8Hz or t > 299cyc]
+    LFRT --> [*] : rt_duration_exceeded\n[F < 58.5Hz or t > 299cyc]
+}
+
+' ─── Islanded / Grid-forming mode ────────────────────────────────────────────
+state "ISLANDED_OPERATION" as ISLANDED <<ISLANDED>> {
+
+    state "ISLAND_DETECTION_CONFIRM" as IDC
+    state "ISLAND_CAPABILITY_CHECK" as ICC <<choice>>
+
+    state "GRID_FORMING_VSI" as VSI <<GRID_FORMING>> {
+        VSI : entry / switch: current-control → voltage-control\n          set: Vref=1.0pu, Fref=60.0Hz\n          enable: droop control
+        VSI : do / V-F droop: Kv=5%, Kf=5%\n          current limit: 1.2pu (hardware)\n          load sharing with other DERs\n          black-start sequencing if req'd
+        VSI : exit / transition back to grid-following mode\n          synchronize: Δθ<20°, ΔV<10%, ΔF<0.3Hz
+
+        state "BLACK_START" as BS
+        state "LOAD_PICKUP" as LP
+        state "STEADY_STATE_ISLAND" as SSI
+
+        [*] --> BS
+        BS : do / energize island bus\n       sequence critical loads first
+        BS --> LP : bus_energized [V_stable]
+        LP : do / close load feeders in sequence\n       monitor: I_inrush < 1.5pu
+        LP --> SSI : all_loads_picked_up
+        SSI : do / regulate: V, F\n        balance: P_gen == P_load ± 5%\n        monitor: battery_SOC, fuel_level
+        SSI --> [*] : grid_reconnect_approved
+    }
+
+    IDC : do / confirm island: 3 independent methods\n        SFS + RPV + ROCOF (df/dt > 1Hz/s)\n        threshold: all 3 must trigger
+    IDC --> ICC : island_confirmed [3/3 methods]
+
+    ICC --> VSI : [DER.islandCapable == true\nand battery_SOC > 20%]
+    ICC --> [*] : [DER.islandCapable == false\nor battery_SOC <= 20%]\n/ mandatory trip
+
+    [*] --> IDC
+}
+
+' ─── Protective trip ─────────────────────────────────────────────────────────
+state "PROTECTIVE_TRIP" as PROT_TRIP <<FAULT>> {
+
+    state "TRIP_CLASSIFY" as TC
+    state "TRIP_CHOICE" as T_CHOICE <<choice>>
+    state "INSTANTANEOUS_TRIP" as IT_STATE
+    state "DELAYED_TRIP" as DT_STATE
+    state "FAULT_LOG" as FL
+
+    TC : do / identify: trip cause\n       OV, UV, OF, UF, OC, DC_OV,\n       ISLANDING, EXTERNAL_TRIP,\n       THERMAL, COMM_LOSS
+
+    T_CHOICE --> IT_STATE : [severity==CRITICAL\nor cause IN {OC, DC_OV, THERMAL}]
+    T_CHOICE --> DT_STATE : [severity==WARNING\nor cause IN {OV, UV, OF, UF}]
+
+    IT_STATE : entry / disable PWM immediately (<1 cycle)\n              open contactor K1 (<2 cycles)\n              log: trip_reason, Vgrid, Igrid, Vdc
+    DT_STATE : entry / ramp P to 0 over 200ms\n              then disable PWM\n              then open K1
+
+    [*] --> TC
+    TC --> T_CHOICE : classified
+    IT_STATE --> FL : trip_executed
+    DT_STATE --> FL : trip_executed
+    FL --> [*] : logged\n/ publish IEEE2035 DERStatus.operationalModeStatus=TRIP
+}
+
+' ─── Top-level transitions ───────────────────────────────────────────────────
+POWER_OFF --> PRECONNECT : utility_present\nand enable_cmd [Vdc > Vdc_min]\n/ start_preconnect_sequence()
+
+PRECONNECT --> GRID_FOLLOWING : preconnect_complete\n[sync_locked\nand anti_island_clear]\n/ close_contactor()
+
+PRECONNECT --> POWER_OFF : utility_lost [Vgrid < 0.5pu\nor Fgrid out of range]\n/ abort_preconnect()
+
+' Ride-through entry (from grid-following)
+GRID_FOLLOWING --> RIDE_THROUGH : abnormal_grid\n[V outside 0.88-1.10pu\nor F outside 59.3-60.5Hz\nand not in mandatory_trip_zone]\n/ log_ride_through_entry()
+
+RIDE_THROUGH --> GRID_FOLLOWING : grid_restored\n[V in 0.95-1.05pu\nand F in 59.98-60.02Hz\nfor 10s]\n/ resume_pq_control()
+
+RIDE_THROUGH --> PROT_TRIP : mandatory_trip_threshold_exceeded\n[per IEEE 1547 Table 1&2]
+
+' Islanding
+GRID_FOLLOWING --> ISLANDED : island_suspected\n[initial detection]\n/ begin_island_confirm()
+
+ISLANDED --> PRECONNECT : grid_reconnected\n[utility_restored]\n/ island_exit_sequence()
+
+ISLANDED --> PROT_TRIP : island_not_capable\nor battery_depleted [SOC < 5%]
+
+' Normal trip
+GRID_FOLLOWING --> PROT_TRIP : protection_element_operated\n[OC | OV | UV | OF | UF]\nor external_trip_cmd [SCADA]\nor IEEE2035.DERControl.setESDelay==0
+
+PROT_TRIP --> PRECONNECT : fault_cleared\n[manual_reset or auto_reclose]\n[operator_acknowledged]\n/ start_reconnect_delay(300s)
+
+PROT_TRIP --> POWER_OFF : utility_lost [sustained]\nor hardware_fault [non-recoverable]\n/ shutdown_sequence()
+
+' Shutdown
+GRID_FOLLOWING --> POWER_OFF : disable_cmd [IEEE2035]\nor planned_shutdown\n/ graceful_shutdown()
+
+note right of GRID_FOLLOWING
+    **IEEE 2030.5 DER Status Reports:**
+    operationalModeStatus:
+      0=Not_Applicable
+      1=Not_Operating
+      2=Operating (→ this state)
+      3=Starting_up
+      4=Shutting_down
+      5=At_Disconnect_Level
+      6=SGD_Load_Level
+    Reported every 5s to CSIP-AUS VEN.
+end note
+
+note left of ISLANDED
+    **IEEE 1547-2018 §8:**
+    Intentional island permitted only with
+    explicit utility agreement + transfer switch.
+    Unintentional island: trip within 2s.
+    Island-capable DER: must re-sync before
+    reconnect (Δθ<20°, ΔV<10%, ΔF<0.3Hz).
+end note
+
+note right of RIDE_THROUGH
+    **IEEE 1547-2018 Table 1 (Category B):**
+    HV: 1.10-1.20pu → ride-through up to 12cyc
+    HV: >1.20pu → trip within 0.16s
+    LV: 0.50-0.88pu → ride-through up to 160cyc
+    LV: <0.50pu → trip within 0.16s
+    HF: 60.5-61.8Hz → ride-through up to 299cyc
+    LF: 58.8-59.3Hz → ride-through up to 299cyc
+end note
+
+note bottom of PRECONNECT
+    **Reconnect delay (IEEE 1547 §4.10.3):**
+    - After fault trip: 300s mandatory delay
+    - After normal disconnect: 20s minimum
+    - After voltage sag recovery: 0s (immediate)
+    Anti-islanding must confirm grid stiff
+    before any reconnect attempt.
+end note
+
+@enduml

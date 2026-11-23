@@ -1,0 +1,343 @@
+@startuml t_activity_08_parser_stress_test
+title Activity Diagram — Parser Stress Test\n(all keywords combined, deep nesting, edge cases, special chars)
+
+skinparam activity {
+    BackgroundColor #F8F9FA
+    BorderColor #495057
+    DiamondBackgroundColor #FFF9C4
+    DiamondBorderColor #F9A825
+    FontSize 11
+    ArrowColor #333333
+}
+
+start
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. ACTION LABEL EDGE CASES
+'    Labels containing chars that could confuse the colon-to-semicolon lexer
+' ══════════════════════════════════════════════════════════════════════════
+
+:Action with (parentheses) inside;
+:Action with [square brackets] inside;
+:Action with {curly braces} inside;
+:Action with -> arrow text inside;
+:Action with --> dotted arrow inside;
+:Action with : colon inside label;
+:Action with "quoted text" inside;
+:Action with 'single quotes' inside;
+:Action with < angle > brackets;
+:Action with | pipe | characters;
+:Action with #hash in label;
+:Action with == equals == inside;
+:Action with ... dots ... inside;
+:Action with * asterisk inside;
+:Action with - dash inside;
+:Action with \n literal backslash-n;
+:Action: label starting with colon after colon;
+:Multiline with : colon
+ on second : line
+ and third : line;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. ALL STEREOTYPE FORMS
+' ══════════════════════════════════════════════════════════════════════════
+
+:SDL input; <<input>>
+:SDL output; <<o>>
+:SDL procedure; <<procedure>>
+:SDL load; <<load>>
+:SDL save; <<save>>
+:SDL continuous; <<continuous>>
+:SDL task; <<task>>
+:UML object; <<object>>
+:UML signal; <<objectSignal>>
+:UML accept; <<acceptEvent>>
+:UML time; <<timeEvent>>
+:UML send; <<sendSignal>>
+:UML trigger; <<trigger>>
+:UML icon; <<icon>>
+:Custom stereo; <<customStereoName>>
+:Color plus stereo; <<input>>
+#LightBlue:Colored plus stereo; <<procedure>>
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. ARROW EDGE CASES
+' ══════════════════════════════════════════════════════════════════════════
+
+:Before explicit bare arrow;
+->
+:After bare arrow;
+
+:Before labeled arrow with special chars;
+-> label with (parens) and [brackets];
+:After labeled arrow;
+
+:Before colored arrow;
+-[#FF0000]->
+:After red colored arrow;
+
+-[#00FF00,bold]->
+:After green bold arrow;
+
+-[#0000FF,dashed]->
+:After blue dashed arrow;
+
+-[#FF8800,dotted]->
+:After orange dotted arrow;
+
+-[hidden]->
+:After hidden arrow;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. CONNECTORS WITH SPECIAL NAMES
+' ══════════════════════════════════════════════════════════════════════════
+
+(A)
+:Action after connector A;
+if (go to B or C?) then (B)
+    (B)
+else (C)
+    (C)
+endif
+(B)
+:Continue from B;
+(C)
+:Continue from C;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. DEEPLY NESTED CONDITIONALS (5 levels)
+' ══════════════════════════════════════════════════════════════════════════
+
+if (level 1?) then (yes)
+    :L1 true;
+    if (level 2?) then (yes)
+        :L2 true;
+        if (level 3?) then (yes)
+            :L3 true;
+            if (level 4?) then (yes)
+                :L4 true;
+                if (level 5?) then (yes)
+                    :L5 true — maximum depth;
+                else (no)
+                    :L5 false;
+                endif
+            else (no)
+                :L4 false;
+                switch (L4 switch?)
+                case (opt1)
+                    :L4 switch opt1;
+                case (opt2)
+                    :L4 switch opt2;
+                endswitch
+            endif
+        else (no)
+            :L3 false;
+        endif
+    elseif (level 2 alt?) then (yes)
+        :L2 alternate;
+    else (no)
+        :L2 false;
+    endif
+else (no)
+    :L1 false;
+endif
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. ALL LOOP FORMS IN SEQUENCE
+' ══════════════════════════════════════════════════════════════════════════
+
+:Action before loops;
+
+repeat
+    :Repeat body;
+repeat while (repeat done?) is (no) not (yes)
+
+while (while condition?) is (yes)
+    :While body;
+endwhile (done)
+
+repeat
+    :Repeat with backward;
+backward:Backward action;
+repeat while (done?) is (no)
+
+while (while with backward?) is (yes)
+    :While body with backward;
+backward:While backward;
+endwhile
+
+:Action after loops;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 7. ALL PARALLEL FORMS IN SEQUENCE
+' ══════════════════════════════════════════════════════════════════════════
+
+fork
+    :Fork branch 1;
+fork again
+    :Fork branch 2;
+end fork
+
+fork
+    :Fork branch A;
+fork again
+    :Fork branch B;
+end fork {and}
+
+fork
+    :Merge branch X;
+fork again
+    :Merge branch Y;
+end merge
+
+split
+    :Split branch I;
+split again
+    :Split branch II;
+end split
+
+' ══════════════════════════════════════════════════════════════════════════
+' 8. ALL TERMINAL FORMS
+' ══════════════════════════════════════════════════════════════════════════
+
+if (which terminal?) then (stop)
+    :Log stop path;
+else (end)
+    :Log end path;
+endif
+
+' ══════════════════════════════════════════════════════════════════════════
+' 9. CONTAINER TYPES (partition only — others conflict with swimlanes)
+' ══════════════════════════════════════════════════════════════════════════
+
+:Pre-container action;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 10. CONTINUED FLOW (swimlanes tested separately in t_activity_05)
+' ══════════════════════════════════════════════════════════════════════════
+
+:Alpha start;
+
+if (alpha condition?) then (yes)
+    :Alpha true;
+else (no)
+    :Alpha false;
+endif
+
+:Beta start;
+
+fork
+    :Beta fork branch;
+fork again
+    :Gamma fork branch;
+end fork
+
+
+while (gamma loop?) is (yes)
+    :Gamma loop body;
+endwhile (done)
+
+:Delta action;
+
+switch (delta choice?)
+case (X)
+    :Delta X;
+case (Y)
+    :Cross-lane switch case;
+endswitch
+
+:Epsilon end action;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 11. LABEL / GOTO EDGE CASES
+' ══════════════════════════════════════════════════════════════════════════
+
+
+label jumpTarget1
+:Action at jump target 1;
+
+if (jump back?) then (yes)
+    :Pre-jump action;
+    goto jumpTarget1
+endif
+
+label jumpTarget2
+:Action at jump target 2;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 12. NOTES ADJACENT TO EVERY CONSTRUCT
+' ══════════════════════════════════════════════════════════════════════════
+
+
+:Action with adjacent right note;
+note right: Inline right note
+
+:Action with adjacent left note;
+note left: Inline left note
+
+if (noted condition?) then (yes)
+    :True branch;
+    note right: Note in true branch
+else (no)
+    :False branch;
+    note left: Note in false branch
+endif
+
+fork
+    :Fork branch with note;
+    note right
+        Block note in
+        fork branch
+    end note
+fork again
+    :Other fork branch;
+end fork
+
+note
+    Floating standalone note
+    between constructs
+end note
+
+:Action after floating note;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 13. MULTI-LINE ACTIONS WITH MIXED CONTENT
+' ══════════════════════════════════════════════════════════════════════════
+
+
+:Complex multi-line action
+ - Item one with **bold**
+ - Item two with //italic//
+ * Star item with ""mono""
+ ** Deep star item
+ Regular second paragraph line
+ <color:red>Third line colored</color>
+ Final line of action;
+
+:Another complex action
+ First line normal
+ Second line with -> arrow text
+ Third line with [bracket] text
+ Fourth line with (paren) text;
+
+stop
+
+note right
+    **Parser stress targets:**
+    Action labels with every special char
+    All 14 stereotype forms
+    All arrow color/style combinations
+    Connectors with jump targets
+    5-level nested conditionals
+    switch inside if inside switch
+    All loop forms (repeat, while, +backward)
+    All parallel forms (fork, merge, split)
+    All terminal forms (stop, end, detach, kill)
+    All 5 container types in sequence
+    Swimlanes with every construct
+    label/goto edge cases
+    Notes adjacent to every construct
+    Multi-line actions with mixed content
+end note
+
+@enduml

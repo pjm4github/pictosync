@@ -1,0 +1,234 @@
+@startuml t_component_07_parser_edge_cases
+title Component Diagram — Parser Edge Cases\n(ambiguous tokens, hide/remove active, left-to-right, boundary cases)
+
+' ══════════════════════════════════════════════════════════════════════════
+' GLOBAL DIRECTIVES — grammar productions that affect the whole diagram
+' ══════════════════════════════════════════════════════════════════════════
+
+left to right direction
+
+skinparam component {
+    BackgroundColor #F8F9FA
+    BorderColor #495057
+    FontSize 11
+}
+skinparam component<<hide_test>> {
+    BackgroundColor #FFE0B2
+    BorderColor #E65100
+}
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. AMBIGUOUS BRACKET CASES
+'    [Name] vs component body [...] vs guard [condition] on arrow
+' ══════════════════════════════════════════════════════════════════════════
+
+' Standard bracket component declaration
+[BracketComponent] as BC1
+
+' Bracket with stereotype — <<>> immediately after ]
+[StereotypedBracket] <<service>> as BC2
+
+' Bracket with color
+[ColoredBracket] as BC3 #B3E5FC
+
+' Bracket where name contains spaces (requires quotes internally — actually
+' PlantUML allows spaces in bracket names as a special case)
+[Component With Internal Spaces] as BC4
+
+' Keyword component with body using [...] — ambiguity with bracket component
+component BC5 [
+    Description line one
+    Description line two
+    Third line of description
+]
+
+' Keyword component with body AND stereotype
+component BC6 <<service>> [
+    Has both a stereotype
+    and a multi-line body
+]
+
+' Keyword component with body AND alias AND color
+component BC7 <<gateway>> #EDE7F6 [
+    Full featured body component
+    with all optional attributes
+]
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. INTERFACE AMBIGUITY — () vs interface keyword
+' ══════════════════════════════════════════════════════════════════════════
+
+' Circle-paren with no space before quote
+() "NoSpaceIface" as NSI
+
+' Circle-paren with name that could be a keyword
+() "component" as IFACE_NAMED_COMPONENT
+() "interface" as IFACE_NAMED_INTERFACE
+() "package" as IFACE_NAMED_PACKAGE
+
+' Interface with stereotype that matches component stereotype
+interface SameStereotype <<service>>
+interface "Quoted Interface" as QIF <<provided>> #E8F5E9
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. ALIAS COLLISION EDGE CASES
+'    Alias same as a PlantUML keyword
+' ══════════════════════════════════════════════════════════════════════════
+
+component "Test Component A" as note_alias
+component "Test Component B" as left
+component "Test Component C" as right
+component "Test Component D" as up
+component "Test Component E" as down
+
+' These must parse correctly even though the aliases match direction keywords
+note_alias --> left : alias=note_alias
+left --> right : alias=left
+right --> up : alias=right
+up --> down : alias=up
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. ARROW LABEL EDGE CASES
+'    Labels with special chars, brackets, stereotypes
+' ══════════════════════════════════════════════════════════════════════════
+
+[ArrowSrc] as AS1
+[ArrowTgt] as AT1
+
+' Arrow where label contains [] — must not be mistaken for guard or body
+AS1 --> AT1 : label with [brackets] inside
+AS1 ..> AT1 : <<stereotype>> as label
+AS1 --> AT1 : label: with colon
+AS1 --> AT1 : "quoted label"
+AS1 -[#FF0000]-> AT1 : colored [with brackets]
+AS1 --> AT1 : label / with slash
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. TAG SYSTEM — active hide/remove/restore directives
+' ══════════════════════════════════════════════════════════════════════════
+
+component "Visible Alpha" as VA $alpha $shared
+component "Visible Beta"  as VB $beta  $shared
+component "Will Be Hidden" as WBH $hidden_tag
+component "Also Hidden"    as AH $hidden_tag $alpha
+component "Restored"       as RS $hidden_tag $restore_tag
+component "Unlinked Component" as UNLINKED
+
+VA --> VB : alpha-to-beta
+VB --> RS : beta-to-restored
+
+' Active directives — these are parsed and executed:
+hide $hidden_tag
+restore $restore_tag
+' hide @unlinked   ← would hide UNLINKED; commented to keep diagram readable
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. DEEPLY NESTED CONTAINERS with left-to-right layout
+' ══════════════════════════════════════════════════════════════════════════
+
+package "Tier 1" as T1 #EEF2FF {
+    [T1_A] as T1A
+    [T1_B] as T1B
+
+    package "Tier 2" as T2 #FFF8E1 {
+        [T2_A] as T2A
+        [T2_B] as T2B
+
+        package "Tier 3" as T3 #E8F5E9 {
+            [T3_A] as T3A
+            [T3_B] as T3B
+
+            package "Tier 4" as T4 #FCE4EC {
+                [T4_A] as T4A
+                [T4_B] as T4B
+            }
+        }
+    }
+}
+
+T1A --> T2A : t1→t2
+T2A --> T3A : t2→t3
+T3A --> T4A : t3→t4
+T4A --> T4B : within t4
+T4B --> T3B : t4→t3 back
+T3B --> T2B : t3→t2 back
+T2B --> T1B : t2→t1 back
+
+' ══════════════════════════════════════════════════════════════════════════
+' 7. MIXED DECLARATION ORDER
+'    Transitions declared before components (forward references)
+' ══════════════════════════════════════════════════════════════════════════
+
+component "Forward A" as FWD_A
+component "Forward B" as FWD_B
+[Forward C] as FWD_C
+
+' Links between forward-declared components
+FWD_A --> FWD_B : forward ref link
+FWD_B ..> FWD_C : also forward
+
+' ══════════════════════════════════════════════════════════════════════════
+' 8. PORT EDGE CASES — port on bracket-form component
+' ══════════════════════════════════════════════════════════════════════════
+
+component "Port Test" as PT {
+    port p1
+    portin p2
+    portout p3
+    port "Quoted Port" as QP
+    port "Port/With/Slashes" as PWS
+}
+
+p1 --> T1A : port to component
+T2A --> p2 : component to portin
+p3 --> FWD_A : portout to forward-ref
+QP --> VB : quoted port link
+
+' ══════════════════════════════════════════════════════════════════════════
+' 9. MULTILINE COMPONENT NAMES IN BRACKET FORM
+' ══════════════════════════════════════════════════════════════════════════
+
+[Line1\nLine2] as ML2
+[Line1\nLine2\nLine3] as ML3
+[A\nB\nC\nD] as ML4
+
+ML2 --> ML3 : multi to multi
+ML3 --> ML4
+
+' ══════════════════════════════════════════════════════════════════════════
+' 10. NOTES — edge cases
+' ══════════════════════════════════════════════════════════════════════════
+
+note right of BC5
+    **Body component parser test:**
+    The body after component keyword
+    is a description body, NOT a bracket
+    component declaration.
+    Parser must context-disambiguate
+    bracket vs body form.
+end note
+
+note right of T1
+    **left to right direction:**
+    Changes rankdir=LR in DOT output.
+    Must be parsed as a global directive,
+    not a transition or component name.
+end note
+
+note as EDGE_NOTE
+    **Edge cases summary:**
+    1. [body] vs [component] disambiguation
+    2. () iface vs interface keyword
+    3. Aliases matching keyword names
+    4. Arrow labels containing []
+    5. hide/remove/restore directives
+    6. Forward references in transitions
+    7. Port on keyword-form component
+    8. Multiline \n in bracket names
+    9. left to right direction directive
+    10. allowmixing directive
+end note
+
+BC1 .. EDGE_NOTE
+
+@enduml

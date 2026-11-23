@@ -1,0 +1,81 @@
+---
+title: Investigation Session — End-to-End Sequence
+---
+sequenceDiagram
+    autonumber
+    actor SME as SME
+    participant Seal as Seal Authority
+    participant Gate as Power Gate
+    participant Relay as Protection Relays
+    participant AI as GPU Platform
+    participant LLM as frontier_llm_api
+    participant Voice as voice_tag
+    participant Store as capsule_store
+    participant MCP as mcp_edge
+
+    Note over SME,MCP: System is SEALED. A trip event needs live human investigation.
+
+    SME->>Seal: open_investigation_session(reason="trip on Bus 3")
+    Seal->>Seal: verify single-key auth + integrity + legal transition
+
+    alt request rejected
+        Seal-->>SME: TransitionReceipt(success=false)
+    else request accepted
+        Seal->>Gate: enable GPU Platform power rail
+        Gate->>AI: power on (boot)
+        AI-->>Gate: ready
+        Seal->>Relay: enable extra-sensitive trip profile
+        Relay-->>Seal: ack
+        Seal->>Seal: start 15-min auto-expire timer
+        Seal-->>LLM: mode_change(SEALED → INVESTIGATION)
+        Seal-->>Voice: mode_change
+        Seal-->>MCP: mode_change
+        Seal-->>SME: TransitionReceipt(success=true)
+    end
+
+    Note over SME,MCP: Active session — read inference allowed, orchestration writes blocked
+
+    SME->>Voice: hold-to-record voice query
+    Voice->>Voice: ASR transcribe (local Whisper)
+    Voice-->>SME: transcript
+
+    SME->>Store: query_capsules(time_range, novelty > 0.7)
+    Store-->>SME: candidate capsules
+
+    SME->>LLM: complete(prompt with token pattern)
+    LLM->>LLM: power-gate check<br/>(mode in {BOOTSTRAP, INVESTIGATION} ✓)
+    LLM->>AI: POST /complete
+    AI-->>LLM: response
+    LLM-->>SME: rendered analysis
+
+    SME->>Store: read settings + COMTRADE for capsule
+    Store-->>SME: .cfg, .dat, settings
+
+    SME->>MCP: propose_ontology_update(...)
+    MCP-->>SME: SealedModeError<br/>(orchestration writes require BOOTSTRAP)
+
+    Note over SME,MCP: Session ends — auto-expire OR manual close
+
+    alt 15-min timer expires (deadman)
+        Seal->>Seal: timer fires (system-initiated, no signer)
+        Seal->>Seal: compute erase_hash = SHA-256(witness)
+        Seal->>Voice: power off microVM (RAM crypto-erased)
+        Seal->>LLM: power off microVM
+        Seal->>MCP: power off microVM
+        Seal->>Gate: disable GPU Platform power rail
+        Gate->>AI: power off
+        Seal->>Relay: revert to normal protection
+        Seal->>Seal: append AuditEntry(<br/>event="investigation_session_expired",<br/>erase_hash=...)
+    else SME closes early
+        SME->>Seal: close_investigation_session()
+        Seal->>Seal: cancel timer
+        Note right of Seal: same teardown:<br/>power off VMs, RAM crypto-erase,<br/>power down GPU Platform,<br/>revert relay profile
+        Seal->>Seal: append AuditEntry(event="mode_transition")
+    end
+
+    Seal-->>LLM: mode_change(INVESTIGATION → SEALED)
+    Seal-->>Voice: mode_change
+    Seal-->>MCP: mode_change
+    Seal-->>SME: any in-flight LLM call → HardwareUnavailableError
+
+    Note over SME,MCP: System SEALED again. Audit hash sealed in permanent memory.

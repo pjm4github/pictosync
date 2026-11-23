@@ -1,0 +1,247 @@
+@startuml t_activity_03_loops_flow_control
+title Activity Diagram — Loops & Flow Control\n(repeat, while, backward, break, detach, kill, stop, end, connectors)
+
+skinparam activity {
+    BackgroundColor #F3E5F5
+    BorderColor #6A1B9A
+    DiamondBackgroundColor #E8F5E9
+    DiamondBorderColor #2E7D32
+    FontSize 11
+    ArrowColor #333333
+}
+
+start
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. REPEAT / REPEAT WHILE  (do-while form)
+' ══════════════════════════════════════════════════════════════════════════
+
+:Initialize retry counter;
+
+repeat
+    :Attempt operation;
+    :Check result;
+repeat while (operation failed?) is (yes) not (no)
+
+:Operation succeeded;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. REPEAT WITH BACKWARD  (label on back-edge)
+' ══════════════════════════════════════════════════════════════════════════
+
+:Start polling loop;
+
+repeat
+    :Poll sensor endpoint;
+    :Read analog value;
+    if (value in range?) then (yes)
+        :Process valid reading;
+    else (no)
+        :Log out-of-range event;
+    endif
+backward:Increment poll counter;
+repeat while (max polls reached?) is (no) not (yes)
+
+:Exit polling loop;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. REPEAT WHILE — alternate spacing forms
+'    (tests both "repeat while" and "repeatwhile" lexer variants)
+' ══════════════════════════════════════════════════════════════════════════
+
+:Start data stream;
+
+repeat
+    :Read data chunk;
+    :Append to buffer;
+backward:Update read pointer;
+repeat while (more data?) is (yes)
+
+:Buffer complete;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. WHILE / ENDWHILE  (while-do form)
+' ══════════════════════════════════════════════════════════════════════════
+
+:Open file handle;
+
+while (end of file?) is (not reached)
+    :Read next line;
+    :Parse line content;
+    :Append to result list;
+endwhile (EOF reached)
+
+:Close file handle;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. WHILE WITHOUT EXIT LABEL
+' ══════════════════════════════════════════════════════════════════════════
+
+while (queue not empty?)
+    :Dequeue next item;
+    :Process item;
+    :Acknowledge completion;
+endwhile
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. WHILE WITH BACKWARD
+' ══════════════════════════════════════════════════════════════════════════
+
+:Initialize connection pool;
+
+while (pool has idle connections?) is (yes)
+    :Send heartbeat ping;
+    :Await pong response;
+    if (pong received?) then (yes)
+        :Mark connection healthy;
+    else (no)
+        :Mark connection stale;
+        :Remove from pool;
+    endif
+backward:Wait 30 seconds;
+endwhile (no idle connections)
+
+:Pool maintenance complete;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 7. NESTED LOOPS
+' ══════════════════════════════════════════════════════════════════════════
+
+:Begin matrix processing;
+
+while (rows remaining?) is (yes)
+    :Read next row;
+    while (columns remaining?) is (yes)
+        :Read cell value;
+        :Apply transform;
+        :Write result;
+    endwhile (row complete)
+    :Increment row counter;
+endwhile (matrix complete)
+
+:Matrix processing done;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 8. REPEAT INSIDE WHILE
+' ══════════════════════════════════════════════════════════════════════════
+
+:Initialize batch processor;
+
+while (batches remaining?) is (yes)
+    :Load next batch;
+    repeat
+        :Process batch item;
+        :Validate result;
+    backward:Retry item;
+    repeat while (item valid?) is (no) not (yes)
+    :Commit batch;
+endwhile (all batches done)
+
+:Batch processing complete;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 9. BREAK — early exit from repeat loop
+' ══════════════════════════════════════════════════════════════════════════
+
+:Start search operation;
+
+repeat
+    :Check next candidate;
+    if (candidate matches?) then (yes)
+        :Store match result;
+        break
+    endif
+    :Advance search pointer;
+repeat while (search space exhausted?) is (no)
+
+:Search complete;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 10. CONNECTORS  (A)  — named jump points
+' ══════════════════════════════════════════════════════════════════════════
+
+:Main flow action A;
+
+if (take shortcut?) then (yes)
+    :Skip to shortcut;
+else (no)
+    :Long path step 1;
+    :Long path step 2;
+    :Long path step 3;
+endif
+
+:Continue after shortcut;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 11. LABEL / GOTO — arbitrary jump targets
+' ══════════════════════════════════════════════════════════════════════════
+
+:Action before label target;
+
+label retryPoint
+
+:Attempt risky operation;
+
+if (operation failed?) then (yes)
+    :Log failure;
+    :Increment attempt counter;
+    if (attempts < 3?) then (yes)
+        goto retryPoint
+    else (no)
+        :Abandon operation;
+    endif
+else (no)
+    :Process success;
+endif
+
+' ══════════════════════════════════════════════════════════════════════════
+' 12. DETACH — removes outgoing arrow, creates closed final node
+' ══════════════════════════════════════════════════════════════════════════
+
+if (fire and forget?) then (yes)
+    :Launch async process;
+    detach
+endif
+
+:Continue synchronous flow;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 13. KILL — terminated flow with cross marker
+' ══════════════════════════════════════════════════════════════════════════
+
+if (fatal error?) then (yes)
+    :Log fatal error;
+    :Notify operators;
+    kill
+endif
+
+:Normal exit path;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 14. STOP vs END  (two terminal forms)
+' ══════════════════════════════════════════════════════════════════════════
+
+if (use stop?) then (yes)
+    stop
+else (use end)
+    end
+endif
+
+note right
+    **Grammar targets (loops):**
+    repeat ... repeat while (c) is (y) not (n)
+    backward:action;  (back-edge label)
+    while (cond) is (label) ... endwhile (label)
+    while (cond) ... endwhile
+    while + backward
+    Nested loops (2 levels)
+    repeat inside while
+    break  (early exit)
+    label name / goto name
+    detach
+    kill
+    stop
+    end
+end note
+
+@enduml

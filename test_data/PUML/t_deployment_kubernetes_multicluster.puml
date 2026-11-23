@@ -1,0 +1,189 @@
+@startuml 03_kubernetes_multicluster
+title Kubernetes Multi-Cluster GitOps Deployment
+
+skinparam defaultFontSize 11
+skinparam component {
+    BackgroundColor #E8EAF6
+    BorderColor #283593
+}
+skinparam node {
+    BackgroundColor #E0F7FA
+    BorderColor #00695C
+}
+skinparam artifact {
+    BackgroundColor #FFF8E1
+    BorderColor #FF8F00
+}
+skinparam database {
+    BackgroundColor #FCE4EC
+    BorderColor #AD1457
+}
+skinparam cloud {
+    BackgroundColor #F1F8E9
+    BorderColor #558B2F
+}
+skinparam file {
+    BackgroundColor #ECEFF1
+    BorderColor #546E7A
+}
+
+' ─── Source control ──────────────────────────────────────────────────────────
+node "GitHub Enterprise" as GHE <<vcs>> {
+    artifact "app-services\n[monorepo]" as MONOREPO
+    artifact "helm-charts\n[chart library]" as HELM_REPO
+    artifact "gitops-config\n[ArgoCD apps]" as GITOPS_REPO
+    artifact "tf-infra\n[Terraform IaC]" as TF_REPO
+}
+
+' ─── CI Pipeline ─────────────────────────────────────────────────────────────
+node "GitHub Actions Runners\n(self-hosted, arm64)" as CI_RUNNERS <<ci_platform>> {
+    component "Build & Test Job\nbuildx multi-arch" as CI_BUILD
+    component "SAST / SCA Job\nSnyk + Semgrep" as CI_SAST
+    component "Image Sign Job\nCosign + Sigstore" as CI_SIGN
+    component "Helm Package Job\nhelm package + push" as CI_HELM
+    component "Terraform Plan Job\nterraform plan -out" as CI_TF
+}
+
+' ─── Registry ────────────────────────────────────────────────────────────────
+node "Harbor Registry\nregistry.internal:5000" as HARBOR <<oci_registry>> {
+    artifact "app/api-gateway:2.4.1" as IMG_GW
+    artifact "app/user-svc:1.9.3" as IMG_USER
+    artifact "app/ml-scorer:3.1.0-gpu" as IMG_ML
+    artifact "charts/api-stack:0.9.2" as CHART_API
+    component "Trivy Scanner\n(vulnerability gate)" as TRIVY
+    component "Notary v2\n(image signing)" as NOTARY
+}
+
+' ─── GitOps controller ───────────────────────────────────────────────────────
+node "ArgoCD Control Plane\nargocd.internal:443" as ARGOCD <<gitops_controller>> {
+    component "Application Controller\n(reconcile loop 3m)" as ARGO_CTRL
+    component "ApplicationSet Controller\n(cluster generator)" as ARGO_APPSET
+    component "Repo Server\n(helm template engine)" as ARGO_REPO
+    component "Notification Controller\nSlack + PagerDuty" as ARGO_NOTIF
+    database "Redis State Cache\n:6379" as ARGO_REDIS
+}
+
+' ─── Cluster A: Production ───────────────────────────────────────────────────
+node "K8s Cluster: prod-us-east\nEKS 1.29 — 24 nodes" as PROD_CLUSTER <<kubernetes_cluster>> {
+
+    node "Namespace: ingress-system" as NS_INGRESS <<k8s_namespace>> {
+        component "NGINX Ingress Controller\n:80/:443 NodePort" as NGINX
+        component "cert-manager\nLet's Encrypt ACME" as CERT_MGR
+        artifact "TLS Secret\ntls.crt / tls.key" as TLS_SECRET
+    }
+
+    node "Namespace: app-prod" as NS_APP <<k8s_namespace>> {
+        component "Deployment: api-gateway\nreplicas:3 — HPA 3-10" as DEP_GW
+        component "Deployment: user-svc\nreplicas:2 — HPA 2-8" as DEP_USER
+        component "Deployment: ml-scorer\nreplicas:1 — GPU node" as DEP_ML
+        component "Service: api-gateway\nClusterIP :3000" as SVC_GW
+        component "Service: user-svc\nClusterIP :8080" as SVC_USER
+        artifact "ConfigMap: app-config\nenv: production" as CM_PROD
+        artifact "Secret: db-creds\n(Vault injected)" as SECRET_DB
+    }
+
+    node "Namespace: data-plane" as NS_DATA <<k8s_namespace>> {
+        component "StatefulSet: postgresql\nreplicas:3 — HA" as SS_PG
+        component "StatefulSet: redis-cluster\nreplicas:6" as SS_REDIS
+        component "StatefulSet: kafka\nreplicas:3 — KRaft" as SS_KAFKA
+        artifact "PersistentVolumeClaim\ngp3 2Ti each" as PVC_DATA
+    }
+
+    node "Namespace: observability" as NS_OBS <<k8s_namespace>> {
+        component "Prometheus Stack\n:9090 scrape :15s" as PROMETHEUS
+        component "Grafana\n:3000 dashboards" as GRAFANA
+        component "Loki + Promtail\nlog aggregation" as LOKI
+        component "Tempo\ndistributed tracing" as TEMPO
+        component "OTel Collector\nOTLP :4317/:4318" as OTEL
+    }
+
+    node "Namespace: security" as NS_SEC <<k8s_namespace>> {
+        component "Vault Agent Injector\nsidecar pattern" as VAULT_INJ
+        component "Falco DaemonSet\nruntime syscall audit" as FALCO
+        component "Kyverno\nadmission policies" as KYVERNO
+        component "Network Policy Controller\nCilium eBPF" as CILIUM
+    }
+}
+
+' ─── Cluster B: Staging ──────────────────────────────────────────────────────
+node "K8s Cluster: staging-us-east\nEKS 1.29 — 8 nodes" as STG_CLUSTER <<kubernetes_cluster>> {
+    node "Namespace: app-staging" as NS_STG <<k8s_namespace>> {
+        component "Deployment: api-gateway\nreplicas:1" as DEP_GW_STG
+        component "Deployment: user-svc\nreplicas:1" as DEP_USER_STG
+        artifact "ConfigMap: app-config\nenv: staging" as CM_STG
+    }
+}
+
+' ─── External dependencies ───────────────────────────────────────────────────
+cloud "HashiCorp Vault Cluster\nvault.internal:8200" as VAULT_CLUSTER <<secrets_manager>> {
+    component "PKI Engine" as VAULT_PKI
+    component "KV-v2 Engine" as VAULT_KV
+    component "K8s Auth Backend" as VAULT_K8S
+}
+
+node "Terraform Cloud\nWorkspace: eks-infra" as TFC <<iac_platform>> {
+    component "State Backend\nS3 + DynamoDB lock" as TF_STATE
+    component "Policy Engine\nSentinel policies" as TF_POLICY
+}
+
+' ─── Connections ─────────────────────────────────────────────────────────────
+MONOREPO --> CI_BUILD : "push trigger"
+CI_BUILD --> CI_SAST : "artifact"
+CI_SAST --> CI_SIGN : "pass gate"
+CI_SIGN --> CI_HELM : "signed image"
+CI_SIGN --> HARBOR : "docker push"
+CI_HELM --> HARBOR : "helm push"
+CI_TF --> TFC : "apply"
+HARBOR --> TRIVY : "scan on push"
+HARBOR --> NOTARY : "sign"
+
+GITOPS_REPO --> ARGO_REPO : "poll every 3m"
+HELM_REPO --> ARGO_REPO : "helm chart source"
+ARGO_REPO --> ARGO_CTRL : "rendered manifests"
+ARGO_CTRL ..> ARGO_REDIS : "state cache"
+ARGO_APPSET --> ARGO_CTRL : "generate Apps"
+ARGO_CTRL --> PROD_CLUSTER : "kubectl apply"
+ARGO_CTRL --> STG_CLUSTER : "kubectl apply"
+ARGO_NOTIF ..> ARGO_CTRL : "watch sync status"
+
+HARBOR --> DEP_GW : "image pull"
+HARBOR --> DEP_USER : "image pull"
+HARBOR --> DEP_ML : "image pull"
+HARBOR --> DEP_GW_STG : "image pull"
+
+CM_PROD ..> DEP_GW : "envFrom"
+CM_PROD ..> DEP_USER : "envFrom"
+SECRET_DB ..> DEP_USER : "volumeMount"
+TLS_SECRET ..> NGINX : "ssl-certificate"
+CERT_MGR --> TLS_SECRET : "provision cert"
+NGINX --> SVC_GW : "ingress route"
+SVC_GW --> DEP_GW : "ClusterIP fwd"
+DEP_GW --> SVC_USER : "gRPC"
+SVC_USER --> DEP_USER : "ClusterIP fwd"
+DEP_USER --> SS_PG : "JDBC :5432"
+DEP_USER --> SS_REDIS : "RESP2 :6379"
+DEP_GW --> SS_KAFKA : "Kafka :9092"
+
+VAULT_INJ --> SECRET_DB : "inject secret"
+VAULT_K8S --> VAULT_INJ : "K8s SA auth"
+VAULT_KV --> VAULT_K8S : "lease"
+VAULT_PKI --> CERT_MGR : "sign cert"
+
+OTEL --> PROMETHEUS : "metrics scrape"
+OTEL --> LOKI : "log export"
+OTEL --> TEMPO : "trace export"
+DEP_GW ..> OTEL : "OTLP :4317"
+DEP_USER ..> OTEL : "OTLP :4317"
+FALCO ..> OTEL : "alert events"
+
+SS_PG --> PVC_DATA : "volumeMount"
+SS_REDIS --> PVC_DATA : "volumeMount"
+SS_KAFKA --> PVC_DATA : "volumeMount"
+
+TF_REPO --> CI_TF : "trigger"
+TFC --> TF_STATE : "state lock"
+TFC --> TF_POLICY : "enforce"
+KYVERNO ..> NS_APP : "admission webhook"
+CILIUM ..> NS_APP : "eBPF network policy"
+
+@enduml

@@ -1,0 +1,75 @@
+
+architecture-beta
+
+%% ---------------------------------
+%% Groups (system boundaries)
+%% ---------------------------------
+
+group cloud(internet)[Cloud]
+group app(cloud)[Application Layer]
+group data(cloud)[Data Layer]
+group ext(internet)[External Services]
+
+%% ---------------------------------
+%% Actors
+%% ---------------------------------
+
+actor user(internet)[User]
+actor admin(internet)[Admin]
+
+%% ---------------------------------
+%% Services
+%% ---------------------------------
+
+service web(app)[Web Frontend]
+service api(app)[API Service]
+service auth(app)[Auth Service]
+service worker(app)[Worker Service]
+
+%% ---------------------------------
+%% Databases / Storage
+%% ---------------------------------
+
+database db(data)[Primary Database]
+database cache(data)[Redis Cache]
+database warehouse(data)[Data Warehouse]
+
+%% ---------------------------------
+%% Queues / Messaging
+%% ---------------------------------
+
+queue events(app)[Event Queue]
+queue jobs(app)[Job Queue]
+
+%% ---------------------------------
+%% External services
+%% ---------------------------------
+
+service payments(ext)[Payment Gateway]
+service email(ext)[Email Provider]
+service ai(ext)[AI Service]
+
+%% ---------------------------------
+%% Relationships
+%% ---------------------------------
+
+user --> web : HTTPS
+admin --> web : Admin UI
+
+web --> api : REST
+api --> auth : validate token
+
+api --> cache : read/write
+api --> db : queries
+
+api --> events : publish events
+worker --> jobs : consume jobs
+
+events --> worker
+worker --> db
+
+api --> payments : charge
+api --> email : send mail
+worker --> ai : inference
+
+db --> warehouse : ETL

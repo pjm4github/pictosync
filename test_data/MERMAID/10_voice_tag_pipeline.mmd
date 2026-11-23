@@ -1,0 +1,75 @@
+---
+title: Voice Tag Pipeline — Capture to Canonical Label
+---
+flowchart LR
+    classDef capture fill:#dbeafe,stroke:#1e40af
+    classDef llm fill:#fee2e2,stroke:#991b1b
+    classDef human fill:#dcfce7,stroke:#166534
+    classDef store fill:#fef3c7,stroke:#92400e
+
+    subgraph CapturePhase["1. Capture (any mode)"]
+        direction TB
+        sme[SME at substation<br/>reviewing event capsule]:::human
+        record[MIC Hold-to-record button<br/>PyQt6 widget]:::capture
+        audio[Audio file<br/>.wav, 16 kHz]:::store
+        asr[Local Whisper ASR<br/>on-prem GPU<br/>no data leaves substation]:::capture
+        speaker[Speaker ID<br/>pyannote / SpeechBrain]:::capture
+        transcript["Transcript + confidence<br/>phase A to ground short,<br/>breaker tripped"]:::store
+        voicetag[(VoiceTag stored<br/>capsule_id, audio,<br/>transcript, speaker)]:::store
+
+        sme --> record --> audio
+        audio --> asr --> transcript
+        audio --> speaker
+        transcript --> voicetag
+        speaker --> voicetag
+    end
+
+    subgraph GatePhase["2. Mode gate"]
+        direction TB
+        sealcheck{Mode ==<br/>BOOTSTRAP?}:::store
+        queue[(Queue for next<br/>BOOTSTRAP window)]:::store
+
+        sealcheck -->|SEALED| queue
+    end
+
+    subgraph NormalizePhase["3. Normalize (BOOTSTRAP only)"]
+        direction TB
+        embed[Sentence embedding<br/>via frontier_llm_api]:::llm
+        cluster[Cluster by embedding<br/>similarity]:::llm
+        similar[Find similar already-labeled<br/>capsules in corpus]:::llm
+        propose[LLM proposes canonical<br/>label + attributes]:::llm
+        confidence{Confidence<br/>> 0.9?}:::llm
+
+        embed --> cluster --> similar --> propose --> confidence
+    end
+
+    subgraph CuratePhase["4. Curate"]
+        direction TB
+        auto[Auto-propose canonical label<br/>pending curator approval]:::store
+        review[Flag for human review<br/>with suggested questions]:::human
+        curator[Normalization curator<br/>reviews proposals]:::human
+
+        auto --> curator
+        review --> curator
+    end
+
+    subgraph OutcomePhase["5. Outcome"]
+        direction TB
+        modify[Modify proposed label<br/>before activation]:::store
+        accept[Activate canonical label<br/>capsule labeled<br/>training corpus updated]:::store
+        reject[Reject - keep voice tag<br/>but no canonical label]:::store
+        ontology[(Canonical ontology<br/>extended if new class)]:::store
+
+        modify --> accept --> ontology
+    end
+
+    voicetag --> sealcheck
+    sealcheck -->|BOOTSTRAP| embed
+    queue -.->|next BOOTSTRAP| embed
+
+    confidence -->|yes| auto
+    confidence -->|no| review
+
+    curator --> accept
+    curator --> modify
+    curator --> reject

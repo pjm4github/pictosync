@@ -1,0 +1,252 @@
+@startuml t_activity_04_fork_split_parallel
+title Activity Diagram — Fork, Split & Parallel Flows\n(fork/join, split/merge, end fork, end merge, end split, nested)
+
+skinparam activity {
+    BackgroundColor #E8F4FD
+    BorderColor #1565C0
+    DiamondBackgroundColor #FFF9C4
+    DiamondBorderColor #F9A825
+    FontSize 11
+    ArrowColor #444444
+}
+
+start
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. BASIC FORK / END FORK  (parallel split + join)
+' ══════════════════════════════════════════════════════════════════════════
+
+:Begin parallel order processing;
+
+fork
+    :Validate inventory;
+    :Check stock levels;
+    :Reserve items;
+fork again
+    :Process payment;
+    :Authorize charge;
+    :Capture funds;
+fork again
+    :Send confirmation email;
+    :Generate PDF receipt;
+end fork
+
+:All parallel tasks complete;
+:Finalize order;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. FORK WITH JOIN SPEC  end fork {joinSpec}
+' ══════════════════════════════════════════════════════════════════════════
+
+:Begin multi-region deployment;
+
+fork
+    :Deploy to us-east-1;
+    :Run smoke tests east;
+fork again
+    :Deploy to eu-west-1;
+    :Run smoke tests eu;
+fork again
+    :Deploy to ap-south-1;
+    :Run smoke tests ap;
+end fork {or}
+
+:At least one region online;
+:Update DNS routing;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. END MERGE  (parallel split, merge without join sync)
+' ══════════════════════════════════════════════════════════════════════════
+
+:Begin async notifications;
+
+fork
+    :Send push notification;
+fork again
+    :Send SMS alert;
+fork again
+    :Post to webhook;
+fork again
+    :Write to audit log;
+end merge
+
+:Notification dispatch complete;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. SPLIT / SPLIT AGAIN / END SPLIT
+' ══════════════════════════════════════════════════════════════════════════
+
+:Incoming sensor data packet;
+
+split
+    :Store raw reading to TimescaleDB;
+    :Update 15-min rolling average;
+split again
+    :Forward to NATS message bus;
+    :Publish to ots.sv.bay1;
+split again
+    :Run anomaly detection;
+    :Compare against baseline;
+    if (anomaly detected?) then (yes)
+        :Raise alert;
+    endif
+end split
+
+:Sensor data processing done;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. FORK INSIDE IF
+' ══════════════════════════════════════════════════════════════════════════
+
+if (parallel mode enabled?) then (yes)
+    fork
+        :Parallel branch A;
+        :A step 1;
+        :A step 2;
+    fork again
+        :Parallel branch B;
+        :B step 1;
+        :B step 2;
+    end fork
+else (no)
+    :Sequential branch A;
+    :Sequential branch B;
+endif
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. IF INSIDE FORK BRANCH
+' ══════════════════════════════════════════════════════════════════════════
+
+:Start conditional parallel;
+
+fork
+    :Branch 1 entry;
+    if (branch 1 condition?) then (yes)
+        :Branch 1 true path;
+    else (no)
+        :Branch 1 false path;
+    endif
+    :Branch 1 exit;
+fork again
+    :Branch 2 entry;
+    if (branch 2 condition?) then (yes)
+        :Branch 2 true path;
+        if (nested condition?) then (yes)
+            :Nested true action;
+        else (no)
+            :Nested false action;
+        endif
+    else (no)
+        :Branch 2 false path;
+    endif
+    :Branch 2 exit;
+fork again
+    :Branch 3 — simple;
+    :Branch 3 action;
+end fork
+
+' ══════════════════════════════════════════════════════════════════════════
+' 7. LOOP INSIDE FORK BRANCH
+' ══════════════════════════════════════════════════════════════════════════
+
+fork
+    :Fork A — loop branch;
+    while (A items remaining?) is (yes)
+        :Process A item;
+    endwhile (A done)
+fork again
+    :Fork B — repeat branch;
+    repeat
+        :Process B item;
+    backward:B retry;
+    repeat while (B failed?) is (no)
+fork again
+    :Fork C — simple branch;
+    :C action 1;
+    :C action 2;
+    :C action 3;
+end fork
+
+' ══════════════════════════════════════════════════════════════════════════
+' 8. NESTED FORK (fork inside fork branch)
+' ══════════════════════════════════════════════════════════════════════════
+
+fork
+    :Outer branch 1;
+    fork
+        :Inner A;
+        :Inner A work;
+    fork again
+        :Inner B;
+        :Inner B work;
+    end fork
+    :Outer branch 1 continues;
+fork again
+    :Outer branch 2;
+    split
+        :Split sub-A;
+    split again
+        :Split sub-B;
+    end split
+    :Outer branch 2 continues;
+end fork
+
+' ══════════════════════════════════════════════════════════════════════════
+' 9. FORK WITH COLORED ACTIONS IN BRANCHES
+' ══════════════════════════════════════════════════════════════════════════
+
+fork
+    #E8F4FD:Blue branch action;
+    :Blue branch step 2;
+fork again
+    #E8F5E9:Green branch action;
+    :Green branch step 2;
+fork again
+    #FCE4EC:Pink branch action;
+    :Pink branch step 2;
+fork again
+    #FFF3E0:Orange branch action;
+    :Orange branch step 2;
+end fork
+
+' ══════════════════════════════════════════════════════════════════════════
+' 10. FORK WITH NOTES IN BRANCHES
+' ══════════════════════════════════════════════════════════════════════════
+
+fork
+    :Documented branch A;
+    note right
+        Branch A runs the
+        primary data pipeline
+    end note
+    :Branch A processing;
+fork again
+    :Documented branch B;
+    note left
+        Branch B handles
+        the notification system
+    end note
+    :Branch B processing;
+end fork
+
+stop
+
+note right
+    **Grammar targets (parallel):**
+    fork
+    fork again
+    end fork
+    end fork {joinSpec}
+    end merge
+    split
+    split again
+    end split
+    fork inside if
+    if inside fork branch
+    loop inside fork branch
+    nested fork (fork in fork)
+    fork with colors
+    fork with notes
+end note
+
+@enduml

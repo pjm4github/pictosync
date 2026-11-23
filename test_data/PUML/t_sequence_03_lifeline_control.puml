@@ -1,0 +1,224 @@
+@startuml t_sequence_03_lifeline_control
+title Sequence Diagram — Lifeline Control\n(activate, deactivate, destroy, return, autoactivate, nested, colored)
+
+participant "Client"      as CLI
+participant "API Gateway" as GW
+participant "Auth Service" as AUTH
+participant "Order Service" as ORDSVC
+participant "Inventory"   as INV
+participant "Payment"     as PAY
+participant "Notifier"    as NOTIF
+participant "Logger"      as LOG
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. BASIC ACTIVATE / DEACTIVATE
+' ══════════════════════════════════════════════════════════════════════════
+
+== Basic activate / deactivate ==
+
+CLI -> GW : GET /orders
+activate GW
+GW --> CLI : 200 OK
+deactivate GW
+
+CLI -> GW : POST /orders
+activate GW
+GW -> AUTH : validateToken()
+activate AUTH
+AUTH --> GW : token valid
+deactivate AUTH
+GW --> CLI : order created
+deactivate GW
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. ACTIVATE WITH COLOR  activate ALIAS #color
+' ══════════════════════════════════════════════════════════════════════════
+
+== activate with color ==
+
+CLI -> GW : POST /orders (colored lifelines)
+activate GW #FFE0B2
+GW -> AUTH : validateToken()
+activate AUTH #E3F2FD
+AUTH -> LOG : logAccess()
+activate LOG #E8F5E9
+LOG --> AUTH : logged
+deactivate LOG
+AUTH --> GW : valid
+deactivate AUTH
+GW -> ORDSVC : createOrder()
+activate ORDSVC #FCE4EC
+ORDSVC --> GW : orderId=42
+deactivate ORDSVC
+GW --> CLI : 201 Created
+deactivate GW
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. NESTED ACTIVATIONS (stacked lifeline bars)
+' ══════════════════════════════════════════════════════════════════════════
+
+== Nested activations ==
+
+CLI -> GW : complexRequest()
+activate GW
+
+GW -> ORDSVC : processOrder()
+activate ORDSVC
+
+ORDSVC -> INV : checkStock()
+activate INV
+INV -> LOG : logCheck()
+activate LOG
+LOG --> INV : logged
+deactivate LOG
+INV --> ORDSVC : stock available
+deactivate INV
+
+ORDSVC -> PAY : chargePayment()
+activate PAY
+PAY -> LOG : logPayment()
+activate LOG
+LOG --> PAY : logged
+deactivate LOG
+PAY --> ORDSVC : charged
+deactivate PAY
+
+ORDSVC -> NOTIF : sendConfirmation()
+activate NOTIF
+NOTIF --> ORDSVC : queued
+deactivate NOTIF
+
+ORDSVC --> GW : order complete
+deactivate ORDSVC
+
+GW --> CLI : 200 OK
+deactivate GW
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. RETURN KEYWORD  (deactivates + sends return message)
+' ══════════════════════════════════════════════════════════════════════════
+
+== return keyword ==
+
+CLI -> GW : getUser(id)
+activate GW
+GW -> AUTH : authenticate()
+activate AUTH
+AUTH -> LOG : log()
+activate LOG
+return logged
+AUTH --> GW : authenticated
+deactivate AUTH
+return user data
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. DESTROY KEYWORD  (lifeline ends with X)
+' ══════════════════════════════════════════════════════════════════════════
+
+== destroy keyword ==
+
+CLI -> GW : deleteSession()
+activate GW
+GW -> AUTH : invalidateToken()
+activate AUTH
+AUTH --> GW : token invalidated
+destroy AUTH
+GW --> CLI : session deleted
+deactivate GW
+
+CLI -> ORDSVC : cancelOrder(42)
+activate ORDSVC
+ORDSVC -> PAY : refundPayment()
+activate PAY
+PAY --> ORDSVC : refunded
+deactivate PAY
+ORDSVC -> INV : restoreStock()
+activate INV
+INV --> ORDSVC : stock restored
+deactivate INV
+ORDSVC --> CLI : order cancelled
+destroy ORDSVC
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. AUTOACTIVATE ON / OFF
+' ══════════════════════════════════════════════════════════════════════════
+
+== autoactivate on ==
+
+autoactivate on
+
+CLI -> GW : autoRequest()
+GW -> AUTH : autoValidate()
+AUTH --> GW : autoValid
+GW --> CLI : autoResponse
+
+autoactivate off
+
+== autoactivate off (back to manual) ==
+
+CLI -> GW : manualRequest()
+activate GW
+GW --> CLI : manualResponse
+deactivate GW
+
+' ══════════════════════════════════════════════════════════════════════════
+' 7. ACTIVATE + RETURN IN SAME BLOCK (shorthand pattern)
+' ══════════════════════════════════════════════════════════════════════════
+
+== activate + return shorthand ==
+
+CLI -> GW : shorthandFlow()
+activate GW #LightBlue
+
+GW -> ORDSVC : step1()
+activate ORDSVC #LightGreen
+ORDSVC -> INV : step1a()
+activate INV #LightYellow
+return inResult
+return step1Result
+
+GW -> PAY : step2()
+activate PAY #LightPink
+return step2Result
+
+return finalResponse
+
+' ══════════════════════════════════════════════════════════════════════════
+' 8. MULTIPLE ACTIVATIONS OF SAME PARTICIPANT (stacking)
+' ══════════════════════════════════════════════════════════════════════════
+
+== Multiple activations (stack) ==
+
+CLI -> GW : outer()
+activate GW
+CLI -> GW : inner() [recursive]
+activate GW #FF8888
+GW --> CLI : inner result
+deactivate GW
+GW --> CLI : outer result
+deactivate GW
+
+note right of GW
+    **Grammar targets (lifeline):**
+    activate ALIAS
+    activate ALIAS #color
+    deactivate ALIAS
+    destroy ALIAS
+    return [label]
+    autoactivate on
+    autoactivate off
+    Nested activate (stack bars)
+    Multiple activate same participant
+end note
+
+note right of AUTH
+    **return keyword:**
+    Sends a return arrow AND
+    deactivates the current
+    activation frame.
+    Equivalent to:
+      --> caller : label
+      deactivate self
+end note
+
+@enduml

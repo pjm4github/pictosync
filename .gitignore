@@ -35,3 +35,19 @@ test_data/PNG/C4.png
 
 # Alignment debug files
 debug_*.png
+
+# Logs
+*.log
+
+# Dev scratch / debris
+_ul
+/fail.png
+/snip.png
+/magic quad Ent Arch.png
+properties/rightmouse-popup.png
+properties/rightmouse-shapepopup.png
+properties/text-selection-popup.png
+schemas/*-old.json
+
+# Generated code (ANTLR, etc.)
+gen/

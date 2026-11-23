@@ -1,0 +1,188 @@
+@startuml t_activity_01_actions_arrows
+title Activity Diagram — Actions & Arrows\n(all action forms, colors, stereotypes, list bullets, explicit arrows)
+
+skinparam activity {
+    BackgroundColor #E8F4FD
+    BorderColor #1565C0
+    FontSize 11
+    ArrowColor #444444
+    ArrowFontSize 10
+    DiamondBackgroundColor #FFF9C4
+    DiamondBorderColor #F9A825
+}
+skinparam note {
+    BackgroundColor #FFFDE7
+    BorderColor #F9A825
+}
+
+start
+
+' ══════════════════════════════════════════════════════════════════════════
+' 1. BASIC ACTION  :text;
+' ══════════════════════════════════════════════════════════════════════════
+
+:Simple action text;
+:Action with **bold** text;
+:Action with //italic// text;
+:Action with ""monospace"" text;
+:Action with --strikethrough-- text;
+:Action with <color:red>colored</color> text;
+:Action with <b>HTML bold</b>;
+:Action with <i>HTML italic</i>;
+:Action with <u>HTML underline</u>;
+:Action with <s>HTML strikethrough</s>;
+:Action with <font color="blue">font color</font>;
+:Action with <size:14>larger</size> text;
+:Action combining **bold** and //italic// and ""mono"";
+
+' ══════════════════════════════════════════════════════════════════════════
+' 2. MULTILINE ACTION  :line one\nline two;
+' ══════════════════════════════════════════════════════════════════════════
+
+:Multiline action
+ spanning two lines;
+
+:Three line action
+ second line here
+ third line here;
+
+:Action with **bold** on first line
+ and //italic// on second line
+ and ""mono"" on third line;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 3. COLORED ACTIONS  #color:text;
+' ══════════════════════════════════════════════════════════════════════════
+
+#Red:Red background action;
+#Green:Green background action;
+#Blue:Blue background action;
+#Yellow:Yellow background action;
+#LightBlue:Named color action;
+#FF8800:Hex color action;
+#E8F5E9:Light green background;
+#FCE4EC:Light pink background;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 4. STEREOTYPE SUFFIXES on actions  :text; <<stereo>>
+'    SDL stereotypes: input, output, procedure, load, save, continuous, task
+'    UML stereotypes: custom
+' ══════════════════════════════════════════════════════════════════════════
+
+:Receive input data; <<input>>
+:Send output data; <<output>>
+:Execute procedure; <<procedure>>
+:Load configuration; <<load>>
+:Save to disk; <<save>>
+:Continuous monitoring; <<continuous>>
+:Background task; <<task>>
+:Custom stereotype; <<myCustomStereo>>
+:Multiple words stereo; <<my_stereo>>
+
+' ══════════════════════════════════════════════════════════════════════════
+' 5. COLOR + STEREOTYPE combined
+' ══════════════════════════════════════════════════════════════════════════
+
+#LightCyan:Read sensor data; <<input>>
+#LightYellow:Compute analysis; <<procedure>>
+#LightGreen:Write results; <<output>>
+#Pink:Error handler; <<task>>
+
+' ══════════════════════════════════════════════════════════════════════════
+' 6. LIST-STYLE ACTIONS (bullet syntax)
+' ══════════════════════════════════════════════════════════════════════════
+
+:List action with items
+- First item in list
+- Second item in list
+- Third item in list;
+
+:Nested list action
+* Top level item one
+** Sub-item A
+** Sub-item B
+* Top level item two
+** Sub-item C;
+
+:Mixed list
+- Step one dash
+* Step two star
+** Sub-step star-star
+- Step three dash;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 7. EXPLICIT ARROWS  ->  -[#color]->  -[style]->
+' ══════════════════════════════════════════════════════════════════════════
+
+:Action before explicit arrow;
+
+->
+
+:Action after bare arrow;
+
+-[#red]->
+
+:Action after red arrow;
+
+-[#0000FF]->
+
+:Action after blue hex arrow;
+
+-[#008800,dashed]->
+
+:Action after green dashed arrow;
+
+-[#FF8800,bold]->
+
+:Action after orange bold arrow;
+
+-[#800080,dotted]->
+
+:Action after purple dotted arrow;
+
+-[hidden]->
+
+:Action after hidden arrow;
+
+' ══════════════════════════════════════════════════════════════════════════
+' 8. EXPLICIT ARROWS WITH LABELS  -> label text;
+' ══════════════════════════════════════════════════════════════════════════
+
+:Action before labeled arrow;
+
+-> plain label text;
+
+:Action after plain labeled arrow;
+
+-> **bold label**;
+
+:Action after bold labeled arrow;
+
+-> label with [condition];
+
+:Action after bracketed label;
+
+-[#red]-> colored labeled arrow;
+
+:Final action;
+
+stop
+
+note right
+    **Grammar targets (actions):**
+    :text;  basic action
+    :multiline\ntext;
+    #color:text;
+    :text; <<stereotype>>
+    #color:text; <<stereotype>>
+    - bullet list inside action
+    * star bullet
+    ** double star
+    ->  bare explicit arrow
+    -> label;  labeled arrow
+    -[#color]->  colored arrow
+    -[#color,style]->  styled arrow
+    -[hidden]->  hidden arrow
+end note
+
+@enduml

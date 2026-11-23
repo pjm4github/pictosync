@@ -60,6 +60,8 @@ class CharFormat:
     background_color: str = ""   # #RRGGBBAA hex; empty = none
     superscript: bool = False
     subscript: bool = False
+    spacing_type: str = "single"   # single|proportional|fixed|minimum|line_distance
+    spacing_value: float = 0.0     # 0 = auto (font height for single)
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "CharFormat":
@@ -160,6 +162,8 @@ class TextBlock:
     id: str = ""
     halign: str = ""       # empty = inherit from frame.halign
     line_spacing: float = 1.0
+    spacing_type: str = ""   # empty = inherit from default_format.spacing_type
+    spacing_value: float = 0.0
     space_before: float = 0.0
     space_after: float = 0.0
 
@@ -172,6 +176,8 @@ class TextBlock:
             id=d.get("id", ""),
             halign=d.get("halign", ""),
             line_spacing=d.get("line_spacing", 1.0),
+            spacing_type=d.get("spacing_type", ""),
+            spacing_value=d.get("spacing_value", 0.0),
             space_before=d.get("space_before", 0.0),
             space_after=d.get("space_after", 0.0),
             runs=runs,
@@ -185,6 +191,9 @@ class TextBlock:
             d["halign"] = self.halign
         if self.line_spacing != 1.0:
             d["line_spacing"] = self.line_spacing
+        if self.spacing_type:
+            d["spacing_type"] = self.spacing_type
+            d["spacing_value"] = self.spacing_value
         if self.space_before:
             d["space_before"] = self.space_before
         if self.space_after:
@@ -194,6 +203,35 @@ class TextBlock:
     def plain_text(self) -> str:
         """Return concatenated text content of all text runs."""
         return "".join(r.text for r in self.runs if r.type == "text")
+
+
+def _dedup_blocks(blocks: List[TextBlock]) -> List[TextBlock]:
+    """Remove duplicate text across blocks (label/tech/note slots).
+
+    Priority: block 0 (label) > block 1 (tech) > block 2 (note).
+    If a block's plain text matches a higher-priority block, its runs are
+    cleared.  Comparison is case-insensitive and whitespace-normalised.
+
+    Args:
+        blocks: List of TextBlock objects (typically 1-3 blocks).
+
+    Returns:
+        The same list, mutated in place, with duplicate runs cleared.
+    """
+    if len(blocks) < 2:
+        return blocks
+
+    def _norm(s: str) -> str:
+        return " ".join(s.split()).lower().strip()
+
+    seen: list = []
+    for blk in blocks:
+        pt = _norm(blk.plain_text())
+        if pt and pt in seen:
+            blk.runs = []
+        elif pt:
+            seen.append(pt)
+    return blocks
 
 
 # ── Deprecated flat keys (overlay-1.0) ────────────────────────────────────
@@ -274,6 +312,12 @@ class AnnotationContents:
     wrap: bool = True
     text_box_width: float = 0.0
     text_box_height: float = 0.0
+    text_anchor: str = "center"    # left | center | right — horizontal box placement
+    text_anchor_v: str = "middle"  # top | middle | bottom — vertical box placement
+    anchor_value: float = 50.0   # 0-100 — position along line/curve path (%)
+    text_box_border: bool = True           # show text box border stroke
+    text_box_border_color: str = ""        # #RRGGBBAA hex; empty = default grey
+    text_box_background_color: str = ""    # #RRGGBBAA hex; empty = white
     # ── overlay-1.0 flat fields (mirrors + fallbacks) ─────────────────
     text: str = ""
     halign: str = "left"
@@ -291,6 +335,12 @@ class AnnotationContents:
     image_anchor: int = 0
     # Arbitrary extra keys preserved through round-trips
     extras: Dict[str, Any] = field(default_factory=dict, repr=False)
+
+    # NOTE: the block-based label/tech/note property aliases and
+    # ``_ensure_blocks`` are defined once, lower in this class (search for
+    # "Block-based label / tech / note aliases").  An earlier duplicate set
+    # that force-padded to 3 blocks was removed when the C4 partition was
+    # decoupled from the generic text model.
 
     # -- Serialization -------------------------------------------------
 
@@ -313,35 +363,9 @@ class AnnotationContents:
         if not isinstance(d, dict):
             return cls()
 
-        # ── 1. Legacy meta format (label/tech/note) ─────────────────
-        if bool(_OLD_META_KEYS & d.keys()):
-            label = d.get("label", "")
-            tech = d.get("tech", "")
-            note = d.get("note", "")
-            label_size = d.get("label_size", 12)
-            tech_size = d.get("tech_size", 10)
-            note_size = d.get("note_size", 10)
-            html = build_contents_text(label, tech, note,
-                                       label_size, tech_size, note_size)
-            halign = d.get("label_align", "center")
-            valign = d.get("text_valign", "top")
-            spacing = d.get("text_spacing", 0.0)
-            text_box_width = d.get("text_box_width", 0.0)
-            text_box_height = d.get("text_box_height", 0.0)
-
-            old_all = _OLD_META_KEYS | {"text_box_width", "text_box_height", "dsl"}
-            extras: Dict[str, Any] = {k: v for k, v in d.items()
-                                       if k not in old_all}
-            if "dsl" in d:
-                extras["dsl"] = d["dsl"]
-            return cls(
-                text=html, halign=halign, valign=valign, spacing=spacing,
-                font_size=label_size,
-                text_box_width=text_box_width, text_box_height=text_box_height,
-                extras=extras,
-            )
-
-        # ── 2. Overlay-2.0 (has blocks or frame) ────────────────────
+        # ── 1. Overlay-2.0 (has blocks or frame) ────────────────────
+        # Check overlay-2.0 FIRST: when both ``blocks`` and legacy keys
+        # (label/tech/note) are present, blocks is authoritative.
         if "blocks" in d or "frame" in d:
             frame = TextFrame.from_dict(d.get("frame") or {})
             default_format = CharFormat.from_dict(d.get("default_format") or {})
@@ -349,6 +373,12 @@ class AnnotationContents:
             wrap = d.get("wrap", True)
             text_box_width = d.get("text_box_width", 0.0)
             text_box_height = d.get("text_box_height", 0.0)
+            text_anchor = d.get("text_anchor", "center")
+            text_anchor_v = d.get("text_anchor_v", "middle")
+            anchor_value = d.get("anchor_value", 50.0)
+            text_box_border = d.get("text_box_border", True)
+            text_box_border_color = d.get("text_box_border_color", "")
+            text_box_background_color = d.get("text_box_background_color", "")
 
             # Mirror nested → flat for canvas item backward compat
             halign = frame.halign
@@ -363,13 +393,83 @@ class AnnotationContents:
 
             extras = {k: v for k, v in d.items()
                       if k not in {"frame", "default_format", "blocks", "wrap",
-                                   "text_box_width", "text_box_height"}}
+                                   "text_box_width", "text_box_height",
+                                   "text_anchor", "text_anchor_v",
+                                   "anchor_value",
+                                   "text_box_border", "text_box_border_color",
+                                   "text_box_background_color",
+                                   "label", "tech", "note"}}
+            # NOTE: blocks are taken verbatim — no cross-block dedup.  The
+            # label/tech/note 3-block partition is a C4-specific projection
+            # handled by the DSL layer, not the generic text model, so
+            # free-form blocks (incl. repeated paragraphs) round-trip intact.
             return cls(
                 frame=frame, default_format=default_format, blocks=blocks,
                 wrap=wrap, text_box_width=text_box_width,
-                text_box_height=text_box_height,
+                text_box_height=text_box_height, text_anchor=text_anchor,
+                text_anchor_v=text_anchor_v, anchor_value=anchor_value,
+                text_box_border=text_box_border,
+                text_box_border_color=text_box_border_color,
+                text_box_background_color=text_box_background_color,
                 text=text, halign=halign, valign=valign,
                 color=color, font_family=font_family, font_size=font_size,
+                margin_left=frame.margin_left, margin_right=frame.margin_right,
+                margin_top=frame.margin_top, margin_bottom=frame.margin_bottom,
+                extras=extras,
+            )
+
+        # ── 2. Legacy meta format (label/tech/note without blocks) ──
+        if bool(_OLD_META_KEYS & d.keys()):
+            label_val = d.get("label", "")
+            tech_val = d.get("tech", "")
+            note_val = d.get("note", "")
+            label_size = d.get("label_size", 12)
+            tech_size = d.get("tech_size", 10)
+            note_size = d.get("note_size", 10)
+            html = build_contents_text(label_val, tech_val, note_val,
+                                       label_size, tech_size, note_size)
+            halign = d.get("label_align", "center")
+            valign = d.get("text_valign", "top")
+            spacing = d.get("text_spacing", 0.0)
+            text_box_width = d.get("text_box_width", 0.0)
+            text_box_height = d.get("text_box_height", 0.0)
+            text_anchor = d.get("text_anchor", d.get("label_align", "center"))
+            text_anchor_v = d.get("text_anchor_v", "middle")
+
+            blocks: List[TextBlock] = [
+                TextBlock(runs=[TextRun(type="text", text=label_val,
+                                        format=CharFormat(bold=True, font_size=label_size))]),
+                TextBlock(runs=[TextRun(type="text", text=tech_val,
+                                        format=CharFormat(italic=True, font_size=tech_size))]),
+                TextBlock(runs=[TextRun(type="text", text=note_val,
+                                        format=CharFormat(font_size=note_size))]),
+            ]
+            frame = TextFrame(halign=halign, valign=valign)
+            default_format = CharFormat(font_size=label_size)
+
+            anchor_value = d.get("anchor_value", 50.0)
+            text_box_border = d.get("text_box_border", True)
+            text_box_border_color = d.get("text_box_border_color", "")
+            text_box_background_color = d.get("text_box_background_color", "")
+            old_all = _OLD_META_KEYS | {"text_box_width", "text_box_height",
+                                        "anchor_value", "text_anchor_v",
+                                        "text_box_border", "text_box_border_color",
+                                        "text_box_background_color", "dsl"}
+            extras: Dict[str, Any] = {k: v for k, v in d.items()
+                                       if k not in old_all}
+            if "dsl" in d:
+                extras["dsl"] = d["dsl"]
+            _dedup_blocks(blocks)
+            return cls(
+                frame=frame, default_format=default_format, blocks=blocks,
+                text=html, halign=halign, valign=valign, spacing=spacing,
+                font_size=label_size,
+                text_box_width=text_box_width, text_box_height=text_box_height,
+                text_anchor=text_anchor, text_anchor_v=text_anchor_v,
+                anchor_value=anchor_value,
+                text_box_border=text_box_border,
+                text_box_border_color=text_box_border_color,
+                text_box_background_color=text_box_background_color,
                 margin_left=frame.margin_left, margin_right=frame.margin_right,
                 margin_top=frame.margin_top, margin_bottom=frame.margin_bottom,
                 extras=extras,
@@ -405,11 +505,27 @@ class AnnotationContents:
                 if fmt_d:
                     d["default_format"] = fmt_d
             d["blocks"] = [b.to_dict() for b in self.blocks]
+            # The serialized contract is blocks-only.  label/tech/note are no
+            # longer emitted as convenience aliases — they are a C4-specific
+            # projection over blocks, handled by the DSL layer, and remain
+            # available as read/write Python properties for importers.
             d["wrap"] = self.wrap
             if self.text_box_width:
                 d["text_box_width"] = self.text_box_width
             if self.text_box_height:
                 d["text_box_height"] = self.text_box_height
+            if self.text_anchor and self.text_anchor != "center":
+                d["text_anchor"] = self.text_anchor
+            if self.text_anchor_v and self.text_anchor_v != "middle":
+                d["text_anchor_v"] = self.text_anchor_v
+            if self.anchor_value != 50.0:
+                d["anchor_value"] = self.anchor_value
+            if not self.text_box_border:
+                d["text_box_border"] = False
+            if self.text_box_border_color:
+                d["text_box_border_color"] = self.text_box_border_color
+            if self.text_box_background_color:
+                d["text_box_background_color"] = self.text_box_background_color
             d.update(self.extras)
             return d
 
@@ -453,6 +569,80 @@ class AnnotationContents:
             "text_box_width":  d.text_box_width,
             "text_box_height": d.text_box_height,
         }
+
+    # -- Block-based label / tech / note aliases -------------------------
+
+    def _ensure_blocks(self, count: int = 1) -> List[TextBlock]:
+        """Ensure at least *count* blocks exist, padding with empty blocks.
+
+        Lazily initialises ``blocks``, ``frame``, and ``default_format``
+        the first time a caller writes through the ``label``/``tech``/``note``
+        property setters.  Pads only up to *count* (the index the caller is
+        about to write) rather than always to 3 — the label/tech/note 3-block
+        partition is a C4-specific projection, not a generic-text invariant,
+        so a label-only node stays a single block instead of carrying two
+        empty trailing paragraphs.
+
+        Returns:
+            The (now guaranteed ≥ *count*-element) ``blocks`` list.
+        """
+        if self.blocks is None:
+            self.blocks = []
+        if self.frame is None:
+            self.frame = self.effective_frame()
+        if self.default_format is None:
+            self.default_format = self.effective_default_format()
+        while len(self.blocks) < count:
+            self.blocks.append(TextBlock(runs=[TextRun(type="text", text="")]))
+        return self.blocks
+
+    @property
+    def label(self) -> str:
+        """Plain text of block 0 (label slot).
+
+        Back-compat sugar over ``blocks`` — importers (Mermaid/PlantUML) write
+        every node's primary text through this setter.  Reading/writing
+        ``label`` does not impose the C4 3-block partition.
+        """
+        if self.blocks and len(self.blocks) >= 1:
+            return self.blocks[0].plain_text()
+        return ""
+
+    @label.setter
+    def label(self, value: str):
+        blks = self._ensure_blocks(1)
+        blks[0].runs = [TextRun(type="text", text=value,
+                                format=CharFormat(bold=True))]
+        self.text = _blocks_to_legacy_text(self.blocks)
+
+    @property
+    def tech(self) -> str:
+        """Plain text of block 1 (tech slot). C4-specific projection."""
+        if self.blocks and len(self.blocks) >= 2:
+            return self.blocks[1].plain_text()
+        return ""
+
+    @tech.setter
+    def tech(self, value: str):
+        blks = self._ensure_blocks(2)
+        blks[1].runs = [TextRun(type="text", text=value,
+                                format=CharFormat(italic=True))]
+        self.text = _blocks_to_legacy_text(self.blocks)
+
+    @property
+    def note(self) -> str:
+        """Plain text of block 2 (note slot). C4-specific projection."""
+        if self.blocks and len(self.blocks) >= 3:
+            return self.blocks[2].plain_text()
+        return ""
+
+    @note.setter
+    def note(self, value: str):
+        blks = self._ensure_blocks(3)
+        blks[2].runs = [TextRun(type="text", text=value)]
+        self.text = _blocks_to_legacy_text(self.blocks)
+
+    # -- Effective defaults ------------------------------------------------
 
     def effective_frame(self) -> TextFrame:
         """Return the effective TextFrame, using defaults if not set."""
@@ -503,7 +693,7 @@ def hex_to_css_color(hex_color: str) -> str:
     return hex_color
 
 
-def _blocks_to_legacy_text(blocks: List[TextBlock]) -> str:
+def _blocks_to_legacy_text(blocks: List[TextBlock], frame_halign: str = "") -> str:
     """Produce a simple HTML body string from blocks for legacy canvas rendering.
 
     Only handles basic bold/italic/underline/color/font run formats.
@@ -511,6 +701,13 @@ def _blocks_to_legacy_text(blocks: List[TextBlock]) -> str:
 
     Args:
         blocks: List of ``TextBlock`` objects.
+        frame_halign: Document-level default alignment.  A block carries its
+            own ``halign`` only as an OVERRIDE (sparse) — blocks that match the
+            frame default emit no ``halign``.  Qt's ``setHtml`` does NOT honour
+            a document's ``defaultTextOption`` for parsed ``<p>`` (it defaults
+            them to left), so the alignment must be written into each ``<p>``.
+            Passing the frame default here makes every paragraph carry the
+            correct ``text-align`` and survive the round-trip.
 
     Returns:
         HTML body fragment string (no ``<html>/<head>/<body>`` wrapper).
@@ -552,9 +749,18 @@ def _blocks_to_legacy_text(blocks: List[TextBlock]) -> str:
         align_css = {
             "left": "left", "center": "center",
             "right": "right", "justified": "justify",
-        }.get(blk.halign, "")
-        style = f" style='text-align:{align_css};'" if align_css else ""
-        parts.append(f"<p{style}>{runs_html}</p>")
+        }.get(blk.halign or frame_halign, "")
+        styles = ["margin:0"]
+        if align_css:
+            styles.append(f"text-align:{align_css}")
+        # An empty paragraph (blank line) must be tagged with Qt's own
+        # ``-qt-paragraph-type:empty`` marker so setHtml preserves it as its
+        # own empty block (a bare ``<p></p>`` collapses; a ``<br/>`` survives
+        # but re-parses as a U+2028 line-separator run, not a clean empty
+        # block).  This keeps the blocks round-trip lossless for blank lines.
+        if not runs_html:
+            styles.append("-qt-paragraph-type:empty")
+        parts.append(f"<p style='{';'.join(styles)}'>{runs_html}</p>")
     return "\n".join(parts)
 
 

@@ -159,8 +159,53 @@ diagram
     ;
 
 filenameHint
-    : ID
+    : ( ID | INT )+ ( '.' ( ID | INT )+ )*
     | QUOTED_STRING
+    ;
+
+// ── Generic rest-of-line — consumes mixed tokens until NEWLINE ────────────
+restOfLine
+    : ( ID | QUOTED_STRING | INT | COLOR | FREE_TEXT
+      | COLON | SEMI | PIPE | BANG | HASH | DOT
+      | QMARK | COMMA | SLASH | LT | GT | PLUS | TILDE | EQ
+      | LPAREN | RPAREN | LBRACK | RBRACK | LBRACE | RBRACE
+      | STEREO | ARROW | SWIMLANE
+      | BULLET_STAR | BULLET_DASH
+      | KW_START | KW_STOP | KW_END | KW_DETACH | KW_KILL | KW_BREAK
+      | KW_IF | KW_THEN | KW_ELSE | KW_ELSEIF | KW_ENDIF
+      | KW_IS | KW_EQUALS | KW_NOT
+      | KW_SWITCH | KW_CASE | KW_ENDSWITCH
+      | KW_REPEAT | KW_BACKWARD | KW_WHILE | KW_ENDWHILE
+      | KW_FORK | KW_SPLIT | KW_MERGE
+      | KW_FORK_AGAIN | KW_SPLIT_AGAIN
+      | KW_END_FORK | KW_END_MERGE | KW_END_SPLIT
+      | KW_PARTITION | KW_GROUP | KW_PACKAGE | KW_RECTANGLE | KW_CARD
+      | KW_NOTE | KW_FLOATING | KW_LEFT | KW_RIGHT
+      | KW_LABEL | KW_GOTO
+      | KW_SKINPARAM | KW_PRAGMA | KW_SCALE | KW_TITLE
+      | KW_HEADER | KW_FOOTER | KW_CAPTION
+      )+
+    ;
+
+// Content inside parentheses — any tokens except RPAREN and NEWLINE
+parenContent
+    : ( ID | QUOTED_STRING | INT | COLOR | FREE_TEXT
+      | COLON | SEMI | PIPE | BANG | HASH | DOT
+      | QMARK | COMMA | SLASH | LT | GT | PLUS | TILDE | EQ
+      | LPAREN | LBRACK | RBRACK | LBRACE | RBRACE
+      | STEREO | ARROW
+      | BULLET_STAR | BULLET_DASH
+      | KW_START | KW_STOP | KW_END | KW_DETACH | KW_KILL | KW_BREAK
+      | KW_IF | KW_THEN | KW_ELSE | KW_ELSEIF | KW_ENDIF
+      | KW_IS | KW_EQUALS | KW_NOT
+      | KW_SWITCH | KW_CASE | KW_ENDSWITCH
+      | KW_REPEAT | KW_BACKWARD | KW_WHILE | KW_ENDWHILE
+      | KW_FORK | KW_SPLIT | KW_MERGE
+      | KW_PARTITION | KW_GROUP | KW_PACKAGE | KW_RECTANGLE | KW_CARD
+      | KW_NOTE | KW_FLOATING | KW_LEFT | KW_RIGHT
+      | KW_LABEL | KW_GOTO
+      | KW_SKINPARAM | KW_PRAGMA | KW_SCALE | KW_TITLE
+      )+
     ;
 
 // ── Statement dispatcher ──────────────────────────────────────────────────
@@ -210,7 +255,7 @@ statement
 // ═══════════════════════════════════════════════════════════════════════════
 
 actionStmt
-    : COLOR_PREFIX? ACTION STEREO?
+    : ACTION STEREO?
     ;
 
 // ── List-style actions (bullet notation) ──────────────────────────────────
@@ -220,8 +265,8 @@ actionStmt
 //   *** Sub-Sub-Action  etc.
 
 listActionStmt
-    : BULLET_DASH FREE_TEXT    // - text
-    | BULLET_STAR FREE_TEXT    // * / ** / *** text
+    : BULLET_DASH restOfLine    // - text
+    | BULLET_STAR restOfLine    // * / ** / *** text
     ;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -242,7 +287,7 @@ arrowStmt
     ;
 
 arrowLabel
-    : FREE_TEXT SEMI?
+    : restOfLine SEMI?
     ;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -254,7 +299,7 @@ arrowLabel
 // ═══════════════════════════════════════════════════════════════════════════
 
 connectorStmt
-    : COLOR? CONNECTOR
+    : COLOR? LPAREN ID RPAREN
     ;
 
 // ── Control flow terminals ────────────────────────────────────────────────
@@ -308,17 +353,17 @@ ifBlock
     ;
 
 condExpr
-    : LPAREN FREE_TEXT RPAREN
+    : LPAREN parenContent RPAREN
     ;
 
 condOp
     : KW_THEN thenLabel            // if (x) then (label)
-    | KW_IS   LPAREN FREE_TEXT RPAREN KW_THEN   // if (x) is (y) then
-    | KW_EQUALS LPAREN FREE_TEXT RPAREN KW_THEN  // if (x) equals (y) then
+    | KW_IS   LPAREN parenContent RPAREN KW_THEN   // if (x) is (y) then
+    | KW_EQUALS LPAREN parenContent RPAREN KW_THEN  // if (x) equals (y) then
     ;
 
 thenLabel
-    : ( LPAREN FREE_TEXT RPAREN )?
+    : ( LPAREN parenContent RPAREN )?
     ;
 
 elseifBranch
@@ -327,7 +372,7 @@ elseifBranch
     ;
 
 elseBranch
-    : KW_ELSE ( LPAREN FREE_TEXT RPAREN )? NEWLINE+
+    : KW_ELSE ( LPAREN parenContent RPAREN )? NEWLINE+
           statement*
     ;
 
@@ -347,7 +392,7 @@ switchBlock
     ;
 
 caseBranch
-    : KW_CASE LPAREN FREE_TEXT RPAREN NEWLINE+
+    : KW_CASE LPAREN parenContent RPAREN NEWLINE+
           statement*
     ;
 
@@ -371,12 +416,11 @@ repeatBlock
 
 backwardClause
     : KW_BACKWARD ACTION NEWLINE+
-      noteStmt? NEWLINE*
     ;
 
 repeatWhileLabels
-    : ( KW_IS  LPAREN FREE_TEXT RPAREN )?
-      ( KW_NOT LPAREN FREE_TEXT RPAREN )?
+    : ( KW_IS  LPAREN parenContent RPAREN )?
+      ( KW_NOT LPAREN parenContent RPAREN )?
       arrowStmt?
     ;
 
@@ -390,10 +434,10 @@ repeatWhileLabels
 // ═══════════════════════════════════════════════════════════════════════════
 
 whileBlock
-    : KW_WHILE condExpr ( KW_IS LPAREN FREE_TEXT RPAREN )? NEWLINE+
+    : KW_WHILE condExpr ( KW_IS LPAREN parenContent RPAREN )? NEWLINE+
           statement*
           backwardClause?
-      KW_ENDWHILE ( LPAREN FREE_TEXT RPAREN )? NEWLINE+
+      KW_ENDWHILE ( LPAREN parenContent RPAREN )? NEWLINE+
     ;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -428,7 +472,7 @@ forkTerminator
 
 // Optional joinspec: {or} {and} etc.
 joinSpec
-    : LBRACE FREE_TEXT RBRACE
+    : LBRACE ID RBRACE
     ;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -475,7 +519,7 @@ containerKeyword
 
 containerName
     : QUOTED_STRING
-    | FREE_TEXT     // bare unquoted name (stops at '{' or newline)
+    | ID             // bare unquoted name
     ;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -502,22 +546,11 @@ containerName
 // ═══════════════════════════════════════════════════════════════════════════
 
 noteStmt
-    : KW_FLOATING? KW_NOTE noteSide? COLON FREE_TEXT
+    : NOTE_INLINE_TOKEN
     ;
 
 noteBlock
-    : KW_FLOATING? KW_NOTE noteSide? NEWLINE+
-          noteBodyLine+
-      KW_END_NOTE NEWLINE+
-    ;
-
-noteSide
-    : KW_LEFT | KW_RIGHT
-    ;
-
-noteBodyLine
-    : FREE_TEXT NEWLINE+
-    | NEWLINE+
+    : NOTE_BLOCK_TOKEN NEWLINE+
     ;
 
 // ── Label and Goto ────────────────────────────────────────────────────────
@@ -539,26 +572,28 @@ styleBlock
     ;
 
 skinparamStmt
-    : KW_SKINPARAM ID FREE_TEXT?
+    : KW_SKINPARAM ( ID | containerKeyword ) restOfLine?
     ;
 
 skinparamBlock
-    : KW_SKINPARAM ID LBRACE NEWLINE+
+    : KW_SKINPARAM ( ID | containerKeyword ) LBRACE NEWLINE+
           skinparamEntry*
       RBRACE NEWLINE+
     ;
 
 skinparamEntry
-    : ID FREE_TEXT NEWLINE+
+    : restOfLine NEWLINE+
     | NEWLINE+
     ;
 
-pragmaStmt  : BANG KW_PRAGMA ID FREE_TEXT? ;
-scaleStmt   : KW_SCALE FREE_TEXT ;
-titleStmt   : KW_TITLE FREE_TEXT? ;
-headerStmt  : KW_HEADER FREE_TEXT? ;
-footerStmt  : KW_FOOTER FREE_TEXT? ;
-captionStmt : KW_CAPTION FREE_TEXT? ;
+pragmaStmt  : BANG KW_PRAGMA ID restOfLine?
+            | BANG ID restOfLine?
+            ;
+scaleStmt   : KW_SCALE restOfLine ;
+titleStmt   : KW_TITLE restOfLine? ;
+headerStmt  : KW_HEADER restOfLine? | HEADER_BLOCK ;
+footerStmt  : KW_FOOTER restOfLine? | FOOTER_BLOCK ;
+captionStmt : KW_CAPTION restOfLine? ;
 
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -591,8 +626,36 @@ ENDUML   : '@enduml' ;
 // The content between ':' and ';' is the action text (Creole-formatted).
 // Declared before COLON so ':' followed by any content up to ';' wins.
 
+// Note composite tokens — declared BEFORE ACTION so ':' inside note/header/footer
+// body text is not consumed by ACTION.
+
+// Multi-line note block: note [left|right] [#color]\n...\nend note
+// Requires 'end note' to be at start of a line (after optional whitespace)
+// to avoid matching 'end note' appearing mid-line inside note body text.
+NOTE_BLOCK_TOKEN
+    : ('floating' [ \t]+)? 'note' ([ \t]+ ('left' | 'right'))? ([ \t]+ '#' [a-zA-Z0-9]+)? [ \t]* ('\r'? '\n')
+      .*?
+      ('\r'? '\n') [ \t]* 'end' [ \t]+ 'note'
+    ;
+
+// Inline note: note left|right [#color] : text
+NOTE_INLINE_TOKEN
+    : ('floating' [ \t]+)? 'note' [ \t]+ ('left' | 'right') ([ \t]+ '#' [a-zA-Z0-9]+)? [ \t]* ':' ~[\r\n]*
+    ;
+
+// Multi-line header/footer blocks
+HEADER_BLOCK
+    : 'header' [ \t]* ('\r'? '\n') .*? 'end' [ \t]+ 'header'
+    ;
+
+FOOTER_BLOCK
+    : 'footer' [ \t]* ('\r'? '\n') .*? 'end' [ \t]+ 'footer'
+    ;
+
+// Action: captures ':text;' including optional '#color:' prefix
 ACTION
-    : ':' .*? ';'
+    : '#' [a-zA-Z0-9\-|\\]+ ':' .*? ';'   // #color:text;
+    | ':' .*? ';'                            // :text;
     ;
 
 // ── Swimlane token ────────────────────────────────────────────────────────
@@ -605,7 +668,7 @@ ACTION
 // Declared before PIPE so the full swimlane wins.
 
 SWIMLANE
-    : '|' ( '#' [a-zA-Z0-9]+ '|' )? ~[|\r\n]+ '|' [^\r\n]*
+    : '|' ( '#' [a-zA-Z0-9]+ '|' )? ~[|\r\n]+ '|' ~[\r\n]*
     ;
 
 // ── Arrow token ───────────────────────────────────────────────────────────
@@ -653,14 +716,8 @@ COLOR
     : '#' [a-zA-Z0-9\-|\\]+
     ;
 
-// ── Connector (circle) token ──────────────────────────────────────────────
-// Parenthesised single-letter or short-label connector: (A) (B) (1) etc.
-// Declared before LPAREN so the full (label) wins.
-// Content: one or more non-paren non-newline characters.
-
-CONNECTOR
-    : '(' ~[)\r\n]+ ')'
-    ;
+// Connector is now handled as a parser rule: connectorStmt → LPAREN ID RPAREN
+// (Removed CONNECTOR lexer token to avoid conflict with condition labels)
 
 // ── Bullet tokens ─────────────────────────────────────────────────────────
 // BULLET_STAR matches one or more '*' at the start of a logical line
@@ -715,6 +772,7 @@ KW_ENDWHILE   : 'endwhile' ;
 KW_FORK       : 'fork' ;
 KW_ENDFORK    : 'endfork' ;
 KW_SPLIT      : 'split' ;
+KW_MERGE      : 'merge' ;
 
 KW_PARTITION  : 'partition' ;
 KW_GROUP      : 'group' ;
@@ -759,6 +817,15 @@ STAR    : '*' ;
 DASH    : '-' ;
 BANG    : '!' ;
 HASH    : '#' ;
+DOT     : '.' ;
+QMARK   : '?' ;
+COMMA   : ',' ;
+SLASH   : '/' ;
+LT      : '<' ;
+GT      : '>' ;
+PLUS    : '+' ;
+TILDE   : '~' ;
+EQ      : '=' ;
 
 // ── Integer ───────────────────────────────────────────────────────────────
 
@@ -786,8 +853,11 @@ COMMENT_MULTI
 // lines, skinparam values, etc.  Stops at newline.
 // Declared last so all structural tokens have priority.
 
+// Restricted: catch-all for characters not covered by explicit tokens.
+// Single character to prevent consuming structural delimiters like ')'.
 FREE_TEXT
-    : ~[\r\n]+
+    : [&%^\\`$@]
+    | [\u0080-\uFFFF]     // Unicode chars (em-dash, accented letters, etc.)
     ;
 
 // ── Newline ───────────────────────────────────────────────────────────────
