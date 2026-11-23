@@ -517,6 +517,63 @@ class GeminiSettings:
 
 
 # =============================================================================
+# Multi-provider AI Settings
+# =============================================================================
+
+@dataclass
+class AIProviderConfig:
+    """Per-provider configuration for the multi-provider extraction seam.
+
+    The API key itself is never stored here — only the *name* of the
+    environment variable that holds it. The name is user-editable so a key
+    can be dedicated to PictoSync + a provider (e.g. ``PICTOSYNC_OPENAI_KEY``).
+
+    Attributes:
+        env_key: Environment variable name that holds this provider's key.
+        models: Known model ids the user has added for this provider.
+        default_model: The model selected for this provider.
+    """
+    env_key: str = ""
+    models: List[str] = field(default_factory=list)
+    default_model: str = ""
+
+
+def _default_ai_providers() -> "Dict[str, AIProviderConfig]":
+    """Seed provider configs with vendor-default key names and starter models."""
+    return {
+        "gemini": AIProviderConfig(
+            env_key="GOOGLE_API_KEY",
+            models=["gemini-2.5-flash-image", "gemini-3-pro-image-preview"],
+            default_model="gemini-2.5-flash-image",
+        ),
+        "openai": AIProviderConfig(
+            env_key="OPENAI_API_KEY",
+            models=["gpt-4o", "gpt-4.1"],
+            default_model="gpt-4o",
+        ),
+        "anthropic": AIProviderConfig(
+            env_key="ANTHROPIC_API_KEY",
+            models=["claude-opus-4-8", "claude-sonnet-5-5"],
+            default_model="claude-opus-4-8",
+        ),
+    }
+
+
+@dataclass
+class AIProvidersSettings:
+    """Settings for the provider-agnostic extraction seam.
+
+    Attributes:
+        active: Id of the provider used by default (``gemini`` / ``openai`` /
+            ``anthropic``).
+        providers: Per-provider configuration keyed by provider id.
+    """
+    active: str = "gemini"
+    providers: Dict[str, AIProviderConfig] = field(
+        default_factory=_default_ai_providers)
+
+
+# =============================================================================
 # External Tools Settings
 # =============================================================================
 
@@ -582,6 +639,7 @@ class AppSettings:
     style: DefaultStyleSettings = field(default_factory=DefaultStyleSettings)
     item_defaults: Dict[str, ItemDefaults] = field(default_factory=dict)
     gemini: GeminiSettings = field(default_factory=GeminiSettings)
+    ai_providers: AIProvidersSettings = field(default_factory=AIProvidersSettings)
     external_tools: ExternalToolsSettings = field(default_factory=ExternalToolsSettings)
 
 
@@ -986,6 +1044,28 @@ class SettingsManager:
             if settings.gemini.models:
                 settings.gemini.default_model = settings.gemini.models[0]
 
+        # Multi-provider AI section
+        ai = data.get("ai_providers", {})
+        if isinstance(ai, dict):
+            settings.ai_providers.active = ai.get(
+                "active", settings.ai_providers.active)
+            raw_providers = ai.get("providers", {})
+            if isinstance(raw_providers, dict):
+                for pid, cfg in raw_providers.items():
+                    if not isinstance(cfg, dict):
+                        continue
+                    entry = settings.ai_providers.providers.get(pid)
+                    if entry is None:
+                        entry = AIProviderConfig()
+                        settings.ai_providers.providers[pid] = entry
+                    entry.env_key = cfg.get("env_key", entry.env_key)
+                    if isinstance(cfg.get("models"), list):
+                        entry.models = list(cfg["models"])
+                    entry.default_model = cfg.get(
+                        "default_model", entry.default_model)
+                    if entry.default_model not in entry.models and entry.models:
+                        entry.default_model = entry.models[0]
+
         # External tools section
         ext = data.get("external_tools", {})
         settings.external_tools.java_path = ext.get("java_path", settings.external_tools.java_path)
@@ -1111,6 +1191,17 @@ class SettingsManager:
             "gemini": {
                 "models": s.gemini.models,
                 "default_model": s.gemini.default_model,
+            },
+            "ai_providers": {
+                "active": s.ai_providers.active,
+                "providers": {
+                    pid: {
+                        "env_key": cfg.env_key,
+                        "models": cfg.models,
+                        "default_model": cfg.default_model,
+                    }
+                    for pid, cfg in s.ai_providers.providers.items()
+                },
             },
             "external_tools": {
                 "java_path": s.external_tools.java_path,

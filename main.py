@@ -937,6 +937,53 @@ class MainWindow(QMainWindow):
             act.setCheckable(True)
             act.setChecked(name == self.model_name)
             act.triggered.connect(lambda checked, n=name: self._on_model_selected(n))
+        self.model_menu.addSeparator()
+        vault_act = self.model_menu.addAction("Set up key vault…")
+        vault_act.setToolTip(
+            "Create or unlock the single vault key that encrypts all your "
+            "API keys.")
+        vault_act.triggered.connect(self.open_vault_wizard)
+        setup_act = self.model_menu.addAction("Set up a provider (keys & libraries)…")
+        setup_act.setToolTip(
+            "Walk through installing a provider's library and setting its "
+            "API key.")
+        setup_act.triggered.connect(self.open_provider_setup_wizard)
+        try_act = self.model_menu.addAction("Try a model on an image…")
+        try_act.setToolTip(
+            "Open a harness to run any provider/model on an image and "
+            "inspect the extracted schema.")
+        try_act.triggered.connect(self.open_try_model_dialog)
+
+    def open_vault_wizard(self):
+        """Open the API-key vault setup / unlock wizard."""
+        from vault_wizard import VaultSetupDialog
+        VaultSetupDialog(self.settings_manager, parent=self).exec()
+
+    def open_provider_setup_wizard(self):
+        """Open the provider setup wizard for the active provider."""
+        from provider_setup_wizard import ProviderSetupWizard
+
+        active = self.settings_manager.settings.ai_providers.active
+        wiz = ProviderSetupWizard(self.settings_manager, active, parent=self)
+        wiz.exec()
+
+    def open_try_model_dialog(self):
+        """Open the multi-provider 'Try a Model on an Image' harness."""
+        from try_model_dialog import TryModelDialog
+
+        def _send_to_canvas(data: dict):
+            pretty = json.dumps(data, indent=2)
+            self._set_draft_text_programmatically(
+                pretty, enable_import=True,
+                status="Draft from Try-a-Model. Click Import to link JSON<->Scene.",
+                focus_id=None)
+            self.statusBar().showMessage("Draft received from Try-a-Model harness.")
+
+        dlg = TryModelDialog(
+            self.settings_manager, parent=self,
+            image_path=self.bg_path or "",
+            on_send_to_canvas=_send_to_canvas)
+        dlg.show()
 
     def _on_model_selected(self, name: str):
         """Handle model selection from the dropdown menu."""
@@ -4579,6 +4626,19 @@ def main():
 
     # Ensure settings file has all sections
     settings_manager.ensure_file_complete()
+
+    # Unlock the API-key vault (if a vault key is remembered on this machine)
+    # and load the stored keys into the environment, so they survive
+    # restarts/reboots regardless of how the app was launched. A real
+    # environment variable of the same name always takes precedence.
+    try:
+        from vault import load_vault_key_into_env, load_keys_into_env
+        load_vault_key_into_env(settings_manager)
+        n_keys = load_keys_into_env(settings_manager)
+        if n_keys:
+            trace(f"Loaded {n_keys} API key(s) from vault into environment", "MAIN")
+    except Exception as _e:  # never block startup on key loading
+        trace(f"Vault load failed: {_e}", "MAIN")
 
     # Apply saved theme (or default if not set)
     initial_style = settings_manager.settings.theme
